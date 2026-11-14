@@ -28,17 +28,17 @@ and out of §9's order, is done, 2026-11-14: Tests run 23 passed all 64 jobs, th
 job's `immediate_annuity` legs on Linux and Windows among them (§7.9, *Record — M23*). DIA's
 compile step, M24, built and tested there after M23, is done, 2026-11-14: Tests run 27
 passed all 70 jobs, the `cython` job's `deferred_income_annuity` legs among them (§7.12,
-*Record — M24*); RILA's, M25, built and tested there after M24, is done, 2026-11-15:
-Tests run 31 passed all 74 jobs (§7.8, *Record — M25*). FIA's compile step, M21,
-landed after them, and IUL's, M19, after M21; both are done, 2026-11-14: Tests run 27 passed
-all 70 jobs, their `cython` legs on Linux and Windows among them (§7.11, *Record — M21*;
-§7.4, *Record — M19*). VA's compile step, M22, landed before M25 and is done, 2026-11-14:
-Tests run 29, on its fix, passed all 72 jobs, the `cython` job's `variable_annuity` legs on
-Linux and Windows among them (§7.7, *Record — M22*). M26, Phase 2's close, landed
-2026-11-15 (§6.4): Phase 2 is closed pending M26's CI run. The open decisions of §8.2 are
-settled, the last of them, item 4, on 2026-11-03. Like USLIB-MERGE-PLAN.md, this document is
-both the specification and the record: each phase records what it actually did, including
-where the implementation departed from the plan.
+*Record — M24*); RILA's, M25, built and tested there after M24, is done, 2026-11-15: Tests
+run 31 passed all 74 jobs (§7.8, *Record — M25*). FIA's compile step, M21, landed after
+them, and IUL's, M19, after M21; both are done, 2026-11-14: Tests run 27 passed all 70 jobs,
+their `cython` legs on Linux and Windows among them (§7.11, *Record — M21*; §7.4, *Record —
+M19*). VA's compile step, M22, landed before M25 and is done, 2026-11-14: Tests run 29, on
+its fix, passed all 72 jobs, the `cython` job's `variable_annuity` legs on Linux and Windows
+among them (§7.7, *Record — M22*). M26, Phase 2's close, is done, 2026-11-15: Tests run 33
+passed all 74 jobs, and Phase 2 is closed (§6.4). The open decisions of §8.2 are settled,
+the last of them, item 4, on 2026-11-03. Like USLIB-MERGE-PLAN.md, this document is both the
+specification and the record: each phase records what it actually did, including where the
+implementation departed from the plan.
 
 Every number in it was measured in this repository, or in lifelib 0.17.2, modelx 0.33.0 and
 modelx-cython 0.1.0 as installed for the purpose, and each is quoted with the experiment
@@ -2106,7 +2106,7 @@ All marked `cython` unless noted.
 A milestone whose gate is met on Linux alone is done on Linux, and stays open until the
 `cython` job has run its tests on Windows (M14).
 
-### 6.4 Record — M26, landed 2026-11-15
+### 6.4 Record — M26, done 2026-11-15
 
 M26 closes Phase 2. It took up §9's row and the items the product records carry into it
 (§7.7, *Record — M22*, and §7.8, *Record — M25*, *Carried into M26*; §7.9, *Record — M23*,
@@ -2126,9 +2126,10 @@ commits on 535ebe8, M25's record:
 No number moved. Term's, WholeLife's, RILA's, UL's and VUL's fingerprints reproduce, and
 UL's and VUL's every cached value equals its stage-`E` model's at no tolerance.
 
-**CI: pending.** M26's gate, the whole matrix green, C1–C5 on Linux and Windows for all
-twelve among it (§6.3), awaits a Tests run dispatched on 66f1e47. Phase 2 is closed when
-that run passes; until then it is closed pending M26's CI run.
+**CI: green.** Tests run 33, dispatched on 66f1e47, passed all 74 jobs, the `cython` job's
+legs for all twelve products on Linux and Windows among them, so C1–C5 hold on both for
+every model (§6.3); run 32, on 8f58256, the UL and VUL change alone, passed all 74 too.
+Phase 2 is closed.
 
 **What exists now.**
 - Four conventions over every stage-`EC` model, in `sec_support.py` and
@@ -14683,4 +14684,4 @@ Items 1, 2, 3 and 5 were confirmed on 2026-11-01, as recommended, and item 4 on
 | M19 | Phase 2 for IUL, the ninth after M13, the last on UL's chassis — **done**, 2026-11-14, after M21; Tests run 27 passed all 70 jobs (§7.4, *Record — M19*) | §6.1 recipe, `sample_sec.py`, `spec_sec.py`; one merged reviewer; the `indexed_ul` shard added to the `cython` job | C1–C5 green on Linux and Windows; C6 recorded |
 | M22 | Phase 2 for VA, the tenth after M13, on MYGA's and FIA's chassis — **done**, 2026-11-14, after M19 and before M25; Tests run 29, on its fix, passed all 72 jobs (§7.7, *Record — M22*) | §6.1 recipe, `sample_sec.py`, `spec_sec.py`; one merged reviewer; the `variable_annuity` shard added to the `cython` job | C1–C5 green on Linux and Windows; C6 recorded |
 | M25 | Phase 2 for RILA, the last product — **done**, 2026-11-15, landed after M22, built and tested on Windows in the local session that built M23 and M24; Tests run 31 passed all 74 jobs (§7.8, *Record — M25*) | §6.1 recipe, `sample_sec.py`, `spec_sec.py`; one merged reviewer; `"python_calls"` taking dotted names, `math` admitted by cell; the `registered_index_linked_annuity` shard added to the `cython` job | C1–C5 green on Linux and Windows; C6 recorded |
-| M26 | Close — **landed**, 2026-11-15, CI pending (§6.4) | A benchmark table in `index.md`; the shared conventions and items the product records carry into M26 (the `cython` job stays an ordinary job, not a required check: D13) | — |
+| M26 | Close — **done**, 2026-11-15; Tests run 33 passed all 74 jobs (§6.4) | A benchmark table in `index.md`; the shared conventions and items the product records carry into M26 (the `cython` job stays an ordinary job, not a required check: D13) | — |
