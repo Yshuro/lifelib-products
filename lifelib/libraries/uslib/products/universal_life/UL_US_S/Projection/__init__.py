@@ -1122,10 +1122,17 @@ def mort_rate(t):
     illustrative one **[std]**, *not* the 2015 VBT the notes recommend -- that family
     is licensed and may not be reproduced here.  Ages beyond the table take its last
     row, where the rate is 1.0.
+
+    The product is capped at 1, written ``min(q, 1.0)``: a class factor above 1 carries
+    the oldest ages' rates past 1, where the monthly rate ``1 - (1 - q)^(1/12)`` has no
+    real value, and with the bound second a missing input, a NaN, stays NaN, where
+    ``min(1.0, q)`` would read it as 1.  On every shipped point the product reaches 1.0, at
+    attained age 119, and never passes it, so the cap changes no shipped number.
     """
     tbl = data.mort_table()                                          # noqa: F821
     a = min(max(age(t), int(tbl.index.min())), int(tbl.index.max()))
-    return float(tbl.loc[a, "mort_rate"]) * class_factor() * mort_ae_factor  # noqa: F821
+    q = float(tbl.loc[a, "mort_rate"]) * class_factor() * mort_ae_factor  # noqa: F821
+    return min(q, 1.0)
 
 
 def mort_rate_mth(t):
