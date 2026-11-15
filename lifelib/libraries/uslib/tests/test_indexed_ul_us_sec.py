@@ -6540,9 +6540,12 @@ def test_run_sec_says_a_copy_without_the_repository_cannot_build(tmp_path):
 
 
 def _bench_tool():
-    """The repository's ``tools/bench_sec_cy.py``, imported as a module of its own."""
+    """The repository's ``tools/bench_sec_cy.py``, imported as a module of its own, or a
+    skip where the tool is absent, as from a ``lifelib.create()`` copy or from lifelib."""
     import importlib.util
     path = model_path(SEC).parents[5] / "tools" / "bench_sec_cy.py"
+    if not path.is_file():
+        pytest.skip("tools/bench_sec_cy.py is the source repository's, and it is absent")
     spec = importlib.util.spec_from_file_location(f"bench_sec_cy_{next(_names)}", path)
     tool = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(tool)

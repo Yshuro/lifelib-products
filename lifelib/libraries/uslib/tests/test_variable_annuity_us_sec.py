@@ -4043,7 +4043,7 @@ def _refusal_entries():
     where its message names the loop's column; and each fault a grouped message collects,
     ``faults.append(...)``, is an entry of its own, matched anywhere in the message.
     """
-    tree = ast.parse((model_path(SEC) / "Data" / "__init__.py").read_text())
+    tree = ast.parse((model_path(SEC) / "Data" / "__init__.py").read_text(encoding="utf-8"))
     sub_ids = sorted(set(pd.read_csv(model_path(SEC).parent / "fund_table.csv")["sub_id"]))
     entries = {}
     for cell in tree.body:
