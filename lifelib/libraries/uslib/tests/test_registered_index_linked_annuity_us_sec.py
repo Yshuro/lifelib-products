@@ -5729,7 +5729,15 @@ def test_a_power_off_its_domain_is_refused_beside_s(tmp_path, case, s_point, ref
     guard that refused where S has a float, or one lost, so that a compiled ``inf`` or NaN
     goes on, fails a case; :func:`test_the_compiled_model_takes_a_power_as_modelx_does`
     holds the compiled model to these.
+
+    The bound's case is posed only where ``pandas.read_csv`` reads :data:`_VOL` back as
+    itself.  Its default parser is not correctly rounded everywhere: on a Windows build it
+    reads ``1.3407807929942596e+154`` as the next float up, past the bound, so both models
+    see the case beside it, and the bound cannot be written to a file at all.
     """
+    if (case == "a volatility whose square is the largest float"
+            and pd.read_csv(io.StringIO(f"v\n{_VOL!r}\n"))["v"].iloc[0] != _VOL):
+        pytest.skip("pandas.read_csv reads the bound volatility as the next float up here")
     s_folder, sec_folder = _power_case(tmp_path, case, s_point, refs, edit, files)
     s = _read(s_folder, "s_power", refs)
     sec = _read(sec_folder, "power", refs)
