@@ -397,7 +397,7 @@ def chassis():
     v = model_point()["chassis"]
     if v not in ("UWP_bond", "CWP_endowment"):
         raise ValueError(
-            "invalid chassis; SF_prufund is out of scope on a monthly grid")
+            "invalid chassis; SF_smoothed is out of scope on a monthly grid")
     return v
 
 

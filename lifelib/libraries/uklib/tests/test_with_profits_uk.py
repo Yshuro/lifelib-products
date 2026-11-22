@@ -832,7 +832,7 @@ def test_the_smoothed_fund_chassis_is_out_of_scope(tmp_path):
     try:
         table = pd.read_csv(MODEL_DIR.parent / "model_point_table.csv",
                             index_col="point_id")
-        table.loc[1, "chassis"] = "SF_prufund"
+        table.loc[1, "chassis"] = "SF_smoothed"
         alt = "model_point_table_sf.csv"
         table.to_csv(model.Data.input_dir() / alt)
         try:
