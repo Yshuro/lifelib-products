@@ -1682,7 +1682,7 @@ def test_the_future_horizon_is_a_reference_that_bounds_future_business(tmp_path)
         assert model.Data.future_horizon_mth == 120
         negative = "future_horizon_mth must be 0 months or more, not -1"
         for horizon, refusal in ((13, None), (12, later), (0, no_future), (-1, negative),
-                                 (120, None)):
+                                 (12.0, later), (-1.0, negative), (120, None)):
             model.Data.future_horizon_mth = horizon
             if refusal is None:
                 assert len(model.Data.model_point_table()) == len(_committed()), horizon
@@ -1793,6 +1793,18 @@ NOT_ISSUED = [
     ("a second life covered to 91", _set("joint_age", [6], 66), {}, 6,
      "point_id 6: life 2's cover runs to attained age 91, issue age 66 and a 25-year "
      "term, past expiry_age_max, 90", None),
+    # Each bound written as a float, which the compiled model holds as an int, printed as
+    # it does.
+    ("a term above a bound lowered to 24, written as a float", None,
+     {"policy_term_max": 24.0}, 1,
+     "point_id 1: the term, 25 years, is above policy_term_max, 24", 300),
+    ("an issue age below a bound raised to 36, written as a float", None,
+     {"issue_age_min": 36.0}, 1,
+     "point_id 1: life 1's issue age, 35, is below issue_age_min, 36", 300),
+    ("cover past a bound lowered to 59, written as a float", None,
+     {"expiry_age_max": 59.0}, 1,
+     "point_id 1: life 1's cover runs to attained age 60, issue age 35 and a 25-year "
+     "term, past expiry_age_max, 59", 300),
 ]
 
 
@@ -1882,6 +1894,16 @@ SHORT_PIPELINE = [
      "duration_mth), lags 1 to 5"),
     ("a negative deferred period", lambda t: t, {"wop_defer_mths": -1}, 11,
      "point_id 11: wop_defer_mths must be 0 months or more, not -1"),
+    # A count of months written as a float, which the compiled model holds as an int,
+    # printed as it does.
+    ("a deferred period lengthened, written as a float", lambda t: t,
+     {"wop_defer_mths": 7.0}, 11,
+     "point_id 11: wop_pipeline_sec.csv holds 6 lags, its last 6, where a waiver point in "
+     "force 66 months holds one for each of its last 7, min(wop_defer_mths, "
+     "duration_mth), lags 1 to 7"),
+    ("a negative deferred period, written as a float", lambda t: t,
+     {"wop_defer_mths": -1.0}, 11,
+     "point_id 11: wop_defer_mths must be 0 months or more, not -1"),
 ]
 
 
@@ -1936,6 +1958,11 @@ WAIVED_TOO_SOON = [
      f"point_id 11: wop_waived_frac_init is {_committed().at[11, 'wop_waived_frac_init']}, "
      f"where a waiver point in force 66 months, no longer than wop_defer_mths, 66, has "
      f"waived no premium yet: 0"),
+    ("a share waived inside a deferred period lengthened to 66, written as a float",
+     lambda t: t, {"wop_defer_mths": 66.0}, 11,
+     f"point_id 11: wop_waived_frac_init is {_committed().at[11, 'wop_waived_frac_init']}, "
+     f"where a waiver point in force 66 months, no longer than wop_defer_mths, 66, has "
+     f"waived no premium yet: 0"),
 ]
 
 
@@ -1971,19 +1998,21 @@ def test_a_waived_share_the_deferred_period_has_not_run_is_refused(tmp_path, cas
 # in their deferred period among those who can fall ill, so at the shipped recovery rate
 # and deferred period an incidence of 0.856 a year takes S's waiver point's share past 1
 # at month 19, and one of 1 at month 8, while one of 0.855 keeps every point's below it.
+# A rate written as an int, which the compiled model holds as a float, is refused in the
+# same words in both.
 WAIVER_RATES = [
     *[(f"wop_inc_rate at {case}", "wop_inc_rate", value, outcome)
       for case, value, outcome in (
           ("0", 0.0, "accepted"), ("0.855", 0.855, "accepted"), ("0.856", 0.856, "share"),
           ("1", 1.0, "share"), ("the float below 0", math.nextafter(0.0, -1.0), "rate"),
           ("the float above 1", math.nextafter(1.0, 2.0), "rate"),
-          ("NaN", math.nan, "rate"))],
+          ("the int 2", 2, "rate"), ("NaN", math.nan, "rate"))],
     *[(f"wop_rec_rate at {case}", "wop_rec_rate", value, outcome)
       for case, value, outcome in (
           ("0", 0.0, "accepted"), ("1", 1.0, "accepted"),
           ("the float below 0", math.nextafter(0.0, -1.0), "rate"),
           ("the float above 1", math.nextafter(1.0, 2.0), "rate"),
-          ("NaN", math.nan, "rate"))],
+          ("the int -1", -1, "rate"), ("NaN", math.nan, "rate"))],
 ]
 
 
@@ -2023,7 +2052,7 @@ def test_a_waiver_rate_outside_its_domain_is_refused(case, ref, value, outcome):
             for label in waiver:
                 _refused(_point(sec, label).result_cf,
                          f"point_id {label}: {ref} must be a number from 0 to 1, "
-                         f"not {value}")
+                         f"not {float(value)}")
             if value > 1.0:
                 assert isinstance(s_proj.cells[f"{ref}_mth"](), complex), case
         elif outcome == "share":
@@ -2033,7 +2062,8 @@ def test_a_waiver_rate_outside_its_domain_is_refused(case, ref, value, outcome):
             for label, at in ((twin, month), (later, month + 13)):
                 _refused(_point(sec, label).result_cf,
                          f"point_id {label}: the waived share wop_waived_frac({at}) is "
-                         f"{share}, outside 0 to 1, under wop_inc_rate {value}")
+                         f"{share}, outside 0 to 1, under wop_inc_rate "
+                         f"{float(value)}")
             for label in set(waiver) - {twin, later}:
                 p = _point(sec, label)
                 try:
@@ -2069,19 +2099,25 @@ def test_a_waiver_rate_outside_its_domain_is_refused(case, ref, value, outcome):
 # S projects as a complex number, and an infinite rate gives a factor of 0, NaN one of
 # NaN.  A rate of 0 is the closed form's limit, m, in S and here; at 1e-17, where 1 + r is
 # 1, this model's monthly rate is 0 and the factor m, where S, which tests the annual rate,
-# divides by zero; at -0.99 the factor is S's.  And the float above -1 is in the domain,
-# its power past the largest float on every family income benefit point of the table.
+# divides by zero; and so at PAST_ONE, the least float whose 1 + r is not 1, 1 + 2**-52,
+# whose twelfth root still rounds to 1, so that the factor tests the monthly rate and not
+# 1 + r.  At -0.99 the factor is S's.  The float above -1 is in the domain, its power past
+# the largest float on every family income benefit point of the table.  And -2 written as
+# an int, which the compiled model holds as -2.0, is refused in the same words in both.
+PAST_ONE = math.nextafter(2.0 ** -53, 1.0)
 COMMUTE_RATES = [
-    ("0", 0.0, "accepted"), ("1e-17", 1e-17, "accepted"), ("-0.99", -0.99, "accepted"),
-    ("-1", -1.0, "refused"), ("-2", -2.0, "refused"), ("NaN", math.nan, "refused"),
-    ("inf", math.inf, "refused"), ("-inf", -math.inf, "refused"),
+    ("0", 0.0, "accepted"), ("1e-17", 1e-17, "accepted"),
+    ("the float past 1 + r == 1", PAST_ONE, "accepted"), ("-0.99", -0.99, "accepted"),
+    ("-1", -1.0, "refused"), ("-2", -2.0, "refused"), ("the int -2", -2, "refused"),
+    ("NaN", math.nan, "refused"), ("inf", math.inf, "refused"),
+    ("-inf", -math.inf, "refused"),
     ("the float above -1", math.nextafter(-1.0, 0.0), "overflow"),
 ]
 
 # What S makes of each refused rate, on its point 4's annuity certain at 300 months: a
 # raise, by its type, or the value.
-S_COMMUTE = {"-1": "ZeroDivisionError", "-2": complex, "NaN": "nan", "inf": 0.0,
-             "-inf": 0.0}
+S_COMMUTE = {"-1": "ZeroDivisionError", "-2": complex, "the int -2": complex, "NaN": "nan",
+             "inf": 0.0, "-inf": 0.0}
 
 
 def _overflow_text():
@@ -2102,8 +2138,10 @@ def test_a_commutation_discount_outside_its_domain_is_refused(case, value, outco
     asserted beside it (:data:`S_COMMUTE`).  Inside it, every family income benefit point
     projects and every other point projects whatever the rate: at 0 and at -0.99 the
     twins of S's family income benefit points, 3 and 4, are S's in every cell, holding
-    the closed form's limit and S's power against S; at 1e-17, where ``1 + r`` is 1, the
-    monthly rate is 0 and the factor is ``m``, where S divides by zero, a departure.  The
+    the closed form's limit and S's power against S; at 1e-17, where ``1 + r`` is 1, and
+    at :data:`PAST_ONE`, where it is not, the monthly rate is 0 and the factor is ``m``,
+    where S divides by zero, a departure.  A refusal prints the rate as a float, as the
+    compiled model holds it, an int among the rates refused.  The
     float above -1 is accepted, and its power passes the largest float, Python's
     ``OverflowError`` in S and here alike.  The rate is set in both models as each is
     read, before either computes anything, the form that runs compiled unchanged (K7);
@@ -2122,7 +2160,7 @@ def test_a_commutation_discount_outside_its_domain_is_refused(case, value, outco
             for label in fib:
                 _refused(_point(sec, label).result_cf,
                          f"point_id {label}: fib_commute_disc_rate must be a finite "
-                         f"number above -1, not {value}")
+                         f"number above -1, not {float(value)}")
             want = S_COMMUTE[case]
             try:
                 got = _point(s, 4).annuity_certain_factor(300)
@@ -2145,7 +2183,7 @@ def test_a_commutation_discount_outside_its_domain_is_refused(case, value, outco
                 p = _point(sec, label)
                 assert len(p.result_cf()) == p.proj_len() and p.check_fib_ledger(), label
             p = _point(sec, 4)
-            if value == 1e-17:
+            if value != 0.0 and (1.0 + value) ** (1.0 / 12.0) - 1.0 == 0.0:
                 assert p.annuity_certain_factor(300) == 300.0
                 with pytest.raises(Exception) as raised:
                     _point(s, 4).annuity_certain_factor(300)
@@ -2166,6 +2204,32 @@ def test_a_commutation_discount_outside_its_domain_is_refused(case, value, outco
     finally:
         sec.close()
         s.close()
+
+
+def test_a_select_period_written_as_a_float_reads_the_table_as_an_int():
+    """``select_period`` 3.0 projects what 3 projects, as the compiled model, which holds
+    the Reference as an int, does.
+
+    ``select_factor`` reads ``Data.select_factor_array`` at ``min(duration(t),
+    select_period)``, which a float period makes a float from its third year, an index
+    numpy refuses where ``Term_UK_S``'s lookup by label read it; the cell reads the
+    duration as an ``int``.  On S's waiver point's twin, on the select basis, every cell
+    of the report and the select factor at every month agree, to the bit, with the
+    period an int and a float.
+    """
+    as_int = mx.read_model(model_path(SEC), name=_name("period_int"))
+    as_float = mx.read_model(model_path(SEC), name=_name("period_float"))
+    try:
+        as_int.Projection.select_period = 3
+        as_float.Projection.select_period = 3.0
+        p, q = _point(as_int, 7), _point(as_float, 7)
+        assert p.is_select_basis() and p.proj_len() > 36
+        assert frame_mismatches(p.result_cf(), q.result_cf(), rtol=0, atol=0) == []
+        assert [p.select_factor(t) for t in range(p.proj_len())] == [
+            q.select_factor(t) for t in range(q.proj_len())]
+    finally:
+        as_float.close()
+        as_int.close()
 
 
 def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
@@ -5317,8 +5381,9 @@ def test_the_compiled_model_computes_what_modelx_computes_at_a_commutation_disco
     commutation discount of 0, and of 1e-17.
 
     ``annuity_certain_factor`` returns ``m`` where the monthly rate is 0, at a rate of 0,
-    as ``Term_UK_S`` does, and at one whose monthly rate rounds to 0, 1e-17, where
-    ``1 + r`` is 1 and S divides by zero.  The shipped rate, 3%, takes the closed form on
+    as ``Term_UK_S`` does, and at two whose monthly rate rounds to 0, where S divides by
+    zero: 1e-17, where ``1 + r`` is 1, and :data:`PAST_ONE`, where it is not.  The shipped
+    rate, 3%, takes the closed form on
     every point, so no other compiled test reaches the branch, and
     ``test_a_commutation_discount_outside_its_domain_is_refused`` holds it against S in
     modelx.  On the committed points, with the rate set in both engines before either
@@ -5329,7 +5394,7 @@ def test_the_compiled_model_computes_what_modelx_computes_at_a_commutation_disco
     build = sec_build(SEC)
     folder = compiled_case(build, tmp_path / "discount")
     found = []
-    for value in (0.0, 1e-17):
+    for value in (0.0, 1e-17, PAST_ONE):
         found += [f"at {value}: {line}" for line in compiled_mismatches(
             build, folder, refs={"fib_commute_disc_rate": value})]
     assert not found, _mismatch_lines(found)
@@ -5644,6 +5709,11 @@ def _refusal_cases():
                   {"select_period": 7}, [(at(7), "result_cf", ())], ()))
     cases.append(("a select duration below the table", extract(), lags(), None,
                   {"select_period": -1}, [(at(7), "select_factor", (0,))], ()))
+    cases.append(("a select duration below the table, written as a float", extract(),
+                  lags(), None, {"select_period": -1.0},
+                  [(at(7), "select_factor", (0,))], ()))
+    cases.append(("a select duration past the table, written as a float", extract(),
+                  lags(), None, {"select_period": 7.0}, [(at(7), "result_cf", ())], ()))
     cases.append(("a lag the pipeline does not hold", extract(), lags(), None, {},
                   [(at(12), "wop_deferred_init", (k,)) for k in (0, 5)]
                   + [(at(1), "wop_deferred_init", (1,))], ()))

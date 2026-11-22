@@ -283,15 +283,16 @@ def model_point_table():
                          f"point_id {bad}")
     horizon = future_horizon_mth                                     # noqa: F821
     if horizon < 0:
-        raise ValueError(f"future_horizon_mth must be 0 months or more, not {horizon}")
+        raise ValueError(f"future_horizon_mth must be 0 months or more, not "
+                         f"{int(horizon)}")
     bad = table.index[months < -horizon].tolist()
     if bad and horizon == 0:
         raise ValueError(f"{name}: duration_mth must be 0 or more: this model takes no "
                          f"future new business; it is not at point_id {bad}")
     if bad:
-        raise ValueError(f"{name}: duration_mth must be -{horizon} or more, a policy "
-                         f"issued at most {horizon} months after the valuation date; it "
-                         f"is not at point_id {bad}")
+        raise ValueError(f"{name}: duration_mth must be -{int(horizon)} or more, a "
+                         f"policy issued at most {int(horizon)} months after the valuation "
+                         f"date; it is not at point_id {bad}")
     state = {}
     for column, low, high, rule in (
             ("lapse_cum_init", 0.0, 1.0,

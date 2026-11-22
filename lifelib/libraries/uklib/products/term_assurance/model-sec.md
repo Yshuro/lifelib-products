@@ -378,7 +378,7 @@ fail it.
 | `result_pols` | — | `pols_new_biz` added, the rates 0 outside cover | The counts behind `result_cf()`, after `basiclife/BasicTerm_SE`'s `result_pols()` |
 | `claims` | `claims(t, kind=None)`, the kinds by name and, with no kind, their total by `sum` | `claims(t, kind)`, no default: the codes `DEATH`, `FIB` and `LAPSE`, and the total `ALL`, written left to right | A default and `None` do not compile, and the total is `sum`'s to the last bit (*The compiled model*); the twin identity compares `Term_UK_S`'s `claims(t)` with `claims(t, ALL)` |
 | `sex(2)`, `smoker(2)` | `invalid life` on a single life | the column as read, NaN where blank | Reporting cells, whose type the sample traces on a blank second life, so that each compiles to a Python object; no projection cell reads them, `mort_group` taking each life's row of the mortality table |
-| `annuity_certain_factor` | `m` where the annual rate is 0, else the closed form | `m` where the monthly rate is 0, else the closed form; a rate not a finite number above −1 refused on a family income benefit point by `proj_len()` | At a rate whose monthly equivalent rounds to 0, 1e-17 say, where `1 + r` is 1, S divides by zero; at −1 or below, or not finite, it raises, goes complex or gives 0 or NaN without a word |
+| `annuity_certain_factor` | `m` where the annual rate is 0, else the closed form | `m` where the monthly rate is 0, else the closed form; a rate not a finite number above −1 refused on a family income benefit point by `proj_len()` | At a rate whose monthly equivalent rounds to 0, S divides by zero: 1e-17, where `1 + r` is 1, and 1.1e-16, where it is not; at −1 or below, or not finite, it raises, goes complex or gives 0 or NaN without a word |
 | `select_factor` | `.loc` on the table, `KeyError` past it | an array read by the select duration, checked against the table's extent either side first, and refused by name | A negative duration, under a negative `select_period`, would read the array from its end without a word |
 
 Of the cash flows, the change of clock moves the maintenance expense alone, and `net_cf`
@@ -413,9 +413,11 @@ factor of 0, and NaN one of NaN, without a word. So on a family income benefit p
 among them, naming the point and the Reference; a point of another shape reads no
 discount. And the factor tests the monthly rate for 0, where S tests the annual one, as
 `benefit_sched` tests its own monthly rate: at 0 both give `m`, the closed form's limit,
-and so does this model at a rate whose monthly equivalent rounds to 0, 1e-17 say, where
-`1 + r` is 1 and S divides by zero. Within about 2e-8 of −1 the power passes the largest
-float at the longest commutation, and S and this model raise Python's `OverflowError`.
+and so does this model at a rate whose monthly equivalent rounds to 0, where S divides
+by zero: 1e-17, where `1 + r` is 1, and the least float whose `1 + r` is not 1,
+1.1102230246251568e-16, whose twelfth root still rounds to 1. Within about 2e-8 of −1 the
+power passes the largest float at the longest commutation, and S and this model raise
+Python's `OverflowError`.
 
 **A defect of the specification, kept in both models.** The waiver recursion,
 `u(t + 1) = u(t)(1 − rec_m) + inc_m (1 − u(t − 6)) (1 − rec_m)^6`, takes each month's
@@ -451,8 +453,8 @@ committed point was frozen before the change, and it still computes it, to the l
 compiled model computes what modelx computes, bit for bit, on the committed points, on
 the points of the splice grid, which take the branches they do not, at the contract's
 longest covers, on points where the cap on mortality binds and at a commutation discount
-of 0 and of 1e-17. The compile tests hold it so on x86-64, and to 1e-12 relative
-elsewhere, where no run has shown it yet.
+of 0, of 1e-17 and of 1.1e-16. The compile tests hold it so on x86-64, and to 1e-12
+relative elsewhere, where no run has shown it yet.
 
 ### Building it
 
@@ -684,6 +686,14 @@ each point the frame refuses, each waiver rate, waived share and commutation dis
 refused, a key read beyond a table, either side, and what the vectors cannot hold, in a
 cell typed `long long` or `double` as in a Python one.
 
+A message prints each Reference as the compiled model holds it: a rate as a float, and a
+term, an age or a count of months as an int. So a rate written as an int, 2, or a bound
+written as a float, 24.0, gives one message in both engines, which a test holds for each
+Reference a refusal prints. A `select_period` written as a float, 3.0, reads the select
+table at 3 in both. An int Reference is a C `long long` compiled, and a float set on it is
+truncated as it is set, 48.5 to 48, where modelx computes with 48.5, so set each as a
+whole number.
+
 - What `Data` cannot decode or hold, when the vector is first read, naming every point at
   fault: a `point_id` that is not a whole number, or is `2**53` or more in size; an issue
   age, a term or, on a joint first-death point, a second age `2**53` or more in size,
@@ -809,27 +819,26 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   multiplies every flow and counted cell and moves no per-policy value, bit for bit, the
   lapse ratio and the cohort's share among them; and both checks, their tolerances scaled
   by the count, close on a million policies.
-- **Validation and regeneration**: each malformed row of the table, 76 cases, each
-  `2**53` bound at the bound among them, and of the pipeline, 17, is refused naming its
-  point or its line; the horizon is a Reference; a point past its cover, outside the
-  contract's bounds or with a pipeline not exactly its lags, 8 cases, among them none at
-  all and a gap, is refused by `proj_len()`, each bound just inside it and each moved past
-  a committed point, and `run_sec.py --block` refuses such a point before printing
-  anything; so is a share waived before the deferred period has run, at its last month
-  among them; a waiver point under a waiver rate a float outside 0 to 1, or NaN, is
-  refused by the frame, and under an incidence of 0.856 or 1 by the waived share in the
-  month it passes 1, S's month and S's share, where at 0, at 0.855 and at a recovery of 1
-  the twin of S's waiver point is S's in every cell; a family income benefit point under
-  a commutation discount that is not a finite number above −1 is refused by the frame,
-  S's own outcome beside it, where at 0 and −0.99 the twins of S's family income benefit
-  points are S's in every cell, at 1e-17 the factor is `m`, and at the float above −1 S
-  and this model raise the same `OverflowError`; each assumption table a reader cannot
-  read, 28 cases, is refused naming its lines, a repeated key with each of its lines, and
-  a read beyond a table naming the point; keys written as floats read as `Term_UK_S`
-  reads them; the edges of the interface and of each bound are accepted; every state
-  `Term_UK_S` reaches, as shipped, under the splice's switches and where the cap binds,
-  is accepted in force; and the committed table and pipeline are what `Term_UK_S`
-  generates.
+- **Validation and regeneration**: each malformed row of the table, 76 cases, each `2**53`
+  bound at the bound among them, and of the pipeline, 17, is refused naming its point or
+  its line; the horizon is a Reference; a point past its cover, outside the contract's
+  bounds or with a pipeline not exactly its lags, 8 cases, among them none at all and a
+  gap, is refused by `proj_len()`, each bound just inside it and each moved past a
+  committed point, and `run_sec.py --block` refuses such a point before printing anything;
+  so is a share waived before the deferred period has run, at its last month among them; a
+  waiver point under a waiver rate a float outside 0 to 1, or NaN, is refused by the
+  frame, and under an incidence of 0.856 or 1 by the waived share in the month it passes
+  1, S's month and S's share, where at 0, at 0.855 and at a recovery of 1 the twin of S's
+  waiver point is S's in every cell; a family income benefit point under a commutation
+  discount that is not a finite number above −1 is refused by the frame, S's own outcome
+  beside it, where at 0 and −0.99 the twins of S's family income benefit points are S's in
+  every cell, at 1e-17 and 1.1e-16 the factor is `m`, and at the float above −1 S and this
+  model raise the same `OverflowError`; each assumption table a reader cannot read, 28
+  cases, is refused naming its lines, a repeated key with each of its lines, and a read
+  beyond a table naming the point; keys written as floats read as `Term_UK_S` reads them;
+  the edges of the interface and of each bound are accepted; every state `Term_UK_S`
+  reaches, as shipped, under the splice's switches and where the cap binds, is accepted in
+  force; and the committed table and pipeline are what `Term_UK_S` generates.
 - **The product's own facts**: the two clocks on the shipped points; the committed rows,
   in force and issued later, continuing their S points at the shipped assumptions but for
   inflation; the lapse ratio carried on from the issued cohort, and the deaths it loads;
@@ -879,13 +888,13 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   spec and the generated C; C4 on the committed points; and the release. In this model's
   module, C4 on the splice grid, at the contract's longest covers, issued now and 120
   months on and in force in their last month, where the cap binds and on keys written as
-  floats, and at a commutation discount of 0 and of 1e-17; each life's label that is not
-  text; the refusals, message for message, the overflows among them, the `IndexError`s
+  floats, and at a commutation discount of 0, 1e-17 and 1.1e-16; each life's label that is
+  not text; the refusals, message for message, the overflows among them, the `IndexError`s
   past the caches and an `idx` past the table and of −1; each shape's deepest cold call on
   a 1 MiB thread and on the main thread; a Reference set late, which clears no cache; and
   `run_sec.py --cython`, which prints what modelx prints. In
-  `tests/test_compiled_conventions_uk.py`, a static test holds the build tool's
-  directives to the two.
+  `tests/test_compiled_conventions_uk.py`, a static test holds the build tool's directives
+  to the two.
 
 ```bash
 python -m pytest tests/test_term_assurance_uk_sec.py -q

@@ -20,8 +20,9 @@ product meets it from the commit that moves it there, Term_UK_SEC first (M2):
   takes a C ``bint``, ``long long`` or ``double`` and caches in a C array of the spec's
   size, every new ``Data`` vector but a reader is a typed memoryview or a C scalar, and
   the generated C keeps no Python object in a projection cell's locals, calls no Python
-  builtin there and builds no container, under the two directives the build tool writes;
-  and every reporting cell a reader asks for, a label among them, returns ``object``.
+  builtin by its name there and builds no container, under the two directives the build
+  tool writes; and every reporting cell a reader asks for, a label among them, returns
+  ``object``.
 * C4 on the committed points: the compiled model computes what modelx computes, every cell
   at every argument a full modelx sweep caches, every raise and every ``Data`` array, bit
   for bit on x86-64.
@@ -391,7 +392,11 @@ def test_every_projection_cell_compiles_to_a_c_type(name, model, sec_build):
     other than an exception it raises, or builds a list, dict or set, and every translated
     space module begins with ``infer_types=True`` and ``cpow=True``, without which an
     integer local is a Python object and a power drifts from modelx's.  A builtin the
-    registry's ``"python_calls"`` admits in a cell is no fault in that cell's C.  And the
+    registry's ``"python_calls"`` admits in a cell is no fault in that cell's C.  A builtin
+    is seen where Cython looks it up by its name, ``__pyx_builtin_round``; a call reached
+    through a builtin type, ``float.__pow__``, which Cython reaches through
+    ``&PyFloat_Type``, is not seen here, and C5 is what confines such a call to a
+    ``raise`` statement, where the overflow guards make it.  And the
     reporting cells a reader asks for, ``model_point``, the ``result_*`` reports and the
     label accessors, return ``object`` where they compile: a label the sample traced on
     text alone compiles to ``str``, and raises on a label ``Data`` holds as a number or a

@@ -934,41 +934,44 @@ def proj_len():
     if policy_term() > longest:
         raise ValueError(
             f"point_id {point_id()}: the term, {policy_term()} years, is above "
-            f"{'policy_term_max_fib' if fib else 'policy_term_max'}, {longest}")
+            f"{'policy_term_max_fib' if fib else 'policy_term_max'}, {int(longest)}")
     oldest = expiry_age_max_fib if fib else expiry_age_max           # noqa: F821
     for life in range(1, 3 if is_joint() else 2):
         if age_at_entry(life) < issue_age_min:                       # noqa: F821
             raise ValueError(
                 f"point_id {point_id()}: life {life}'s issue age, "
-                f"{age_at_entry(life)}, is below issue_age_min, {issue_age_min}")  # noqa: F821
+                f"{age_at_entry(life)}, is below issue_age_min, "
+                f"{int(issue_age_min)}")                             # noqa: F821
         if age_at_entry(life) + policy_term() > oldest:
             raise ValueError(
                 f"point_id {point_id()}: life {life}'s cover runs to attained age "
                 f"{age_at_entry(life) + policy_term()}, issue age "
                 f"{age_at_entry(life)} and a {policy_term()}-year term, past "
-                f"{'expiry_age_max_fib' if fib else 'expiry_age_max'}, {oldest}")
+                f"{'expiry_age_max_fib' if fib else 'expiry_age_max'}, {int(oldest)}")
     if fib and not (fib_commute_disc_rate > -1.0                     # noqa: F821
                     and fib_commute_disc_rate <= 1.7976931348623157e308):  # noqa: F821
         raise ValueError(
             f"point_id {point_id()}: fib_commute_disc_rate must be a finite number "
-            f"above -1, not {fib_commute_disc_rate}")                # noqa: F821
+            f"above -1, not {float(fib_commute_disc_rate)}")         # noqa: F821
     if wop():
         if not (wop_inc_rate >= 0.0 and wop_inc_rate <= 1.0):        # noqa: F821
-            raise ValueError(f"point_id {point_id()}: wop_inc_rate must be "
-                             f"a number from 0 to 1, not {wop_inc_rate}")  # noqa: F821
+            raise ValueError(
+                f"point_id {point_id()}: wop_inc_rate must be a number from 0 to 1, "
+                f"not {float(wop_inc_rate)}")                        # noqa: F821
         if not (wop_rec_rate >= 0.0 and wop_rec_rate <= 1.0):        # noqa: F821
-            raise ValueError(f"point_id {point_id()}: wop_rec_rate must be "
-                             f"a number from 0 to 1, not {wop_rec_rate}")  # noqa: F821
+            raise ValueError(
+                f"point_id {point_id()}: wop_rec_rate must be a number from 0 to 1, "
+                f"not {float(wop_rec_rate)}")                        # noqa: F821
         if wop_defer_mths < 0:                                       # noqa: F821
             raise ValueError(f"point_id {point_id()}: wop_defer_mths must be "
-                             f"0 months or more, not {wop_defer_mths}")  # noqa: F821
+                             f"0 months or more, not {int(wop_defer_mths)}")  # noqa: F821
         if (duration_mth_init() > 0 and duration_mth_init() <= wop_defer_mths  # noqa: F821
                 and wop_waived_frac_init() != 0.0):
             raise ValueError(
                 f"point_id {point_id()}: wop_waived_frac_init is "
                 f"{wop_waived_frac_init()}, where a waiver point in force "
                 f"{duration_mth_init()} months, no longer than wop_defer_mths, "
-                f"{wop_defer_mths}, has waived no premium yet: 0")   # noqa: F821
+                f"{int(wop_defer_mths)}, has waived no premium yet: 0")  # noqa: F821
         lags = min(wop_defer_mths, max(duration_mth_init(), 0))      # noqa: F821
         held = data.wop_pipeline_count()[idx]                        # noqa: F821
         last = data.wop_pipeline_last()[idx]                         # noqa: F821
@@ -977,7 +980,8 @@ def proj_len():
                 f"point_id {point_id()}: wop_pipeline_sec.csv holds {held} lags, "
                 f"its last {last}, where a waiver point in force "
                 f"{max(duration_mth_init(), 0)} months holds one for each of its "
-                f"last {lags}, min(wop_defer_mths, duration_mth), lags 1 to {lags}")
+                f"last {int(lags)}, min(wop_defer_mths, duration_mth), lags 1 to "
+                f"{int(lags)}")
     return n
 
 
@@ -1071,15 +1075,17 @@ def select_factor(t):
     :mod:`~.Term_UK_S`'s lookup raised ``KeyError``. A duration outside the table's, 0 to
     ``Data.select_last_duration``, where ``select_period`` runs beyond it or below 0,
     raises ``ValueError``, naming the point, rather than reading the array at another
-    duration or wrapping round to its end.
+    duration or wrapping round to its end.  The duration is read as an ``int``, as the
+    compiled model holds ``select_period``, so a period written as a float, 3.0, reads
+    the array at 3, as :mod:`~.Term_UK_S`'s lookup did, where numpy refuses a float index.
     """
     if not is_active(t):
         return 0.0
     d = min(duration(t), select_period)                              # noqa: F821
     if d < 0 or d > data.select_last_duration():                     # noqa: F821
         raise ValueError(f"point_id {point_id()}: select_factor_table.csv has no factor "
-                         f"at duration {d}")
-    return float(data.select_factor_array()[d])                      # noqa: F821
+                         f"at duration {int(d)}")
+    return float(data.select_factor_array()[int(d)])                 # noqa: F821
 
 
 def mort_rate_base(t, life):
@@ -1427,8 +1433,9 @@ def wop_waived_frac(t):
     if not (u >= 0.0 and u <= 1.0):
         raise ValueError(
             f"point_id {point_id()}: the waived share wop_waived_frac({t}) is {u}, "
-            f"outside 0 to 1, under wop_inc_rate {wop_inc_rate}, wop_rec_rate "  # noqa: F821
-            f"{wop_rec_rate} and wop_defer_mths {wop_defer_mths}: Term_UK_S's "  # noqa: F821
+            f"outside 0 to 1, under wop_inc_rate {float(wop_inc_rate)}, "  # noqa: F821
+            f"wop_rec_rate {float(wop_rec_rate)} and wop_defer_mths "  # noqa: F821
+            f"{int(wop_defer_mths)}: Term_UK_S's "                   # noqa: F821
             f"waiver recursion passes 1 at an incidence this high")
     return u
 
