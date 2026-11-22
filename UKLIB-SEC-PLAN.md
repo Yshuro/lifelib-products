@@ -3,9 +3,10 @@
 **Status:** Accepted, 2026-11-22, with §9's eleven decisions confirmed as recommended;
 drafted the same day. Phase 0 (M0) is done, 2026-11-22, its gate met by the Tests
 workflow's run 43 (§3, *Record — M0*), and so is Term's in-force step, M1, by run 45
-(§6.1, *Record — M1*). Term's compile step, M2, is next. Like USLIB-SEC-PLAN.md, this
-document is both the specification and the record: each milestone records what it
-actually did, including where the implementation departed from the plan.
+(§6.1, *Record — M1*). Term's compile step, M2, is done on Linux, and open until run
+46's Windows legs pass (§6.1, *Record — M2*). Like USLIB-SEC-PLAN.md, this document is
+both the specification and the record: each milestone records what it actually did,
+including where the implementation departed from the plan.
 
 Every number in it was measured in this repository, under modelx 0.33.0 and pandas 3.0.5
 as USLIB-SEC-PLAN.md's were, or is quoted from USLIB-SEC-PLAN.md, and each is given with
@@ -949,6 +950,230 @@ test meant to catch it.
   - It changes `technical-notes.md`'s formula and the worked example's goldens, and
     `Term_UK_SEC` with them.
   - It is outside this plan, and left as S has it.
+
+#### Record — M2, done on Linux 2026-11-22
+
+Built in two commits after the Phase 1 fingerprint, which M1 froze (`f041c4c`): the C step
+(`8fef0a2`) and its docs with C6 (`6b48830`). Three more followed from the review. The
+gate's Windows legs are the Tests workflow's run 46, so M2 stays open until they pass
+(§7).
+- One agent built it, injecting 10 faults, one for each kind the C step guards against.
+- A second agent reviewed it against this note, the plan and USLIB-SEC-PLAN.md, injecting
+  24 faults of its own, of which 20 were caught. It confirmed that no number had moved,
+  163,873 values on the committed points and 1,997,675 on the full splice grid, and it
+  found six gaps in what the tests hold:
+  - the ledger residual's compensated sum, held by nothing;
+  - the commutation discount, read with no domain, outside which the two engines differ;
+  - a decode test that could not tell truncation from rounding;
+  - `age_at_entry(2)` on a single life, untested;
+  - the zero discount's branch, run nowhere;
+  - `joint_age`'s `2**53` bound, tested far from the bound.
+
+  It also found four lesser gaps: directives held present but not alone, the documented
+  `idx` edges untested, a docs wording with some unwrapped lines, and C6's noise.
+- The builder fixed all ten in `d262ca9` and `c9a2e7c`. Sweeping every power and
+  division, it found five cells more whose powers overflow, and 9 faults more were
+  caught.
+- The reviewer verified the rework with 10 faults of its own. It found two more gaps,
+  which `06a6a46` closes:
+  - the zero discount's departure pinned only where `1 + r` is exactly 1;
+  - a refusal printing a Reference as each engine holds it: an int `wop_inc_rate` of 2
+    read "not 2" in modelx and "not 2.0" compiled.
+
+  The builder found one more case there: modelx refused a `select_period` of 3.0, which
+  numpy cannot take as an index, and now reads it as 3.
+
+**What exists now.**
+- *`Term_UK_SEC` at stage EC*, compiled under modelx-cython and checked against modelx.
+  - `Projection` has 90 cells, keyed by `idx`: stage E's 83, and `point_id`, the decoded
+    `is_level`, `is_decreasing`, `is_fib`, `is_select_basis`, `prem_cycle` and
+    `mort_group`.
+  - 82 compile to `bint`, `long long` or `double`. The eight that stay Python are
+    `model_point`, the five label accessors and the two reports.
+  - Codes: timings `BEF_NB` 0, `BEF_DECR` 1, `BEF_LAPSE` 2 and `AFT_DECR` 3; kinds
+    `DEATH` 0, `FIB` 1 and `LAPSE` 2, and `ALL` 3, the total, which S spelt `claims(t)`.
+  - `Data` has 45 cells: the six readers, and 39 int64 or float64 vectors, arrays,
+    extents and counts, which its docstring tables.
+    - The mortality table is `[group, age]`, padded with NaN from age 0.
+    - The select factors and lapse rates are by duration and by policy year.
+    - The pipeline is `[idx, lag]`.
+  - A compiled `Projection` ItemSpace is 512,248 bytes.
+- *Beside the model:*
+  - `sample_sec.py`, which runs the reports and checks on every committed point, the
+    labels on a blank second life, and sets a recursion limit of 5,000;
+  - `spec_sec.py`: `t` 722, the 2-D caches 722 × 4, `life` 4, `k` 600 and `m` 481, each
+    derived in its comment from the contract's References, and held there by a test;
+  - `run_sec.py --cython` and `--build`;
+  - in `model-sec.md`, *The compiled model*, in seven subsections.
+- *Tests.* Term's module gains a representation section and a compiled section.
+  - The representation section holds the total and the ledger residual to S by
+    `float.hex`, every decode on every value, the NaN padding, the vectors' dtypes, and
+    the spec's and sample's comments.
+  - The compiled section holds C4 on the splice grid, at the contract's longest covers,
+    where the cap binds, on float keys and at a commutation discount of 0 and of 1e−17.
+    It also holds the labels, the refusals and overflows message for message, the `idx`
+    edges, the 1 MiB stack, a Reference set late and the runner.
+  - 291 pass and 119 skip by default, 410 pass on the full grid, and the `term_assurance`
+    shard runs 13 compile tests.
+- *Shared files, added to in place:*
+  - `uk_sec_support.py`'s product specs, which gain Term's `twin_arg_map`, S's
+    `claims(t, None)` to `ALL`;
+  - `uk_registry.py`, with Term at `EC` with `idx`, its `"reporting"` labels and their
+    `"reporting_columns"`;
+  - `test_compiled_conventions_uk.py`, whose C3, C4 and release tests are now marked
+    `cython` outright, M0's `_compile_test` having waited for this model, and which pins
+    the build's directives;
+  - the `cython_uk` job's `term_assurance` shard;
+  - uklib's `index.md`.
+
+**Departures and precisions.**
+- *The claims total is written left to right,* `0.0 + DEATH + FIB + LAPSE`, not as a
+  compensated sum.
+  - The lapse kind is 0.0 in every month, by its formula, so at most two terms are ever
+    non-zero, and the plain sum is `sum`'s float.
+  - A test holds it to S by `float.hex`. CI's total, with three kinds, is a compensated sum
+    (§6.2).
+- *The ledger residual is a compensated loop,* Neumaier's, as Python's `sum` is since
+  3.12. A test holds it to S by `float.hex` in every month, at the shipped take-ups and at
+  0.5. T1's 1e−9 floor stays for take-ups such as 0.3, where M1 found the two models' sums
+  round apart.
+- *The shape is three flags, not one code.* A shape code named `FIB` would collide with
+  the claims kind.
+- *`sex(life)` and `smoker(life)` return each life's column as read,* NaN for a single
+  life's second, where S refuses an invalid life. They compile to Python objects, as
+  `SPIA_US_SEC`'s and `DIA_US_SEC`'s do, since `label_faults` needs every point to return
+  its column.
+- *`m` is 481, not this note's 480.* `m` reaches 480 in the family income benefit's issue
+  month.
+- *The 1-D `life` caches are widened to 4,* the shared inner width, so that a life of 0
+  or 3 is refused by the formula in both engines.
+- *`joint_first_death` serves as `joint_age`'s flag;* a blank second age decodes to 0.
+- *New refusals, in both engines, message for message.*
+  - `Data` refuses an issue age, a term or a joint age of `2**53` or more, which int64
+    would hold inexactly without a word. Each is tested at exactly `2**53`.
+  - `select_factor` checks its duration on both sides, since a negative `select_period`
+    would wrap the index.
+  - On a family income benefit point, `proj_len()` refuses a `fib_commute_disc_rate`
+    that is not a finite number above −1.
+    - At −1, S raises `ZeroDivisionError` and the compiled model gave an infinity, with
+      `net_cf` NaN in every month.
+    - Below −1, S's power is complex and the compiled model's NaN.
+- *The zero discount is tested on the monthly rate,* as `benefit_sched` tests
+  `sched_rate_mth()`. A rate whose monthly equivalent rounds to 0 gives `m` in both
+  engines, where S divides by zero. It is a departure from S, in the departures table.
+  T5 and C4 hold it at 1e−17, where `1 + r` is 1, and at 1.1102230246251568e−16, the
+  least rate where it is not.
+- *A refusal prints a Reference as the compiled model types it:* a rate through
+  `float(...)`, and a term, an age or a count of months through `int(...)`. So the
+  messages are the same in both engines whether the Reference is set as an int or a
+  float, and T5 and the compiled refusal test hold a case of each.
+  - The one difference left cannot be fixed in the model. The compiled model truncates a
+    float set on an int Reference, 48.5 to 48, where modelx computes with 48.5.
+    `model-sec.md` says to set int References as whole numbers.
+- *Five cells' powers take uslib's M22 form.* Past the largest float, Python's power
+  raises `OverflowError` where C's `pow` gives an infinity. So `inflation_factor`,
+  `idx_factor`, `idx_prem_factor`, `benefit_sched` and `annuity_certain_factor` call
+  Python's own power where theirs is infinite from a finite base, as `VA_US_SEC` does.
+  - Only inputs far outside the product reach it: inflation above about 140,000 a year,
+    an index increase above about 2 million, a schedule rate above about 1.5 million, or
+    a discount within about 2e−8 of −1.
+  - A case in the compiled refusal test reaches each one.
+- *The build's directives are pinned.*
+  - C3 requires `infer_types` and `cpow` and reads no other directive. Under
+    `cdivision=True`, only C4's full sweep, through point 14's `duration(t)` before
+    issue, saw floor division truncate.
+  - A static test in `test_compiled_conventions_uk.py` now holds `tools/build_sec_cy.py`'s
+    line to the two and no other. The tool is shared, so the test guards uslib's builds
+    too.
+- *The `idx` edges.* An `idx` past the last row raises `IndexError` in both engines, and
+  `Projection[-1]` is the last point under its own `point_id()`. The compiled refusal
+  test holds both, so `boundscheck=False` or `wraparound=False` would fail.
+- *Tests in the template's form, with uklib's precisions:*
+  - The label test runs its own compiled comparison, since the shared `label_mismatches`
+    takes only labels without parameters.
+  - The refusal test runs every case in one child, rewriting file paths in messages to
+    file names.
+  - The release test runs the committed points alone, as uslib's IUL does for a table
+    with a point-keyed companion.
+  - The stack test runs every shape at its longest cover, the decreasing and joint shapes
+    added to M1's two.
+  - The sample's recursion limit is four times the measured need, as uslib's later
+    products set it.
+
+**Measured for K6.** On the shared 4-CPU Linux machine, at a load of about 1:
+- A build takes 62 s with gcc 13.3.
+- C6, the median of three runs of `bench_sec_cy.py`:
+
+  | Engine | `net_cf`, a point | `result_cf`, a point |
+  |---|---|---|
+  | compiled | 0.168 ms | 0.541 ms |
+  | export | 2.10 ms | 2.55 ms |
+  | modelx | 68.7 ms | 71.2 ms |
+
+  - On `net_cf` the compiled model runs 12.4 times its export and 402 times modelx; on
+    `result_cf`, 4.7 and 132 times. uslib's `Term_US_SEC` ran 9.5 and 4.7 times its
+    export.
+  - The noise is about ±3% on modelx, and from −10% to +5% on the compiled report.
+  - The compiled peak is 86 to 88 MB, and grows by less than 0.1 MB over 6,006 points.
+- *Stack.* The deepest call the contract allows, a cold `net_cf` at the waiver point's
+  longest cover, needs a recursion limit of 26 compiled, against 1,246 in the export.
+  - With every switch on that ships off, it ran on a 256 KiB thread and not on 192 KiB.
+  - At the shipped References, per shape:
+    - the waiver point: 192 to 224 KiB;
+    - the level and decreasing shapes and the joint point: 128 to 160 KiB;
+    - the family income benefit: 96 to 128 KiB.
+  - All are inside the 1 MiB the test asserts.
+- *Times.*
+  - Term's module takes 265 s by default, its compile tests and their build included.
+    M1's took 90 s.
+  - The `term_assurance` shard takes 190 s and the toolchain shard 34 s.
+  - At landing, `06a6a46` ran its gate in four jobs at once:
+    - uklib's suite, 1,117 passed and 129 skipped, in 431 s (at M1's close, 1,056 and 135
+      in 4 min 0 s);
+    - the full grid, 410 passed, in 366 s;
+    - both shards;
+    - the generators' and the harness's checks, doccheck at 0 warnings, and the scaffolding
+      at 0 files.
+- *CI.* The Tests workflow's run 46, dispatched on `06a6a46` at landing, is the first to
+  run the `cython_uk` job's `term_assurance` legs, on Ubuntu and on Windows.
+
+**Faults.** Each fault was injected into a copy of its own, and each run was held to the
+test meant to catch it.
+- The builder: 10, then 9 on the rework, all caught.
+- The review: 24, of which 20 were caught.
+  - The four misses were the Neumaier correction dropped, the term decoded by rounding,
+    `age_at_entry(2)` unguarded, and `joint_age`'s bound at `2**62`.
+  - Each is caught since `d262ca9`.
+- The verification: 10, of which 9 were caught. The one missed, the zero test written on
+  `1 + r`, is caught since `06a6a46`, which two faults more, both caught, also checked.
+
+**Carried into M3 and after.**
+- *The compile template, for every later product.* With uslib's Phase 2 template:
+  - Every 2-D cache shares one inner width, and the per-life 1-D caches are widened to
+    match.
+  - A label that takes a parameter needs `"reporting_columns"`, a trace on a blank second
+    life in the sample, and a compiled comparison of the module's own.
+  - Every int64 column gets a `2**53` bound, tested at exactly `2**53`. Every array read
+    gets a check on both sides.
+  - A text code is decoded to flags when its name would clash with another family's code.
+  - A total is written left to right only where at most two kinds can be non-zero.
+    Otherwise it is a compensated sum, and every compensated sum is held to S by
+    `float.hex`.
+  - A rate Reference read by a closed form gets a domain in `proj_len()` and a zero test
+    on its monthly rate. Every power an accepted input can overflow takes M22's form.
+  - A decode test's fractional values sit above .5.
+  - The compiled refusal test compares `idx` −1 and an `idx` past the table across the
+    engines.
+  - Measured limits and derived sizes are written in comments, and held by tests.
+  - A batched refusal child rewrites file paths in messages to file names.
+- *What the harness cannot see.* C3 reads the builtins a compiled formula calls by name.
+  Cython reaches `float.__pow__` through `&PyFloat_Type`, not by such a name, so C3 sees
+  M22's call only if its result lands in a Python-object local. It is C5 that confines
+  the call to `raise` statements. Both copies of the harness are the same here.
+- *For uslib, outside this plan* (U7):
+  - uslib's suite holds the build's two directives present, not alone. uklib's static
+    test now holds the shared tool's line for both libraries.
+  - Its Term's compiled refusal test does not hold the `idx` edges.
 
 ### 6.2 Critical illness — `CI_UK_SEC` (E: M, C: M)
 
