@@ -2,9 +2,10 @@
 
 **Status:** Accepted, 2026-11-22, with §9's eleven decisions confirmed as recommended;
 drafted the same day. Phase 0 (M0) is done, 2026-11-22, its gate met by the Tests
-workflow's run 43 (§3, *Record — M0*). Term's in-force step, M1, is next. Like
-USLIB-SEC-PLAN.md, this document is both the specification and the record: each milestone
-records what it actually did, including where the implementation departed from the plan.
+workflow's run 43 (§3, *Record — M0*), and so is Term's in-force step, M1, by run 45
+(§6.1, *Record — M1*). Term's compile step, M2, is next. Like USLIB-SEC-PLAN.md, this
+document is both the specification and the record: each milestone records what it
+actually did, including where the implementation departed from the plan.
 
 Every number in it was measured in this repository, under modelx 0.33.0 and pandas 3.0.5
 as USLIB-SEC-PLAN.md's were, or is quoted from USLIB-SEC-PLAN.md, and each is given with
@@ -747,6 +748,207 @@ an indexed waiver point.
   for the family income benefit): `proj_len()` refuses each through a lower-case Reference.
   The bound is not named `expiry_age`, which S's tests assert absent.
 - Every cell is reached by a report or a check.
+
+#### Record — M1, done 2026-11-22
+
+Built in three commits, as U1 and §7 ask: `Term_UK_S` copied with only `_name` changed
+(`50bdfb4`), the enhancement (`3f7a01d`), and the Phase 1 fingerprint frozen alone
+(`f041c4c`).
+- One agent built it, injecting 22 faults. Two directions followed its brief, from M0's
+  record: refuse the waiver incidence out of range, and drop the `life=1` defaults.
+- A second agent reviewed it against this note, the plan and USLIB-SEC-PLAN.md, injecting
+  29 faults of its own. It found:
+  - two defects in the numbers that no test could see: history recomputed from today's
+    assumptions, and a waived share past 1 at rates the model accepted;
+  - a pipeline measured at the wrong instant;
+  - five lesser gaps.
+- The builder reworked the enhancement, fixing all eight, and 11 faults more were caught.
+- The reviewer verified the rework with 12 faults of its own. It found two more gaps, which
+  `2a2c5a3` closes.
+
+**What exists now.**
+- *`Term_UK_SEC` at stage E.*
+  - `Projection` keeps 68 of `Term_UK_S`'s 70 cells: 14 unchanged, 16 with a new docstring
+    only, and 38 rewritten.
+  - It drops `proj_start` and `duration_inforce`, which the valuation clock replaces.
+  - It adds 15 cells:
+    - `policy_count`, `duration_mth_init`, `t_entry`, `is_active` and `pols_new_biz`;
+    - `cohort_frac`, the issued cohort's share in force, rebuilt from the opening ratios;
+    - `fib_streams`, the family income benefit's streams in payment;
+    - the opening state's eight cells.
+  - Five lower-case References hold the contract's bounds, which `proj_len()` checks:
+    `issue_age_min`, `policy_term_max`, `policy_term_max_fib`, `expiry_age_max` and
+    `expiry_age_max_fib`.
+- *The opening state* (D6). Each column is documented in `model-sec.md` with the instant
+  it is measured at. Seven columns sit on the table:
+  - `lapse_cum_init`, held as a ratio to the issued cohort, count-free, so that T4's
+    scaling holds;
+  - `fib_cum_init`, the deaths since issue per policy in force, which `cohort_frac` and
+    the ledger read;
+  - `fib_streams_init`, the streams in payment;
+  - `idx_factor_init` and `idx_prem_factor_init`, the RPI increases already given;
+  - `wop_waived_frac_init`;
+  - `comm_init_pp_init`, the commission paid at issue.
+
+  The companion `wop_pipeline_sec.csv` is keyed `(point_id, lag)`, in IUL's ladder shape.
+  - For a waiver point in force `d` months, it holds lags 1 to `min(wop_defer_mths, d)`.
+  - Each lag is the share of the policies still in its deferred period at the start of
+    month 0, `inc·(1 − u)·(1 − rec)^(k − 1)`. Its entrants at `t = D + 1 − k` take
+    `(1 − rec)^t`, `D` months of deferral in all.
+  - `proj_len()` refuses a pipeline whose count or last lag is wrong, and `Data` checks
+    the file against seven rules, naming the lines at fault.
+- *`model_point_table_sec.csv`*, 14 rows generated from Term's `SecSpec`.
+  - S's eight points are twins, point 8 in force at 60 months.
+  - Five rows are derived: the indexed point on its fifth anniversary; the family income
+    benefit mid-year, its streams in payment; the waiver point after its select period,
+    with six lags in the pipeline; the waiver point inside its deferred period, with four
+    and none waived; and S point 1 in its last covered month.
+  - One row is future, S point 7 issued at `t = 13`.
+  - The pipeline holds ten rows.
+  - A case-insensitive search for every publisher, product and form code that
+    `term_assurance/sources.md` cites finds none in either file.
+- *`tests/test_term_assurance_uk_sec.py`*, in uslib's settled forms: T2 on a core and a
+  full splice grid, T3, T4 at 2.5, T5, T6, the rules test, the cold-depth bound, the caps,
+  the runner and the committed rows. The product's own facts include a K14 test for each
+  history column. 237 tests pass and 119 skip by default; 356 pass on the full grid.
+- *The rest:*
+  - `run_sec.py`, for one point or `--block`;
+  - `model-sec.md`;
+  - the registry entry, directly after `Term_UK_S`, with its `INPUT_FILES`;
+  - the generated pages;
+  - uklib's `index.md`, with the SEC paragraph and Term's row;
+  - the `sec_uk` job over `[term_assurance]`. M0's job test now holds it to the registry
+    instead of skipping.
+
+**Departures and precisions.**
+- *History beyond the plan's list* (§9 item 5, K14). The review found two more facts of
+  the contract that S rebuilds from today's References.
+  - **The streams in payment.** S pays `(1 − c) I (D + FIBcum)`, every death since issue
+    at today's take-up. A take-up of 0.5 set at the valuation date on point 10 paid 49.6%
+    low at `t = 0` and 21.9% low over the frame, and `check_fib_ledger` passed.
+  - **The commission paid at issue,** which the clawback recovers.
+
+  Both are now columns, each with a K14 test whose column departs from what the References
+  give. `Data` also refuses streams off the family income benefit's shape, or beyond the
+  deaths since issue, two states S cannot reach.
+- *The pipeline is measured at the valuation instant* (D6), a precision of this note's
+  "the incidence".
+  - Measured at incidence, it re-ran the elapsed part of each deferred period at today's
+    recovery rate: a rate changed at the valuation date moved point 11's waived share by
+    up to 1.12%.
+  - Measured at the instant, it matches the truth. It equals S to 2.5e-16 on 15 restated
+    rows, at deferred periods of 6, 3, 1 and 0.
+  - IP's claim cohorts take this form (§6.3).
+- *The waived share stays in [0, 1].* S's recursion, kept, passes 1 from an incidence of
+  about 0.8552 a year with the shipped recovery and deferral. At 0.86 the share is 1.012
+  and the monthly premium −0.47, and both checks pass.
+  - `wop_waived_frac(t)` raises in the month the share leaves [0, 1], naming the point,
+    the month, the share and the three References. That is FIA's form for a computed value
+    out of range.
+  - `proj_len()` cannot see the share without running the recursion, which reads the
+    pipeline, which asks `proj_len()` first.
+  - 0.855 projects, its twin equal to S, and 0.856 is refused at month 19.
+- *S's over-count, kept in both models.* S's incidence base, `1 − u(t − 6)`, includes the
+  lives already in their deferred period, whom its technical notes' own account of an
+  entrant counts once.
+  - On point 7 and its rows, entrants run up to 0.184% high and the waived share up to
+    0.182% (1.38e-5). Premiums are £0.07 (0.0011%) low over the frame.
+  - It is a defect of the specification rather than of S, which reproduces its notes'
+    formula bit for bit.
+  - As with `SPIA_US_S`'s refund trim, it is fixed in neither model, so that T1 and T2
+    hold on the waiver cells without exemptions (*Carried*).
+- *The waiver's References.* The incidence and the recovery rate are each refused outside
+  [0, 1] by name, NaN included. Past 1, S's monthly rate is complex. A recovery rate of
+  exactly 1, under which nobody survives the deferral, is accepted.
+  - The recovery rate goes beyond M0's carried item: it has the same form and the same
+    defect, and below 0 the waived share grows without bound.
+  - A non-zero opening waived share on a point in force no longer than its deferred period
+    is refused in `proj_len()`, since `wop_defer_mths` is a `Projection` Reference that
+    `Data` cannot read.
+- *The `life=1` defaults are dropped* (M0's carried item, discharged). Every caller passes
+  `life` positionally (R12). modelx keys S's calls by their bound arguments, `(t, 1)`, so
+  T1 pairs them: zero mismatches over 1,140 keys on three points.
+- *The contract's bounds are refused at stage E,* though this note lists them under C,
+  since T5 asks for them.
+- *The runner is uslib Term's as it stands*, `--cython` and `--build` included, with its
+  `create()`-copy test, as M14's carried list asks. At E, `--cython` stops with
+  `build_sec_cy.py`'s message that the model has no `sample_sec.py`.
+- *T1 compares `check_fib_ledger_resid` at a floor of 1e-9* (`TWIN_FLOORS`). SEC sums the
+  streams month by month, where S scales the deaths' sum.
+  - At the shipped take-ups, 0 and 1, and at 0.5, they are the same floats.
+  - At 0.3, which no committed point holds, T1 found 50 mismatches without the floor, each
+    a rounding about zero (S's 0.0 against SEC's −2.8e-17), and none with it.
+- *The cold-depth test also runs the family income benefit's point* at its own longest
+  cover, 40 years from issue at 30. Written two cells a month, its streams chain had passed
+  every test while running 965 deep. Now 495 are allowed there, and the test fails it.
+
+**Measured for K6.** On the shared 4-CPU Linux machine:
+- the default module takes 90 s and the full grid 145 s, against U6's five minutes, each
+  near 900 MiB at its peak;
+- uklib's suite, 1,056 passed and 135 skipped, takes 4 min 0 s. At M0's close it was 782
+  and 28 in 165 s.
+
+Cold, at the contract's longest cover:
+- `net_cf` runs 11 cells beyond the waiver point's 599-month chain.
+- On the family income benefit's 479-month chain, `fib_streams` runs 8 beyond,
+  `claims(·, "FIB")` 10 and `net_cf` 11.
+- All are inside Term's 16, and shallower than the level point's 610.
+
+In CI, Tests run 45 on `2a2c5a3` ran the `sec_uk` job's first three legs, each in four
+minutes or less:
+- the full grid on Ubuntu, 356 passed in 3 min 1 s;
+- the core on Windows, 236 passed and 120 skipped in 1 min 58 s;
+- the core on macOS.
+
+The core legs skip one more test than here: the module's docstring parse test, which needs
+docutils, and only the full-grid leg installs it.
+
+Run 45 passed all 79 jobs, 1 h 15 min from dispatch to the last. It is also the first CI
+run of M0's six review commits.
+
+**Faults.** Each fault was injected into a copy of its own, and each run was held to the
+test meant to catch it.
+- The builder: 22, then 11 on the rework, all caught.
+- The review: 29, of which 26 were caught. The three misses were the pipeline check
+  skipped with no rows, `last != lags` dropped, and `life` dropped from the runner's
+  joint-life line. The rework added a test for each.
+- The verification: 12. Ten were caught, and one only by T1, in the ledger residual's last
+  bit. The one missed, the two-cell streams chain, is caught since `2a2c5a3`.
+
+**Carried into M2 and after.**
+- *M2, this note's C list.*
+  - The model's data:
+    - arrays for the three tables, and `[idx, lag]` for the pipeline;
+    - decodes for the shape, sex, smoker, the joint columns, `premium_mode`, `mort_basis`,
+      the flags, and a blank `joint_age`.
+  - Codes, loops and keys:
+    - codes `BEF_NB` to `AFT_DECR`, and `DEATH`, `FIB` and `LAPSE` with an explicit
+      claims total;
+    - loops in place of the generators in `claims` and `check_fib_ledger_resid`;
+    - `param: "idx"`, with `point_id()` in the refusals;
+    - a T1 `arg_map` for S's `claims(t, None)` keys.
+  - The compile:
+    - `reporting` and `reporting_columns`, where `sex` and `smoker` take `life`;
+    - the spec's sizes: `t` 722, `benefit_sched` 600, `annuity_certain_factor` 480, and
+      `life`;
+    - `sample_sec.py`, `spec_sec.py`, the compile tests, the `cython_uk` shard and C6.
+  - Two rules of uslib's *Carried into Phase 1* are met only at C, as this note's C list
+    has them: branching on numbers, while S's text comparisons stay at E; and R7's "no
+    string-keyed join in a per-`t` cell", where `mort_rate_base` and the other two table
+    readers stand.
+- *The template, for every later product.*
+  - History as opening state reaches beyond RPI and reviews. A stream already in payment
+    and a commission paid at issue are facts of the contract too. Each such column gets a
+    K14 test whose column departs from what the References give.
+  - A pipeline or cohort companion is measured at the valuation instant.
+  - A computed value S lets leave its range is refused in its cell, naming the References.
+  - The cold-depth test runs every chain at its own shape's longest cover.
+- *The owner's decision.* Whether to fix `Term_UK_S`'s incidence base.
+  - The fix would take it to `1 − u − P`, with `P` the share in its deferred period, which
+    `wop_deferred_init` already serves.
+  - It changes `technical-notes.md`'s formula and the worked example's goldens, and
+    `Term_UK_SEC` with them.
+  - It is outside this plan, and left as S has it.
 
 ### 6.2 Critical illness — `CI_UK_SEC` (E: M, C: M)
 
