@@ -503,9 +503,11 @@ def inception_rate(t):
     Read from ``inception_table.csv`` at the policy's sex, occupation class and deferred
     period, **linearly** interpolated between pivot ages and linearly extrapolated
     beyond them, then multiplied by the economic-cycle overlay ``cycle_factor``.
-    Floored at zero, since linear extrapolation below the first pivot can go negative,
-    and the product capped at 1, the bound second, ``min(q, 1.0)``, so that a missing
-    input, a NaN, stays NaN, where ``min(1.0, q)`` would read it as 1.
+    Floored at zero, ``max(0.0, r)``, since linear extrapolation below the first pivot
+    can go negative, and the product capped at 1, the bound second, ``min(q, 1.0)``.
+    The floor comes first, and reads a NaN as 0: a blank table rate at either pivot is
+    floored to 0, and no claim incepts from it.  A NaN ``cycle_factor`` reaches the cap
+    and stays NaN, where ``min(1.0, q)`` would read it as 1.
 
     The rate is a *claim payment* inception rate specific to the deferred period, which
     is exactly what the CMI publishes per deferred period - so the deferred period needs

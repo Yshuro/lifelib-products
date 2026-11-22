@@ -10,10 +10,13 @@ assertion through a comparison instead of through a second copy of the golden.
 This is uslib's harness, ``uslib/tests/sec_support.py``, under a name of this library's
 own, so that the two libraries' suites can run in one process (UKLIB-SEC-PLAN.md U3).  It
 differs from uslib's in three spellings, ``uk_registry``, ``UKLIB_`` and ``_uk_sec``, in
-this paragraph, and in its product specs, which are uklib's; ``tools/check_sec_harness.py``
-holds everything else to uslib's, function by function.  The docstrings keep uslib's
-examples and cite USLIB-SEC-PLAN.md, whose design UKLIB-SEC-PLAN.md adopts by reference:
-they are the record of why each function is as it is.
+this paragraph, in the few sentences of prose those spellings make uklib's, which name
+uklib's jobs and modules where uslib's name its own, ``cython_uk`` and
+``test_compiled_conventions_uk.py`` among them, and in its product specs, which are uklib's;
+``tools/check_sec_harness.py`` holds everything else to uslib's, function by function.
+The docstrings keep uslib's examples and cite USLIB-SEC-PLAN.md, whose design
+UKLIB-SEC-PLAN.md adopts by reference: they are the record of why each function is as it
+is.
 
 What is here, by the plan's tests (its §5.2):
 
@@ -40,12 +43,12 @@ C2, the Phase 1 fingerprint
     :func:`fingerprint_text` writes it out as the literal a product module freezes, and
     :func:`fingerprint_mismatches` holds a later version of the model to it (§5.4).
 Compiling, for Phase 2's compile tests
-    :func:`require_cython` skips a compile test, or fails it in the ``cython`` job, where
-    :func:`cython_missing` finds the toolchain missing; :class:`SecBuilds` compiles each
-    SEC model once a session, into a temporary directory; :func:`compiled_case` puts a
-    build beside a copy of its inputs; and :func:`run_compiled` runs calls on it in a
+    :func:`require_cython` skips a compile test, or fails it in the ``cython_uk`` job,
+    where :func:`cython_missing` finds the toolchain missing; :class:`SecBuilds` compiles
+    each SEC model once a session, into a temporary directory; :func:`compiled_case` puts
+    a build beside a copy of its inputs; and :func:`run_compiled` runs calls on it in a
     child process, on a stack of a given size.  :func:`cython_shards` and
-    :func:`cython_shard` split the compile tests among the ``cython`` job's legs.
+    :func:`cython_shard` split the compile tests among the ``cython_uk`` job's legs.
 C3, C4 and C5, and the release
     :func:`reporting_cells` is R17's allowlist, the cells that may stay Python, and
     :func:`data_readers` the ``Data`` cells that read a file, which stay Python too.
@@ -1706,8 +1709,9 @@ def require_cython():
 
     The compile tests skip where :func:`cython_missing` finds something missing, so the
     ``test`` CI job and lifelib's own bare ``pytest`` stay green without modelx-cython or a
-    compiler (D13).  The ``cython`` job installs both and sets ``UKLIB_REQUIRE_CYTHON=1``,
-    and there a skip would be a green run that compiled nothing, so it fails instead.
+    compiler (D13).  The ``cython_uk`` job installs both and sets
+    ``UKLIB_REQUIRE_CYTHON=1``, and there a skip would be a green run that compiled
+    nothing, so it fails instead.
     ``pytest`` is imported here, not at the top, because ``tools/gen_sec_points.py``
     imports this module without it.
     """
@@ -1725,27 +1729,28 @@ def require_cython():
     return module
 
 
-# The cython CI job's shards (D13, decided at M16)
+# The cython_uk CI job's shards (D13, decided at M16)
 #
 # The job runs one shard to a leg, chosen by UKLIB_CYTHON_SHARD, so that no leg compiles
-# every model: "toolchain", test_cython_toolchain.py and any compile test tied to no one
+# every model: "toolchain", test_cython_toolchain_uk.py and any compile test tied to no one
 # SEC model, and one shard for each SEC model at stage "EC", its product module's compile
-# tests with its cases of test_compiled_conventions.py, in one session, so that it compiles
-# once.  conftest.py deselects the compile tests outside the shard.
+# tests with its cases of test_compiled_conventions_uk.py, in one session, so that it
+# compiles once.  conftest.py deselects the compile tests outside the shard.
 
 CYTHON_SHARD = "UKLIB_CYTHON_SHARD"
 TOOLCHAIN_SHARD = "toolchain"
 
 
 def cython_shards():
-    """The ``cython`` job's shards, ``{shard: model}``: ``"toolchain"``, to ``None``, first.
+    """The ``cython_uk`` job's shards, ``{shard: model}``: ``"toolchain"``, to ``None``,
+    first.
 
     Then, in the registry's order, the product directory of each SEC model at stage
-    ``"EC"``, to the model: ``"term_life"`` to ``"Term_US_SEC"``.  The directory names the
-    product's test module, ``test_term_life_uk_sec.py``, as it does in the ``sec`` job's
-    matrix.  Read from the registry, so a model gains its shard in the commit that moves it
-    to stage ``"EC"``, and ``test_compiled_conventions.py`` holds the workflow's matrix to
-    these.
+    ``"EC"``, to the model: ``"term_assurance"`` to ``"Term_UK_SEC"``.  The directory names
+    the product's test module, ``test_term_assurance_uk_sec.py``, as it does in the
+    ``sec_uk`` job's matrix.  Read from the registry, so a model gains its shard in the
+    commit that moves it to stage ``"EC"``, and ``test_compiled_conventions_uk.py`` holds
+    the workflow's matrix to these.
     """
     from uk_registry import is_sec, meta
     shards = {TOOLCHAIN_SHARD: None}
@@ -1759,7 +1764,7 @@ def cython_shard(item, shards):
     """The shard among ``shards`` (:func:`cython_shards`) that runs the test ``item``.
 
     A test parametrized over a stage-``"EC"`` model is that model's, as each case of
-    ``test_compiled_conventions.py`` is; else a test in a shard's product module,
+    ``test_compiled_conventions_uk.py`` is; else a test in a shard's product module,
     ``test_<shard>_uk_sec.py``, is that shard's; and every other is ``"toolchain"``'s.  So
     no compile test falls outside every shard: one tied to no model, or to a model not yet
     at stage ``"EC"``, runs in the toolchain's.
@@ -1794,8 +1799,8 @@ class SecBuilds:
     a :class:`Build` for the rest of the session.  A build that fails is kept too, and its
     error raised again to every test that asks for it, so a broken build reports itself
     in each test that needs it without being compiled again.  Without the toolchain,
-    :func:`require_cython` skips, or fails in the ``cython`` job.  ``conftest.sec_build``
-    is the session's one instance.
+    :func:`require_cython` skips, or fails in the ``cython_uk`` job.
+    ``conftest.sec_build`` is the session's one instance.
     """
 
     def __init__(self, tmp_path_factory):

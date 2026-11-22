@@ -615,7 +615,9 @@ def ap_rate(t):
 
     A **frequency**, not a probability: additional-payment conditions are payable more
     than once across the schedule, subject to one claim per condition, and they never
-    terminate the policy.
+    terminate the policy.  So it has no cap of its own, but it takes :func:`ci_rate`'s,
+    which caps ``i_ci`` at 1: the frequency is at most ``ap_freq_factor``, and a NaN
+    diagnosis rate reaches it as NaN.
     """
     return ap_freq_factor * ci_rate(t, 1)                            # noqa: F821
 
