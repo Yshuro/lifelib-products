@@ -3,8 +3,8 @@
 ``Term_UK_SEC`` is ``Term_UK_S`` taught to run in force at a valuation date
 (UKLIB-SEC-PLAN.md, milestone M1, after USLIB-SEC-PLAN.md's Phase 1), and represented so
 that it compiles under modelx-cython (milestone M2, the C step, after its Phase 2).  It
-runs on two clocks: ``t`` counts months from the valuation date, the same month for every model point,
-and ``duration_mth(t)`` counts the months the policy has been in force,
+runs on two clocks: ``t`` counts months from the valuation date, the same month for every
+model point, and ``duration_mth(t)`` counts the months the policy has been in force,
 ``duration_mth_init() + t``.  A model point may be a policy already in force at the
 valuation date, in any month of its policy year, one issued at it, or one to be issued
 after it, as in ``basiclife/BasicTerm_SE``.  A policy in force opens with seven columns of
@@ -118,6 +118,7 @@ which turns S's ``claims(t, None)``, its total, into ``claims(t, ALL)``.
 """
 import ast
 import dataclasses
+import errno
 import importlib.machinery
 import inspect
 import io
@@ -1504,6 +1505,8 @@ MALFORMED = [
     # refuses an age or a term of 2**53 or more, which an int64 vector cannot hold whole.
     ("an issue age past int64", _set("age_at_entry", [1], 1e19),
      "{file}: age_at_entry must be below 2**53 in size; it is not at point_id [1]"),
+    ("an issue age of 2**53", _set("age_at_entry", [1], 2.0 ** 53),
+     "{file}: age_at_entry must be below 2**53 in size; it is not at point_id [1]"),
     ("a term of 2**53 years", _set("policy_term", [2], 2.0 ** 53),
      "{file}: policy_term must be below 2**53 in size; it is not at point_id [2]"),
     ("a negative sum assured", _set("sum_assured", [1], -1.0),
@@ -1522,6 +1525,9 @@ MALFORMED = [
      "{file}: joint_age must be a finite number on a joint first-death point; it is not "
      "at point_id [6]"),
     ("a joint point's second age past int64", _set("joint_age", [6], -1e19),
+     "{file}: joint_age must be below 2**53 in size on a joint first-death point; it is "
+     "not at point_id [6]"),
+    ("a joint point's second age of 2**53", _set("joint_age", [6], 2.0 ** 53),
      "{file}: joint_age must be below 2**53 in size on a joint first-death point; it is "
      "not at point_id [6]"),
     ("a joint point with an unknown second sex", _set("joint_sex", [6], "X"),
@@ -2048,6 +2054,115 @@ def test_a_waiver_rate_outside_its_domain_is_refused(case, ref, value, outcome):
             assert _compare(s_proj, _point(sec, twin), 0,
                             TWIN_EXEMPT_DEFAULT | SPEC.exempt) == [], case
         assert len(_point(sec, 1).result_cf()) == 300
+    finally:
+        sec.close()
+        s.close()
+
+
+# The family income benefit's commutation discount, fib_commute_disc_rate, at the edges
+# of its domain, as (case, its value, what the model does): "accepted", every family
+# income benefit point projected; "refused", proj_len() refusing the Reference on every
+# family income benefit point; "overflow", the discount's power past the largest float,
+# Python's OverflowError, raised alike by S, by this model and, compiled, by Python's own
+# power (Projection.annuity_certain_factor).  The commuted value discounts at
+# (1 + r)^(-m/12): at -1 that power divides by zero, below -1 it has no real value, which
+# S projects as a complex number, and an infinite rate gives a factor of 0, NaN one of
+# NaN.  A rate of 0 is the closed form's limit, m, in S and here; at 1e-17, where 1 + r is
+# 1, this model's monthly rate is 0 and the factor m, where S, which tests the annual rate,
+# divides by zero; at -0.99 the factor is S's.  And the float above -1 is in the domain,
+# its power past the largest float on every family income benefit point of the table.
+COMMUTE_RATES = [
+    ("0", 0.0, "accepted"), ("1e-17", 1e-17, "accepted"), ("-0.99", -0.99, "accepted"),
+    ("-1", -1.0, "refused"), ("-2", -2.0, "refused"), ("NaN", math.nan, "refused"),
+    ("inf", math.inf, "refused"), ("-inf", -math.inf, "refused"),
+    ("the float above -1", math.nextafter(-1.0, 0.0), "overflow"),
+]
+
+# What S makes of each refused rate, on its point 4's annuity certain at 300 months: a
+# raise, by its type, or the value.
+S_COMMUTE = {"-1": "ZeroDivisionError", "-2": complex, "NaN": "nan", "inf": 0.0,
+             "-inf": 0.0}
+
+
+def _overflow_text():
+    """Python's float power's ``OverflowError``, as the platform words it."""
+    return f"OverflowError: ({errno.ERANGE}, {os.strerror(errno.ERANGE)!r})"
+
+
+@pytest.mark.parametrize("case, value, outcome", COMMUTE_RATES,
+                         ids=[c[0] for c in COMMUTE_RATES])
+def test_a_commutation_discount_outside_its_domain_is_refused(case, value, outcome):
+    """A commutation discount that is not a finite number above -1 is refused on every
+    family income benefit point, and inside it the factor is S's or its limit (T5).
+
+    ``fib_commute_disc_rate`` is one Reference, which ``Term_UK_S`` reads unchecked, and
+    the commuted value raises, goes complex or goes to 0 or NaN outside its domain, so
+    this model's frame refuses it on every family income benefit point, naming the point
+    and the Reference, as it refuses a waiver rate outside 0 to 1; S's own outcome is
+    asserted beside it (:data:`S_COMMUTE`).  Inside it, every family income benefit point
+    projects and every other point projects whatever the rate: at 0 and at -0.99 the
+    twins of S's family income benefit points, 3 and 4, are S's in every cell, holding
+    the closed form's limit and S's power against S; at 1e-17, where ``1 + r`` is 1, the
+    monthly rate is 0 and the factor is ``m``, where S divides by zero, a departure.  The
+    float above -1 is accepted, and its power passes the largest float, Python's
+    ``OverflowError`` in S and here alike.  The rate is set in both models as each is
+    read, before either computes anything, the form that runs compiled unchanged (K7);
+    the compiled refusal test holds the compiled model to each refusal and overflow, and
+    C4 holds it to modelx at 0 and 1e-17.
+    """
+    sec = mx.read_model(model_path(SEC), name=_name("discount"))
+    s = mx.read_model(model_path(TWIN), name=_name("discount_s"))
+    try:
+        sec.Projection.fib_commute_disc_rate = value
+        s.Projection.fib_commute_disc_rate = value
+        table = sec.Data.model_point_table()
+        fib = [label for label in table.index if table.at[label, "shape"] == "fib"]
+        assert len(fib) == 3, fib
+        if outcome == "refused":
+            for label in fib:
+                _refused(_point(sec, label).result_cf,
+                         f"point_id {label}: fib_commute_disc_rate must be a finite "
+                         f"number above -1, not {value}")
+            want = S_COMMUTE[case]
+            try:
+                got = _point(s, 4).annuity_certain_factor(300)
+            except Exception as err:            # S's own refusal of the rate
+                assert _raised(err).startswith(f"{want}:"), (case, _raised(err))
+            else:
+                assert (isinstance(got, want) if isinstance(want, type)
+                        else (math.isnan(got) if want == "nan" else got == want)), (
+                    case, got)
+        elif outcome == "overflow":
+            for label in fib:
+                with pytest.raises(Exception) as raised:
+                    _point(sec, label).result_cf()
+                assert _raised(raised.value) == _overflow_text(), (label, raised.value)
+            with pytest.raises(Exception) as raised:
+                _point(s, 4).result_cf()
+            assert _raised(raised.value) == _overflow_text(), raised.value
+        else:
+            for label in fib:
+                p = _point(sec, label)
+                assert len(p.result_cf()) == p.proj_len() and p.check_fib_ledger(), label
+            p = _point(sec, 4)
+            if value == 1e-17:
+                assert p.annuity_certain_factor(300) == 300.0
+                with pytest.raises(Exception) as raised:
+                    _point(s, 4).annuity_certain_factor(300)
+                assert _raised(raised.value).startswith("ZeroDivisionError"), raised.value
+            else:
+                for point_id in (3, 4):
+                    s_proj = _point(s, point_id)
+                    _sweep_s(s_proj)
+                    assert _compare(s_proj, _point(sec, point_id), 0,
+                                    TWIN_EXEMPT_DEFAULT | SPEC.exempt) == [], (case,
+                                                                              point_id)
+                if value == 0.0:
+                    assert p.annuity_certain_factor(300) == 300.0
+        others = [label for label in table.index if label not in fib]
+        for label in others:
+            p = _point(sec, label)
+            assert len(p.result_cf()) == p.proj_len(), label
     finally:
         sec.close()
         s.close()
@@ -3637,6 +3752,24 @@ def test_the_core_grid_reaches_every_branch(spliced, splice_records):
 # after the fingerprint holds the compiled model to modelx on it.
 
 
+def _part_commuted(tmp_path, name):
+    """S read on its point 10 alone, the family income benefit commuted in half, and SEC
+    on that point's twin, which the generator makes from it: ``(s, sec)``, each to close.
+    """
+    rows = _s_table_with_variants().loc[[10]]
+    s = mx.read_model(temp_inputs(tmp_path / "s", model_path(TWIN), model_points=rows),
+                      name=_name(f"{name}_s"))
+    try:
+        spec = dataclasses.replace(SPEC, derived=(), future=())
+        twins, companions = build_sec_table(spec, s)
+        sec = mx.read_model(_sec_inputs(tmp_path / "sec", twins, companions[PIPELINE]),
+                            name=_name(name))
+    except BaseException:
+        s.close()
+        raise
+    return s, sec
+
+
 def test_the_all_total_is_s_total_bit_for_bit(sec_model, s_model, tmp_path):
     """``claims(t, ALL)`` is ``Term_UK_S``'s ``claims(t)``, its ``sum``, to the last bit.
 
@@ -3657,15 +3790,8 @@ def test_the_all_total_is_s_total_bit_for_bit(sec_model, s_model, tmp_path):
         s, p = _point(s_model, point_id), _point(sec_model, point_id)
         found += [f"point {point_id}, t = {t}" for t in range(p.proj_len())
                   if p.claims(t, total).hex() != s.claims(t + month).hex()]
-    rows = _s_table_with_variants().loc[[10]]
-    s = mx.read_model(temp_inputs(tmp_path / "s", model_path(TWIN), model_points=rows),
-                      name=_name("total_s"))
-    sec = None
+    s, sec = _part_commuted(tmp_path, "total")
     try:
-        spec = dataclasses.replace(SPEC, derived=(), future=())
-        twins, companions = build_sec_table(spec, s)
-        sec = mx.read_model(_sec_inputs(tmp_path / "sec", twins, companions[PIPELINE]),
-                            name=_name("total"))
         q, sq = projection(sec, point_keys(sec)[0]), _point(s, 10)
         death, fib = _code(q, "DEATH"), _code(q, "FIB")
         months = range(q.proj_len())
@@ -3673,18 +3799,59 @@ def test_the_all_total_is_s_total_bit_for_bit(sec_model, s_model, tmp_path):
         found += [f"part commuted, t = {t}" for t in months
                   if q.claims(t, total).hex() != sq.claims(t).hex()]
     finally:
-        if sec is not None:
-            sec.close()
+        sec.close()
         s.close()
     assert both, "no month of the part-commuted point pays two kinds"
     assert not found, found[:10]
+
+
+def test_the_ledger_residual_is_s_own_bit_for_bit(sec_model, s_model, tmp_path):
+    """``check_fib_ledger_resid(t)`` is ``Term_UK_S``'s to the last bit, every month.
+
+    The residual rebuilds the streams in payment from the deaths since issue, and S sums
+    those deaths with Python's ``sum``, which compensates; this model sums them in a loop,
+    compensated as ``sum`` compensates them, by Neumaier's method
+    (``Projection.check_fib_ledger_resid``).  Nothing else sees the loop: T1 and T2 floor
+    the residual at 1e-9, since at a take-up such as 0.3 the two models' rebuilds round
+    apart (*The in-force interface* in ``model-sec.md``), the fingerprint covers the
+    reports alone, and C4 compares two engines that run the same loop.  A plain sum gives a
+    residual that still closes, ``check_fib_ledger()`` True, and moves 309 of the
+    committed points' residuals, 203 of point 3's 300 months.  So this compares the two
+    by ``float.hex`` in every month of the twins of S's family income benefit points, 3,
+    uncommuted, and 4, commuted whole, at the shipped take-ups, and of S's point 10, the
+    same commuted in half, where the two sums agree too; S's residuals there are not all
+    0, which is asserted.
+    """
+    found, nonzero = [], 0
+    for point_id in (3, 4):
+        s, p = _point(s_model, point_id), _point(sec_model, point_id)
+        assert p.duration_mth_init() == 0 and p.is_fib(), point_id
+        for t in range(p.proj_len()):
+            mine, want = p.check_fib_ledger_resid(t), s.check_fib_ledger_resid(t)
+            nonzero += want != 0.0
+            if mine.hex() != want.hex():
+                found.append(f"point {point_id}, t = {t}: {mine!r}, S {want!r}")
+    s, sec = _part_commuted(tmp_path, "ledger")
+    try:
+        q, sq = projection(sec, point_keys(sec)[0]), _point(s, 10)
+        assert q.fib_commute_rate() == 0.5
+        for t in range(q.proj_len()):
+            mine, want = q.check_fib_ledger_resid(t), sq.check_fib_ledger_resid(t)
+            nonzero += want != 0.0
+            if mine.hex() != want.hex():
+                found.append(f"part commuted, t = {t}: {mine!r}, S {want!r}")
+    finally:
+        sec.close()
+        s.close()
+    assert not found, f"{len(found)} months apart, first: {found[:10]}"
+    assert nonzero, "every residual of S's is 0, so no sum is seen"
 
 
 # One S point per value a decoded column can hold, as (the S point it changes, the columns
 # it changes): each shape; each sex and smoker status of the first life and of the second;
 # both premium modes; both mortality bases; each flag both ways; and the numbers
 # Term_UK_S reads with int, the issue ages and the term, written with a fraction, which
-# int truncates.
+# int truncates: each fraction above .5, so that a decode that rounded would part.
 DECODED = [
     (1, {"shape": "level"}), (2, {"shape": "decreasing"}), (3, {"shape": "fib"}),
     *[(1, {"sex": x, "smoker": y}) for x in ("M", "F") for y in ("N", "S")],
@@ -3694,7 +3861,7 @@ DECODED = [
     (5, {"indexation": True}), (1, {"indexation": False}),
     (7, {"wop": True}), (1, {"wop": False}),
     (6, {"joint_first_death": True}), (6, {"joint_first_death": False}),
-    (1, {"age_at_entry": 35.7}), (6, {"joint_age": 33.6}), (1, {"policy_term": 25.4}),
+    (1, {"age_at_entry": 35.7}), (6, {"joint_age": 33.6}), (1, {"policy_term": 25.6}),
 ]
 
 # The cells each decoded point is compared on, Term_UK_S's own, which read the text or
@@ -3810,7 +3977,8 @@ def test_every_padded_array_holds_nan_and_no_reader_reads_it(sec_model, tmp_path
                                       moved, cut), name=_name("padded"))
     try:
         p, q = _point(model, young), _point(model, anchor)
-        assert p.point_id() == young != point_keys(model)[list(extract.index).index(young)] + 1
+        position = list(extract.index).index(young)
+        assert p.point_id() == young != point_keys(model)[position] + 1
         for lag in (0, 5):
             _refused(lambda: p.wop_deferred_init(lag),
                      f"point_id {young}: wop_pipeline_sec.csv holds no lag {lag}")
@@ -4127,12 +4295,15 @@ NOT_HELD = [
      "is not"),
     ("a label of 2**53", lambda t: _set("duration_mth", [13], 300)(t).rename(
         index={13: 2 ** 53}), "result_cf", (),
-     f"model_point_table_sec.csv: point_id must be below 2**53 in size; [{2 ** 53}] is not"),
+     f"model_point_table_sec.csv: point_id must be below 2**53 in size; [{2 ** 53}] is "
+     f"not"),
     ("a timing no cell takes", None, "pols_if_at", (0, 9), "invalid timing"),
     ("a kind no cell takes", None, "claims", (0, 9), "invalid kind"),
     ("a third life", None, "age_at_entry", (3,), "invalid life"),
     ("a life of 0", None, "mort_group", (0,), "invalid life"),
     ("a second life on a single life", None, "mort_group", (2,), "invalid life"),
+    ("a second life's issue age on a single life", None, "age_at_entry", (2,),
+     "invalid life"),
     ("a label of a third life", None, "sex", (3,), "invalid life"),
 ]
 
@@ -5139,6 +5310,31 @@ def test_the_compiled_model_computes_what_modelx_computes_where_the_cap_binds(se
     assert not found, _mismatch_lines(found)
 
 
+@pytest.mark.cython
+def test_the_compiled_model_computes_what_modelx_computes_at_a_commutation_discount_of_0(
+        sec_build, tmp_path):
+    """C4 where the annuity certain is its limit: compiled, every cell is modelx's at a
+    commutation discount of 0, and of 1e-17.
+
+    ``annuity_certain_factor`` returns ``m`` where the monthly rate is 0, at a rate of 0,
+    as ``Term_UK_S`` does, and at one whose monthly rate rounds to 0, 1e-17, where
+    ``1 + r`` is 1 and S divides by zero.  The shipped rate, 3%, takes the closed form on
+    every point, so no other compiled test reaches the branch, and
+    ``test_a_commutation_discount_outside_its_domain_is_refused`` holds it against S in
+    modelx.  On the committed points, with the rate set in both engines before either
+    computes, modelx sweeps every point fully, and the compiled model must agree at every
+    argument modelx caches, the family income benefit's points 3, 4 and 10, whose
+    commuted value reads the factor, among them (``uk_sec_support.compiled_mismatches``).
+    """
+    build = sec_build(SEC)
+    folder = compiled_case(build, tmp_path / "discount")
+    found = []
+    for value in (0.0, 1e-17):
+        found += [f"at {value}: {line}" for line in compiled_mismatches(
+            build, folder, refs={"fib_commute_disc_rate": value})]
+    assert not found, _mismatch_lines(found)
+
+
 # The model point table's columns that hold whole numbers, which a spreadsheet may save as
 # floats: the months, the ages and the term.  And the assumption tables' keys.
 FLOAT_COLUMNS = ("duration_mth", "age_at_entry", "policy_term", "joint_age")
@@ -5246,7 +5442,8 @@ def test_the_compiled_model_returns_a_label_that_is_not_text_as_modelx_does(sec_
             want = {}
             for key, (point, columns) in zip(point_keys(model), changes):
                 p = projection(model, key)
-                want[key] = [_did(lambda: p.cells[cell](*args)) for cell, args in LIFE_LABELS]
+                want[key] = [_did(lambda: p.cells[cell](*args))
+                             for cell, args in LIFE_LABELS]
                 for cell, column in (("sex", "joint_sex"), ("smoker", "joint_smoker")):
                     value, held = p.cells[cell](2), columns[column]
                     assert (math.isnan(value) if held != held else value == held), (
@@ -5335,9 +5532,37 @@ def _named(outcome, files):
 # anchor's twin, a single life: a life of 0 and of 3, inside every life's cache, a second
 # life on a single life, and a label's third life.  Every timing and kind inside its
 # cache is a code the cell takes.
-LIVES_IN_CACHE = [("age_at_entry", (0,)), ("age_at_entry", (3,)), ("mort_group", (0,)),
-                  ("mort_group", (2,)), ("age", (0, 0)), ("age", (0, 3)),
-                  ("mort_rate_base", (0, 3)), ("sex", (3,)), ("smoker", (0,))]
+LIVES_IN_CACHE = [("age_at_entry", (0,)), ("age_at_entry", (2,)), ("age_at_entry", (3,)),
+                  ("mort_group", (0,)), ("mort_group", (2,)), ("age", (0, 0)),
+                  ("age", (0, 3)), ("mort_rate_base", (0, 3)), ("sex", (3,)),
+                  ("smoker", (0,))]
+
+# Powers an input the model accepts pushes past the largest float, which Python's float
+# power refuses with OverflowError where C's pow gives an infinity, so that each cell calls
+# Python's own there (Projection.idx_factor), as (case, the committed table's edit, the
+# References, [(S point, cell, arguments)]): expense inflation of 1e20 a year, past it at
+# t = 192, (1e20)^16; RPI and both caps at 1e200, the indexed point's cover and premium
+# factors past it at its second anniversary; and a decreasing schedule at a rate of 1e14
+# a year, its (1 + j_m)^300 past it.  The commutation discount's own, within 2e-8 of -1,
+# is COMMUTE_RATES' "overflow".
+OVERFLOWS = [
+    ("expense inflation past the largest float", None, {"inflation_rate": 1e20},
+     [(1, "inflation_factor", (192,)), (1, "result_cf", ())]),
+    ("the index factors past the largest float", None,
+     {"rpi_rate": 1e200, "idx_cover_cap": 1e200, "idx_prem_cap": 1e200},
+     [(5, "idx_factor", (24,)), (5, "idx_prem_factor", (24,)), (5, "result_cf", ())]),
+    ("the decreasing schedule past the largest float", _set("sched_rate", [2], 1e14), {},
+     [(2, "benefit_sched", (0,)), (2, "result_cf", ())]),
+]
+
+# Projection's idx past the extract's last row, 14, and -1, beside the last row, 13, as
+# (position, cell, arguments): past the last row the first read of a vector raises
+# IndexError in both engines, each in its own words, and -1 reads every vector at its last
+# element in both, so it is the last point, under that point's own point_id.
+IDX_CASE = "an idx past the table and one before it"
+IDX_EDGES = [(14, "point_id", ()), (14, "result_cf", ()), (-1, "point_id", ()),
+             (-1, "proj_len", ()), (-1, "net_cf", (0,)), (13, "point_id", ()),
+             (13, "proj_len", ()), (13, "net_cf", (0,))]
 
 # Calls past the caches spec_sec.py sizes, which raise IndexError in the compiled model
 # alone, as (call, arguments, what modelx does): a month either side of the t cache; a
@@ -5396,11 +5621,11 @@ def _refusal_cases():
                       [(at(point), cell, ()) for cell in ("result_cf", "proj_len")], ()))
     for case, edit, refs, point, _ in SHORT_PIPELINE:
         cases.append((case, extract(), lags(edit), None, refs,
-                      [(at(point), "result_cf", ()), (at(point), "wop_deferred_init", (1,))],
-                      ()))
+                      [(at(point), "result_cf", ()),
+                       (at(point), "wop_deferred_init", (1,))], ()))
     for case, edit, refs, point, _ in WAIVED_TOO_SOON:
-        cases.append((case, extract(edit), lags(), None, refs, [(at(point), "result_cf", ())],
-                      ()))
+        cases.append((case, extract(edit), lags(), None, refs,
+                      [(at(point), "result_cf", ())], ()))
     waiver = [at(p) for p in committed.index[committed["wop"]]]
     shared = [at(_label(committed, kind, 7, month))
               for kind, month in (("twin", 0), ("future", -13))]
@@ -5412,8 +5637,9 @@ def _refusal_cases():
     cases.append(("past its cover", extract(_set("duration_mth", [13], 300)), lags(), None,
                   {}, [(at(13), "result_cf", ()), (at(13), "proj_len", ())], ()))
     cut = {MORT: _dropped(lambda t: (t["age"] > 50) | (t["age"] < 20))}
-    cases.append(("an age outside the mortality table", extract(_set("age_at_entry", [1], 18)),
-                  lags(), cut, {}, [(at(1), "result_cf", ()), (at(2), "result_cf", ())], ()))
+    cases.append(("an age outside the mortality table",
+                  extract(_set("age_at_entry", [1], 18)), lags(), cut, {},
+                  [(at(1), "result_cf", ()), (at(2), "result_cf", ())], ()))
     cases.append(("a select duration past the table", extract(), lags(), None,
                   {"select_period": 7}, [(at(7), "result_cf", ())], ()))
     cases.append(("a select duration below the table", extract(), lags(), None,
@@ -5427,6 +5653,17 @@ def _refusal_cases():
                           ("point_id",)))
     cases.append(("lives no cell takes, inside the caches", extract(), lags(), None, {},
                   [(0, cell, args) for cell, args in LIVES_IN_CACHE], ()))
+    fib = [at(p) for p in committed.index[committed["shape"] == "fib"]]
+    for case, value, outcome in COMMUTE_RATES:
+        if outcome != "accepted":
+            cases.append((f"fib_commute_disc_rate at {case}", extract(), lags(), None,
+                          {"fib_commute_disc_rate": value},
+                          [(i, "result_cf", ()) for i in fib]
+                          + ([(at(4), "proj_len", ())] if outcome == "refused"
+                             else [(at(4), "annuity_certain_factor", (300,))]), ()))
+    for case, edit, refs, calls in OVERFLOWS:
+        cases.append((case, extract(edit), lags(), None, refs,
+                      [(at(point), cell, args) for point, cell, args in calls], ()))
     return cases
 
 
@@ -5450,10 +5687,20 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
     by ``Data.point_id``; and each life of :data:`LIVES_IN_CACHE`, inside the caches, which
     every cell refuses by its own formula.
 
+    And every commutation discount :data:`COMMUTE_RATES` refuses, by the frame on every
+    family income benefit point, and the float above -1, whose power passes the largest
+    float; and each power of :data:`OVERFLOWS` past it: compiled, each cell calls Python's
+    own power where C's gives an infinity, so that it raises the platform's
+    ``OverflowError`` as modelx does, where it would carry an infinity on.
+
     And the refusals that are the compiled model's alone (:data:`COMPILED_ONLY`): a month
     past the ``t`` cache either side, a timing, a kind and a life past their codes, a policy
     month past the ``k`` cache and the months left past the ``m`` cache, each raising
-    ``IndexError`` compiled, beside what modelx does.
+    ``IndexError`` compiled, beside what modelx does.  And ``Projection``'s ``idx`` at the
+    table's edges (:data:`IDX_EDGES`): one past the last row raises ``IndexError`` in both
+    engines, compared by its type, the words being each engine's own, and ``-1`` is the
+    last row in both, its every outcome the last row's and modelx's, which a build without
+    bounds checks, or without Python's negative indices, would part from.
 
     The compiled model runs every case in one child, each on a fresh instance of the model
     that reads the case's own copies of the five files by absolute path, as
@@ -5463,8 +5710,11 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
     """
     build = sec_build(SEC)
     cases = _refusal_cases()
+    plain = len(cases)
     cases.append(("compiled only", _extract()[0], _extract()[1], None, {},
                   [(0, cell, args) for cell, args, _ in COMPILED_ONLY], ()))
+    assert len(_extract()[0]) == 14
+    cases.append((IDX_CASE, _extract()[0], _extract()[1], None, {}, IDX_EDGES, ()))
     root = tmp_path / "refused"
     compiled_case(build, root / "base")
     jobs, wants = [], []
@@ -5494,7 +5744,7 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
                           capture_output=True, text=True, timeout=900)
     assert done.returncode == 0, done.stderr[-4000:]
     got = pickle.loads(result.read_bytes())
-    found, refused = [], 0
+    found, refused, edges = [], 0, {}
     only = iter(COMPILED_ONLY)
     for (case, *_, calls, data), (files, *_), (want, want_data), (have, have_data) in zip(
             cases, jobs, wants, got, strict=True):
@@ -5503,6 +5753,15 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
         for (idx, cell, args), modelx_did, compiled_did in zip(calls, want, have,
                                                               strict=True):
             where = f"{case}: idx {idx}: {cell}{args}"
+            if case == IDX_CASE:
+                edges[idx, cell, args] = (modelx_did, compiled_did)
+                if idx == 14:
+                    for engine, did in (("modelx", modelx_did), ("compiled", compiled_did)):
+                        if (did[0], str(did[1]).split(":")[0]) != ("raised", "IndexError"):
+                            found.append(f"{where}: {engine} {did}, not IndexError")
+                elif compiled_did != modelx_did:
+                    found.append(f"{where}: compiled {compiled_did}, modelx {modelx_did}")
+                continue
             if case == "compiled only":
                 _, _, does = next(only)
                 if does is not None and modelx_did != does:
@@ -5527,8 +5786,13 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
                 found.append(f"{case}: Data.{name}: compiled {compiled_did}, modelx "
                              f"{modelx_did}")
             refused += 1
+    for (idx, cell, args), outcomes in edges.items():
+        if idx == -1 and outcomes != edges[13, cell, args]:
+            found.append(f"{IDX_CASE}: {cell}{args} at idx -1 is {outcomes}, at the last "
+                         f"row {edges[13, cell, args]}")
+    assert edges[-1, "point_id", ()][0] == ("ok", EXTRACT_LABELS[-1]), edges
     assert not found, "\n".join(found[:40])
-    assert refused == sum(len(calls) + len(data) for *_, calls, data in cases[:-1])
+    assert refused == sum(len(calls) + len(data) for *_, calls, data in cases[:plain])
 
 
 # The cold call the stack test makes compiled, in a thread whose stack is reserved at each

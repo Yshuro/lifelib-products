@@ -882,7 +882,7 @@ def proj_len():
     count of :func:`result_cf`. Cover ceases at the end of the term with no maturity
     value, no renewal and no conversion [S1][S2][S6][S8][R8].
 
-    Seven kinds of point raise here, naming the point, rather than project nothing or a
+    Eight kinds of point raise here, naming the point, rather than project nothing or a
     frame the contract does not have, each checked in this order:
 
     * one whose cover ended at or before the valuation date, which an in-force extract
@@ -892,6 +892,11 @@ def proj_len():
     * one with a life issued below ``issue_age_min``, 18;
     * one with a life whose cover runs past attained age ``expiry_age_max``, 90, or on the
       family income benefit ``expiry_age_max_fib``, 70: the issue age plus the term;
+    * one of the family income benefit while ``fib_commute_disc_rate``, the annual rate
+      the commuted value discounts at, is not a finite number above -1: at -1 the
+      discount's power ``(1 + r_c)^(-m/12)`` divides by zero, below it has no real
+      value, which :mod:`~.Term_UK_S` projects as a complex number, and an infinite rate
+      gives a factor of 0, and NaN one of NaN, without a word;
     * one with the waiver rider in force while ``wop_inc_rate`` or ``wop_rec_rate``, an
       annual rate, is outside 0 to 1 or not a number: each is one Reference, with no
       factor and no cap, and past 1 its monthly rate, ``1 - (1 - r)^(1/12)``, has no real
@@ -916,7 +921,8 @@ def proj_len():
     ``policy_term_max``, ``policy_term_max_fib`` or the horizon needs the spec's sizes
     raised and the model rebuilt, or a report runs past the caches in the compiled model
     alone, raising ``IndexError`` where modelx projects. A point without the rider reads
-    neither waiver rate, and projects whatever they are.
+    neither waiver rate, and one of another shape no discount rate, and each projects
+    whatever they are.
     """
     n = term_mths() - duration_mth_init()
     if n <= 0:
@@ -941,6 +947,11 @@ def proj_len():
                 f"{age_at_entry(life) + policy_term()}, issue age "
                 f"{age_at_entry(life)} and a {policy_term()}-year term, past "
                 f"{'expiry_age_max_fib' if fib else 'expiry_age_max'}, {oldest}")
+    if fib and not (fib_commute_disc_rate > -1.0                     # noqa: F821
+                    and fib_commute_disc_rate <= 1.7976931348623157e308):  # noqa: F821
+        raise ValueError(
+            f"point_id {point_id()}: fib_commute_disc_rate must be a finite number "
+            f"above -1, not {fib_commute_disc_rate}")                # noqa: F821
     if wop():
         if not (wop_inc_rate >= 0.0 and wop_inc_rate <= 1.0):        # noqa: F821
             raise ValueError(f"point_id {point_id()}: wop_inc_rate must be "
@@ -1294,9 +1305,10 @@ def pols_if_at(t, timing):
     These are int References, 0 to 3, named as :mod:`~.Term_UK_S`'s strings (the Space
     docstring's *Codes*). ``BEF_NB`` is the one timing running in force adds, as
     ``basiclife.BasicTerm_SE`` names it; the other three are :mod:`~.Term_UK_S`'s, and any
-    other raises. ``BEF_NB`` forms month t - 1's ``BEF_DECR`` count itself, as ``BEF_NB`` plus
-    :func:`pols_new_biz` at t - 1, the same sum in the same order, rather than calling for
-    it. So the chain of calls from month t back to :func:`t_entry` is one cell a month,
+    other raises. ``BEF_NB`` forms month t - 1's ``BEF_DECR`` count itself, as
+    ``BEF_NB`` plus :func:`pols_new_biz` at t - 1, the same sum in the same order, rather
+    than calling for it. So the chain of calls from month t back to :func:`t_entry` is one
+    cell a month,
     where :mod:`~.Term_UK_S`'s ``pols_if`` chain runs three: a compiled model runs that
     chain on the C stack.
     """
@@ -1479,12 +1491,25 @@ def idx_factor(t):
     duration(t_entry())``.  The increases before the valuation date are history, carried
     in, and those after it are projected at ``rpi_rate``.  1 whenever the option is not
     elected, and 0 outside cover, where there is no cover to index.
+
+    The exponent is a whole number of years, 0 or more, so the power is real whatever the
+    base.  It passes the largest float only where the References put the increase above
+    about 2 million a year, which the shipped cap, 10%, does not.  Python's float power
+    raises ``OverflowError`` past the largest float, where C's ``pow`` gives an infinity,
+    so where the power is infinite from a finite base the cell calls Python's own, which
+    raises the platform's message in the compiled model as in modelx (USLIB-SEC-PLAN.md,
+    *Record -- M22*); modelx never reaches the call, its own power raising first.
     """
     if not is_active(t):
         return 0.0
     if not indexation():
         return 1.0
-    return idx_factor_init() * (1.0 + idx_increase()) ** (duration(t) - duration(t_entry()))
+    base = 1.0 + idx_increase()
+    n = duration(t) - duration(t_entry())
+    factor = base ** n
+    if factor - factor != 0.0 and base - base == 0.0:
+        raise float.__pow__(base, n)
+    return idx_factor_init() * factor
 
 
 def idx_prem_factor(t):
@@ -1497,13 +1522,22 @@ def idx_prem_factor(t):
     the sign of that conclusion if acceptance is selective, impaired lives accepting
     while healthy ones decline **[std]** concern.  No public take-up data exists.  1
     whenever the option is not elected, and 0 outside cover.
+
+    The exponent is a whole number of years, as :func:`idx_factor`'s is, and the power
+    passes the largest float only where the References put the step above about 2 million
+    a year, which the shipped cap, 15%, does not; there the cell raises Python's
+    ``OverflowError`` in both engines, as :func:`idx_factor` does.
     """
     if not is_active(t):
         return 0.0
     if not indexation():
         return 1.0
     step = 1.0 + min(idx_prem_mult * idx_increase(), idx_prem_cap)   # noqa: F821
-    return idx_prem_factor_init() * step ** (duration(t) - duration(t_entry()))
+    n = duration(t) - duration(t_entry())
+    factor = step ** n
+    if factor - factor != 0.0 and step - step == 0.0:
+        raise float.__pow__(step, n)
+    return idx_prem_factor_init() * factor
 
 
 def premium_pp(t):
@@ -1553,13 +1587,20 @@ def benefit_sched(k):
     from ``B(0) = SA0`` to ``B(N) = 0``.  A zero schedule rate degenerates to straight
     line, which the closed form cannot express.  Keyed by the policy month, not by
     ``t``: :func:`benefit_pp` reads it at ``duration_mth(t)``, in cover only.
+
+    ``Data`` refuses a schedule rate below 0, or not a finite number, so ``1 + j_m`` is 1
+    or more, and the divisor is above 0 wherever ``j_m`` is.  ``(1 + j_m)^N`` passes the
+    largest float on a 50-year term from a rate of about 1.5 million a year; there the
+    cell raises Python's ``OverflowError`` in both engines, as :func:`idx_factor` does.
     """
     n_m = term_mths()
     jm = sched_rate_mth()
     if jm == 0.0:
         return sum_assured() * (n_m - k) / n_m
-    return sum_assured() * (
-        (1.0 + jm) ** n_m - (1.0 + jm) ** k) / ((1.0 + jm) ** n_m - 1.0)
+    grown = (1.0 + jm) ** n_m
+    if grown - grown != 0.0 and jm - jm == 0.0:
+        raise float.__pow__(1.0 + jm, n_m)
+    return sum_assured() * (grown - (1.0 + jm) ** k) / (grown - 1.0)
 
 
 def annuity_certain_factor(m):
@@ -1567,13 +1608,27 @@ def annuity_certain_factor(m):
 
     ``[1 - (1+r_c)^(-m/12)] / [(1+r_c)^(1/12) - 1]``, instalments in arrears.  Used
     only by the commutation module, at the months left to the end of the term.
+
+    :func:`proj_len` refuses, on a family income benefit point, a rate that is not a
+    finite number above -1, so the base ``1 + r_c`` is above 0.  The divisor, the monthly
+    rate, is tested for 0, as :func:`benefit_sched` tests :func:`sched_rate_mth`, and
+    there the factor is ``m``, the closed form's limit: at a rate of 0, as in
+    :mod:`~.Term_UK_S`, and at one whose monthly rate rounds to 0, such as 1e-17, where
+    ``1 + r_c`` is 1 and :mod:`~.Term_UK_S`, which tests the annual rate, divides by zero.
+    Within about 2e-8 of -1, ``(1 + r_c)^(-m/12)`` passes the largest float at the
+    longest commutation; there the cell raises Python's ``OverflowError`` in both
+    engines, as :func:`idx_factor` does.
     """
     if m <= 0:
         return 0.0
-    j = fib_commute_disc_rate                                        # noqa: F821
-    if j == 0.0:
+    base = 1.0 + fib_commute_disc_rate                               # noqa: F821
+    j_m = base ** (1.0 / 12.0) - 1.0
+    if j_m == 0.0:
         return float(m)
-    return (1.0 - (1.0 + j) ** (-m / 12.0)) / ((1.0 + j) ** (1.0 / 12.0) - 1.0)
+    v = base ** (-m / 12.0)
+    if v - v != 0.0 and base - base == 0.0:
+        raise float.__pow__(base, -m / 12.0)
+    return (1.0 - v) / j_m
 
 
 def fib_commute_pp(t):
@@ -1722,8 +1777,18 @@ def inflation_factor(t):
     valuation date.  :mod:`~.Term_UK_S` inflates from issue, ``(1 + pi)^duration(t)``,
     the notes' ``e(t) = 30 x 1.03^t`` with ``t`` the policy year; on a point issued at
     ``t = 0`` the two are the same.  Acquisition is not inflated (see :func:`expenses`).
+
+    The exponent is a whole number of years, so the power is real whatever the base.  It
+    passes the largest float within the longest frame only where ``inflation_rate`` is
+    above about 140,000 a year in size; there the cell raises Python's ``OverflowError``
+    in both engines, as :func:`idx_factor` does.
     """
-    return (1.0 + inflation_rate) ** (t // 12)                       # noqa: F821
+    base = 1.0 + inflation_rate                                      # noqa: F821
+    n = t // 12
+    factor = base ** n
+    if factor - factor != 0.0 and base - base == 0.0:
+        raise float.__pow__(base, n)
+    return factor
 
 
 def expenses(t):

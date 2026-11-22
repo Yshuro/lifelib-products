@@ -29,6 +29,8 @@ product meets it from the commit that moves it there, Term_UK_SEC first (M2):
   (F5, K2).
 * The block's sum: ``run_sec.py``'s running sum is ``groupby``'s, bit for bit, on the
   committed points' frames, run in modelx, with or without a compiler.
+* The directives: ``tools/build_sec_cy.py`` writes ``infer_types=True`` and ``cpow=True``
+  and no other, which C3, requiring the two, cannot see.  Read statically.
 
 The allowlist of cells that stay Python is R17's, :func:`uk_sec_support.reporting_cells`:
 ``model_point``, the ``result_*`` reports, the ``check_*`` checks, and the label accessors
@@ -69,6 +71,7 @@ from uk_sec_support import (
     release_faults, reporting_cells, spec_faults, static_faults, typing_faults)
 from uk_sec_support import label_faults, reporting_columns_faults
 from uk_sec_support import engine_faults
+from uk_sec_support import REQUIRED_DIRECTIVES
 from uk_sec_support import (
     block_sum_faults, labels_refusing_non_text, object_cells, object_return_faults,
     pxd_declarations, runner_add, sample_engine_faults)
@@ -340,6 +343,36 @@ def test_the_runner_sums_the_block_as_groupby_does(name):
     assert naive and naive[0].startswith("the running sum departs"), (
         f"{name}: a plain running sum is groupby's on the committed points, so the "
         f"comparison cannot fail there: {naive}")
+
+
+# The one line tools/build_sec_cy.py puts at the top of each translated space module.
+DIRECTIVE = "# cython: infer_types=True, cpow=True"
+
+
+def test_the_build_writes_the_two_directives_and_no_other():
+    """``tools/build_sec_cy.py``'s ``DIRECTIVE`` is :data:`DIRECTIVE`, exactly.
+
+    C3 requires both of ``uk_sec_support.REQUIRED_DIRECTIVES`` in each translated module,
+    and reads no other, so a third would compile unseen: ``cdivision=True`` makes ``//``
+    and ``%`` on C integers truncate where Python floors, which only C4's full sweep met,
+    through point 14's ``duration(t)`` before issue, -2 in modelx and -1 compiled;
+    ``boundscheck=False`` lets an ``idx`` past the table read past a vector; and
+    ``wraparound=False`` makes ``Projection[-1]`` raise where modelx reads the last point.
+    So the tool's line is held to the two, read from its source, which needs no compiler,
+    and to the harness's own; it skips where the tool is absent, as from a
+    ``lifelib.create()`` copy.  The tool is the repository's, which uslib's models build
+    with too.
+    """
+    tool = LIB.parents[2] / "tools" / "build_sec_cy.py"
+    if not tool.is_file():
+        pytest.skip("tools/build_sec_cy.py is this repository's, and it is absent")
+    found = [node.value.value for node in ast.parse(tool.read_text(encoding="utf-8")).body
+             if isinstance(node, ast.Assign) and len(node.targets) == 1
+             and getattr(node.targets[0], "id", None) == "DIRECTIVE"
+             and isinstance(node.value, ast.Constant)]
+    assert found == [DIRECTIVE], found
+    given = dict(part.strip().split("=") for part in DIRECTIVE.split(":", 1)[1].split(","))
+    assert given == REQUIRED_DIRECTIVES, (given, REQUIRED_DIRECTIVES)
 
 
 @pytest.mark.cython

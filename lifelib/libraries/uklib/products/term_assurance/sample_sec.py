@@ -11,14 +11,18 @@ model's carries at ``BEF_NB`` instead.  Those are called here too, the count in 
 of the frame and the month after it.  Every other timing and every kind are reached by the
 reports and the checks.  A code a cell refuses is not called, since a raise is not traced.
 
-The run takes the committed points alone, and they leave branches untaken: an annual
-payer, a family income benefit commuted in part, an indexed waiver point, the decreasing
-shape at a schedule rate of 0, a joint life who smokes, a commutation discount of 0, the
-clawback window open, the cap on mortality.  That is enough to type every cell, because
-every branch of a cell returns the one type its other branches return, a count a float in
-every branch, ``0.0`` or ``False`` outside cover.  What the compiled model computes on
-those branches is not traced but tested: the compile tests run it on points that take
-them, and compare it with modelx.
+The run takes the committed points alone, at the shipped References, and they leave
+branches untaken: an annual payer, a family income benefit commuted in part, an indexed
+waiver point, the decreasing shape at a schedule rate of 0 and a joint life who smokes,
+which the splice grid's variants take; the clawback window open, which its References
+open; the cap on mortality, which the cap's points reach; a commutation discount of 0, and
+one whose monthly rate rounds to 0, 1e-17, at which the committed points run; and a power
+past the largest float, which the refusals reach.  That is enough to type every cell,
+because every branch of a cell returns the one type its other branches return, a count a
+float in every branch, ``0.0`` or ``False`` outside cover.  What the compiled model
+computes on those branches is not traced but tested: the compile tests run it there and
+compare it with modelx, C4 on the splice grid, where the cap binds and at the two
+discounts, and the refusal test on the overflows.
 
 The label accessors are typed from more than the committed points.  ``shape()``,
 ``premium_mode()`` and ``mort_basis()`` validate their column, as ``Term_UK_S``'s do, so
