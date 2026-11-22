@@ -35,7 +35,9 @@ lives, its accelerated and standalone contracts and its reviewable point after a
 ``IP_UK_S``'s active lives and its lives in claim; ``WOL_UK_S``'s O50 and UW cells; and
 ``PA_UK_S``'s dependant and its annuitant past the limiting age, where no table is read.
 :data:`PREMISES` holds the reads to those branches and factors, so that a change to a
-shipped point or Reference that would leave a cap unseen fails here.
+shipped point or Reference that would leave a cap unseen fails here.  And every S model
+registered has a case or is named in :data:`NO_CAP`, as uslib's module holds its own, so
+that a model registered later must say which, and a case dropped is missed.
 
 A NaN in a table rate does not always reach a cap: ``IP_UK_S`` floors its interpolated
 inception rate at 0 before the economic-cycle factor, ``max(0.0, r)``, which reads a NaN
@@ -51,7 +53,7 @@ import math
 import modelx as mx
 import pytest
 
-from uk_registry import model_path, projection
+from uk_registry import MODELS, is_sec, model_path, projection
 
 #: S model -> the References set on ``Projection`` when the model is read, before any
 #: feed, so that the factors the shipped References hold at 1 differ from 1 at the reads.
@@ -140,6 +142,11 @@ CASES = [
     ("PA_UK_S", ("model_point_file", "dependant_rating"), 1e6, _PA_DEPENDANT),
 ]
 
+#: The S models that cap no mortality or morbidity rate, and so have no case: none, since
+#: each of the seven caps one.  uslib's module names two, whose rate is the table's with
+#: no factor.
+NO_CAP = frozenset()
+
 #: S model -> what its reads rely on, each ``(point, cell, arguments, value)``: the
 #: branch a read takes, or, where ``value`` is ``None``, a factor that a case reading it
 #: does not feed and that must differ from 1 there.
@@ -226,6 +233,16 @@ def _rates(tmp_path, name, feed, value, reads):
 
 
 CASE_IDS = [f"{name}-{_feed_id(feed)}" for name, feed, _, _ in CASES]
+
+
+def test_every_s_model_has_a_case_or_is_named_without_a_cap():
+    """Each S model registered has a case above or is named in ``NO_CAP``, not both."""
+    s_models = {name for name in MODELS if not is_sec(name)}
+    cased = {name for name, _, _, _ in CASES}
+    assert not NO_CAP & cased, sorted(NO_CAP & cased)
+    assert NO_CAP | cased == s_models, (
+        f"without a case or a place in NO_CAP: {sorted(s_models - cased - NO_CAP)}; "
+        f"not a registered S model: {sorted((NO_CAP | cased) - s_models)}")
 
 
 @pytest.mark.parametrize("name, feed, past_1, reads", CASES, ids=CASE_IDS)
