@@ -955,9 +955,15 @@ def test_the_discretionary_scale_is_references_not_a_rate_table(with_profits):
 
 
 def test_inputs_live_beside_the_model():
-    """The three input CSVs sit in the model folder's parent directory."""
+    """The three input CSVs sit in the model folder's parent directory.
+
+    An SEC model shares the directory and reads its own inputs beside these
+    (UKLIB-SEC-PLAN.md U1), so this asks that the S model's are present, as uslib's
+    product modules do; that every CSV here is read by some model in the directory is
+    the conventions suite's check.
+    """
     expected = {"model_point_table.csv", "mort_table.csv", "lapse_table.csv"}
-    assert expected == {p.name for p in MODEL_DIR.parent.iterdir()
+    assert expected <= {p.name for p in MODEL_DIR.parent.iterdir()
                         if p.suffix == ".csv"}
 
 

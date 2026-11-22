@@ -680,9 +680,15 @@ def test_cells_names_follow_the_payout_chassis(pension_annuity):
 
 
 def test_inputs_live_beside_the_model():
-    """Only two input CSVs: this product has almost nothing to parameterize."""
+    """Only two input CSVs: this product has almost nothing to parameterize.
+
+    An SEC model shares the directory and reads its own inputs beside these
+    (UKLIB-SEC-PLAN.md U1), so this asks that the S model's are present, as uslib's
+    product modules do; that every CSV here is read by some model in the directory is
+    the conventions suite's check.
+    """
     expected = {"model_point_table.csv", "mort_table.csv"}
-    assert expected == {p.name for p in MODEL_DIR.parent.iterdir()
+    assert expected <= {p.name for p in MODEL_DIR.parent.iterdir()
                         if p.suffix == ".csv"}
 
 
