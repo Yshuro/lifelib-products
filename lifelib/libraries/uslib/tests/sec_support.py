@@ -1070,6 +1070,9 @@ class SecSpec:
         object.__setattr__(self, "exempt", frozenset(self.exempt))
 
 
+# >>> product specs: this library's own.  tools/check_sec_harness.py compares the rest.
+
+
 def _wl_entering(name, opening):
     """What ``WholeLife_US_S`` carries into month ``d`` in cells ``name``.
 
@@ -3099,6 +3102,8 @@ SEC_SPECS: dict[str, SecSpec] = {
         twin_arg_map=_iul_twin_args,
     ),
 }
+
+# <<< product specs
 
 
 def _derived_policy_id(policy_id, d):
