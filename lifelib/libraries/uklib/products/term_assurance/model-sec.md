@@ -137,9 +137,12 @@ valuation date would rewrite back to issue. It pays the family income benefit on
 at the valuation date of the point in force at 66 would commute half the streams long in
 payment, and pay 49.6% low at `t = 0`; here the streams in payment are a column, and each
 later death adds its `(1 − c)` share, `fib_streams(t)`, so that the payment is
-`I [(1 − c) D(t) + streams(t)]`, `Term_UK_S`'s number at a take-up that never changes, bit
-for bit on its new business. And it rebuilds the commission paid at issue from
-`comm_init_rate`, which the clawback recovers; here a point in force reads it.
+`I [(1 − c) D(t) + streams(t)]`, `Term_UK_S`'s number at a take-up that never changes. On
+new business it is S's bit for bit at the take-ups the shipped points hold, 0 and 1, and at
+0.5; at another, such as 0.3, a sum of scaled deaths and a scaled sum round apart, and T1
+compares the ledger's residual, a rounding about zero, at a floor of 1e-9. And it rebuilds
+the commission paid at issue from `comm_init_rate`, which the clawback recovers; here a
+point in force reads it.
 
 The waiver's deferred period is a vector whose length is a Reference,
 `Projection.wop_defer_mths`, six months as shipped, so it goes in a companion,
@@ -419,7 +422,10 @@ is `proj_len()`'s, beside the pipeline's length, which reads it too.
   cell of `Term_UK_S`'s agrees at every argument `Term_UK_S` evaluates in its own sweep,
   to 1e-9 relative with no absolute floor, but for `pols_if_init` and `model_point`, and
   `proj_start`, `duration_inforce` and `result_pols`, which the spec names with its
-  reasons; a cell this model lacked would fail it. So `Term_UK_S`'s worked example, which
+  reasons; a cell this model lacked would fail it. The ledger's residual,
+  `check_fib_ledger_resid`, a rounding about zero, is compared at an absolute floor of
+  1e-9, since at a take-up such as 0.3 the two models' sums round apart (*The in-force
+  interface*). So `Term_UK_S`'s worked example, which
   `tests/test_term_assurance_uk.py` asserts to the penny and the in-force to six decimals,
   holds here with no number restated. The same suite holds the model to the conventions
   every `_SEC` model meets: every frame starts at `t = 0`, `pols_if` is the `"BEF_DECR"`

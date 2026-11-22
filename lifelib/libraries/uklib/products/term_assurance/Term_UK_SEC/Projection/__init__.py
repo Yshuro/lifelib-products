@@ -1429,7 +1429,8 @@ def fib_streams(t):
     once a claim is admitted the instalments are an annuity-certain to the end of the
     term whatever happens to any life [S6][S8].  Only *new* claims carry ``l(t)``.
     :mod:`~.Term_UK_S` holds no such cell: it pays ``(1 - c) x FIBcum(t)``, the same
-    number at a take-up that never changes, bit for bit on its new business.  0 outside
+    number at a take-up that never changes, and on new business the same floats where
+    ``1 - c`` scales exactly, at the shipped take-ups of 0 and 1 and at 0.5.  0 outside
     cover, and on the level and decreasing shapes, which pay no instalments.
     """
     if not is_active(t) or shape() != "fib":

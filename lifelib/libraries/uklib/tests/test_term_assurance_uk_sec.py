@@ -1036,14 +1036,19 @@ def test_the_policy_clock_is_a_closed_form_and_no_recursion_runs_backward(sec_re
 # Data's first reads of its tables.  A cold net_cf in the last month runs 11 cells beyond
 # the count's chain, on every committed point and at the contract's longest cover alike,
 # and each chain head called alone at most 8 beyond: the count, the lapse ratio and the
-# cohort's share 6, the waived share 3, the ledger 8 (measured at M1).  Term's 16, as for
-# uslib's Term (USLIB-SEC-PLAN.md D5).  Any chain of two cells a month runs a frame's
-# length beyond.
+# cohort's share 6, the waived share 3, the ledger 8 (measured at M1).  On the family
+# income benefit's point at its longest cover, the streams in payment run 8 beyond, its
+# claims 10 and net_cf 11 (measured at M1's review).  Term's 16, as for uslib's Term
+# (USLIB-SEC-PLAN.md D5).  Any chain of two cells a month runs a frame's length beyond.
 CHAIN_OVERHEAD = 16
 
 # The contract's longest cover (product-spec.md, held by proj_len()): a 50-year term,
 # policy_term_max, issued at issue_age_min, 18, which expires at 68, inside expiry_age_max.
 LONGEST_TERM, YOUNGEST = 50, 18
+
+# The family income benefit's longest cover: a 40-year term, policy_term_max_fib, issued
+# at 30, which expires at 70, expiry_age_max_fib.
+LONGEST_FIB_TERM, OLDEST_FIB = 40, 30
 
 # Each chain of the model and the cell that heads it, called cold in the last month of the
 # frame, each on a read of its own: (cell, the timing it takes, or None).  The count, the
@@ -1052,6 +1057,11 @@ LONGEST_TERM, YOUNGEST = 50, 18
 # with every switch on, every chain runs the frame's length.
 CHAIN_HEADS = (("net_cf", None), ("pols_if_at", "BEF_NB"), ("lapse_cum", None),
                ("cohort_frac", None), ("wop_waived_frac", None), ("fib_cum", None))
+
+# The chains the family income benefit's point adds, which return at once on the waiver
+# point, a level shape: the streams in payment and the claims they pay, and net_cf over
+# them.  Its count, lapse and ledger chains are those the waiver point measures.
+FIB_CHAIN_HEADS = (("net_cf", None), ("claims", "FIB"), ("fib_streams", None))
 
 
 def _cold_depth(proj, cell, args):
@@ -1070,21 +1080,28 @@ def _cold_depth(proj, cell, args):
 
 
 def _longest_cover(tmp_path):
-    """A copy whose table holds the waiver point at the contract's longest cover.
+    """A copy whose table holds the waiver point and the family income benefit's point at
+    their longest cover, and each row's frame, ``t_entry()`` and chain heads.
 
-    S point 7's twin, the waiver point on the select basis, issued at 18 on a 50-year term,
-    issued now and 120 months on, the shipped ``future_horizon_mth``: frames of 600 and 720
-    months, whose chains stop at ``t_entry()``.  The shipped tables serve it: the mortality
-    table runs from 18, and the policy expires at 68.
+    S point 7's twin, the waiver point on the select basis, issued at 18 on a 50-year
+    term, and S point 3's twin, the family income benefit, issued at 30 on a 40-year term,
+    the longest its shape takes; each issued now and 120 months on, the shipped
+    ``future_horizon_mth``: frames of 600 and 720 months, and of 480 and 600, whose chains
+    stop at ``t_entry()``.  The shipped tables serve both: the mortality table runs from
+    18, and the policies expire at 68 and 70.
     """
     committed = _committed()
-    now = _label(committed, "twin", 7, 0)
-    rows = committed.loc[[now, now]].assign(age_at_entry=YOUNGEST,
-                                            policy_term=LONGEST_TERM).set_axis(
-        [now, committed.index.max() + 1]).rename_axis("point_id")
-    rows = _set("duration_mth", [rows.index[1]], -120)(rows)
+    level, fib = _label(committed, "twin", 7, 0), _label(committed, "twin", 3, 0)
+    top = committed.index.max()
+    rows = committed.loc[[level, level, fib, fib]].assign(
+        age_at_entry=[YOUNGEST, YOUNGEST, OLDEST_FIB, OLDEST_FIB],
+        policy_term=[LONGEST_TERM, LONGEST_TERM, LONGEST_FIB_TERM, LONGEST_FIB_TERM],
+    ).set_axis([level, top + 1, fib, top + 2]).rename_axis("point_id")
+    rows = _set("duration_mth", [top + 1, top + 2], -120)(rows)
     empty = _committed_pipeline().iloc[0:0]
-    return _sec_inputs(tmp_path, rows, empty), list(rows.index)
+    frames = ((level, 600, 0, CHAIN_HEADS), (top + 1, 720, 120, CHAIN_HEADS),
+              (fib, 480, 0, FIB_CHAIN_HEADS), (top + 2, 600, 120, FIB_CHAIN_HEADS))
+    return _sec_inputs(tmp_path, rows, empty), frames
 
 
 # modelx warns as its stack trace starts and stops, which is all the test does with it.
@@ -1101,19 +1118,21 @@ def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path):
     last month of the frame, ``net_cf``, the deepest call a projection makes, among them,
     each on a read of its own, with :data:`SWITCHED_ON` set, so that the lapse ratio loads
     mortality and the clawback reads the lapses.  At the contract's longest cover, 50 years
-    from issue age 18, issued now and 120 months on (:func:`_longest_cover`), each row's
-    frame asserted first, as §7.5's *Record — M5* and M14's carried rule ask.
+    from issue age 18, issued now and 120 months on, and on the family income benefit's
+    point, at its own longest cover, 40 years from issue age 30, the chains of
+    :data:`FIB_CHAIN_HEADS` (:func:`_longest_cover`), each row's frame asserted first, as
+    §7.5's *Record — M5* and M14's carried rule ask.
     """
-    folder, labels = _longest_cover(tmp_path)
+    folder, frames = _longest_cover(tmp_path)
     found = []
-    for label, months in zip(labels, (600, 720)):
-        for cell, timing in CHAIN_HEADS:
+    for label, months, entry, heads in frames:
+        for cell, timing in heads:
             fresh = mx.read_model(folder, name=_name("cold"))
             try:
                 for ref, value in SWITCHED_ON.items():
                     setattr(fresh.Projection, ref, value)
                 p = _point(fresh, label)
-                assert p.proj_len() == months and p.t_entry() == months - 600, label
+                assert p.proj_len() == months and p.t_entry() == entry, label
                 last = p.proj_len() - 1
                 args = (last,) if timing is None else (last, _code(p, timing))
                 depth, chain = _cold_depth(p, cell, args), last - p.t_entry()

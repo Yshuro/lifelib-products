@@ -951,10 +951,19 @@ def twin_model(name, tmp_path_factory):
 # The cells T1 compares at an absolute floor, by SEC model, each with its reason.  Every
 # other cell is held to 1e-9 relative with no absolute floor (USLIB-SEC-PLAN.md §5.2, T1,
 # precised at uslib's M13): twin_mismatches' default floor of 1e-9 passes any error in a
-# count below 1e-9, and uslib's twins held counts in force down to 1e-13.  uklib names
-# none; a product that needs a floor enters the cell here with its floor and the reason
-# its two models round apart, as uslib's DIA and RILA did.
-TWIN_FLOORS = {}
+# count below 1e-9, and uslib's twins held counts in force down to 1e-13.  A product that
+# needs a floor enters the cell here with its floor and the reason its two models round
+# apart, as uslib's DIA and RILA did.
+#
+# Term_UK_SEC carries the family income benefit's streams in payment as a running sum,
+# adding each month's (1 - c) D, where Term_UK_S scales the deaths' sum by (1 - c)
+# (model-sec.md).  At the take-ups the shipped points hold, 0 and 1, and at 0.5, the two
+# are the same floats; at a take-up such as 0.3 they round apart, and the ledger's
+# residual, a rounding about zero, is -2.8e-17 in SEC where S's is 0.0 (M1's review).  It
+# keeps the residual's own floor.
+TWIN_FLOORS = {
+    "Term_UK_SEC": {"check_fib_ledger_resid": 1e-9},
+}
 
 
 @sec_family
