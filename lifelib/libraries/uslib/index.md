@@ -80,12 +80,13 @@ all twelve: every product has its in-force model.
 **Compiled speed.** Each `_SEC` model's `model-sec.md` records what compiling buys, timed by
 `tools/bench_sec_cy.py`: one block of the committed model points repeated, each engine in a
 process of its own, the fastest of several runs. The figures below are `net_cf(t)` summed over
-each point's frame, the projection alone, in milliseconds a point, on the shared Linux
-machine each compile step ran on, under load, so they compare engines within a row better
-than products across rows. The export is the model as plain Python, `modelx`'s export,
-before compiling; `modelx` is the `_SEC` model itself. RILA's ratio to its export is the
-lowest, since making and releasing its 6.4 MB compiled point takes most of each point's
-time.
+each point's frame, the projection alone, in milliseconds a point. Nine products were timed
+on shared 4-CPU Linux machines under load, and RILA, SPIA and DIA on a Windows desktop
+shared with other work, as each `model-sec.md` records, so the figures compare engines
+within a row better than products across rows. The export is the model as plain Python,
+`modelx`'s export, before compiling; `modelx` is the `_SEC` model itself. RILA's ratio to
+its export is the lowest, since making and releasing its 6.4 MB compiled point takes most
+of each point's time.
 
 | Product | Model | Compiled | Export | modelx | Compiled vs export | Compiled vs modelx |
 |---|---|---|---|---|---|---|
