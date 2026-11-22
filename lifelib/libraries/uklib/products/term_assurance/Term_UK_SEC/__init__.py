@@ -24,12 +24,15 @@ way. Its formulas are the executable counterpart of
     Reads the three assumption CSVs it shares with :mod:`~.Term_UK_S`, its own model point
     table and its own waiver pipeline, and holds their filename References. It takes no
     parameters, so each file is read **once per model**. It checks each table before a
-    value of it is read.
+    value of it is read, and hands the projection what the files hold as numpy vectors
+    and arrays of numbers, one element per model point or per key.
 
 :mod:`~.Term_UK_SEC.Projection`
-    The by-policy projection, parameterized by ``point_id``: ``Projection[1]`` is an
-    ItemSpace projecting model point 1. It reaches the input tables through its ``data``
-    Reference, which resolves to the single :mod:`~.Term_UK_SEC.Data` Space.
+    The by-policy projection, parameterized by ``idx``, the position of a model point in
+    the ``Data`` vectors, as ``basiclife.BasicTerm_SC`` is: ``Projection[0]`` is an
+    ItemSpace projecting the table's first row, model point 1, and its ``point_id()`` is
+    that label. It reaches the inputs through its ``data`` Reference, which resolves to
+    the single :mod:`~.Term_UK_SEC.Data` Space.
 
 The split matters for more than tidiness. Because ``Projection`` is parameterized,
 every ``Projection[N]`` is a separate ItemSpace with its own cells cache; readers
@@ -39,6 +42,19 @@ once, however many policies are projected.
 Input data is **external**: CSVs in the model folder's parent directory, read at run
 time rather than stored inside the model. The model folder itself holds no data, so
 the model and its inputs must travel together.
+
+**Compiled.** The model compiles under modelx-cython into C-typed code, as
+``basiclife/BasicTerm_SC`` does, from the two inputs beside it: ``sample_sec.py``, the run
+that types each cell, and ``spec_sec.py``, the length of each cell's cache.
+``Projection``'s cells read every model point attribute a projection cell uses as a C
+number from a ``Data`` vector at ``idx``, and every table as an array indexed by integers;
+a timing or a kind is an int code; a text column is decoded into the number a formula
+branches on; and every cell but the two reports, ``model_point`` and five label
+accessors returns a C ``bint``, ``long long`` or ``double``, the two checks among them,
+cached as a single value or in a C array sized from the contract. modelx reads and runs the same formulas, and computes
+the same numbers. ``products/term_assurance/model-sec.md`` says how to compile and run it,
+and what the compiled model does not do as modelx does: it clears no cache when a
+Reference is set, so every Reference is set on a model just imported.
 
 **Projection basis.** Monthly steps on two clocks. ``t`` counts months from the
 valuation date, 0-based, as ``basiclife/BasicTerm_SE`` counts them: ``t = 0`` is the
@@ -117,8 +133,8 @@ Example:
 
     >>> import modelx as mx
     >>> model = mx.read_model("products/term_assurance/Term_UK_SEC")
-    >>> model.Projection[8].result_cf()      # the anchor cell in force five years
-    >>> model.Projection[8].result_pols()
+    >>> model.Projection[7].result_cf()      # the eighth row: the anchor cell in force
+    >>> model.Projection[7].result_pols()    # five years, model point 8
 """
 
 from modelx.serialize.jsonvalues import *

@@ -92,14 +92,21 @@ ANB, ALB = "ANB", "ALB"
 #                     {**MONTHLY, "age_basis": ANB, "twin": "Term_UK_S", "stage": "E"}),
 #
 # with "param": "idx" and the "reporting" label accessors added at stage "EC", and there
-# "python_calls" where a cell keeps a Python builtin and "engine" where it keeps S's cells
-# a compiled cell does not call; "closing_pols_if": True on PA_UK_SEC alone.  Each is
-# entered directly after its twin, with its INPUT_FILES set below.
+# "reporting_columns" where a label returns another column, "python_calls" where a cell
+# keeps a Python builtin and "engine" where it keeps S's cells a compiled cell does not
+# call; "closing_pols_if": True on PA_UK_SEC alone.  Each is entered directly after its
+# twin, with its INPUT_FILES set below.  Term_UK_SEC, the first, was entered exactly so at
+# its stage "E" (M1), and is the first at "EC" (M2), its labels sex(life) and smoker(life)
+# returning each life's column.
 MODELS = {
     # Protection
     "Term_UK_S": ("products/term_assurance/Term_UK_S", {**MONTHLY, "age_basis": ANB}),
     "Term_UK_SEC": ("products/term_assurance/Term_UK_SEC",
-                    {**MONTHLY, "age_basis": ANB, "twin": "Term_UK_S", "stage": "E"}),
+                    {**MONTHLY, "age_basis": ANB, "twin": "Term_UK_S", "stage": "EC",
+                     "param": "idx",
+                     "reporting": ("mort_basis", "premium_mode", "sex", "shape", "smoker"),
+                     "reporting_columns": {"sex": {1: "sex", 2: "joint_sex"},
+                                           "smoker": {1: "smoker", 2: "joint_smoker"}}}),
     "CI_UK_S": ("products/critical_illness/CI_UK_S", {**MONTHLY, "age_basis": ANB}),
     "IP_UK_S": ("products/income_protection/IP_UK_S", {**MONTHLY, "age_basis": ANB}),
     "WOL_UK_S": ("products/whole_of_life/WOL_UK_S", {**MONTHLY, "age_basis": ALB}),

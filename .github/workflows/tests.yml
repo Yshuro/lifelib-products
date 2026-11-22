@@ -173,14 +173,15 @@ jobs:
     # no one model, and for each uklib SEC model at stage "EC" its product directory, its
     # module's compile tests with its cases of test_compiled_conventions_uk.py, in one
     # session. A product's C step adds its shard here, and test_compiled_conventions_uk.py,
-    # in the `test` job, fails until the list is exactly uklib's registry's.
+    # in the `test` job, fails until the list is exactly uklib's registry's: term
+    # assurance's, Term_UK_SEC's, first (M2).
     name: Compile uklib ${{ matrix.shard }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        shard: [toolchain]
+        shard: [toolchain, term_assurance]
         os: [ubuntu-latest, windows-latest]
         python-version: ['3.13']
     env:

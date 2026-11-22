@@ -252,10 +252,7 @@ def pytest_runtest_makereport(item, call):
     missing, but a test can skip before its body runs: one parametrized over the SEC models
     at stage ``"EC"`` skips, "got empty parameter set", when the registry holds none.  In
     the ``cython_uk`` CI job any such skip is a green run that compiled nothing (D13), so
-    it is turned into a failure here, whatever skipped it.  (While the registry holds no
-    model at stage ``"EC"``, ``test_compiled_conventions_uk.py`` leaves its compile tests
-    unmarked, so that their empty parameter set falls in no shard; see there.)  A
-    docstring parse test skips where docutils is absent, and on the CI leg that installs
+    it is turned into a failure here, whatever skipped it.  A docstring parse test skips where docutils is absent, and on the CI leg that installs
     docutils such a skip is a green run that parsed nothing, so it fails there the same
     way.  pytest calls this hook for the tests below this file alone, so uslib's
     variables never fail a test of uklib's, nor these one of uslib's.

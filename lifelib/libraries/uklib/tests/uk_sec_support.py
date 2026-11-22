@@ -1188,6 +1188,21 @@ def _term_pipeline(s_model, table):
     return pd.DataFrame(rows, columns=list(_TERM_PIPELINE))
 
 
+def _term_claims_total(name, args):
+    """``Term_UK_S``'s ``claims`` keys as ``Term_UK_SEC`` takes them at stage ``"EC"`` (R9,
+    R12).
+
+    S's ``claims(t, kind=None)`` is cached under ``(t, None)`` where S asks for the total,
+    which its ``net_cf`` does: SEC's code ``ALL``, so ``None`` is mapped to ``"ALL"``, which
+    :func:`codes` then turns into the int, as it turns S's kinds and timings.  Every other
+    key, and every other cell's arguments, pass as they are, SEC's own codes among them,
+    where a comparison of two SEC models passes it SEC's keys.
+    """
+    if name == "claims" and len(args) == 2 and args[1] is None:
+        return (args[0], "ALL")
+    return args
+
+
 SEC_SPECS: dict[str, SecSpec] = {
     # Term's state is seven columns (_TERM_STATE above) and the waiver pipeline, a long
     # companion, wop_pipeline_sec.csv, keyed (point_id, lag), lag the months before the
@@ -1215,6 +1230,26 @@ SEC_SPECS: dict[str, SecSpec] = {
     #     column S's lacks and cannot agree as a whole.  Each column it shares with S is a
     #     cell T1 compares at every month, and test_term_assurance_uk_sec.py compares the
     #     report itself with S's, on every column both hold.
+    # At stage EC (M2), S's timings and kinds are SEC's int codes, BEF_NB to AFT_DECR and
+    # DEATH to LAPSE, which codes maps, and S's claims(t, None) keys, the kind=None total
+    # its net_cf caches, are SEC's code ALL: the spec's twin_arg_map, _term_claims_total,
+    # maps None to "ALL", and codes maps it and the rest.  S's label accessors stay S's,
+    # called by reporting and T1 alone: shape(), premium_mode() and mort_basis() return
+    # the column of their own name, and the registry's "reporting_columns" names what the
+    # other two return, sex(life) "sex" or "joint_sex" by life and smoker(life) "smoker" or
+    # "joint_smoker".  T1 compares each at the arguments S cached.
+    #
+    # Phase 2 sizes its caches from the contract (spec_sec.py holds each derivation):
+    #   t 0..721: policy_term_max, 50 years, the longest term, issued future_horizon_mth,
+    #     120 months, after the valuation date, a frame of 720 months, its month after, and
+    #     the roll-forward's t + 1 there;
+    #   k 0..599, the policy months of cover, where benefit_sched is read, and the
+    #     pipeline's lags, fewer than the months in force;
+    #   m 1..480, the months the family income benefit's commuted value is read at, on
+    #     policy_term_max_fib's 40 years;
+    #   life 1..2, the lives of a joint first death.
+    # proj_len() refuses a term above either maximum, an issue age below issue_age_min, 18,
+    # and cover past expiry_age_max, 90, or expiry_age_max_fib, 70, each naming the point.
     "Term_UK_SEC": SecSpec(
         twin="Term_UK_S",
         column_map={"duration_inforce": None},
@@ -1225,6 +1260,7 @@ SEC_SPECS: dict[str, SecSpec] = {
         twin_state=_TERM_STATE,
         exempt=frozenset({"proj_start", "duration_inforce", "result_pols"}),
         companions={"wop_pipeline_sec.csv": _term_pipeline},
+        twin_arg_map=_term_claims_total,
     ),
 }
 

@@ -36,13 +36,12 @@ the registry entry names under ``"reporting"``, and S's cells of float parameter
 names under ``"engine"``, which no compiled cell calls (R14).  A builtin a compiled cell
 still calls, R16's ``round`` of a projected amount, is admitted in that cell alone, by the
 registry entry's ``"python_calls"``, which C3 and C5 read.  C3, C4 and the release are
-marked ``cython``, from the first model at stage ``"EC"`` on (:func:`_compile_test`).  They
-compile each model once a session, into a temporary directory (``conftest.sec_build``),
-never into the tree (D12), and run the compiled package in child processes only.  Without
-modelx-cython or a C compiler they skip, and the ``cython_uk`` CI job, which sets
-``UKLIB_REQUIRE_CYTHON=1``, fails a skip (D13).  Each product module adds what is its own:
-C4 on its splice grid and at its contract's extremes, its compiled refusals, its deepest
-cold call on a 1 MiB stack, and its runner compiled.
+marked ``cython``.  They compile each model once a session, into a temporary directory
+(``conftest.sec_build``), never into the tree (D12), and run the compiled package in child
+processes only.  Without modelx-cython or a C compiler they skip, and the ``cython_uk`` CI
+job, which sets ``UKLIB_REQUIRE_CYTHON=1``, fails a skip (D13).  Each product module adds
+what is its own: C4 on its splice grid and at its contract's extremes, its compiled
+refusals, its deepest cold call on a 1 MiB stack, and its runner compiled.
 
 The ``cython_uk`` CI job runs these with the product module's in the model's own leg, one
 shard to a leg (``uk_sec_support.cython_shards``), and
@@ -84,24 +83,6 @@ EC_MODELS = sorted(n for n in SEC_MODELS if meta(n).get("stage") == "EC")
 RELEASE_POINTS = 120
 
 _names = itertools.count(1)
-
-
-def _compile_test(test):
-    """Mark ``test`` ``cython``, a compile test, once a model is at stage ``"EC"``.
-
-    C3, C4 and the release are each one case per model at stage ``"EC"``, and with none
-    registered pytest makes each a single case, skipped for its empty parameter set.  A
-    compile test, that case would be tied to no model, and ``uk_sec_support.cython_shard``
-    gives such a test to the ``toolchain`` shard, where ``UKLIB_REQUIRE_CYTHON=1`` fails a
-    skip whatever skipped it (``conftest.py``): the ``cython_uk`` job's toolchain legs would
-    fail on three tests that have no model to compile.  So the mark waits for the first
-    model at stage ``"EC"``.  Until then the three are no compile tests, ``-m cython``
-    leaves them out of every leg, and every other run skips them, as it skips the SEC
-    tests of the conventions suite.  From then on each case is its model's compile test,
-    in its model's shard, as every case of uslib's is: uslib had a model at stage ``"EC"``
-    before this module existed, and uklib has this module from M0.
-    """
-    return pytest.mark.cython(test) if EC_MODELS else test
 
 
 @pytest.fixture(scope="module", params=EC_MODELS)
@@ -361,7 +342,7 @@ def test_the_runner_sums_the_block_as_groupby_does(name):
         f"comparison cannot fail there: {naive}")
 
 
-@_compile_test
+@pytest.mark.cython
 def test_every_projection_cell_compiles_to_a_c_type(name, model, sec_build):
     """C3: the compiled model's declarations, and its generated C, are C.
 
@@ -408,7 +389,7 @@ def test_every_projection_cell_compiles_to_a_c_type(name, model, sec_build):
     assert not found, f"{name}: {len(found)} faults, first:\n  " + "\n  ".join(found[:20])
 
 
-@_compile_test
+@pytest.mark.cython
 def test_the_compiled_model_computes_what_modelx_computes(name, sec_build, tmp_path):
     """C4 on the committed points: compiled, every cell is modelx's, at every argument.
 
@@ -446,7 +427,7 @@ def _block(name, points):
     return block
 
 
-@_compile_test
+@pytest.mark.cython
 def test_a_block_run_releases_each_compiled_point(name, sec_build, tmp_path):
     """``run_sec.py --block``, compiled, holds one point's ItemSpace at a time (F5, K2).
 

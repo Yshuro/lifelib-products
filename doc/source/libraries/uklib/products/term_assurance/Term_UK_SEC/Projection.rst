@@ -8,7 +8,15 @@ Cells Descriptions
 
 .. autofunction:: model_point
 
+.. autofunction:: point_id
+
 .. autofunction:: shape
+
+.. autofunction:: is_level
+
+.. autofunction:: is_decreasing
+
+.. autofunction:: is_fib
 
 .. autofunction:: is_joint
 
@@ -17,6 +25,8 @@ Cells Descriptions
 .. autofunction:: sex
 
 .. autofunction:: smoker
+
+.. autofunction:: mort_group
 
 .. autofunction:: policy_term
 
@@ -34,7 +44,11 @@ Cells Descriptions
 
 .. autofunction:: premium_mode
 
+.. autofunction:: prem_cycle
+
 .. autofunction:: mort_basis
+
+.. autofunction:: is_select_basis
 
 .. autofunction:: policy_count
 

@@ -5,21 +5,40 @@
 
 """The by-policy projection of the :mod:`~.Term_UK_SEC` model; holds all formulas.
 
-The Space is parameterized by ``point_id``, so ``Projection[1]`` is an ItemSpace
-projecting model point 1, the twin of :mod:`~.Term_UK_S`'s anchor cell, issued at the
-valuation date::
+The Space is parameterized by ``idx``, the position of a model point in the table and in
+every :mod:`~.Term_UK_SEC.Data` vector, as ``basiclife.BasicTerm_SC`` is: ``Projection[7]``
+is an ItemSpace projecting the table's eighth row, model point 8, the twin of
+:mod:`~.Term_UK_S`'s anchor cell in force five years, and :func:`point_id` is its label::
 
-    >>> Projection[1].result_cf()          # one row per month from the valuation date
-    >>> Projection[1].result_pols()        # the counts behind it
-    >>> Projection.point_id = 8            # or switch the default
+    >>> Projection[7].result_cf()          # one row per month from the valuation date
+    >>> Projection[7].result_pols()        # the counts behind it
+    >>> Projection[7].point_id()           # 8, the row's point_id
+    >>> Projection.idx = 1                 # or switch the default, before it computes
+
+Compiled, no cache is ever cleared: set ``idx``, like every Reference, on a model just
+imported, before anything is computed, or project through ``Projection[i]``. modelx
+recomputes what a Reference reaches when it is set; a compiled ItemSpace takes the
+References when it is made and keeps every value it has computed until it is deleted,
+and the base ``Projection`` and ``Data`` keep theirs for good.
+
+Any ``idx`` makes an ItemSpace, and none is refused here. ``Projection[-1]`` reads every
+vector at its last element, as numpy and a compiled memoryview both do, so it is the
+table's last point, under that point's own :func:`point_id`; an ``idx`` past the last
+row raises ``IndexError`` at its first read of a vector, which modelx reports inside its
+``FormulaError``.
 
 This is :mod:`~.Term_UK_S` taught to run in force at a valuation date, as lifelib's
-``basiclife.BasicTerm_SE`` extends ``basiclife.BasicTerm_S``. A formula of
+``basiclife.BasicTerm_SE`` extends ``basiclife.BasicTerm_S``, and then made to compile, as
+``basiclife.BasicTerm_SC`` is made from ``basiclife.BasicTerm_S``. A formula of
 :mod:`~.Term_UK_S` is rewritten where it depends on where the projection starts, where it
 must answer for a month outside cover, or where it read a policy month as ``t``; every
 other formula is :mod:`~.Term_UK_S`'s own, the cap on mortality,
 ``min(q, 1.0)``, among them. ``products/term_assurance/model-sec.md`` lists the rewritten
-cells with the reason for each.
+cells with the reason for each. Making it compile changed how each cell reads its inputs
+and spells its codes, and no number: every model point attribute a projection cell uses
+is read as a number from a ``Data`` vector, every table as an array indexed by integers,
+every timing and kind is an int code (*Codes*, below), and every text column is decoded
+into the number a formula branches on.
 
 .. rubric:: Input data
 
@@ -51,6 +70,15 @@ mort_table_file         data.mort_table()               mort_table.csv
 select_factor_file      data.select_factor_table()      select_factor_table.csv
 lapse_table_file        data.lapse_table()              lapse_table.csv
 ======================  ==============================  ==========================
+
+No cell here but :func:`model_point`, a reporting cell, reads the readers' DataFrames,
+and the label accessors read through it. Every other reads :mod:`~.Term_UK_SEC.Data`'s
+vectors and arrays, one element at a time: a model point's attribute at its position,
+``data.age_at_entry()[idx]``, decoded already into the number the formula needs; the
+mortality table at a life's row and attained age,
+``data.mort_table_array()[mort_group(life), age(t, life)]``; the select factors at the
+select duration and the lapse table at the policy year; and the waiver pipeline at the
+point and the lag, ``data.wop_deferred_init()[idx, k]``. ``Data``'s docstring lists them.
 
 .. rubric:: Two clocks
 
@@ -90,15 +118,15 @@ On a point issued at ``t = 0`` the two clocks coincide and this model computes w
 
 .. rubric:: Counts
 
-``pols_if(t)`` is the count that weights row ``t``: ``pols_if_at(t, "BEF_DECR")``, the
-count carried in from ``t - 1`` (``"BEF_NB"``) plus the month's new business,
+``pols_if(t)`` is the count that weights row ``t``: ``pols_if_at(t, BEF_DECR)``, the
+count carried in from ``t - 1`` (``BEF_NB``) plus the month's new business,
 :func:`pols_new_biz`, before the month's decrements. A point in force at the valuation
 date opens with :func:`pols_if_init`, its ``policy_count``; one issued at or after the
 valuation date opens with none, and takes its ``policy_count`` as new business in its
 issue month. The recursion's base is :func:`t_entry`, the first month on the books, and
 nothing is counted outside cover (:func:`is_active`): before issue every count, and so
-every cash flow, is zero. :mod:`~.Term_UK_S`'s three timings are kept, ``"BEF_DECR"``,
-``"BEF_LAPSE"`` and ``"AFT_DECR"``, and ``"BEF_NB"`` is the one running in force adds.
+every cash flow, is zero. :mod:`~.Term_UK_S`'s three timings are kept, ``BEF_DECR``,
+``BEF_LAPSE`` and ``AFT_DECR``, and ``BEF_NB`` is the one running in force adds.
 
 .. rubric:: The opening state
 
@@ -128,27 +156,79 @@ an assumption from the valuation date on. From :func:`lapse_cum_init` and
 force, which turns a month's lapse rate into the lapse ratio's increment without dividing
 by the count.
 
+.. rubric:: Codes
+
+What :mod:`~.Term_UK_S` spells as text, a timing or a kind, is here an int Reference
+named as the text it replaces, so that every cell takes and returns C numbers. A call
+site reads as it did, less the quotes: ``pols_if_at(t, BEF_DECR)``, ``claims(t, FIB)``.
+
+=============  =====  ===========================================================
+Reference      Value  Meaning
+=============  =====  ===========================================================
+BEF_NB         0      :func:`pols_if_at`: the count carried in from month t - 1
+BEF_DECR       1      :func:`pols_if_at`: that count plus month t's new business
+BEF_LAPSE      2      :func:`pols_if_at`: after the month's deaths, before its lapses
+AFT_DECR       3      :func:`pols_if_at`: the end of the month, after its decrements
+DEATH          0      :func:`claims`: the lump sum on death and terminal illness
+FIB            1      :func:`claims`: the family income benefit instalments
+LAPSE          2      :func:`claims`: the lapse benefit, nil by product design
+ALL            3      :func:`claims`: the three kinds' total
+=============  =====  ===========================================================
+
+A code a cell takes indexes that cell's cache, a C array of four timings a month for
+:func:`pols_if_at` and four kinds a month for :func:`claims`, so codes are numbered
+densely from 0. Timings are numbered in the order of their instants within the month,
+``BEF_NB`` before ``BEF_DECR``, as in every SEC model, then :mod:`~.Term_UK_S`'s two
+others in its processing order; kinds in :func:`result_cf`'s order, the order
+:mod:`~.Term_UK_S` adds them in its total, and then ``ALL``, which is
+:mod:`~.Term_UK_S`'s ``kind=None``. A code a cell does not take raises, ``invalid
+timing`` or ``invalid kind``. They are References, not cells, so the symbol map below
+does not list them.
+
+.. rubric:: Reporting cells
+
+:func:`model_point`, the label accessors :func:`shape`, :func:`sex`, :func:`smoker`,
+:func:`premium_mode` and :func:`mort_basis`, and the reports :func:`result_cf` and
+:func:`result_pols` return Python values, a table row, text and DataFrames, for a reader
+and for the comparison with :mod:`~.Term_UK_S`, which has every one of them but
+:func:`result_pols`. No cell but these calls a label accessor or a report: every other
+reads the number ``Data`` decoded from the same column instead, the shape's flags, the
+mode's cycle, the basis's flag and each life's row of the mortality table. So they stay
+Python when the model compiles, and every other cell returns a C ``bint``, ``long long``
+or ``double``. The two checks, :func:`check_pols_roll_fwd` and :func:`check_fib_ledger`,
+are reporting cells too, which no cell calls, and each compiles to a ``bint``, a verdict
+over residual cells that compile.
+
 .. rubric:: Naming
 
 Cells names follow lifelib's ``basiclife.BasicTerm_S`` wherever that model has an
 analogue — ``pols_*`` for policy counts, plural nouns for cash flows, ``*_rate`` for
 annual rates and ``*_rate_mth`` for monthly ones, ``*_pp`` for per-policy amounts,
-``claims(t, kind)`` with an uppercase ``kind`` string, ``pols_if_at(t, timing)`` for the
+``claims(t, kind)`` with a ``kind`` code, ``pols_if_at(t, timing)`` for the
 within-month in-force reads. What running in force adds is named as
 ``basiclife.BasicTerm_SE`` names it: ``duration_mth`` read from the model point,
-``policy_count``, ``pols_new_biz``, ``pols_if_at``'s ``"BEF_NB"`` timing, ``is_active``
+``policy_count``, ``pols_new_biz``, ``pols_if_at``'s ``BEF_NB`` timing, ``is_active``
 and ``result_pols``. ``duration_mth_init``, the policy months completed at the valuation
 date, takes ``UL_US_S``'s name; ``t_entry`` and ``cohort_frac`` are this model's own, and
-each opening-state cell is the cell it opens with ``_init`` added. The technical notes
-use compact actuarial symbols instead. The mapping is:
+each opening-state cell is the cell it opens with ``_init`` added. What compiling adds is
+named as ``basiclife.BasicTerm_SC`` names it: ``idx``, ``point_id`` and the ``Data``
+vectors under their columns' names; a decoded text column is the number it selects,
+``prem_cycle`` the months between premiums, ``is_level``, ``is_decreasing``, ``is_fib``
+and ``is_select_basis`` its flags, and ``mort_group(life)`` a life's row of the mortality
+table. The technical notes use compact actuarial symbols instead. The mapping is:
 
 =========================  ==============================  ==========================
 Notes symbol               Cells                           Meaning
 =========================  ==============================  ==========================
+(none)                     point_id()                      The model point's label
 shape                      shape()                         level / decreasing / fib
+(shape decoded)            is_level(), is_decreasing()     The level and decreasing
+                                                           shapes' flags
+(shape decoded)            is_fib()                        The FIB shape's flag
 x                          age_at_entry(life)              Issue age (ANB), life 1 or 2
 x + duration(t)            age(t, life)                    Attained age in month t
 (none)                     sex(life), smoker(life)         Rating factors of each life
+(rating decoded)           mort_group(life)                The life's mortality row
 n                          policy_term()                   Term in years
 N = 12n                    term_mths()                     Policy month cover ends at
 (frame)                    proj_len()                      Months to the end of cover
@@ -173,6 +253,7 @@ idx_p(t)                   idx_prem_factor(t)              Premium indexation fa
 P_m                        premium_mth_pp()                Monthly premium at issue
 P_m x idx_p(t)             premium_pp(t)                   Premium due in month t
 (mode)                     premium_mode()                  monthly or annual
+(mode decoded)             prem_cycle()                    Months between premiums
 (table)                    mort_rate_base(t, life)         Table rate before factors
 (select)                   select_factor(t)                Select-duration factor
 (proxy scaling)            mort_scale                      "00" to "16" Series factor
@@ -180,6 +261,7 @@ P_m x idx_p(t)             premium_pp(t)                   Premium due in month 
 q(t), q_joint              mort_rate(t)                    Annual policy decrement
 q_m(t)                     mort_rate_mth(t)                Monthly policy decrement
 (none)                     mort_basis()                    applied or select run
+(basis decoded)            is_select_basis()               Whether the run is select
 lambda                     sel_lapse_lambda                Selective-lapse loading
 w_ref                      sel_lapse_ref                   Selective-lapse threshold
 w_cum(t)                   lapse_cum(t)                    Cumulative lapse ratio
@@ -258,7 +340,7 @@ survivors neither die nor lapse — their cover simply runs out — so without a
 that the roll-forward appears to lose lives with no cause. :func:`pols_maturity` names
 it, zero in every month but that one, so that
 
-    pols_if(t) - pols_if_at(t + 1, "BEF_NB") = pols_death(t) + pols_lapse(t)
+    pols_if(t) - pols_if_at(t + 1, BEF_NB) = pols_death(t) + pols_lapse(t)
                                               + pols_maturity(t)
 
 holds for every ``t``, and ``pols_if(t + 1)`` adds ``pols_new_biz(t + 1)`` to the count on
@@ -304,7 +386,7 @@ neither mortality nor lapse, unless the claim is commuted to a lump sum, as the 
 streams in payment at the start of month ``t``: on a point in force it opens from
 :func:`fib_streams_init`, the streams in payment per policy in force, history, and adds
 the share of each month's deaths not commuted, so that
-``claims(t, "FIB") = I x [(1 - c) D(t) + streams(t)]`` pays the streams that began before
+``claims(t, FIB) = I x [(1 - c) D(t) + streams(t)]`` pays the streams that began before
 the valuation date as well as after it, and a take-up changed at the valuation date
 commutes none already in payment. :func:`fib_cum`, :mod:`~.Term_UK_S`'s ``FIBcum``, counts
 the deaths since issue alongside. :func:`check_fib_ledger` rebuilds the month's
@@ -337,13 +419,13 @@ library-wide sign of :func:`net_cf`, so there is no ``liability_cf`` companion.
 .. rubric:: Lapse pays nothing
 
 There is no surrender value and no paid-up value at any duration, so a lapse is a pure
-decrement: it moves ``pols_if`` and pays nothing. ``claims(t, "LAPSE")`` exists and
+decrement: it moves ``pols_if`` and pays nothing. ``claims(t, LAPSE)`` exists and
 returns zero, and ``result_cf()`` carries the zero column, as in :mod:`~.Term_UK_S`.
 """
 
 from modelx.serialize.jsonvalues import *
 
-_formula = lambda point_id: None
+_formula = lambda idx: None
 
 _bases = []
 
@@ -357,27 +439,66 @@ _spaces = []
 def model_point():
     """The selected model point, its row of ``model_point_table_sec.csv``, as a Series.
 
-    A row of this model's own table, which carries the in-force interface beside
-    :mod:`~.Term_UK_S`'s columns. Each attribute a formula reads has an accessor below.
+    Row ``idx`` of this model's own table, which carries the in-force interface beside
+    :mod:`~.Term_UK_S`'s columns, for a reader who wants every column at once: a reporting
+    cell (the Space docstring), which no projection cell reads. Each attribute a formula
+    reads has an accessor below, which reads its own ``Data`` vector instead.
     """
-    return data.model_point_table().loc[point_id]                    # noqa: F821
+    return data.model_point_table().iloc[idx]                        # noqa: F821
+
+
+def point_id():
+    """The label of the selected model point, its ``point_id``, from ``Data.point_id``.
+
+    ``Projection`` is indexed by position, ``idx``, as ``basiclife.BasicTerm_SC`` is; the
+    label is what a reader finds in the table, so every refusal names it.
+    """
+    return int(data.point_id()[idx])                                 # noqa: F821
 
 
 def shape():
-    """The benefit shape: ``level``, ``decreasing`` or ``fib`` [S1][S2][S6][S8]."""
+    """The benefit shape: ``level``, ``decreasing`` or ``fib`` [S1][S2][S6][S8].
+
+    A reporting cell (the Space docstring), :mod:`~.Term_UK_S`'s, which returns the column
+    as read, refusing any other value: no projection cell reads it here, and each branches
+    on ``Data``'s decode of the same column instead, :func:`is_level`,
+    :func:`is_decreasing` and :func:`is_fib`.
+    """
     v = model_point()["shape"]
     if v not in ("level", "decreasing", "fib"):
         raise ValueError("invalid shape")
     return v
 
 
+def is_level():
+    """Whether the benefit shape is ``level``, from ``Data.is_level``.
+
+    ``Data`` decodes the ``shape`` column as :mod:`~.Term_UK_S`'s ``shape() == "level"``
+    compares it, and refuses a shape other than the three, so exactly one of
+    :func:`is_level`, :func:`is_decreasing` and :func:`is_fib` is True.
+    """
+    return bool(data.is_level()[idx])                                # noqa: F821
+
+
+def is_decreasing():
+    """Whether the benefit shape is ``decreasing``, from ``Data.is_decreasing``."""
+    return bool(data.is_decreasing()[idx])                           # noqa: F821
+
+
+def is_fib():
+    """Whether the benefit shape is ``fib``, the family income benefit, from
+    ``Data.is_fib``."""
+    return bool(data.is_fib()[idx])                                  # noqa: F821
+
+
 def is_joint():
     """True when the policy covers two lives on a first-death basis.
 
     The policy pays once and ends; separation and replacement options create *new*
-    policies and are out of scope **[std scope]**.
+    policies and are out of scope **[std scope]**.  From ``Data.joint_first_death``, which
+    decodes the column as :mod:`~.Term_UK_S`'s ``bool`` reads it.
     """
-    return bool(model_point()["joint_first_death"])
+    return bool(data.joint_first_death()[idx])                       # noqa: F821
 
 
 def age_at_entry(life):
@@ -388,34 +509,62 @@ def age_at_entry(life):
     tables indexed that way. The age at issue, not at the valuation date:
     ``age(0, life)`` is the attained age then.
 
-    ``life`` has no default, here or in the other five cells that take it, :func:`sex`,
-    :func:`smoker`, :func:`age`, :func:`mort_rate_base` and :func:`mort_rate_life`, where
-    :mod:`~.Term_UK_S` defaults it to 1: every call passes 1 or 2, so that a compiled
-    model declares each a plain parameter. modelx keys :mod:`~.Term_UK_S`'s calls by the
-    arguments bound, ``age(t)`` as ``(t, 1)``, so the two models' cells pair as before.
+    ``life`` has no default, here or in the other seven cells that take it, :func:`sex`,
+    :func:`smoker`, :func:`mort_group`, :func:`age`, :func:`mort_rate_base` and
+    :func:`mort_rate_life`, where :mod:`~.Term_UK_S` defaults it to 1: every call passes
+    1 or 2, so that a compiled model declares each a plain parameter. modelx keys
+    :mod:`~.Term_UK_S`'s calls by the arguments bound, ``age(t)`` as ``(t, 1)``, so the
+    two models' cells pair as before. Read from ``Data.age_at_entry`` and, on a joint
+    point, ``Data.joint_age``, ``int`` of each as :mod:`~.Term_UK_S` reads it.
     """
     if life == 1:
-        return int(model_point()["age_at_entry"])
+        return int(data.age_at_entry()[idx])                         # noqa: F821
     if life == 2 and is_joint():
-        return int(model_point()["joint_age"])
+        return int(data.joint_age()[idx])                            # noqa: F821
     raise ValueError("invalid life")
 
 
 def sex(life):
-    """The sex (M / F) of the first or second life."""
+    """The sex (M / F) of the first or second life, as the table spells it.
+
+    A reporting cell (the Space docstring), which returns the ``sex`` or ``joint_sex``
+    column as read, a single-life point's blank second life as NaN, which
+    :mod:`~.Term_UK_S` refuses as ``invalid life``: no projection cell reads it here, and
+    :func:`mort_rate_base` reads each life's row of the mortality table,
+    :func:`mort_group`, instead.
+    """
     if life == 1:
         return model_point()["sex"]
-    if life == 2 and is_joint():
+    if life == 2:
         return model_point()["joint_sex"]
     raise ValueError("invalid life")
 
 
 def smoker(life):
-    """The smoker status (N / S) of the first or second life."""
+    """The smoker status (N / S) of the first or second life, as the table spells it.
+
+    A reporting cell, as :func:`sex` is: the ``smoker`` or ``joint_smoker`` column as
+    read, a single-life point's blank second life as NaN.
+    """
     if life == 1:
         return model_point()["smoker"]
-    if life == 2 and is_joint():
+    if life == 2:
         return model_point()["joint_smoker"]
+    raise ValueError("invalid life")
+
+
+def mort_group(life):
+    """The row of ``Data.mort_table_array`` of the first (``life = 1``) or second life.
+
+    The life's sex and smoker status, the key :mod:`~.Term_UK_S` reads *mort_table.csv*
+    by, decoded in ``Data`` into the row they select: M N 0, M S 1, F N 2 and F S 3, from
+    ``Data.mort_group`` and, on a joint point, ``Data.joint_mort_group``. Like
+    :func:`age_at_entry`, it refuses a second life on a single-life point.
+    """
+    if life == 1:
+        return int(data.mort_group()[idx])                           # noqa: F821
+    if life == 2 and is_joint():
+        return int(data.joint_mort_group()[idx])                     # noqa: F821
     raise ValueError("invalid life")
 
 
@@ -423,23 +572,26 @@ def policy_term():
     """n: the term in years; 1-50 level, 5-50 decreasing, 5-40 FIB [S1][S6][S8].
 
     :func:`proj_len` refuses a term above ``policy_term_max``, 50 years, or
-    ``policy_term_max_fib``, 40, on the family income benefit.
+    ``policy_term_max_fib``, 40, on the family income benefit. From ``Data.policy_term``.
     """
-    return int(model_point()["policy_term"])
+    return int(data.policy_term()[idx])                              # noqa: F821
 
 
 def sum_assured():
     """SA0: the initial sum assured of the level and decreasing shapes [S1][S6].
 
     The sum assured at issue: on an indexed point in force, the cover of the year under
-    way is this times :func:`idx_factor_init`.
+    way is this times :func:`idx_factor_init`. From ``Data.sum_assured``.
     """
-    return float(model_point()["sum_assured"])
+    return float(data.sum_assured()[idx])                            # noqa: F821
 
 
 def fib_income():
-    """I: the family income benefit, per month, on the ``fib`` shape [S2][S6][S8]."""
-    return float(model_point()["fib_income"])
+    """I: the family income benefit, per month, on the ``fib`` shape [S2][S6][S8].
+
+    From ``Data.fib_income``.
+    """
+    return float(data.fib_income()[idx])                             # noqa: F821
 
 
 def sched_rate():
@@ -448,9 +600,9 @@ def sched_rate():
     Contractual, not experience: the client selects it at outset and the benefit
     amortizes at it whatever happens to interest rates [S1][S6][S8].  The risk it
     carries is therefore specification error - mis-implementing the amortization or the
-    monthly convention - rather than assumption error.
+    monthly convention - rather than assumption error.  From ``Data.sched_rate``.
     """
-    return float(model_point()["sched_rate"])
+    return float(data.sched_rate()[idx])                             # noqa: F821
 
 
 def indexation():
@@ -458,17 +610,21 @@ def indexation():
 
     Restricted to the level shape **[std scope]**: no fetched insurer offers indexed
     decreasing cover, and the notes do not combine indexation with the FIB schedule
-    either.
+    either.  From ``Data.indexation``; ``Data`` refuses the option off the level shape
+    when it reads the table, and this refuses it again, as :mod:`~.Term_UK_S` does.
     """
-    v = bool(model_point()["indexation"])
-    if v and shape() != "level":
+    v = bool(data.indexation()[idx])                                 # noqa: F821
+    if v and not is_level():
         raise ValueError("indexation is modelled on the level shape only")
     return v
 
 
 def wop():
-    """Whether the waiver of premium rider is in force [S1]; false in the base run."""
-    return bool(model_point()["wop"])
+    """Whether the waiver of premium rider is in force [S1]; false in the base run.
+
+    From ``Data.wop``.
+    """
+    return bool(data.wop()[idx])                                     # noqa: F821
 
 
 def premium_mth_pp():
@@ -479,9 +635,9 @@ def premium_mth_pp():
     premium basis is constructed rather than observed.  It is guaranteed level for the
     full term [S2][S6][S9], which is what puts every month of premium inside the
     Solvency UK contract boundary [R3].  On an indexed point in force, the premium of the
-    year under way is this times :func:`idx_prem_factor_init`.
+    year under way is this times :func:`idx_prem_factor_init`.  From ``Data.premium_mth``.
     """
-    return float(model_point()["premium_mth"])
+    return float(data.premium_mth()[idx])                            # noqa: F821
 
 
 def premium_mode():
@@ -494,11 +650,26 @@ def premium_mode():
     same and only its timing differs.  No premium discount for annual collection is
     modelled **[std]**; UK protection pricing is quote-driven and no published scale
     exists.
+
+    A reporting cell (the Space docstring), :mod:`~.Term_UK_S`'s, which returns the column
+    as read, refusing any other value: :func:`premium_pp` branches on ``Data``'s decode of
+    the same column instead, :func:`prem_cycle`.
     """
     v = model_point()["premium_mode"]
     if v not in ("monthly", "annual"):
         raise ValueError("invalid premium_mode")
     return v
+
+
+def prem_cycle():
+    """Months between premiums: ``monthly`` 1 and ``annual`` 12, from ``Data.prem_cycle``.
+
+    The arithmetic of the mode rather than an assumption, so ``Data`` decodes it from the
+    ``premium_mode`` column, refusing any other mode, and :func:`premium_pp` charges an
+    annual payer where it is 12, as :mod:`~.Term_UK_S` charges one where the mode is
+    ``"annual"``.
+    """
+    return int(data.prem_cycle()[idx])                               # noqa: F821
 
 
 def mort_basis():
@@ -509,11 +680,25 @@ def mort_basis():
     multiplies it by :func:`select_factor` and by ``mort_scale``, the notes' proxy for
     the unavailable subscriber tables.  See the Space docstring for why both are
     shipped.
+
+    A reporting cell (the Space docstring), :mod:`~.Term_UK_S`'s, which returns the column
+    as read, refusing any other value: :func:`mort_rate_life` branches on ``Data``'s decode
+    of the same column instead, :func:`is_select_basis`.
     """
     v = model_point()["mort_basis"]
     if v not in ("applied", "select"):
         raise ValueError("invalid mort_basis")
     return v
+
+
+def is_select_basis():
+    """Whether the mortality table is read as an ultimate basis, from
+    ``Data.is_select_basis``.
+
+    ``Data`` decodes the ``mort_basis`` column as :mod:`~.Term_UK_S`'s ``mort_basis() ==
+    "select"`` compares it, and refuses a basis other than ``applied`` and ``select``.
+    """
+    return bool(data.is_select_basis()[idx])                         # noqa: F821
 
 
 def policy_count():
@@ -523,9 +708,10 @@ def policy_count():
     month-0 event; any other point counts the policies it issues. Either way the count
     enters the projection once: as :func:`pols_if_init` for the first, as
     :func:`pols_new_biz` in the issue month for the second. It is the one weight on every
-    flow: every opening-state column is per policy in force, or a ratio.
+    flow: every opening-state column is per policy in force, or a ratio. Read from
+    ``Data.policy_count``.
     """
-    return float(model_point()["policy_count"])
+    return float(data.policy_count()[idx])                           # noqa: F821
 
 
 def pols_if_init():
@@ -550,8 +736,9 @@ def duration_mth_init():
     takes from the model point. It replaces :mod:`~.Term_UK_S`'s ``duration_inforce``
     column, a count of whole years, twelve months to each of which S opened its frame
     late, on an anniversary only; a point may be valued in any month of its policy year.
+    Its element of ``Data.duration_mth``.
     """
-    return int(model_point()["duration_mth"])
+    return int(data.duration_mth()[idx])                             # noqa: F821
 
 
 def lapse_cum_init():
@@ -560,9 +747,10 @@ def lapse_cum_init():
     :func:`lapse_cum`'s value entering month 0, a ratio to the policies issued, so the
     count does not move it. 0 on a point not yet in force, which ``Data`` requires, and
     on :mod:`~.Term_UK_S`'s point 8, which S opens with nothing lapsed. With
-    :func:`fib_cum_init` it gives :func:`cohort_frac` its opening value.
+    :func:`fib_cum_init` it gives :func:`cohort_frac` its opening value. From
+    ``Data.lapse_cum_init``.
     """
-    return float(model_point()["lapse_cum_init"])
+    return float(data.lapse_cum_init()[idx])                         # noqa: F821
 
 
 def fib_cum_init():
@@ -573,9 +761,9 @@ def fib_cum_init():
     :mod:`~.Term_UK_S`'s ``fib_cum`` counts them, the deaths since issue, which with
     :func:`lapse_cum_init` give :func:`cohort_frac` its opening value. Which of those
     deaths' streams are still in payment is :func:`fib_streams_init`, a column of its own.
-    0 on a point not yet in force, which ``Data`` requires.
+    0 on a point not yet in force, which ``Data`` requires. From ``Data.fib_cum_init``.
     """
-    return float(model_point()["fib_cum_init"])
+    return float(data.fib_cum_init()[idx])                           # noqa: F821
 
 
 def fib_streams_init():
@@ -588,9 +776,10 @@ def fib_streams_init():
     would reach back over every claim already admitted, commuting streams long in payment.
     At a take-up that never changed it is that, ``(1 - c) x`` :func:`fib_cum_init`, and
     it is never more than :func:`fib_cum_init`, which ``Data`` requires. 0 on a point not
-    yet in force, and on the level and decreasing shapes, which pay no instalments.
+    yet in force, and on the level and decreasing shapes, which pay no instalments. From
+    ``Data.fib_streams_init``.
     """
-    return float(model_point()["fib_streams_init"])
+    return float(data.fib_streams_init()[idx])                       # noqa: F821
 
 
 def idx_factor_init():
@@ -600,9 +789,10 @@ def idx_factor_init():
     :func:`sum_assured`, the sum assured at issue: on a valuation on an anniversary, the
     factor of the policy year it opens. History, read from the model point, not
     recomputed from ``rpi_rate``, which is the assumed rate from the valuation date on.
-    1 on a point not yet in force or without the option, which ``Data`` requires.
+    1 on a point not yet in force or without the option, which ``Data`` requires. From
+    ``Data.idx_factor_init``.
     """
-    return float(model_point()["idx_factor_init"])
+    return float(data.idx_factor_init()[idx])                        # noqa: F821
 
 
 def idx_prem_factor_init():
@@ -610,9 +800,9 @@ def idx_prem_factor_init():
 
     :func:`idx_factor_init`'s counterpart on the premium, :func:`premium_mth_pp` the
     premium at issue.  History, as the cover factor is.  1 on a point not yet in force or
-    without the option, which ``Data`` requires.
+    without the option, which ``Data`` requires.  From ``Data.idx_prem_factor_init``.
     """
-    return float(model_point()["idx_prem_factor_init"])
+    return float(data.idx_prem_factor_init()[idx])                   # noqa: F821
 
 
 def wop_waived_frac_init():
@@ -623,9 +813,9 @@ def wop_waived_frac_init():
     rider, which ``Data`` requires, and on a point in force no longer than the deferred
     period, whose first incapacity has not yet run its course, which :func:`proj_len`
     requires. The lives still inside the deferred period are the pipeline,
-    :func:`wop_deferred_init`.
+    :func:`wop_deferred_init`. From ``Data.wop_waived_frac_init``.
     """
-    return float(model_point()["wop_waived_frac_init"])
+    return float(data.wop_waived_frac_init()[idx])                   # noqa: F821
 
 
 def wop_deferred_init(k):
@@ -645,11 +835,16 @@ def wop_deferred_init(k):
     as the incidence instead, the months of the deferred period already run would be run
     again at today's recovery rate.
 
-    One float of one ``.loc`` of ``Data.wop_pipeline``, after :func:`proj_len`, which
+    ``Data.wop_deferred_init`` at this point and lag ``k``, after :func:`proj_len`, which
     refuses a point whose pipeline does not hold exactly the lags it reads, naming it.
+    Then a lag below 1 or past the point's last, ``Data.wop_pipeline_last``, is refused,
+    naming the point and the lag, where stage ``E``'s ``.loc`` raised pandas'
+    ``KeyError``, so that no read meets ``Data``'s padding.
     """
     proj_len()
-    return float(data.wop_pipeline().loc[(point_id, k), "wop_deferred_init"])  # noqa: F821
+    if k < 1 or k > data.wop_pipeline_last()[idx]:                   # noqa: F821
+        raise ValueError(f"point_id {point_id()}: wop_pipeline_sec.csv holds no lag {k}")
+    return float(data.wop_deferred_init()[idx, k])                   # noqa: F821
 
 
 def comm_init_pp_init():
@@ -661,9 +856,9 @@ def comm_init_pp_init():
     rate changed at the valuation date would change what was paid years before.
     :func:`comm_init_pp` returns it on a point in force; a point issued at or after the
     valuation date pays the rate, and holds 0 here, which ``Data`` requires, the
-    commission being an event of the issue month.
+    commission being an event of the issue month.  From ``Data.comm_init_pp_init``.
     """
-    return float(model_point()["comm_init_pp_init"])
+    return float(data.comm_init_pp_init()[idx])                      # noqa: F821
 
 
 def fib_commute_rate():
@@ -671,9 +866,10 @@ def fib_commute_rate():
 
     The insurer may replace the remaining instalments with a lump sum determined
     "fairly and reasonably" [S6][S8]; no insurer publishes the basis, so both the
-    take-up and the discount rate ``fib_commute_disc_rate`` are standardizations.
+    take-up and the discount rate ``fib_commute_disc_rate`` are standardizations.  From
+    ``Data.fib_commute_rate``.
     """
-    return float(model_point()["fib_commute_rate"])
+    return float(data.fib_commute_rate()[idx])                       # noqa: F821
 
 
 def proj_len():
@@ -712,58 +908,62 @@ def proj_len():
 
     These are the product's limits (``product-spec.md``), and rules of the product, read
     from this Space's References, where ``Data`` checks the tables. They are the contract
-    a compiled model's caches are sized from: a frame of at most 50 years and the future
-    horizon, ages from 18 to 90 on the mortality table, a schedule of at most 600 months
-    and an annuity-certain of at most 480. Every report reads this cell first, so no
-    point outside them is projected. A point without the rider reads neither waiver rate,
-    and projects whatever they are.
+    the compiled model's caches are sized from (``spec_sec.py``): a frame of at most
+    ``policy_term_max``, 50 years, and ``Data.future_horizon_mth``, 120 months, so 720
+    months; a schedule of at most 600 policy months; an annuity-certain of at most 480
+    months, ``policy_term_max_fib``'s 40 years; and two lives. Every report reads this
+    cell first, so no point outside them is projected, in modelx as compiled. Raising
+    ``policy_term_max``, ``policy_term_max_fib`` or the horizon needs the spec's sizes
+    raised and the model rebuilt, or a report runs past the caches in the compiled model
+    alone, raising ``IndexError`` where modelx projects. A point without the rider reads
+    neither waiver rate, and projects whatever they are.
     """
     n = term_mths() - duration_mth_init()
     if n <= 0:
         raise ValueError(
-            f"point_id {point_id}: duration_mth {duration_mth_init()} "  # noqa: F821
+            f"point_id {point_id()}: duration_mth {duration_mth_init()} "
             f"is at or past the end of cover, policy month {term_mths()}")
-    fib = shape() == "fib"
+    fib = is_fib()
     longest = policy_term_max_fib if fib else policy_term_max        # noqa: F821
     if policy_term() > longest:
         raise ValueError(
-            f"point_id {point_id}: the term, {policy_term()} years, is above "  # noqa: F821
+            f"point_id {point_id()}: the term, {policy_term()} years, is above "
             f"{'policy_term_max_fib' if fib else 'policy_term_max'}, {longest}")
     oldest = expiry_age_max_fib if fib else expiry_age_max           # noqa: F821
     for life in range(1, 3 if is_joint() else 2):
         if age_at_entry(life) < issue_age_min:                       # noqa: F821
             raise ValueError(
-                f"point_id {point_id}: life {life}'s issue age, "    # noqa: F821
+                f"point_id {point_id()}: life {life}'s issue age, "
                 f"{age_at_entry(life)}, is below issue_age_min, {issue_age_min}")  # noqa: F821
         if age_at_entry(life) + policy_term() > oldest:
             raise ValueError(
-                f"point_id {point_id}: life {life}'s cover runs to attained age "  # noqa: F821
+                f"point_id {point_id()}: life {life}'s cover runs to attained age "
                 f"{age_at_entry(life) + policy_term()}, issue age "
                 f"{age_at_entry(life)} and a {policy_term()}-year term, past "
                 f"{'expiry_age_max_fib' if fib else 'expiry_age_max'}, {oldest}")
     if wop():
         if not (wop_inc_rate >= 0.0 and wop_inc_rate <= 1.0):        # noqa: F821
-            raise ValueError(f"point_id {point_id}: wop_inc_rate must be "  # noqa: F821
+            raise ValueError(f"point_id {point_id()}: wop_inc_rate must be "
                              f"a number from 0 to 1, not {wop_inc_rate}")  # noqa: F821
         if not (wop_rec_rate >= 0.0 and wop_rec_rate <= 1.0):        # noqa: F821
-            raise ValueError(f"point_id {point_id}: wop_rec_rate must be "  # noqa: F821
+            raise ValueError(f"point_id {point_id()}: wop_rec_rate must be "
                              f"a number from 0 to 1, not {wop_rec_rate}")  # noqa: F821
         if wop_defer_mths < 0:                                       # noqa: F821
-            raise ValueError(f"point_id {point_id}: wop_defer_mths must be "  # noqa: F821
+            raise ValueError(f"point_id {point_id()}: wop_defer_mths must be "
                              f"0 months or more, not {wop_defer_mths}")  # noqa: F821
         if (duration_mth_init() > 0 and duration_mth_init() <= wop_defer_mths  # noqa: F821
                 and wop_waived_frac_init() != 0.0):
             raise ValueError(
-                f"point_id {point_id}: wop_waived_frac_init is "     # noqa: F821
+                f"point_id {point_id()}: wop_waived_frac_init is "
                 f"{wop_waived_frac_init()}, where a waiver point in force "
                 f"{duration_mth_init()} months, no longer than wop_defer_mths, "
                 f"{wop_defer_mths}, has waived no premium yet: 0")   # noqa: F821
         lags = min(wop_defer_mths, max(duration_mth_init(), 0))      # noqa: F821
-        held = int(data.wop_pipeline_count()[point_id])              # noqa: F821
-        last = int(data.wop_pipeline_last()[point_id])               # noqa: F821
+        held = data.wop_pipeline_count()[idx]                        # noqa: F821
+        last = data.wop_pipeline_last()[idx]                         # noqa: F821
         if held != lags or last != lags:
             raise ValueError(
-                f"point_id {point_id}: wop_pipeline_sec.csv holds {held} lags, "  # noqa: F821
+                f"point_id {point_id()}: wop_pipeline_sec.csv holds {held} lags, "
                 f"its last {last}, where a waiver point in force "
                 f"{max(duration_mth_init(), 0)} months holds one for each of its "
                 f"last {lags}, min(wop_defer_mths, duration_mth), lags 1 to {lags}")
@@ -855,18 +1055,20 @@ def select_factor(t):
     standardization - the real tables are subscriber-only [R11] - and a licensed basis
     drops in by replacing the CSV.
 
-    It is the one cell that reads ``Data.select_factor_table``, and it reads it only in
-    cover: before issue ``duration(t)`` is negative, where :mod:`~.Term_UK_S`'s lookup
-    raised ``KeyError``. A duration past the table's last, ``Data.select_last_duration``,
-    where ``select_period`` runs beyond it, raises ``ValueError``, naming the point.
+    It is the one cell that reads ``Data.select_factor_array``, indexed by the duration,
+    and it reads it only in cover: before issue ``duration(t)`` is negative, where
+    :mod:`~.Term_UK_S`'s lookup raised ``KeyError``. A duration outside the table's, 0 to
+    ``Data.select_last_duration``, where ``select_period`` runs beyond it or below 0,
+    raises ``ValueError``, naming the point, rather than reading the array at another
+    duration or wrapping round to its end.
     """
     if not is_active(t):
         return 0.0
     d = min(duration(t), select_period)                              # noqa: F821
-    if d > data.select_last_duration():                              # noqa: F821
-        raise ValueError(f"point_id {point_id}: select_factor_table.csv has no factor "  # noqa: F821
+    if d < 0 or d > data.select_last_duration():                     # noqa: F821
+        raise ValueError(f"point_id {point_id()}: select_factor_table.csv has no factor "
                          f"at duration {d}")
-    return float(data.select_factor_table().loc[d, "factor"])        # noqa: F821
+    return float(data.select_factor_array()[d])                      # noqa: F821
 
 
 def mort_rate_base(t, life):
@@ -877,17 +1079,19 @@ def mort_rate_base(t, life):
     are graduated on that basis [R10].
 
     Zero outside cover, where ``age(t, life)`` is not an age the policy reaches in force.
-    Inside it, this is the one cell that reads ``Data.mort_table``. An age outside the
+    Inside it, this is the one cell that reads ``Data.mort_table_array``, at the life's
+    row, :func:`mort_group`, and its attained age, the array's index. An age outside the
     table's, ``Data.mort_age_first`` to ``Data.mort_age_last``, raises ``ValueError``,
-    naming the point and the age, where :mod:`~.Term_UK_S`'s lookup raised ``KeyError``.
+    naming the point and the age, where :mod:`~.Term_UK_S`'s lookup raised ``KeyError``,
+    rather than reading the array's padding.
     """
     if not is_active(t):
         return 0.0
     a = age(t, life)
     if a < data.mort_age_first() or a > data.mort_age_last():        # noqa: F821
-        raise ValueError(f"point_id {point_id}: mort_table.csv has no rate at "  # noqa: F821
+        raise ValueError(f"point_id {point_id()}: mort_table.csv has no rate at "
                          f"attained age {a}")
-    return float(data.mort_table().loc[(sex(life), smoker(life), a), "mort_rate"])  # noqa: F821
+    return float(data.mort_table_array()[mort_group(life), a])       # noqa: F821
 
 
 def mort_rate_life(t, life):
@@ -902,7 +1106,7 @@ def mort_rate_life(t, life):
     and every policy in force at the start of the month dies in it.
     """
     q = mort_rate_base(t, life)
-    if mort_basis() == "select":
+    if is_select_basis():
         q = q * select_factor(t) * mort_scale                        # noqa: F821
     return min(q * sel_lapse_factor(t), 1.0)
 
@@ -1004,12 +1208,15 @@ def lapse_rate_base(t):
 
     Zero outside cover, where the month has no policy year: before issue
     :func:`policy_year` is 0 or less, where :mod:`~.Term_UK_S`'s lookup raised
-    ``KeyError``.
+    ``KeyError``.  Inside it, this is the one cell that reads ``Data.lapse_table_array``,
+    indexed by the policy year, which is 1 or more in cover and at most the table's last,
+    since every later year is read at it: so both ends of the table hold the key, and no
+    read meets the array's padding at index 0.
     """
     if not is_active(t):
         return 0.0
     y = min(policy_year(t), data.lapse_last_year())                  # noqa: F821
-    return float(data.lapse_table().loc[y, "lapse_rate"])            # noqa: F821
+    return float(data.lapse_table_array()[y])                        # noqa: F821
 
 
 def rebroke_factor(t):
@@ -1048,67 +1255,68 @@ def lapse_rate_mth(t):
 def pols_if(t):
     """l(t): the number of policies in force at time t, the count that weights row t.
 
-    ``pols_if_at(t, "BEF_DECR")``: the count carried in from month t - 1, plus month t's
+    ``pols_if_at(t, BEF_DECR)``: the count carried in from month t - 1, plus month t's
     new business, before month t's decrements. On a point issued at ``t = 0`` that is
     exactly :mod:`~.Term_UK_S`'s ``pols_if``, the count at the start of the month, which
     follows the notes' monthly recursion ``l(t+1) = l(t)(1 - q_m(t))(1 - w_m(t))``. It is
     ``basiclife.BasicTerm_SE``'s ``BEF_DECR`` count, not its ``pols_if``. Zero outside
     cover: before issue, and from ``t = proj_len()`` on, when the term has ended.
     """
-    return pols_if_at(t, "BEF_DECR")
+    return pols_if_at(t, BEF_DECR)                                   # noqa: F821
 
 
 def pols_if_at(t, timing):
     """The number of policies in force at a point inside month t.
 
-    ``"BEF_NB"``
+    ``BEF_NB``
         The count carried in from month t - 1, before month t's new business: the
         survivors of month t - 1's deaths and lapses, out of month t - 1's
-        ``"BEF_DECR"`` count. At :func:`t_entry`, the first month on the books, it is
+        ``BEF_DECR`` count. At :func:`t_entry`, the first month on the books, it is
         :func:`pols_if_init`, the count in force at the valuation date (0 for a point
         issued at or after it), and the recursion reads no earlier month. Zero outside
         cover, so the survivors of the last covered month leave as
         :func:`pols_maturity`.
 
-    ``"BEF_DECR"``
-        ``"BEF_NB"`` plus :func:`pols_new_biz`: l(t), the count that weights month t,
+    ``BEF_DECR``
+        ``BEF_NB`` plus :func:`pols_new_biz`: l(t), the count that weights month t,
         which :func:`pols_if` returns.
 
-    ``"BEF_LAPSE"``
+    ``BEF_LAPSE``
         after deaths, before lapses - the notes' processing order is
         **death before lapse** **[std order]**, so this is the population
         lapses are taken from.
 
-    ``"AFT_DECR"``
+    ``AFT_DECR``
         l(t+1), the end-of-month state: what is left once the month's deaths and lapses
         are taken, and zero from the last covered month on, because the cover expires
-        at its end. It is ``"BEF_NB"`` at t + 1 exactly, one product in one order.
+        at its end. It is ``BEF_NB`` at t + 1 exactly, one product in one order.
 
-    ``"BEF_NB"`` is the one timing running in force adds, as ``basiclife.BasicTerm_SE``
-    names it; the other three are :mod:`~.Term_UK_S`'s, and any other raises.
-    ``"BEF_NB"`` forms month t - 1's ``"BEF_DECR"`` count itself, as ``"BEF_NB"`` plus
+    These are int References, 0 to 3, named as :mod:`~.Term_UK_S`'s strings (the Space
+    docstring's *Codes*). ``BEF_NB`` is the one timing running in force adds, as
+    ``basiclife.BasicTerm_SE`` names it; the other three are :mod:`~.Term_UK_S`'s, and any
+    other raises. ``BEF_NB`` forms month t - 1's ``BEF_DECR`` count itself, as ``BEF_NB`` plus
     :func:`pols_new_biz` at t - 1, the same sum in the same order, rather than calling for
     it. So the chain of calls from month t back to :func:`t_entry` is one cell a month,
     where :mod:`~.Term_UK_S`'s ``pols_if`` chain runs three: a compiled model runs that
     chain on the C stack.
     """
-    if timing == "BEF_NB":
+    if timing == BEF_NB:                                             # noqa: F821
         if not is_active(t):
             return 0.0
         if t == t_entry():
             return pols_if_init()
-        return ((pols_if_at(t - 1, "BEF_NB") + pols_new_biz(t - 1))
+        return ((pols_if_at(t - 1, BEF_NB) + pols_new_biz(t - 1))       # noqa: F821
                 * (1.0 - mort_rate_mth(t - 1)) * (1.0 - lapse_rate_mth(t - 1)))
-    if timing == "BEF_DECR":
-        return pols_if_at(t, "BEF_NB") + pols_new_biz(t)
-    if timing == "BEF_LAPSE":
+    if timing == BEF_DECR:                                           # noqa: F821
+        return pols_if_at(t, BEF_NB) + pols_new_biz(t)                 # noqa: F821
+    if timing == BEF_LAPSE:                                          # noqa: F821
         if not is_active(t):
             return 0.0
         return pols_if(t) * (1.0 - mort_rate_mth(t))
-    if timing == "AFT_DECR":
+    if timing == AFT_DECR:                                           # noqa: F821
         if not is_active(t) or duration_mth(t) >= term_mths() - 1:
             return 0.0
-        return pols_if_at(t, "BEF_LAPSE") * (1.0 - lapse_rate_mth(t))
+        return pols_if_at(t, BEF_LAPSE) * (1.0 - lapse_rate_mth(t))    # noqa: F821
     raise ValueError("invalid timing")
 
 
@@ -1139,7 +1347,7 @@ def pols_lapse(t):
     """
     if not is_active(t):
         return 0.0
-    return pols_if_at(t, "BEF_LAPSE") * lapse_rate_mth(t)
+    return pols_if_at(t, BEF_LAPSE) * lapse_rate_mth(t)                # noqa: F821
 
 
 def pols_maturity(t):
@@ -1153,7 +1361,7 @@ def pols_maturity(t):
     """
     if duration_mth(t) != term_mths() - 1:
         return 0.0
-    return pols_if_at(t, "BEF_LAPSE") * (1.0 - lapse_rate_mth(t))
+    return pols_if_at(t, BEF_LAPSE) * (1.0 - lapse_rate_mth(t))        # noqa: F821
 
 
 def wop_waived_frac(t):
@@ -1206,7 +1414,7 @@ def wop_waived_frac(t):
     u = prev * (1.0 - wop_rec_rate_mth()) + entrants
     if not (u >= 0.0 and u <= 1.0):
         raise ValueError(
-            f"point_id {point_id}: the waived share wop_waived_frac({t}) is {u}, "  # noqa: F821
+            f"point_id {point_id()}: the waived share wop_waived_frac({t}) is {u}, "
             f"outside 0 to 1, under wop_inc_rate {wop_inc_rate}, wop_rec_rate "  # noqa: F821
             f"{wop_rec_rate} and wop_defer_mths {wop_defer_mths}: Term_UK_S's "  # noqa: F821
             f"waiver recursion passes 1 at an incidence this high")
@@ -1310,7 +1518,7 @@ def premium_pp(t):
     """
     if not is_active(t):
         return 0.0
-    if premium_mode() == "annual":
+    if prem_cycle() == 12:
         p = 12.0 * premium_mth_pp() if duration_mth(t) % 12 == 0 else 0.0
     else:
         p = premium_mth_pp()
@@ -1376,7 +1584,7 @@ def fib_commute_pp(t):
     same month only on a point issued at ``t = 0``.  Zero on the level and decreasing
     shapes, and outside cover.
     """
-    if not is_active(t) or shape() != "fib":
+    if not is_active(t) or not is_fib():
         return 0.0
     return fib_income() * annuity_certain_factor(term_mths() - duration_mth(t))
 
@@ -1388,15 +1596,16 @@ def benefit_pp(t):
     month ``k = duration_mth(t)``, the outstanding amount through the month the claim
     falls in.  FIB: the commuted value of the instalment stream, which is what a
     commuted claim pays; an uncommuted FIB claim has no lump sum at all and goes through
-    ``claims(t, "FIB")`` instead.  Zero outside cover, before any schedule is read: before
-    issue ``B(k)`` at a negative month would exceed the sum assured without a word.
+    ``claims(t, FIB)`` instead.  Zero outside cover, before any schedule is read: before
+    issue ``B(k)`` at a negative month would exceed the sum assured without a word.  The
+    shape is read from its flags, :func:`is_level` and :func:`is_decreasing`, in
+    :mod:`~.Term_UK_S`'s order, the family income benefit the shape that is neither.
     """
     if not is_active(t):
         return 0.0
-    s = shape()
-    if s == "level":
+    if is_level():
         return sum_assured() * idx_factor(t)
-    if s == "decreasing":
+    if is_decreasing():
         return benefit_sched(duration_mth(t))
     return fib_commute_pp(t)
 
@@ -1433,22 +1642,22 @@ def fib_streams(t):
     ``1 - c`` scales exactly, at the shipped take-ups of 0 and 1 and at 0.5.  0 outside
     cover, and on the level and decreasing shapes, which pay no instalments.
     """
-    if not is_active(t) or shape() != "fib":
+    if not is_active(t) or not is_fib():
         return 0.0
     if t == t_entry():
         return fib_streams_init() * pols_if_init()
     return fib_streams(t - 1) + (1.0 - fib_commute_rate()) * pols_death(t - 1)
 
 
-def claims(t, kind=None):
-    """Benefit outgo in month t, by kind; the total when kind is omitted.
+def claims(t, kind):
+    """Benefit outgo in month t, by kind, and the three kinds' total.
 
-    ``"DEATH"``
+    ``DEATH``
         the lump sum paid at the end of the month of death: ``DB(t) D(t)`` on
         the level and decreasing shapes, and on the ``fib`` shape only the
         commuted proportion of the streams.
 
-    ``"FIB"``
+    ``FIB``
         the family income benefit instalments falling in month t,
         ``I [(1 - c) D(t) + streams(t)]`` - one instalment for every stream in payment,
         :func:`fib_streams`, those that began before the valuation date included, and for
@@ -1457,24 +1666,41 @@ def claims(t, kind=None):
         take-up that never changes; at one changed at the valuation date, the streams
         already in payment stay in payment.  Zero on the other two shapes.
 
-    ``"LAPSE"``
+    ``LAPSE``
         zero, always.  There is no surrender or paid-up value at any duration
         [S1][S6][S8][R8]; the kind exists so that the zero is stated rather
         than left to inference.  See the Space docstring.
+
+    ``ALL``
+        the three kinds' total, :mod:`~.Term_UK_S`'s ``claims(t)``, whose ``kind=None``
+        sums the three with Python's ``sum``, which compiles to no C.  It is written left
+        to right from ``0.0``, ``0.0 + DEATH + FIB + LAPSE``, which is ``sum``'s float
+        wherever at most two kinds are non-zero in a month: ``sum`` carries the rounding
+        error of each addition, Neumaier's way, and adds it back once at the end, and the
+        error of a single addition, added back, rounds to the sum it came from.  Here the
+        lapse kind is 0.0 in every month, so at most two kinds are ever non-zero, the
+        lump sum and the instalments of a family income benefit commuted in part; and
+        ``0.0 +`` the first kind is ``sum``'s start, the int 0, which turns a negative
+        zero to ``0.0``.  So the total is :mod:`~.Term_UK_S`'s float in every month.  A
+        product whose three kinds can be non-zero together writes Neumaier's loop out
+        instead, as :func:`check_fib_ledger_resid` does.
+
+    These are int References, 0 to 3, named as :mod:`~.Term_UK_S`'s strings (the Space
+    docstring's *Codes*), and any other raises.
     """
-    if kind is None:
-        return sum(claims(t, k) for k in ("DEATH", "FIB", "LAPSE"))
-    if kind == "DEATH":
-        if shape() == "fib":
+    if kind == DEATH:                                                # noqa: F821
+        if is_fib():
             return fib_commute_rate() * benefit_pp(t) * pols_death(t)
         return benefit_pp(t) * pols_death(t)
-    if kind == "FIB":
-        if shape() != "fib":
+    if kind == FIB:                                                  # noqa: F821
+        if not is_fib():
             return 0.0
         return fib_income() * ((1.0 - fib_commute_rate()) * pols_death(t)
                                + fib_streams(t))
-    if kind == "LAPSE":
+    if kind == LAPSE:                                                # noqa: F821
         return 0.0
+    if kind == ALL:                                                  # noqa: F821
+        return 0.0 + claims(t, DEATH) + claims(t, FIB) + claims(t, LAPSE)  # noqa: F821
     raise ValueError("invalid kind")
 
 
@@ -1578,20 +1804,20 @@ def net_cf(t):
     - which is also the library-wide convention, so unlike the whole life and payout
     annuity models there is no outgo-positive ``liability_cf`` companion to publish.
     """
-    return (premiums(t) - claims(t) - claim_expenses(t)
+    return (premiums(t) - claims(t, ALL) - claim_expenses(t)          # noqa: F821
             - expenses(t) - commissions(t))
 
 
 def check_pols_roll_fwd_resid(t):
     """The in-force roll-forward residual in month t; zero everywhere.
 
-    ``pols_if(t) - pols_if_at(t + 1, "BEF_NB") - deaths - lapses - expiries``, where the
+    ``pols_if(t) - pols_if_at(t + 1, BEF_NB) - deaths - lapses - expiries``, where the
     count carried into the next month is taken before its new business, which is no part
     of month t's movement.  Expiries are non-zero only in the last covered month, where
     the survivors neither die nor lapse: their cover runs out.  Without that term the
     last month appears to lose lives with no cause.
     """
-    return (pols_if(t) - pols_if_at(t + 1, "BEF_NB")
+    return (pols_if(t) - pols_if_at(t + 1, BEF_NB)                    # noqa: F821
             - pols_death(t) - pols_lapse(t) - pols_maturity(t))
 
 
@@ -1611,7 +1837,7 @@ def check_pols_roll_fwd():
 def check_fib_ledger_resid(t):
     """The family income benefit ledger residual in month t; zero everywhere.
 
-    :func:`claims` ``(t, "FIB")`` less an independent rebuild of the same figure: one
+    :func:`claims` ``(t, FIB)`` less an independent rebuild of the same figure: one
     instalment for every stream in payment at the valuation date,
     ``fib_streams_init() x pols_if_init()``, and for the share not commuted of every death
     in month t or any earlier month on the books, summed straight off the death vector
@@ -1619,12 +1845,33 @@ def check_fib_ledger_resid(t):
     by mortality or lapse - the notes' pitfall - one that paid only the month-of-death
     instalment, or one that lost the streams already in payment would show up here.  Zero
     by definition on the level and decreasing shapes, which have no ledger.
+
+    The deaths are summed from :func:`t_entry` in an explicit loop that compensates as
+    Python's ``sum()`` of floats does from Python 3.12, Neumaier's improvement of Kahan's
+    summation, the error of each addition carried and added back at the end where it is
+    a finite number other than zero, ``abs(c) <= 1.7976931348623157e308``, the largest
+    double: so the sum is stage ``E``'s ``sum()`` of a generator, bit for bit, and
+    compiled it is C on doubles, added in the order written, since nothing in the build
+    lets the compiler reassociate and no multiply and add is fused into one rounding
+    (``-ffp-contract=off``).  A month before :func:`t_entry` sums no death, ``0.0``, as
+    ``sum()`` of none is the int 0.
     """
-    if shape() != "fib":
+    if not is_fib():
         return 0.0
-    built = fib_streams_init() * pols_if_init() + (1.0 - fib_commute_rate()) * sum(
-        pols_death(s) for s in range(t_entry(), t + 1))
-    return claims(t, "FIB") - fib_income() * built
+    deaths = 0.0
+    c = 0.0
+    for s in range(t_entry(), t + 1):
+        x = pols_death(s)
+        u = deaths + x
+        if abs(deaths) >= abs(x):
+            c = c + ((deaths - u) + x)
+        else:
+            c = c + ((x - u) + deaths)
+        deaths = u
+    if c != 0.0 and abs(c) <= 1.7976931348623157e308:
+        deaths = deaths + c
+    built = fib_streams_init() * pols_if_init() + (1.0 - fib_commute_rate()) * deaths
+    return claims(t, FIB) - fib_income() * built                     # noqa: F821
 
 
 def check_fib_ledger():
@@ -1653,9 +1900,9 @@ def result_cf():
         {
             "pols_if": [pols_if(t) for t in ts],
             "premiums": [premiums(t) for t in ts],
-            "claims_death": [claims(t, "DEATH") for t in ts],
-            "claims_fib": [claims(t, "FIB") for t in ts],
-            "claims_lapse": [claims(t, "LAPSE") for t in ts],
+            "claims_death": [claims(t, DEATH) for t in ts],            # noqa: F821
+            "claims_fib": [claims(t, FIB) for t in ts],                # noqa: F821
+            "claims_lapse": [claims(t, LAPSE) for t in ts],            # noqa: F821
             "claim_expenses": [claim_expenses(t) for t in ts],
             "expenses": [expenses(t) for t in ts],
             "commissions": [commissions(t) for t in ts],
@@ -1701,7 +1948,23 @@ def result_pols():
 
 data = ("Interface", ("..", "Data"), "auto")
 
-point_id = 1
+idx = 0
+
+BEF_NB = 0
+
+BEF_DECR = 1
+
+BEF_LAPSE = 2
+
+AFT_DECR = 3
+
+DEATH = 0
+
+FIB = 1
+
+LAPSE = 2
+
+ALL = 3
 
 issue_age_min = 18
 
