@@ -155,8 +155,8 @@ intentionally empty so the input schema matches sibling products (UL etc.).
   the shock — see *Monthly rates from annual assumptions*.
   Detailed study rates by sex/age/band/mode sit behind SOA paid data packages (research
   notes, Gaps); the vector is an order-of-magnitude standardization consistent with the
-  public highlights: 30-year term lapse rates at attained ages 60+ run 1.0%–1.5% [R6], so
-  for T30 the 4% mid-band grades to 1.5% from attained age 60 **[std]**.
+  public highlights (for context, 30-year term lapse rates at attained ages 60+ run
+  1.0%–1.5% [R6], while the model standardizes on the flat 4% mid-band without age grading).
 - **(C) Conversion [std].** The public 2016 study landing page documents incidence
   analysis by age/sex/class/size but no headline rate was recorded in the research notes
   [R7]; 1%/yr (2% final year) is a placeholder magnitude. Treatment of the conversion cash
