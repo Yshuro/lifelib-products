@@ -115,7 +115,8 @@ def pytest_collection_modifyitems(config, items):
         config.hook.pytest_deselected(items=dropped)
         items[:] = kept
     if (os.environ.get("USLIB_REQUIRE_CYTHON") == "1"
-            and not any(item.get_closest_marker("cython") is not None for item in kept)):
+            and not any(item.get_closest_marker("cython") is not None
+                        and item.path.resolve().parent == here for item in kept)):
         raise pytest.UsageError(f"USLIB_REQUIRE_CYTHON=1, and USLIB_CYTHON_SHARD={shard!r} "
                                 f"selects no compile test")
 
