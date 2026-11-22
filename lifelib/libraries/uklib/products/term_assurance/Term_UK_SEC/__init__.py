@@ -51,10 +51,11 @@ number from a ``Data`` vector at ``idx``, and every table as an array indexed by
 a timing or a kind is an int code; a text column is decoded into the number a formula
 branches on; and every cell but the two reports, ``model_point`` and five label
 accessors returns a C ``bint``, ``long long`` or ``double``, the two checks among them,
-cached as a single value or in a C array sized from the contract. modelx reads and runs the same formulas, and computes
-the same numbers. ``products/term_assurance/model-sec.md`` says how to compile and run it,
-and what the compiled model does not do as modelx does: it clears no cache when a
-Reference is set, so every Reference is set on a model just imported.
+cached as a single value or in a C array sized from the contract. modelx reads and runs
+the same formulas, and computes the same numbers.
+``products/term_assurance/model-sec.md`` says how to compile and run it, and what the
+compiled model does not do as modelx does: it clears no cache when a Reference is set, so
+every Reference is set on a model just imported.
 
 **Projection basis.** Monthly steps on two clocks. ``t`` counts months from the
 valuation date, 0-based, as ``basiclife/BasicTerm_SE`` counts them: ``t = 0`` is the

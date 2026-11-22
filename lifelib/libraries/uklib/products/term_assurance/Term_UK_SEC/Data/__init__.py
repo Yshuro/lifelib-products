@@ -126,7 +126,7 @@ Cells                           dtype    Shape             From
 point_id()                      int64    [point]           the table's index
 age_at_entry()                  int64    [point]           ``age_at_entry``
 joint_first_death()             int64    [point]           ``joint_first_death``, 0/1
-joint_age()                     int64    [point]           ``joint_age``, 0 off a joint point
+joint_age()                     int64    [point]           ``joint_age``; 0 if not joint
 mort_group()                    int64    [point]           ``sex`` and ``smoker``, decoded
 joint_mort_group()              int64    [point]           ``joint_sex`` and
                                                            ``joint_smoker``, decoded, 0 off
@@ -142,7 +142,7 @@ prem_cycle()                    int64    [point]           ``premium_mode``, dec
 is_level()                      int64    [point]           ``shape``, 1 where ``level``
 is_decreasing()                 int64    [point]           ``shape``, 1 where ``decreasing``
 is_fib()                        int64    [point]           ``shape``, 1 where ``fib``
-is_select_basis()               int64    [point]           ``mort_basis``, 1 where ``select``
+is_select_basis()               int64    [point]           ``mort_basis``: 1 for ``select``
 policy_count()                  float64  [point]           ``policy_count``
 fib_commute_rate()              float64  [point]           ``fib_commute_rate``
 duration_mth()                  int64    [point]           ``duration_mth``
@@ -629,8 +629,9 @@ def select_last_duration():
     """The last select duration *select_factor_table.csv* gives a factor for, checked.
 
     ``Projection.select_factor`` asks it before it reads the table, and refuses a
-    duration past it, where ``select_period`` runs beyond the table; :func:`select_factor_array`
-    is sized from it.  The rules, the first that fails raising ``ValueError`` and naming
+    duration past it, where ``select_period`` runs beyond the table;
+    :func:`select_factor_array` is sized from it.  The rules, the first that fails raising
+    ``ValueError`` and naming
     the lines, the header line 1: each duration is a whole number, read by its value; the
     durations run from 0, one row a duration, without a gap or a repeat, since the factor
     is read at every completed policy year up to ``select_period``, every fault named in

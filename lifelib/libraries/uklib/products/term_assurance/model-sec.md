@@ -250,10 +250,10 @@ or 40 on the family income benefit, `policy_term_max_fib`; a life issued below 1
 on the family income benefit, `expiry_age_max_fib`. Each is a lower-case Reference, the
 contract the compiled model's caches are sized from (*The compiled model*): a frame of at
 most 600 months and the horizon, ages from 18 to 89 on the mortality table, a schedule of
-600 months and an annuity-certain of 480. None is `expiry_age`, the U.S. tail's name, which `Term_UK_S`'s
-tests hold absent. A loop over the block meets such a row only when it reaches it, after
-projecting the points before it, so `run_sec.py --block` asks every point for its frame
-before it projects any, and stops before it prints anything.
+600 months and an annuity-certain of 480. None is `expiry_age`, the U.S. tail's name,
+which `Term_UK_S`'s tests hold absent. A loop over the block meets such a row only when it
+reaches it, after projecting the points before it, so `run_sec.py --block` asks every
+point for its frame before it projects any, and stops before it prints anything.
 
 The assumption tables are checked before a value of them is read, each in the cell the
 projection takes its extent from: `Data.mort_age_first` and `mort_age_last` for the
@@ -378,6 +378,7 @@ fail it.
 | `result_pols` | — | `pols_new_biz` added, the rates 0 outside cover | The counts behind `result_cf()`, after `basiclife/BasicTerm_SE`'s `result_pols()` |
 | `claims` | `claims(t, kind=None)`, the kinds by name and, with no kind, their total by `sum` | `claims(t, kind)`, no default: the codes `DEATH`, `FIB` and `LAPSE`, and the total `ALL`, written left to right | A default and `None` do not compile, and the total is `sum`'s to the last bit (*The compiled model*); the twin identity compares `Term_UK_S`'s `claims(t)` with `claims(t, ALL)` |
 | `sex(2)`, `smoker(2)` | `invalid life` on a single life | the column as read, NaN where blank | Reporting cells, whose type the sample traces on a blank second life, so that each compiles to a Python object; no projection cell reads them, `mort_group` taking each life's row of the mortality table |
+| `annuity_certain_factor` | `m` where the annual rate is 0, else the closed form | `m` where the monthly rate is 0, else the closed form; a rate not a finite number above −1 refused on a family income benefit point by `proj_len()` | At a rate whose monthly equivalent rounds to 0, 1e-17 say, where `1 + r` is 1, S divides by zero; at −1 or below, or not finite, it raises, goes complex or gives 0 or NaN without a word |
 | `select_factor` | `.loc` on the table, `KeyError` past it | an array read by the select duration, checked against the table's extent either side first, and refused by name | A negative duration, under a negative `select_period`, would read the array from its end without a word |
 
 Of the cash flows, the change of clock moves the maintenance expense alone, and `net_cf`
@@ -402,6 +403,19 @@ has no real value, and `Term_UK_S` projects a complex number; below 0 it is nega
 a waiver point `proj_len()` refuses either rate outside 0 to 1, or NaN, naming the point
 and the Reference, where it refuses a negative deferred period; 0 and 1 are accepted, and
 a point without the rider reads neither.
+
+The family income benefit's commutation discount, `fib_commute_disc_rate`, is one
+Reference too, which `Term_UK_S` reads unchecked in `annuity_certain_factor`,
+`[1 − (1 + r)^(−m/12)] / [(1 + r)^(1/12) − 1]`: at −1 the power divides by zero, below it
+has no real value, which S projects as a complex number, and an infinite rate gives a
+factor of 0, and NaN one of NaN, without a word. So on a family income benefit point
+`proj_len()` refuses a rate that is not a finite number above −1, NaN and both infinities
+among them, naming the point and the Reference; a point of another shape reads no
+discount. And the factor tests the monthly rate for 0, where S tests the annual one, as
+`benefit_sched` tests its own monthly rate: at 0 both give `m`, the closed form's limit,
+and so does this model at a rate whose monthly equivalent rounds to 0, 1e-17 say, where
+`1 + r` is 1 and S divides by zero. Within about 2e-8 of −1 the power passes the largest
+float at the longest commutation, and S and this model raise Python's `OverflowError`.
 
 **A defect of the specification, kept in both models.** The waiver recursion,
 `u(t + 1) = u(t)(1 − rec_m) + inc_m (1 − u(t − 6)) (1 − rec_m)^6`, takes each month's
@@ -436,8 +450,9 @@ committed point was frozen before the change, and it still computes it, to the l
 (*Tests*, below). Cell by cell, at every argument a full modelx sweep evaluates, the
 compiled model computes what modelx computes, bit for bit, on the committed points, on
 the points of the splice grid, which take the branches they do not, at the contract's
-longest covers and on points where the cap on mortality binds. The compile tests hold it
-so on x86-64, and to 1e-12 relative elsewhere, where no run has shown it yet.
+longest covers, on points where the cap on mortality binds and at a commutation discount
+of 0 and of 1e-17. The compile tests hold it so on x86-64, and to 1e-12 relative
+elsewhere, where no run has shown it yet.
 
 ### Building it
 
@@ -510,8 +525,11 @@ taught first (USLIB-SEC-PLAN.md R1 to R17):
   `select_factor_array`, by select duration; the lapse rates `lapse_table_array`, by
   policy year, padded at year 0; and the pipeline `wop_deferred_init`, by point and lag,
   padded at lag 0 and past each point's last lag, beside each point's count of lags and
-  its last. The padding holds NaN, and nothing reads it: the one cell that reads each
-  table checks its key against the table's extent first, either side.
+  its last. The padding holds NaN, and nothing reads it. The one cell that reads each
+  table checks its key against the table's extent first: `mort_rate_base` and
+  `select_factor` either side, and `wop_deferred_init` from lag 1 to the point's last.
+  `lapse_rate_base` holds the policy year at the table's last above, as `Term_UK_S`
+  does, and reads in cover alone, where the year is 1 or more.
 - **Codes.** A timing or a kind, which `Term_UK_S` spells as text, is an int Reference
   named as the text: `BEF_NB = 0`, `BEF_DECR = 1`, `BEF_LAPSE = 2` and `AFT_DECR = 3`,
   in the order of their instants within the month, and `DEATH = 0`, `FIB = 1` and
@@ -618,9 +636,14 @@ typed `long long`; without `cpow`, `1 − (1 − q)^(1/12)`, the monthly rate of
 decrement here, is a complex power, which gcc computes with `cpow` rather than `pow`, and
 its last bits can differ from Python's; and gcc fuses a multiply and an add where the
 target has the instruction, one rounding where Python rounds twice. The tool's docstring
-has the detail, and uslib's [`term_life/model-sec.md`](../../../uslib/products/term_life/model-sec.md)
-the measurements that put each there. With all four, every compiled value here agrees with
-modelx bit for bit, and the compile tests hold each directive in the module's first line.
+has the detail, and uslib's
+[`term_life/model-sec.md`](../../../uslib/products/term_life/model-sec.md) the
+measurements that put each there. With all four, every compiled value here agrees with
+modelx bit for bit. The compile tests hold each directive in the module's first line, and
+a static test holds the tool's line to the two and no other: `cdivision=True` would make
+`//` on C integers truncate where Python floors, which only a full sweep met, through
+point 14's `duration(t)` before issue, and `boundscheck=False` or `wraparound=False`
+would change what an `idx` outside the table reads.
 
 ### What a compiled run needs
 
@@ -645,11 +668,11 @@ less: the level and decreasing shapes and the joint point, 50 years from 18, bet
 and 160 KiB, and the family income benefit, 40 years from 30, which runs 491 cells deep
 in modelx, between 96 and 128. A test runs every shape at its longest cover in a thread of
 1 MiB, the stack Windows gives a program's main thread unless the program is linked for
-more, and again on the main thread, which is where `run_sec.py --cython` runs. MSVC's frames may be larger
-than gcc's, and the `cython_uk` CI job, which runs the test on Windows too, is the check on
-them. The export recurses in Python instead: the same call needs a recursion limit of
-1,246 there, and the reports and checks, which run in ascending `t`, need 128, so
-`sample_sec.py` sets 5,000.
+more, and again on the main thread, which is where `run_sec.py --cython` runs. MSVC's
+frames may be larger than gcc's, and the `cython_uk` CI job, which runs the test on
+Windows too, is the check on them. The export recurses in Python instead: the same call
+needs a recursion limit of 1,246 there, and the reports and checks, which run in
+ascending `t`, need 128, so `sample_sec.py` sets 5,000.
 
 ### What it refuses
 
@@ -657,9 +680,9 @@ The compiled model refuses what modelx refuses, with the same message. modelx ra
 `FormulaError`, which quotes the error; compiled, the `ValueError` itself propagates. A
 test holds the in-force suite's refusals to modelx's, compiled, message for message: each
 malformed row of the table or the pipeline, each assumption table a reader cannot read,
-each point the frame refuses, each waiver rate and waived share refused, a key read
-beyond a table, either side, and what the vectors cannot hold, in a cell typed
-`long long` or `double` as in a Python one.
+each point the frame refuses, each waiver rate, waived share and commutation discount
+refused, a key read beyond a table, either side, and what the vectors cannot hold, in a
+cell typed `long long` or `double` as in a Python one.
 
 - What `Data` cannot decode or hold, when the vector is first read, naming every point at
   fault: a `point_id` that is not a whole number, or is `2**53` or more in size; an issue
@@ -670,9 +693,17 @@ beyond a table, either side, and what the vectors cannot hold, in a cell typed
   is read by its value, as `Term_UK_S`'s lookups match it.
 - A key beyond a table, by the one cell that reads it, where `Term_UK_S`'s lookup raised
   `KeyError`: `point_id 1: mort_table.csv has no rate at attained age 18`, from
-  `mort_rate_base`, on a table that starts at 20; a select duration past the table, or below it under a negative
-  `select_period`, from `select_factor`; and a lag a point's pipeline does not hold, below
-  1 or past its last, from `wop_deferred_init`.
+  `mort_rate_base`, on a table that starts at 20; a select duration past the table, or
+  below it under a negative `select_period`, from `select_factor`; and a lag a point's
+  pipeline does not hold, below 1 or past its last, from `wop_deferred_init`.
+- A power past the largest float, which Python's float power refuses with
+  `OverflowError` where C's `pow` gives an infinity: expense inflation, the two index
+  factors, the decreasing schedule and the annuity certain each call Python's own power
+  where theirs is infinite from a finite base, so that the compiled model raises the
+  platform's message as modelx does (uslib's *Record — M22* form), rather than carry an
+  infinity on. Only an input far outside the product reaches one: an inflation above
+  about 140,000 a year, an index increase or step above about 2 million, a schedule rate
+  above about 1.5 million, or a discount within about 2e-8 of −1; a test reaches each.
 - A timing, a kind or a life no cell takes, by the cell, as `Term_UK_S`'s are:
   `invalid timing`, `invalid kind`, `invalid life`.
 
@@ -683,7 +714,7 @@ it does not take; `age_at_entry(4)`; `benefit_sched(600)` and
 `annuity_certain_factor(481)`, which modelx computes. An `idx` past the last row is
 refused in both, with an `IndexError` at the first read of a vector, and `Projection[-1]`
 reads every vector at its last element in both, so it is the table's last point, under
-that point's own `point_id()`.
+that point's own `point_id()`; the compiled refusal test holds both against modelx.
 
 An annual mortality above 1 is not refused but capped, in both: `mort_rate_life` caps the
 product at 1, as `Term_UK_S` does (*Departures from Term_UK_S*, above), and a compile test
@@ -700,28 +731,33 @@ runs a block, each point projected and then released, and the waiver's pipeline 
 with it, each copy's rows under its own points. `net_cf` is `net_cf(t)` summed over the
 frame, the projection alone, as `basiclife/BasicTerm_SC` is timed on its `pv_net_cf()`;
 `result_cf` is the report `run_sec.py` prints, which builds a DataFrame for each point.
-Each time is the fastest of three runs, with their spread in seconds:
+Each run of the tool takes the fastest of three runs of each engine and loop. The tool was
+run three times, and each time below is the median of its three, with the range of the
+three beside it:
 
 | Engine | Points | `net_cf`, a point | `result_cf`, a point | Peak memory |
 |---|---|---|---|---|
-| compiled | 6,006 | 0.177 ms (1.06–1.13) | 0.525 ms (3.15–3.54) | 88 MB |
-| export | 602 | 2.22 ms (1.33–1.39) | 2.66 ms (1.60–1.75) | 88 MB |
-| modelx | 126 | 73.4 ms (9.25–9.49) | 69.8 ms (8.79–9.63) | 101 MB |
+| compiled | 6,006 | 0.168 ms (0.166–0.179) | 0.541 ms (0.488–0.567) | 86–88 MB |
+| export | 602 | 2.10 ms (2.09–2.16) | 2.55 ms (2.50–2.56) | 86–88 MB |
+| modelx | 126 | 68.7 ms (66.7–71.2) | 71.2 ms (69.1–73.0) | 100–101 MB |
 
-On `net_cf` the compiled model runs 12.5 times its export, and on `result_cf`, where
-building the DataFrame takes most of its time, 5.1 times; it runs 414 and 133 times
-modelx. uslib's `Term_US_SEC`, timed the same way on its own points on 2026-11-02, ran 9.5
-and 4.7 times its export. The release keeps a block flat: the compiled model's peak grew
-by less than 0.1 MB over its 6,006 points. Reading the five files and building every
-`Data` vector and array for those points took 0.045 s, and asking every point for its
-frame, the runner's first pass, 0.06 s. Every engine, loop and run summed `net_cf` over a
-copy of the table to the same −33,525.55113, to 1e-9 relative.
+On `net_cf` the compiled model runs 12.4 times its export (12.0 to 12.7 over the three),
+and on `result_cf`, where building the DataFrame takes most of its time, 4.7 times (4.4
+to 5.2); it runs 402 times modelx on `net_cf` (397 to 409) and 132 on `result_cf` (129 to
+142). The ranges are the noise of a shared machine, about ±3% on modelx and up to −10%
+and +5% on the compiled report: within it modelx's `result_cf`, which does more, came out
+faster than its `net_cf` in one of the three, and in an earlier run of the tool. uslib's
+`Term_US_SEC`, timed the same way on its own points on 2026-11-02, ran 9.5 and 4.7 times
+its export. The release keeps a block flat: the compiled model's peak grew by less than
+0.1 MB over its 6,006 points in every run. Reading the five files and building every
+`Data` vector and array for those points took 0.044 to 0.048 s, and asking every point
+for its frame, the runner's first pass, 0.06 s. Every engine, loop and run summed `net_cf`
+over a copy of the table to the same −33,525.55113, to 1e-9 relative.
 
 Measured on 2026-11-22 on a machine shared with other work: 4 CPUs (an Intel Xeon at
-2.30 GHz), a 1-minute load average between 1.00 and 1.07 as the runs started; Linux,
+2.30 GHz), a 1-minute load average between 0.81 and 1.29 as the runs started; Linux,
 Python 3.13.18 and gcc 13.3.0, with modelx 0.33.0, modelx-cython 0.1.0, Cython 3.3.1,
-numpy 2.5.3 and pandas 3.0.5. Under load the spread is wide, and the fastest run is the
-one to compare.
+numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
 
 ## Tests
 
@@ -773,22 +809,27 @@ one to compare.
   multiplies every flow and counted cell and moves no per-policy value, bit for bit, the
   lapse ratio and the cohort's share among them; and both checks, their tolerances scaled
   by the count, close on a million policies.
-- **Validation and regeneration**: each malformed row of the table, 74 cases, and of the
-  pipeline, 17, is refused naming its point or its line; the horizon is a Reference; a
-  point past its cover, outside the contract's bounds or with a pipeline not exactly its
-  lags, 8 cases, among them none at all and a gap, is refused by `proj_len()`, each bound
-  just inside it and each moved past a committed point, and `run_sec.py --block` refuses
-  such a point before printing anything; so is a share waived before the deferred period
-  has run, at its last month among them; a waiver point under a waiver rate a float
-  outside 0 to 1, or NaN, is refused by the frame, and under an incidence of 0.856 or 1 by
-  the waived share in the month it passes 1, S's month and S's share, where at 0, at
-  0.855 and at a recovery of 1 the twin of S's waiver point is S's in every cell; each
-  assumption table a reader cannot read, 28 cases, is refused naming its lines, a repeated
-  key with each of its lines, and a read beyond a table naming the point; keys written as
-  floats read as `Term_UK_S` reads them; the edges of the interface and of each bound are
-  accepted; every state `Term_UK_S` reaches, as shipped, under the splice's switches and
-  where the cap binds, is accepted in force; and the committed table and pipeline are what
-  `Term_UK_S` generates.
+- **Validation and regeneration**: each malformed row of the table, 76 cases, each
+  `2**53` bound at the bound among them, and of the pipeline, 17, is refused naming its
+  point or its line; the horizon is a Reference; a point past its cover, outside the
+  contract's bounds or with a pipeline not exactly its lags, 8 cases, among them none at
+  all and a gap, is refused by `proj_len()`, each bound just inside it and each moved past
+  a committed point, and `run_sec.py --block` refuses such a point before printing
+  anything; so is a share waived before the deferred period has run, at its last month
+  among them; a waiver point under a waiver rate a float outside 0 to 1, or NaN, is
+  refused by the frame, and under an incidence of 0.856 or 1 by the waived share in the
+  month it passes 1, S's month and S's share, where at 0, at 0.855 and at a recovery of 1
+  the twin of S's waiver point is S's in every cell; a family income benefit point under
+  a commutation discount that is not a finite number above −1 is refused by the frame,
+  S's own outcome beside it, where at 0 and −0.99 the twins of S's family income benefit
+  points are S's in every cell, at 1e-17 the factor is `m`, and at the float above −1 S
+  and this model raise the same `OverflowError`; each assumption table a reader cannot
+  read, 28 cases, is refused naming its lines, a repeated key with each of its lines, and
+  a read beyond a table naming the point; keys written as floats read as `Term_UK_S`
+  reads them; the edges of the interface and of each bound are accepted; every state
+  `Term_UK_S` reaches, as shipped, under the splice's switches and where the cap binds,
+  is accepted in force; and the committed table and pipeline are what `Term_UK_S`
+  generates.
 - **The product's own facts**: the two clocks on the shipped points; the committed rows,
   in force and issued later, continuing their S points at the shipped assumptions but for
   inflation; the lapse ratio carried on from the issued cohort, and the deaths it loads;
@@ -817,15 +858,18 @@ one to compare.
   multiple, or to the RPI's floor and caps, stays NaN.
 - **The C step's representation**, in modelx, in seconds: `claims(t, ALL)` is
   `Term_UK_S`'s total by its bits on every twin's month and on the family income benefit
-  commuted in half; every value each text column can hold decodes as `Term_UK_S` reads
-  it, the mortality group's row holding S's rate at every age; each padded array holds NaN
-  where no file does and nothing else, and its one reader refuses a key outside it on an
-  extract labelled otherwise than by position; each `Data` vector is the int64 or float64
-  the `Data` docstring's table states, and each parameterless cell returns a Python
-  number; `spec_sec.py`'s sizes and `sample_sec.py`'s recursion limit are what their
-  comments derive, and the sample traces each life's labels on a blank second life;
-  `run_sec.py --cython` rebuilds exactly when a source is newer; and a label the vectors
-  cannot hold, or a timing, kind or life no cell takes, is refused.
+  commuted in half, and so is `check_fib_ledger_resid(t)`, the Neumaier sum's residual,
+  on the twins of S's family income benefit points and that same point; every value each
+  text column can hold decodes as `Term_UK_S` reads it, each fraction above .5 so that a
+  decode that rounded would part, the mortality group's row holding S's rate at every
+  age; each padded array holds NaN where no file does and nothing else, and its one
+  reader refuses a key outside it on an extract labelled otherwise than by position; each
+  `Data` vector is the int64 or float64 the `Data` docstring's table states, and each
+  parameterless cell returns a Python number; `spec_sec.py`'s sizes and `sample_sec.py`'s
+  recursion limit are what their comments derive, and the sample traces each life's
+  labels on a blank second life; `run_sec.py --cython` rebuilds exactly when a source is
+  newer; and a label the vectors cannot hold, or a timing, kind or life no cell takes, a
+  single life's second issue age among them, is refused.
 - **C2, the fingerprint**: every committed point computes what the model computed when
   its E step ended, every cell at every argument, frozen at the end of the module by
   `tools/gen_sec_fingerprint.py` before the C step changed anything.
@@ -835,10 +879,13 @@ one to compare.
   spec and the generated C; C4 on the committed points; and the release. In this model's
   module, C4 on the splice grid, at the contract's longest covers, issued now and 120
   months on and in force in their last month, where the cap binds and on keys written as
-  floats; each life's label that is not text; the refusals, message for message, and the
-  `IndexError`s past the caches; each shape's deepest cold call on a 1 MiB thread and on
-  the main thread; a Reference set late, which clears no cache; and `run_sec.py --cython`, which
-  prints what modelx prints.
+  floats, and at a commutation discount of 0 and of 1e-17; each life's label that is not
+  text; the refusals, message for message, the overflows among them, the `IndexError`s
+  past the caches and an `idx` past the table and of −1; each shape's deepest cold call on
+  a 1 MiB thread and on the main thread; a Reference set late, which clears no cache; and
+  `run_sec.py --cython`, which prints what modelx prints. In
+  `tests/test_compiled_conventions_uk.py`, a static test holds the build tool's
+  directives to the two.
 
 ```bash
 python -m pytest tests/test_term_assurance_uk_sec.py -q
