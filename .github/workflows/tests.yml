@@ -16,6 +16,12 @@
 # The third job, `sec`, runs uslib's twelve `_US_SEC` test modules, which the `test` job
 # leaves out: in every leg of it they took the leg to its 90-minute timeout (Tests run 14,
 # USLIB-SEC-PLAN.md K6). One module to a leg, so no leg holds them all.
+#
+# `cython_uk` is the `cython` job over uklib's compile tests, its shards uklib's own, and
+# (from uklib's first SEC model on) `sec_uk` is the `sec` job over uklib's `_UK_SEC`
+# modules (UKLIB-SEC-PLAN.md U7). They are copies rather than a library axis on uslib's
+# jobs, because uslib's shard test reads the job named `cython` and holds every shard in it
+# to uslib's registry, and because a leg takes one library's variables.
 
 name: Tests
 
@@ -73,9 +79,16 @@ jobs:
       # `pytest` from the root, as lifelib's CI runs it, every library in one process. The
       # suites are slow -- every model reproduces its technical notes' worked example,
       # cell by cell -- so report the slowest tests to keep an eye on which models
-      # dominate the run. uslib's `_US_SEC` modules are left to the `sec` job below; the
-      # SEC models' conventions, their registry and `sec_support` still run here.
-      run: pytest -q --durations=10 --ignore-glob='*test_*_us_sec.py'
+      # dominate the run. uslib's `_US_SEC` and uklib's `_UK_SEC` modules are left to the
+      # `sec` and `sec_uk` jobs below; the SEC models' conventions, their registries and
+      # each library's harness still run here.
+      run: pytest -q --durations=10 --ignore-glob='*test_*_us_sec.py' --ignore-glob='*test_*_uk_sec.py'
+
+    - name: Hold uklib's SEC harness to uslib's
+      # uk_sec_support.py is uslib's sec_support.py under uklib's own name, the libraries'
+      # product specs apart; the check fails on any shared function, class or constant
+      # whose code differs (UKLIB-SEC-PLAN.md U3, K10). It reads the two files alone.
+      run: python tools/check_sec_harness.py
 
   cython:
     # The tests marked `cython`, which compile a model with modelx-cython and check the
@@ -144,14 +157,61 @@ jobs:
         pip install -r requirements.txt -r requirements-cython.txt
 
     - name: Run the compile tests with pytest
-      # Only uslib has compile tests, so only its suite is collected, and `-m cython`
-      # selects them: test_cython_toolchain.py, which compiles Term_US_S, and from its
+      # Only uslib's suite is collected here, uklib's compile tests running in `cython_uk`
+      # below, and `-m cython` selects them: test_cython_toolchain.py, which compiles
+      # Term_US_S, and from its
       # Phase 2 on each SEC model's own, Term_US_SEC's first (M14), with the stage-EC
       # conventions of test_compiled_conventions.py, which compile the model once a
       # session and hold the compiled model to modelx; of those, conftest.py keeps the
       # leg's shard. A run that selects nothing fails, which is wanted for the same reason
       # a skip is.
       run: pytest -q -m cython --durations=10 lifelib/libraries/uslib/tests
+
+  cython_uk:
+    # uklib's compile tests, as the `cython` job runs uslib's (UKLIB-SEC-PLAN.md U7): one
+    # shard to a leg, `toolchain`, test_cython_toolchain_uk.py and any compile test tied to
+    # no one model, and for each uklib SEC model at stage "EC" its product directory, its
+    # module's compile tests with its cases of test_compiled_conventions_uk.py, in one
+    # session. A product's C step adds its shard here, and test_compiled_conventions_uk.py,
+    # in the `test` job, fails until the list is exactly uklib's registry's.
+    name: Compile uklib ${{ matrix.shard }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [toolchain]
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.13']
+    env:
+      # As in the `cython` job: here a skip is a failure, the compiled grids run at full
+      # size on Linux, and the leg runs one shard, which conftest.py selects.
+      UKLIB_REQUIRE_CYTHON: '1'
+      UKLIB_SEC_FULL: ${{ matrix.os == 'ubuntu-latest' && '1' || '' }}
+      UKLIB_CYTHON_SHARD: ${{ matrix.shard }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+        cache-dependency-path: |
+          requirements.txt
+          requirements-cython.txt
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt -r requirements-cython.txt
+
+    - name: Run the compile tests with pytest
+      # uklib's suite alone, and of it the tests marked `cython` in the leg's shard. A run
+      # that selects nothing fails, as in the `cython` job.
+      run: pytest -q -m cython --durations=10 lifelib/libraries/uklib/tests
 
   sec:
     # uslib's `_US_SEC` test modules, one to a leg (USLIB-SEC-PLAN.md K6). Each module
