@@ -593,12 +593,14 @@ def mort_rate_life(t, life=1):
     """The annual mortality (incl. TI) rate applied to ``life`` in month t.
 
     The table rate, then on the *select* basis the select factor and the **[std]** 75%
-    proxy scaling, then the selective-lapsation loading.  Capped at 1.
+    proxy scaling, then the selective-lapsation loading.  Capped at 1, the bound second,
+    ``min(q, 1.0)``, so that a missing input, a NaN, stays NaN, where ``min(1.0, q)``
+    would read it as 1.
     """
     q = mort_rate_base(t, life)
     if mort_basis() == "select":
         q = q * select_factor(t) * mort_scale                        # noqa: F821
-    return min(1.0, q * sel_lapse_factor(t))
+    return min(q * sel_lapse_factor(t), 1.0)
 
 
 def mort_rate(t):

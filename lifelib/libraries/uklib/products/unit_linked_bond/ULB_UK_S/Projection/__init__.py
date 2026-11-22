@@ -478,10 +478,12 @@ def mort_rate(t):
     The shipped table rate times ``mort_be_factor``, a crude allowance for
     population mortality being heavier than insured-lives experience.  Nearly irrelevant
     to this product unless the guaranteed minimum death benefit rider is enabled.
+    Capped at 1, the bound second, ``min(q, 1.0)``, so that a missing input, a NaN, stays
+    NaN, where ``min(1.0, q)`` would read it as 1.
     """
     x = min(age(t), omega_age)                                       # noqa: F821
-    return min(1.0, float(data.mort_table().loc[                     # noqa: F821
-        (sex(), x), "mort_rate"]) * mort_be_factor)                  # noqa: F821
+    return min(float(data.mort_table().loc[                          # noqa: F821
+        (sex(), x), "mort_rate"]) * mort_be_factor, 1.0)             # noqa: F821
 
 
 def mort_rate_mth(t):

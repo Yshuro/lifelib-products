@@ -313,7 +313,7 @@ def sex(life):
 def rating_factor(life):
     """theta: the enhanced or impaired mortality multiplier **[std]**; 1.0 standard.
 
-    ``q_rated = min(1, theta x q)``, the simplest overlay that reprices longevity
+    ``q_rated = min(theta x q, 1)``, the simplest overlay that reprices longevity
     without touching contract mechanics.  Insurers' real rating structures - postcode
     and condition-specific factors - are not public, and a rated-age offset is the
     equivalent form.  Whole-market enhanced quoting is mandated at the point of sale, so
@@ -712,16 +712,18 @@ def mort_rate(t, life):
 
         q_base  = ONS-shaped table rate x alpha
         q_imp   = q_base x (1 - f(x))^(c - c0)
-        q_rated = min(1, theta x q_imp)
+        q_rated = min(theta x q_imp, 1)
 
     Every one of the three factors is a standardization: the table is a population
     proxy, the improvement scale a stand-in for a restricted model, and the rating
     multiplier the simplest form of an unpublished structure.  The liability is a
     life-contingent stream with no offsetting decrements, so the level of this rate is
-    the single largest lever on it.
+    the single largest lever on it.  The cap puts its float bound second,
+    ``min(q, 1.0)``, so that a missing input, a NaN, stays NaN, where ``min(1.0, q)``
+    would read it as 1.
     """
     q = mort_rate_base(t, life) * improve_factor(t, life)
-    return min(1.0, rating_factor(life) * q)
+    return min(rating_factor(life) * q, 1.0)
 
 
 def mort_rate_mth(t, life):

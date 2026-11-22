@@ -1088,11 +1088,13 @@ def mort_rate(t):
     are placeholders: CMI tables issued after March 2013 are subscriber-restricted, so
     the table is an ONS-shaped proxy and the factor a crude allowance for population
     mortality being heavier than insured experience.  :func:`mort_rate_mth` is what the
-    projection decrements and charges by.
+    projection decrements and charges by.  Capped at 1, the bound second,
+    ``min(q, 1.0)``, so that a missing input, a NaN, stays NaN, where ``min(1.0, q)``
+    would read it as 1.
     """
     x = min(age(t), omega_age)                                       # noqa: F821
-    return min(1.0, float(data.mort_table().loc[                     # noqa: F821
-        (sex(), x), "mort_rate"]) * mort_be_factor)                  # noqa: F821
+    return min(float(data.mort_table().loc[                          # noqa: F821
+        (sex(), x), "mort_rate"]) * mort_be_factor, 1.0)             # noqa: F821
 
 
 def mort_rate_mth(t):

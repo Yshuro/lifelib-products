@@ -140,7 +140,7 @@ day-to-day rate setting is not publicly documented [unverified].
 |---|---|---|
 | Base annuitant mortality | Proper bases: SAPS S3/S4 pensioner tables (S4 released February 2024, graduated on 2014–2019 data) [R10] [R11] or the insured-annuitant PMA16/PFA16 family [REG-R27]. Both are restricted to CMI Authorised Users [R11] [REG-R22], so the reference basis is a **[std]** proxy: latest ONS UK national life table qx by age/sex [R13] × annuitant adjustment α = 0.80 | [R10] [R11] [R13] [REG-R22] [REG-R27]; α **[std]** (i) |
 | Mortality improvements | CMI Mortality Projections Model, cited by name/version: CMI_2024 (WP201, June 2025, calibrated to E&W data to 31 Dec 2024) [R12]; current version CMI_2025 (WP211, March 2026) [REG-R30]. Model software restricted; reference fallback is a **[std]** deterministic scale: 1.25% p.a. reduction in qx for ages ≤ 90, tapering linearly to 0% at age 110, applied from the base table's data mid-year | [R12] [REG-R30]; scale **[std]** (ii) |
-| Enhanced/impaired rating | Overlay on qx: q_rated = min(1, θ_a × q_base), θ_a ≥ 1 (equivalently a rated-age offset); standard life θ = 1.0 | existence [S1 p5] [S4] [S6] [S9]; overlay **[std]** (iii) |
+| Enhanced/impaired rating | Overlay on qx: q_rated = min(θ_a × q_base, 1), θ_a ≥ 1 (equivalently a rated-age offset); standard life θ = 1.0 | existence [S1 p5] [S4] [S6] [S9]; overlay **[std]** (iii) |
 | Lapse / surrender | None — no surrender value exists | [S1 p4] [S2 §12] [S5 cl.14.7] [R1] |
 | Maintenance expense | £30 per policy per annum, payable monthly while any payment obligation remains, inflating at the RPI assumption | **[std]** (iv) |
 | RPI inflation (for indexed options) | 3.0% p.a. deterministic | **[std]** (v) |
@@ -287,7 +287,7 @@ surrender outgo [S2 §12].
 
     q_base(x, s)   = ONS qx by age/sex [R13] × α,  α = 0.80              **[std]** (proxy for SAPS S4 [R10][R11] / PMA16-PFA16 [REG-R27])
     q_imp(x, c)    = q_base(x) × (1 − f(x))^(c − c_0)                    **[std]** improvement fallback (f = 1.25% p.a. ages ≤ 90, linear taper to 0 at 110; c_0 = base-table data mid-year; production: CMI_2025 with a chosen long-term rate [R12][REG-R30])
-    q_rated(x, c)  = min(1, θ × q_imp(x, c))                             **[std]** enhancement overlay
+    q_rated(x, c)  = min(θ × q_imp(x, c), 1)                             **[std]** enhancement overlay
     q_m            = 1 − (1 − q_rated)^(1/12)                            **[std]**
     l(k)           = l(k−1) × (1 − q_m(k−1)),  l(0) = 1, separately for annuitant (θ_a) and dependant (θ_d)
 

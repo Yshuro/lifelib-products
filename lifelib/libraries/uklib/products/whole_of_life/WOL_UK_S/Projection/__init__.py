@@ -440,12 +440,14 @@ def mort_rate(t):
     """q(y): the annual mortality rate applied in the policy year containing month t.
 
     The cell's table rate at the attained age, times the anti-selection loading and the
-    improvement factor, capped at 1.  Both shipped bases are **[std]** proxies shaped
-    like the tables the notes name and are not published tables.
+    improvement factor, capped at 1, the bound second, ``min(q, 1.0)``, so that a missing
+    input, a NaN, stays NaN, where ``min(1.0, q)`` would read it as 1.  Both shipped
+    bases are **[std]** proxies shaped like the tables the notes name and are not
+    published tables.
     """
     q = float(data.mort_table().loc[                                 # noqa: F821
         (mort_basis(), sex(), smoker(), age(t)), "mort_rate"])
-    return min(1.0, q * mort_loading() * mort_improve_factor(t))
+    return min(q * mort_loading() * mort_improve_factor(t), 1.0)
 
 
 def mort_rate_mth(t):

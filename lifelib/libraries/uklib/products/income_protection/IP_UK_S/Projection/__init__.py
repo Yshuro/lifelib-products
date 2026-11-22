@@ -503,7 +503,9 @@ def inception_rate(t):
     Read from ``inception_table.csv`` at the policy's sex, occupation class and deferred
     period, **linearly** interpolated between pivot ages and linearly extrapolated
     beyond them, then multiplied by the economic-cycle overlay ``cycle_factor``.
-    Floored at zero, since linear extrapolation below the first pivot can go negative.
+    Floored at zero, since linear extrapolation below the first pivot can go negative,
+    and the product capped at 1, the bound second, ``min(q, 1.0)``, so that a missing
+    input, a NaN, stays NaN, where ``min(1.0, q)`` would read it as 1.
 
     The rate is a *claim payment* inception rate specific to the deferred period, which
     is exactly what the CMI publishes per deferred period - so the deferred period needs
@@ -526,7 +528,7 @@ def inception_rate(t):
     r_lo = float(sub.loc[lo, "inception_rate"])
     r_hi = float(sub.loc[hi, "inception_rate"])
     r = r_lo + (r_hi - r_lo) * (x - lo) / (hi - lo)
-    return max(0.0, r) * cycle_factor                                # noqa: F821
+    return min(max(0.0, r) * cycle_factor, 1.0)                      # noqa: F821
 
 
 def inception_rate_mth(t):
@@ -539,10 +541,12 @@ def mort_rate(t):
 
     A minor decrement in income protection, and a **[std]** proxy shaped like the ONS
     national life tables scaled by ``mort_active_factor``.  Claimant mortality is a
-    different rate on a different clock - see :func:`mort_rate_sick`.
+    different rate on a different clock - see :func:`mort_rate_sick`.  Capped at 1, the
+    bound second, ``min(q, 1.0)``, so that a missing input, a NaN, stays NaN, where
+    ``min(1.0, q)`` would read it as 1.
     """
-    return float(data.mort_table().loc[                              # noqa: F821
-        (sex(), age(t)), "mort_rate"]) * mort_active_factor          # noqa: F821
+    return min(float(data.mort_table().loc[                          # noqa: F821
+        (sex(), age(t)), "mort_rate"]) * mort_active_factor, 1.0)    # noqa: F821
 
 
 def mort_rate_mth(t):
@@ -575,10 +579,11 @@ def mort_rate_sick(z):
     Flat across durations in the shipped **[std]** proxy.  IP11 makes it
     duration-dependent to five years and age-dependent beyond, so this is the crudest
     part of the shipped basis; it is also the smaller of the two termination causes.
+    Capped at 1, the bound second, as :func:`mort_rate` is.
     """
     tbl = data.termination_table()                                   # noqa: F821
     y = min(claim_dur_year(z), int(tbl.index.max()))
-    return float(tbl.loc[y, "mort_rate_sick"])
+    return min(float(tbl.loc[y, "mort_rate_sick"]), 1.0)
 
 
 def mort_rate_sick_mth(z):
