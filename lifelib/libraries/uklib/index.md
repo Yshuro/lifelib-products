@@ -76,6 +76,21 @@ flows be read, summed or compared without first checking which step they came fr
 carries a second sense in lifelib — scalar, one model point at a time, as against the
 vectorized `_M` models — and that is true of all seven here as well.
 
+Each product is to carry a second model, `<product>_UK_SEC`, derived from its `_S` model,
+as each of [uslib](../uslib/index.md)'s products does. `E` is for running **in force**: `t`
+counts months from a valuation date shared by every model point, and a model point may be a
+policy issued at that date, one already in force at it, in any month of its policy year, or
+one written after it, as in `basiclife/BasicTerm_SE`. `C` is for compiling, as
+`basiclife/BasicTerm_SC` does, which each model's next step adds. On the `_S` model's
+new-business points, issued at the valuation date, an `_SEC` model reproduces its `_S` model
+cell by cell. Where the `_S` model already has a point in force, as term assurance's
+point 8 is, the `_SEC` twin of that point continues the `_S` projection from the month it
+is valued at, its expenses apart, which inflate from the valuation date; and a point
+restated in force at any month continues it too, opened with the state the `_S` model
+carries into that month, which the `_S` model itself restarts where its frame opens. Each
+`model-sec.md` says what running in force changes. `Term_UK_SEC` is the first: it runs in
+force, and does not yet compile.
+
 Assumption tables stay in the units they are quoted in: a mortality rate by attained age
 and a lapse rate by policy year are annual, and each model converts them month by month
 with `1 − (1 − r)^(1/12)`, so twelve months compound back to the table rate exactly. The
@@ -95,7 +110,7 @@ close, and whose guarantee is an order of magnitude too large a decade later.
 
 | Product | Model | Grid | Representative design |
 |---|---|---|---|
-| [Term assurance](products/term_assurance/index.md) | `Term_UK_S` | monthly | Guaranteed-premium term in three benefit shapes — level, decreasing at a client-selected mortgage rate, and family income benefit — with terminal illness benefit included and optional RPI indexation; expires at end of term, with no U.S.-style post-level-term tail |
+| [Term assurance](products/term_assurance/index.md) | `Term_UK_S`, `Term_UK_SEC` | monthly | Guaranteed-premium term in three benefit shapes — level, decreasing at a client-selected mortgage rate, and family income benefit — with terminal illness benefit included and optional RPI indexation; expires at end of term, with no U.S.-style post-level-term tail |
 | [Critical illness cover](products/critical_illness/index.md) | `CI_UK_S` | monthly | Accelerated life-or-CI level term on the **term-assurance chassis**: ~40 ABI-aligned full-payment conditions including TPD, 25%/£25k additional-payment conditions, 50%/£25k children's cover, 14-day survival period; standalone variant minus the death benefit |
 | [Income protection](products/income_protection/index.md) | `IP_UK_S` | monthly | Full-term guaranteed-premium own-occupation IP: two-band earnings cap (65% to £60k, 50% above), deferred periods 4–52 weeks, RPI escalation in claim, proportionate benefit on partial return to work — the one **three-state** model here, healthy / sick / dead |
 | [Whole of life](products/whole_of_life/index.md) | `WOL_UK_S` | monthly | Two cells: underwritten guaranteed whole of life, protection-only with no cash value — unlike U.S. whole life — and over-50s guaranteed acceptance, a fixed cash sum with a 12-month moratorium, premiums ceasing at 90, lapse-supported |
@@ -224,7 +239,9 @@ one. This is lifelib's own convention (`basiclife/BasicTerm_S`, `savings/CashVal
 `for t in range(proj_len())`). A contractual policy year is the 1-based label
 `duration(t) + 1` and is derived, never indexed by — so is every schedule keyed by it,
 including the lapse tables and the with-profits guarantee dates, which are read through
-`policy_year(t)` rather than re-keyed to months.
+`policy_year(t)` rather than re-keyed to months. An `_SEC` model counts `t` from its
+valuation date instead, the same month for every model point, and its `model-sec.md` sets
+out the two clocks.
 
 The tests ship inside the library and run against *your* copy:
 
@@ -248,18 +265,20 @@ python -m pytest tests -q
   - The liability cash flow model on paper: state variables, recursions, processing order, worked example.
 * - `products/<product>/model.md`
   - How the model implements those notes — what was standardized, what diverges, what the tests cover.
+* - `products/<product>/model-sec.md`
+  - Where the product has an `_SEC` model: how it extends the `_S` one — the in-force interface, the two clocks, the departures.
 * - `products/<product>/sources.md`
   - Every source the product's documents cite, with URLs, access dates and retrieval status.
 * - `products/<product>/<Model>/`
   - The modelx model itself. Formulas only — no embedded data.
 * - `products/<product>/*.csv`
-  - The model's inputs, external to the model folder so they can be edited or swapped in place.
+  - The model's inputs, external to the model folder so they can be edited or swapped in place. An `_SEC` model reads the same tables and its own `model_point_table_sec.csv`, with any `*_sec.csv` companion, such as term assurance's waiver pipeline, each generated from the `_S` model and its inputs and checked against them by the tests.
 * - `products/<product>/run.py`
-  - Reads the model and prints its cash flow statement.
+  - Reads the model and prints its cash flow statement. `run_sec.py` does the same for an `_SEC` model, for one model point or the whole block.
 * - `references/`
   - The cross-product regulatory and actuarial bibliography, cited as `[REG-R#]`.
 * - `tests/`
-  - One module per model for its worked example and invariants, plus `test_model_conventions_uk.py` for the house style, and `uk_registry.py` carrying the model registry.
+  - One module per model for its worked example and invariants, plus `test_model_conventions_uk.py` for the house style, `uk_registry.py` carrying the model registry, and `uk_sec_support.py`, the comparisons and the generator the `_SEC` tests share.
 * - `_research/`
   - The raw research notes every citation traces back to. Provenance, not documentation — kept in the source repository, neither rendered nor packaged with lifelib.
 ```

@@ -18,8 +18,8 @@
 # USLIB-SEC-PLAN.md K6). One module to a leg, so no leg holds them all.
 #
 # `cython_uk` is the `cython` job over uklib's compile tests, its shards uklib's own, and
-# (from uklib's first SEC model on) `sec_uk` is the `sec` job over uklib's `_UK_SEC`
-# modules (UKLIB-SEC-PLAN.md U7). They are copies rather than a library axis on uslib's
+# `sec_uk` is the `sec` job over uklib's `_UK_SEC` modules, Term_UK_SEC's the first
+# (UKLIB-SEC-PLAN.md U7). They are copies rather than a library axis on uslib's
 # jobs, because uslib's shard test reads the job named `cython` and holds every shard in it
 # to uslib's registry, and because a leg takes one library's variables.
 
@@ -271,3 +271,55 @@ jobs:
       run: >-
         pytest -q --durations=10
         lifelib/libraries/uslib/tests/test_${{ matrix.module }}_us_sec.py
+
+  sec_uk:
+    # uklib's `_UK_SEC` test modules, one to a leg, as the `sec` job runs uslib's
+    # (UKLIB-SEC-PLAN.md U7). Each module runs a core of its splice grid by default, and
+    # the rest of the grid, marked `sec_full`, skips unless UKLIB_SEC_FULL is 1. The core
+    # runs on Windows and macOS, the full grid, which holds the core, on Linux; one Python,
+    # as in the `sec` job. A product's E step adds its module to the list.
+    name: SEC uklib ${{ matrix.module }} (${{ matrix.grid }}) on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    # Measured locally, Term_UK_SEC's module took about a minute over its core and two
+    # over its full grid. The hour is the `sec` job's, room for the larger products to
+    # come, and fails a hung leg long before the six-hour default.
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [term_assurance]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        grid: [core, full]
+        exclude:
+          - {os: ubuntu-latest, grid: core}
+          - {os: windows-latest, grid: full}
+          - {os: macos-latest, grid: full}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.13
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Install docutils for the docstring parse tests
+      # As in the `sec` job: the full-grid legs install docutils and set
+      # UKLIB_REQUIRE_DOCUTILS below, under which a skipped `docutils` test fails.
+      if: matrix.grid == 'full'
+      run: pip install docutils
+
+    - name: Run the module with pytest
+      env:
+        UKLIB_SEC_FULL: ${{ matrix.grid == 'full' && '1' || '' }}
+        UKLIB_REQUIRE_DOCUTILS: ${{ matrix.grid == 'full' && '1' || '' }}
+      run: >-
+        pytest -q --durations=10
+        lifelib/libraries/uklib/tests/test_${{ matrix.module }}_uk_sec.py

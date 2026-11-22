@@ -3,23 +3,23 @@
 # It can be imported as a Python module, but functions defined herein
 # are model formulas and may not be executable as standard Python.
 
-"""The by-policy projection of the :mod:`~.Term_UK_S` model.
+"""The by-policy projection of the :mod:`~.Term_UK_SEC` model; holds all formulas.
 
 The Space is parameterized by ``point_id``, so ``Projection[1]`` is an ItemSpace
-projecting model point 1::
+projecting model point 1, the twin of :mod:`~.Term_UK_S`'s anchor cell, issued at the
+valuation date::
 
-    >>> Projection[1].result_cf()          # the worked example's anchor cell
-    >>> Projection.point_id = 3            # or switch the default
+    >>> Projection[1].result_cf()          # one row per month from the valuation date
+    >>> Projection[1].result_pols()        # the counts behind it
+    >>> Projection.point_id = 8            # or switch the default
 
-``t`` counts **policy months from issue, 0-based**, as everywhere in lifelib: ``t = 0``
-is the issue month, ``t = proj_len() - 1 = term_mths() - 1`` is the last, and the policy
-year containing month ``t`` is ``t // 12 + 1``. The frame is
-``range(proj_start(), proj_len())`` — ``range(proj_len())`` for a point projected from
-issue, opening at ``t = proj_start() = 12 x duration_inforce()`` for a point already in
-force. Month ``t`` runs from time ``t`` to time ``t + 1``: ``pols_if(t)`` is the count
-at its start, premiums and maintenance expense fall at its start, claims and lapses at
-its end. There is nothing after the last month — cover ceases at the end of the term
-with no maturity value, no renewal and no conversion.
+This is :mod:`~.Term_UK_S` taught to run in force at a valuation date, as lifelib's
+``basiclife.BasicTerm_SE`` extends ``basiclife.BasicTerm_S``. A formula of
+:mod:`~.Term_UK_S` is rewritten where it depends on where the projection starts, where it
+must answer for a month outside cover, or where it read a policy month as ``t``; every
+other formula is :mod:`~.Term_UK_S`'s own, the cap on mortality,
+``min(q, 1.0)``, among them. ``products/term_assurance/model-sec.md`` lists the rewritten
+cells with the reason for each.
 
 .. rubric:: Input data
 
@@ -32,20 +32,101 @@ input can be edited or swapped without rewriting the model. This follows
 *inside* the model through modelx's IOSpec machinery.
 
 The consequence worth knowing: **the model is not portable on its own.** Copying the
-``Term_UK_S`` folder without its parent's CSVs produces a model that reads and then
+``Term_UK_SEC`` folder without its parent's CSVs produces a model that reads and then
 fails on first evaluation.
 
-Each table has a filename Reference and a reader Cells, both on
-:mod:`~.Term_UK_S.Data`, reached here through the ``data`` Reference:
+:func:`~.Term_UK_SEC.Data.input_dir` resolves the directory from ``_model.path.parent``
+at run time, so the model works wherever the repository is checked out. The three
+assumption tables are the files :mod:`~.Term_UK_S` reads, read in place; the model point
+table and the waiver pipeline are this model's own. Each table has a filename Reference
+and a reader Cells, both on :mod:`~.Term_UK_SEC.Data`, reached here through the ``data``
+Reference:
 
 ======================  ==============================  ==========================
 Reference               Cells                           File
 ======================  ==============================  ==========================
-model_point_file        data.model_point_table()        model_point_table.csv
+model_point_file        data.model_point_table()        model_point_table_sec.csv
+wop_pipeline_file       data.wop_pipeline()             wop_pipeline_sec.csv
 mort_table_file         data.mort_table()               mort_table.csv
 select_factor_file      data.select_factor_table()      select_factor_table.csv
 lapse_table_file        data.lapse_table()              lapse_table.csv
 ======================  ==============================  ==========================
+
+.. rubric:: Two clocks
+
+``t`` counts months from the **valuation date**, 0-based, the clock
+``basiclife.BasicTerm_SE`` runs on: ``t = 0`` is the valuation month for every model
+point, however old the policy, month ``t`` runs from time ``t`` to time ``t + 1``, and the
+frame is ``t = 0 .. proj_len() - 1``, where :func:`proj_len` counts the months from the
+valuation date to the end of the term. Row ``t`` is the same month for every point, so the
+frames of a block line up and sum row by row.
+
+``duration_mth(t)`` counts **policy months**, the months the policy has been in force at
+time ``t``: ``duration_mth(t) = duration_mth_init() + t``, where
+:func:`duration_mth_init` is read from the model point — positive for a policy in force at
+the valuation date, 0 for one issued at it, ``-k`` for one issued ``k`` months later, at
+most ten years later. It is the technical notes' month index ``k``. Everything contractual
+reads it: the completed policy years ``duration(t) = duration_mth(t) // 12``, which are the
+select duration, the contractual 1-based label ``policy_year(t) = duration(t) + 1``, the
+attained age ``age(t, life) = age_at_entry(life) + duration(t)``, and through them the
+mortality and lapse tables, the decreasing schedule, the indexation anniversaries, the
+annual premium, the renewal commission from the second policy year and the clawback
+window. Model point 8, :mod:`~.Term_UK_S`'s point in force five years, is in policy year 6
+at attained age 40 at ``t = 0`` and has 240 months of cover left.
+
+One input reads the valuation clock instead: expense inflation,
+``inflation_factor(t) = (1 + inflation_rate) ** (t // 12)``, stepping on each
+anniversary of the valuation date, so that the maintenance charge is in valuation-date
+pounds for every point alike. Acquisition and the initial commission are charged per
+policy issued, in the issue month, and not inflated, as in ``basiclife.BasicTerm_SE``.
+
+On a point issued at ``t = 0`` the two clocks coincide and this model computes what
+:mod:`~.Term_UK_S` computes: every cell the two share agrees at every argument
+:mod:`~.Term_UK_S` evaluates in its sweep, but for those whose meaning changed —
+``pols_if_init``, now the count already in force at the valuation date, and
+``model_point``, a row of another table — and S's two cells this model does not have,
+``proj_start`` and ``duration_inforce``, which ``duration_mth`` replaces.
+``tests/test_model_conventions_uk.py`` asserts it cell by cell.
+
+.. rubric:: Counts
+
+``pols_if(t)`` is the count that weights row ``t``: ``pols_if_at(t, "BEF_DECR")``, the
+count carried in from ``t - 1`` (``"BEF_NB"``) plus the month's new business,
+:func:`pols_new_biz`, before the month's decrements. A point in force at the valuation
+date opens with :func:`pols_if_init`, its ``policy_count``; one issued at or after the
+valuation date opens with none, and takes its ``policy_count`` as new business in its
+issue month. The recursion's base is :func:`t_entry`, the first month on the books, and
+nothing is counted outside cover (:func:`is_active`): before issue every count, and so
+every cash flow, is zero. :mod:`~.Term_UK_S`'s three timings are kept, ``"BEF_DECR"``,
+``"BEF_LAPSE"`` and ``"AFT_DECR"``, and ``"BEF_NB"`` is the one running in force adds.
+
+.. rubric:: The opening state
+
+A point in force carries, beside its count, what :mod:`~.Term_UK_S` carries into the
+month a point is valued at, each per policy in force or as a ratio, so that the count is
+the one weight on every flow, and each measured at the valuation instant, the start of
+month 0, before any month-0 event:
+
+* :func:`lapse_cum_init`, the selective-lapse ratio, the share of the issued cohort that
+  has lapsed;
+* :func:`fib_cum_init`, the deaths since issue per policy in force;
+* :func:`fib_streams_init`, on the family income benefit, the streams in payment per
+  policy in force: the deaths whose streams were not commuted, at the take-up of the
+  month each fell in;
+* :func:`idx_factor_init` and :func:`idx_prem_factor_init`, the indexation factors of the
+  policy year under way, the RPI increases already given;
+* :func:`wop_waived_frac_init`, the share of the policies in force whose premiums are
+  waived; and, in the companion ``wop_pipeline_sec.csv``, :func:`wop_deferred_init`, the
+  share of the policies in force still inside the deferred period, by the month their
+  incapacity began, after the recoveries already made;
+* :func:`comm_init_pp_init`, the initial commission paid at issue, per policy, which the
+  clawback recovers.
+
+Each is history, read from the model point, never recomputed from a Reference, which is
+an assumption from the valuation date on. From :func:`lapse_cum_init` and
+:func:`fib_cum_init`, :func:`cohort_frac` rebuilds the share of the issued cohort in
+force, which turns a month's lapse rate into the lapse ratio's increment without dividing
+by the count.
 
 .. rubric:: Naming
 
@@ -53,8 +134,13 @@ Cells names follow lifelib's ``basiclife.BasicTerm_S`` wherever that model has a
 analogue — ``pols_*`` for policy counts, plural nouns for cash flows, ``*_rate`` for
 annual rates and ``*_rate_mth`` for monthly ones, ``*_pp`` for per-policy amounts,
 ``claims(t, kind)`` with an uppercase ``kind`` string, ``pols_if_at(t, timing)`` for the
-within-month in-force reads. The technical notes use compact actuarial symbols instead.
-The mapping is:
+within-month in-force reads. What running in force adds is named as
+``basiclife.BasicTerm_SE`` names it: ``duration_mth`` read from the model point,
+``policy_count``, ``pols_new_biz``, ``pols_if_at``'s ``"BEF_NB"`` timing, ``is_active``
+and ``result_pols``. ``duration_mth_init``, the policy months completed at the valuation
+date, takes ``UL_US_S``'s name; ``t_entry`` and ``cohort_frac`` are this model's own, and
+each opening-state cell is the cell it opens with ``_init`` added. The technical notes
+use compact actuarial symbols instead. The mapping is:
 
 =========================  ==============================  ==========================
 Notes symbol               Cells                           Meaning
@@ -64,68 +150,83 @@ x                          age_at_entry(life)              Issue age (ANB), life
 x + duration(t)            age(t, life)                    Attained age in month t
 (none)                     sex(life), smoker(life)         Rating factors of each life
 n                          policy_term()                   Term in years
-N = 12n                    term_mths()                     Term in months, = proj_len()
-(none)                     proj_len()                      Months projected; last t is N-1
-(none)                     proj_start()                    First projected t
-(none)                     duration_inforce()              Years elapsed at projection start
-k, duration_mth(t)         duration_mth(t)                 Months elapsed since entry, = t
-(none)                     duration(t)                     Completed years since entry, t//12
-(none)                     policy_year(t)                  Contractual policy year, t//12 + 1
+N = 12n                    term_mths()                     Policy month cover ends at
+(frame)                    proj_len()                      Months to the end of cover
+(none)                     policy_count()                  Policies the point stands for
+(none)                     duration_mth_init()             Policy months at t = 0
+k, duration_mth(t)         duration_mth(t)                 Policy months at month t
+(none)                     t_entry()                       First month on the books
+(none)                     is_active(t)                    Whether month t is in cover
+(none)                     duration(t)                     Completed policy years
+(none)                     policy_year(t)                  Contractual policy year
 SA0                        sum_assured()                   Initial sum assured
 I                          fib_income()                    FIB income per month
-j                          sched_rate()                    Decreasing schedule rate p.a.
+j                          sched_rate()                    Decreasing schedule rate
 j_m                        sched_rate_mth()                (1+j)^(1/12) - 1
-B(k)                       benefit_sched(k)                Decreasing benefit after k months
+B(k)                       benefit_sched(k)                Benefit after k months
 DB(t)                      benefit_pp(t)                   Death/TI benefit per policy
 idx(t)                     idx_factor(t)                   Cover indexation factor
+(idx at t = 0)             idx_factor_init()               Cover factor given to date
 idx_p(t)                   idx_prem_factor(t)              Premium indexation factor
+(idx_p at t = 0)           idx_prem_factor_init()          Premium factor to date
 (RPI scenario)             rpi_rate                        Flat RPI assumption, 3%
-P_m                        premium_mth_pp()                Monthly premium at outset
+P_m                        premium_mth_pp()                Monthly premium at issue
 P_m x idx_p(t)             premium_pp(t)                   Premium due in month t
-(mode)                     premium_mode()                  monthly or annual collection
-(table)                    mort_rate_base(t, life)         Table rate before adjustment
+(mode)                     premium_mode()                  monthly or annual
+(table)                    mort_rate_base(t, life)         Table rate before factors
 (select)                   select_factor(t)                Select-duration factor
 (proxy scaling)            mort_scale                      "00" to "16" Series factor
 (none)                     mort_rate_life(t, life)         Per-life annual rate
-q(t), q_joint              mort_rate(t)                    Annual policy decrement, incl. TI
+q(t), q_joint              mort_rate(t)                    Annual policy decrement
 q_m(t)                     mort_rate_mth(t)                Monthly policy decrement
 (none)                     mort_basis()                    applied or select run
-lambda                     sel_lapse_lambda                Selective-lapsation loading
-w_ref                      sel_lapse_ref                   Selective-lapsation threshold
-w_cum(t)                   lapse_cum(t)                    Cumulative lapse proportion
-(none)                     sel_lapse_factor(t)             Mortality loading on persisters
+lambda                     sel_lapse_lambda                Selective-lapse loading
+w_ref                      sel_lapse_ref                   Selective-lapse threshold
+w_cum(t)                   lapse_cum(t)                    Cumulative lapse ratio
+(w_cum at t = 0)           lapse_cum_init()                Lapse ratio at t = 0
+l(t) per policy issued     cohort_frac(t)                  Share of cohort in force
+(none)                     sel_lapse_factor(t)             Loading on persisters
 (table)                    lapse_rate_base(t)              Table annual lapse rate
 M_reb(t)                   rebroke_factor(t)               Rebroking multiplier
-w(t)                       lapse_rate(t)                   Annual lapse rate in month t
+w(t)                       lapse_rate(t)                   Annual lapse rate
 w_m(t)                     lapse_rate_mth(t)               Monthly lapse rate
-l(t)                       pols_if(t)                      In force at the start of month t
-l(t)(1-q_m), l(t+1)        pols_if_at(t, timing)           BEF_DECR / BEF_LAPSE / AFT_DECR
-D(t)                       pols_death(t)                   Expected death/TI claims
-(none)                     pols_lapse(t)                   Lapses at the end of month t
-(none)                     pols_maturity(t)                Expiries at the end of the term
-(none)                     pols_payer(t)                   Policies actually paying premium
-inc(t)                     wop_inc_rate                    WOP annual incidence rate
-(recovery)                 wop_rec_rate                    WOP annual recovery rate
-(deferred period)          wop_defer_mths                  26 weeks, read as 6 months
-(none)                     wop_waived_frac(t)              Fraction with premiums waived
-FIBcum(t)                  fib_cum(t)                      FIB streams already in payment
-a(m)                       annuity_certain_factor(m)       m-month annuity-certain factor
+l(t)                       pols_if(t)                      Count weighting month t
+(l(0))                     pols_if_init()                  Count in force at t = 0
+(none)                     pols_new_biz(t)                 Policies issued in month t
+l(t)(1-q_m), l(t+1)        pols_if_at(t, timing)           The within-month counts
+D(t)                       pols_death(t)                   Death/TI claims
+(none)                     pols_lapse(t)                   Lapses at end of month t
+(none)                     pols_maturity(t)                Expiries at end of term
+(none)                     pols_payer(t)                   Policies paying premium
+inc(t)                     wop_inc_rate                    WOP annual incidence
+(recovery)                 wop_rec_rate                    WOP annual recovery
+(deferred period)          wop_defer_mths                  26 weeks, as 6 months
+u(t)                       wop_waived_frac(t)              Share with premium waived
+(u at t = 0)               wop_waived_frac_init()          Share waived at t = 0
+(deferred, lag k)          wop_deferred_init(k)            In deferral at t=0, lag k
+FIBcum(t)                  fib_cum(t)                      Deaths since issue
+(FIBcum at t = 0)          fib_cum_init()                  Deaths to date per policy
+(1-c) FIBcum(t)            fib_streams(t)                  FIB streams in payment
+(streams at t = 0)         fib_streams_init()              Streams per policy, t = 0
+a(m)                       annuity_certain_factor(m)       m-month annuity-certain
 r_c                        fib_commute_disc_rate           FIB commutation rate, 3%
-CV(k)                      fib_commute_pp(t)               Commuted value of one stream
-(take-up)                  fib_commute_rate()              Proportion of FIB claims commuted
+CV(k)                      fib_commute_pp(t)               Commuted value of a stream
+(take-up)                  fib_commute_rate()              Share of FIB commuted
 P_m x idx_p x l            premiums(t)                     Premium income
 DB(t) x D(t), Claims_fib   claims(t, kind)                 Benefit outgo by kind
 ec x D(t)                  claim_expenses(t)               Claim expense outgo
 E0, e(t)                   expenses(t)                     Acquisition + maintenance
 (none)                     inflation_factor(t)             Expense inflation factor
-c0                         comm_init_pp()                  Initial commission per policy
+c0                         comm_init_pp()                  Initial commission
+(c0 paid at issue)         comm_init_pp_init()             c0 paid, in force at t = 0
 c_r                        comm_renewal_rate               Renewal commission rate
-(clawback)                 comm_clawback(t)                Commission recovered on lapse
+(clawback)                 comm_clawback(t)                Commission recovered
 c0, c_r x premiums         commissions(t)                  Commission outgo, net
-CF(t)                      net_cf(t)                       Net cash flow, income positive
+CF(t)                      net_cf(t)                       Net cash flow, income +
+(none)                     result_pols()                   The counts, month by month
 =========================  ==============================  ==========================
 
-Five names needed care.
+Five names needed care in :mod:`~.Term_UK_S`, and keep their reasons here.
 
 The notes use ``q(t)`` both for the per-life table rate and for the decrement actually
 applied to the policy, which on a joint first-death policy is
@@ -139,11 +240,11 @@ and the single-life case collapses to the same number.
 bare ``*_rate`` is the annual rate everywhere, and only ``*_rate_mth`` is monthly — and
 it is what lets the assumption tables stay in the annual units they are quoted in.
 
-``w(t)`` is the lapse rate and ``w_cum(t)`` the cumulative lapse proportion that drives
-the selective-lapsation loading on *mortality*. Spelling them ``lapse_rate`` and
+``w(t)`` is the lapse rate and ``w_cum(t)`` the cumulative lapse ratio that drives the
+selective-lapsation loading on *mortality*. Spelling them ``lapse_rate`` and
 ``lapse_cum`` keeps the second from reading as a running total of the first, which it
-is not: it is a proportion of the original cohort, and the loading it feeds moves
-claims, not lapses.
+is not: it is a share of the issued cohort, and the loading it feeds moves claims, not
+lapses.
 
 ``E0`` and ``e(t)`` are the acquisition and maintenance expenses; both are inside
 :func:`expenses`, which is the library-wide name, with the claim expense ``ec x D(t)``
@@ -151,172 +252,93 @@ kept out of it under :func:`claim_expenses` because the notes' worked-example ta
 prints the two as separate columns.
 
 ``pols_maturity`` has no symbol in the notes at all. The notes give the roll-forward as
-``l(t+1) = l(t)(1-q_m)(1-w_m)`` and, separately, terminate everything at month ``N``.
-Those do not reconcile in the final month: its survivors neither die nor lapse — their
-cover simply runs out — so without a term for that the roll-forward appears to lose
-lives with no cause. :func:`pols_maturity` names it, zero in every month but the last,
-so that
+``l(t+1) = l(t)(1-q_m)(1-w_m)`` and, separately, terminate everything at the end of the
+term. Those do not reconcile in the last covered month, ``duration_mth(t) = N - 1``: its
+survivors neither die nor lapse — their cover simply runs out — so without a term for
+that the roll-forward appears to lose lives with no cause. :func:`pols_maturity` names
+it, zero in every month but that one, so that
 
-    pols_if(t) - pols_if(t+1) = pols_death(t) + pols_lapse(t) + pols_maturity(t)
+    pols_if(t) - pols_if_at(t + 1, "BEF_NB") = pols_death(t) + pols_lapse(t)
+                                              + pols_maturity(t)
 
-holds for every ``t``; :func:`check_pols_roll_fwd` asserts it. It is bookkeeping
-determined by the notes' own rules, not an added assumption, and the name follows
-``BasicTerm_S.pols_maturity``. Note that it is *not* a maturity **benefit**: the amount
-paid is nil.
+holds for every ``t``, and ``pols_if(t + 1)`` adds ``pols_new_biz(t + 1)`` to the count on
+the left; :func:`check_pols_roll_fwd` asserts it. It is bookkeeping determined by the
+notes' own rules, not an added assumption, and the name follows
+``BasicTerm_S.pols_maturity``. It is *not* a maturity **benefit**: the amount paid is nil.
 
 .. rubric:: The monthly grid, and what it removes
 
-The notes take an annual grid as their base and a monthly one as its arbiter: the
-annual grid has to read the decreasing shape's monthly step-down as a **mid-year**
-balance ``B(12t + 6)``, to annualize the premium and carry it in advance with no
-allowance for a mid-year death or lapse, and to round the family income benefit's
-instalment count to six in the year of death and twelve thereafter. The notes are
-explicit that the first two are an offsetting pair of biases and that the monthly grid
-is what settles them.
-
-This model is that monthly grid, so none of those approximations is here. The
-decreasing benefit is the exact balance :func:`benefit_sched` ``(t)`` of the month the
-claim falls in; the premium is the contractual monthly premium ``P_m``, collected in
-the months it is actually due, and it stops the month the policy leaves; family income
-benefit instalments are counted one by one. What the annual grid could only offset, the
-monthly grid simply does not incur.
-
-Two further things follow. ``premium_mode`` is no longer inert: a policy paying
-annually is charged ``12 P_m`` in the first month of each policy year and nothing in
-the other eleven, which is a real difference in the timing of income on a grid that can
-see it. And the waiver of premium rider's 26-week deferred period, which the annual
-grid could only read as "incidence in year ``t``, waiver from year ``t + 1``", is
-carried explicitly as ``wop_defer_mths = 6`` months.
-
-The assumption tables are unchanged and stay in the annual units they are quoted in:
-``mort_table.csv`` is an annual rate by attained age, ``lapse_table.csv`` an annual rate
-by policy year. :func:`mort_rate_mth` and :func:`lapse_rate_mth` convert them with
-``1 - (1 - r)^(1/12)`` **[std]**, the notes' own monthly-grid convention, so twelve
-months compound back to the annual rate exactly. Both are stepped by policy year, not by
-month: the attained age advances on the policy anniversary, which is what an age-nearest-
-birthday basis means, and the lapse table is keyed by the contractual policy year.
+As in :mod:`~.Term_UK_S`: the decreasing benefit is the exact balance
+:func:`benefit_sched` of the policy month the claim falls in, the premium is the
+contractual monthly premium ``P_m``, collected in the months it is due and stopping the
+month the policy leaves, and family income benefit instalments are counted one by one. A
+policy paying annually is charged ``12 P_m`` in the first month of each policy year,
+``duration_mth(t) % 12 == 0``, and nothing in the other eleven; and the waiver of premium
+rider's 26-week deferred period is carried as ``wop_defer_mths = 6`` months. The
+assumption tables stay in the annual units they are quoted in and are converted with
+``1 - (1 - r)^(1/12)`` **[std]**, stepped by policy year.
 
 .. rubric:: No tail states
 
-This is the structural difference from ``Term_US_S``, and the notes list importing a
-U.S.-style post-level-term tail as a modelling pitfall. A UK term policy expires at the
-end of month ``N - 1``: there is no jump to ART rates, no post-level-term shock lapse,
-no mortality deterioration factor and no conversion option, so none of those cells exist
-here. What does exist and has no U.S. analogue is the family income benefit ledger
-below.
+A UK term policy expires at the end of its term, policy month ``N - 1``: there is no jump
+to ART rates, no post-level-term shock lapse, no mortality deterioration factor and no
+conversion option, so none of those cells exist here, as in :mod:`~.Term_UK_S`. What
+running in force adds is the contract's own bounds, which :func:`proj_len` holds a point
+to: a term of at most ``policy_term_max``, 50 years, or ``policy_term_max_fib``, 40, on
+the family income benefit; an issue age of ``issue_age_min``, 18, or more; and expiry by
+attained age ``expiry_age_max``, 90, or ``expiry_age_max_fib``, 70.
 
 .. rubric:: Terminal illness is not an extra benefit
 
 Terminal illness is a 100% **acceleration** of the death benefit under a two-limb
-12-month definition, not an additional cover: one decrement, one payment. Adding a
-separate terminal-illness decrement double-counts claims, which is the notes'
-first-listed pitfall, and the CMI "16" Series assured lives tables already include
-terminal illness. So ``mort_rate`` is the combined death-and-terminal-illness rate and
-there is no ``ti_rate`` anywhere in the model. The acceleration shifts payment earlier
-by up to twelve months; modelling that shift would need a separate terminal-illness
-diagnosis basis, which the subscriber-restricted tables do not provide, so it is left
-out on the monthly grid as it was on the annual one **[std]**.
+12-month definition, not an additional cover: one decrement, one payment. So
+``mort_rate`` is the combined death-and-terminal-illness rate and there is no ``ti_rate``
+anywhere in the model, as in :mod:`~.Term_UK_S`.
 
 .. rubric:: The family income benefit ledger
 
-A death in month ``k`` on the ``fib`` shape triggers ``N - k`` monthly instalments of
-``I``, in arrears, ending at month ``N``. The instalments are an **annuity-certain**:
-once the claim is admitted they run to the end of the term regardless of any life, so
-the in-payment stream is decremented by neither mortality nor lapse. Only *new* claims
-carry ``l(t)``. Omitting the ledger — paying only the instalment falling in the month
-of death — understates the liability by up to ``N - 1`` months of income, and the notes
-list it as a pitfall.
-
-:func:`fib_cum` is that ledger: the expected number of streams already in payment at
-the start of month ``t``, ``sum of D(s) for s < t``. Each stream pays one instalment at
-the end of each month from the month of death onwards, so
-
-    claims(t, "FIB") = I x [D(t) + FIBcum(t)]
-
-and the whole stream for a death in month ``s`` totals ``N - s`` instalments, which is
-the notes' count at the exact death month with no rounding — the six-and-twelve
-bookkeeping the annual grid needed is gone. :func:`check_fib_ledger` rebuilds the
-month's instalment count from the death vector, with no reference to the recursion, and
-asserts the two agree in every projected month.
-
-The optional commutation module replaces a proportion :func:`fib_commute_rate` of the
-streams with a lump sum, the present value of the remaining instalments at the
-**[std]** snapshot rate ``r_c = 3%``. Contractually the insurer reduces the sum of the
-remaining instalments "fairly and reasonably" and no insurer publishes the basis, so
-the rate is a standardization; base take-up is zero and model point 4 exercises the
-other extreme.
+A death in policy month ``k`` on the ``fib`` shape triggers ``N - k`` monthly instalments
+of ``I``, in arrears, ending at the end of the term: an **annuity-certain**, decremented by
+neither mortality nor lapse, unless the claim is commuted to a lump sum, as the take-up
+``c`` of :func:`fib_commute_rate` is. :func:`fib_streams` is the ledger, the expected
+streams in payment at the start of month ``t``: on a point in force it opens from
+:func:`fib_streams_init`, the streams in payment per policy in force, history, and adds
+the share of each month's deaths not commuted, so that
+``claims(t, "FIB") = I x [(1 - c) D(t) + streams(t)]`` pays the streams that began before
+the valuation date as well as after it, and a take-up changed at the valuation date
+commutes none already in payment. :func:`fib_cum`, :mod:`~.Term_UK_S`'s ``FIBcum``, counts
+the deaths since issue alongside. :func:`check_fib_ledger` rebuilds the month's
+instalment count from the opening streams and the death vector, with no reference to the
+recursion, and asserts the two agree in every projected month.
 
 .. rubric:: Two mortality bases: applied and select
 
-UK assured-lives tables are **select** tables — TMNL16/TFNL16 have a 5-year select
-period, AM92 a 2-year one — so the mortality interface has to accept a rate that
-depends on duration since entry as well as attained age. But the notes' worked example
-is quoted as three applied rates, ``q(0) = 0.00055, q(1) = 0.00060, q(2) = 0.00065``,
-described as illustrative values in the shape of a non-smoker temporary assurance table
-and explicitly *not* taken from any CMI table. Three numbers rising at 9% a year are
-not consistent with a graduated select structure, where the wearing-off of selection
-alone moves the rate faster than that. Forcing them onto one would mean either a
-back-solved ultimate curve that is nearly flat at ages 35-37 or shipped cells that
-deviate from the notes. Both are shipped instead, and which applies is a model point
-column:
-
-``mort_basis = "applied"`` **[std]**
-    ``mort_table.csv`` is read as the annual rate actually applied: no select factor,
-    no proxy scaling. Model points 1-6 and 8; point 1 is the anchor cell and
-    reproduces the worked example to the penny.
-
-``mort_basis = "select"``
-    the same table is read as an **ultimate** basis and multiplied by
-    :func:`select_factor` and by ``mort_scale``, the notes' **[std]** 75% proxy
-    for improvement from the public "00" Series era to the 16-Series era. Model point
-    7. This is the shape a production run takes once licensed tables are dropped in —
-    replacing the two CSVs changes the basis with no formula change.
-
-Both are standardizations. The shipped table is a **[std]** construction throughout:
-the M/N cells at ages 35-37 are the notes' illustrative vector, and every other cell is
-a 9% p.a. geometric extension in age with a 2.2 smoker and a 0.70 female factor, each
-row tagged in the file's ``provenance`` column. It is not a published table and no
+As in :mod:`~.Term_UK_S`, which applies is a model point column: ``mort_basis =
+"applied"`` reads ``mort_table.csv`` as the annual rate actually applied, and
+``"select"`` reads it as an ultimate basis, multiplied by :func:`select_factor`, read at
+the select duration :func:`duration` on the policy clock, and by ``mort_scale``. The
+shipped table is a **[std]** construction throughout, not a published table, and no
 conclusion about UK mortality should be drawn from it.
 
 .. rubric:: Modules that are off in the base run
 
-Four of the notes' optional constructions are implemented and switched off, so that the
-base run reproduces the worked example while the machinery stays visible and testable:
-
-- **Selective lapsation**, ``q_eff = q (1 + lambda max(0, w_cum - w_ref))``, with
-  ``lambda = 0``. Healthier lives lapse, so persisters are progressively impaired; the
-  notes rate it the third-largest lever on a long-term block.
-- **Rebroking**, ``M_reb = min(2, max(1, P_inforce / P_market))`` on the lapse rate,
-  with ``premium_market_ratio`` at 1. Guaranteed premiums rule out premium-shock
-  lapse, so falling market rates for the attained age are the economic driver instead.
-  The Reference is a flat scalar, so the multiplier is level in ``t``; a market premium
-  path would be another input table.
-- **Commission clawback** on lapse inside the clawback window, linear in months in
-  force, with ``clawback_mths`` at 0. Set it to 48 for the notes' four-year rule. The
-  months in force at the end of month ``t`` are ``t + 1`` exactly, so on this grid the
-  linear run-off is read month by month rather than in twelve-month jumps.
-- **Waiver of premium**, a two-state incidence/recovery chain on the premium-paying
-  population, with ``wop`` false on every model point but 7. Both its incidence basis
-  and its extra premium are **[std]** placeholders: no public UK incidence basis for
-  the work-tasks definitions exists in the sources. The 26-week deferred period is
-  carried as ``wop_defer_mths = 6`` months between incidence and the first waived
-  premium **[std]**, and mortality and lapse are assumed independent of the waiver
-  state **[std]**, which is what lets the waived population be carried as a fraction
-  rather than as a separate decrement.
+Four of the notes' optional constructions are implemented and switched off, as in
+:mod:`~.Term_UK_S`: selective lapsation (``sel_lapse_lambda = 0``), rebroking
+(``premium_market_ratio = 1``), commission clawback (``clawback_mths = 0``; 48 for the
+notes' four-year rule, the months in force read on the policy clock) and the waiver of
+premium, on model point 7 alone. Each carries its state in force, so a point valued at
+any month continues as it would have from issue.
 
 .. rubric:: Sign convention
 
 The notes' ``CF(t)`` is already **income positive** — "+ = inflow" — which is the
-library-wide sign of :func:`net_cf`, so unlike the whole life and payout annuity models
-there is no ``liability_cf`` companion to publish: one stream, one sign, one name.
+library-wide sign of :func:`net_cf`, so there is no ``liability_cf`` companion.
 
 .. rubric:: Lapse pays nothing
 
 There is no surrender value and no paid-up value at any duration, so a lapse is a pure
 decrement: it moves ``pols_if`` and pays nothing. ``claims(t, "LAPSE")`` exists and
-returns zero, and ``result_cf()`` carries the zero column, because the notes list a
-non-zero lapse row as a pitfall imported from US models with cash surrender values —
-a column of zeros states the product fact where a missing column would only hide it.
+returns zero, and ``result_cf()`` carries the zero column, as in :mod:`~.Term_UK_S`.
 """
 
 from modelx.serialize.jsonvalues import *
@@ -333,7 +355,11 @@ _spaces = []
 # Cells
 
 def model_point():
-    """The selected model point as a Series."""
+    """The selected model point, its row of ``model_point_table_sec.csv``, as a Series.
+
+    A row of this model's own table, which carries the in-force interface beside
+    :mod:`~.Term_UK_S`'s columns. Each attribute a formula reads has an accessor below.
+    """
     return data.model_point_table().loc[point_id]                    # noqa: F821
 
 
@@ -354,12 +380,19 @@ def is_joint():
     return bool(model_point()["joint_first_death"])
 
 
-def age_at_entry(life=1):
+def age_at_entry(life):
     """x: the issue age (ANB) of the first (``life = 1``) or second life.
 
     Age nearest birthday at entry, plus a curtate policy year **[std]**: the fetched
     product documents state no age basis, and the UK assured lives tables are select
-    tables indexed that way.
+    tables indexed that way. The age at issue, not at the valuation date:
+    ``age(0, life)`` is the attained age then.
+
+    ``life`` has no default, here or in the other five cells that take it, :func:`sex`,
+    :func:`smoker`, :func:`age`, :func:`mort_rate_base` and :func:`mort_rate_life`, where
+    :mod:`~.Term_UK_S` defaults it to 1: every call passes 1 or 2, so that a compiled
+    model declares each a plain parameter. modelx keys :mod:`~.Term_UK_S`'s calls by the
+    arguments bound, ``age(t)`` as ``(t, 1)``, so the two models' cells pair as before.
     """
     if life == 1:
         return int(model_point()["age_at_entry"])
@@ -368,7 +401,7 @@ def age_at_entry(life=1):
     raise ValueError("invalid life")
 
 
-def sex(life=1):
+def sex(life):
     """The sex (M / F) of the first or second life."""
     if life == 1:
         return model_point()["sex"]
@@ -377,7 +410,7 @@ def sex(life=1):
     raise ValueError("invalid life")
 
 
-def smoker(life=1):
+def smoker(life):
     """The smoker status (N / S) of the first or second life."""
     if life == 1:
         return model_point()["smoker"]
@@ -387,12 +420,20 @@ def smoker(life=1):
 
 
 def policy_term():
-    """n: the term in years; 1-50 level, 5-50 decreasing, 5-40 FIB [S1][S6][S8]."""
+    """n: the term in years; 1-50 level, 5-50 decreasing, 5-40 FIB [S1][S6][S8].
+
+    :func:`proj_len` refuses a term above ``policy_term_max``, 50 years, or
+    ``policy_term_max_fib``, 40, on the family income benefit.
+    """
     return int(model_point()["policy_term"])
 
 
 def sum_assured():
-    """SA0: the initial sum assured of the level and decreasing shapes [S1][S6]."""
+    """SA0: the initial sum assured of the level and decreasing shapes [S1][S6].
+
+    The sum assured at issue: on an indexed point in force, the cover of the year under
+    way is this times :func:`idx_factor_init`.
+    """
     return float(model_point()["sum_assured"])
 
 
@@ -431,13 +472,14 @@ def wop():
 
 
 def premium_mth_pp():
-    """P_m: the guaranteed monthly premium per policy **[std]**.
+    """P_m: the guaranteed monthly premium per policy at issue **[std]**.
 
     A pure modelling value.  No UK insurer publishes premium rate tables - pricing is
     quote-driven and only the £5/month minimum is public [S5] - so any reference
     premium basis is constructed rather than observed.  It is guaranteed level for the
     full term [S2][S6][S9], which is what puts every month of premium inside the
-    Solvency UK contract boundary [R3].
+    Solvency UK contract boundary [R3].  On an indexed point in force, the premium of the
+    year under way is this times :func:`idx_prem_factor_init`.
     """
     return float(model_point()["premium_mth"])
 
@@ -445,14 +487,13 @@ def premium_mth_pp():
 def premium_mode():
     """Monthly or annual premium collection.
 
-    Live on this grid, unlike the annual one, which annualized either way.  A monthly
-    payer is charged ``P_m`` in every month; an annual payer is charged ``12 P_m`` in
-    the first month of each policy year and nothing in the other eleven.  The amount
-    collected over a policy year is the same and only its timing differs, so the
-    difference is small and one-signed: the annual payer's income arrives earlier and
-    is collected in full from a life that may leave during the year.  No premium
-    discount for annual collection is modelled **[std]**; UK protection pricing is
-    quote-driven and no published scale exists.
+    A monthly payer is charged ``P_m`` in every month; an annual payer is charged
+    ``12 P_m`` in the first month of each policy year, ``duration_mth(t) % 12 == 0`` on
+    the policy clock, and nothing in the other eleven, so a point valued mid-year pays its
+    next premium on its next anniversary.  The amount collected over a policy year is the
+    same and only its timing differs.  No premium discount for annual collection is
+    modelled **[std]**; UK protection pricing is quote-driven and no published scale
+    exists.
     """
     v = model_point()["premium_mode"]
     if v not in ("monthly", "annual"):
@@ -475,18 +516,154 @@ def mort_basis():
     return v
 
 
-def pols_if_init():
-    """Initial number of policies in force; 1.0 on a single-policy model point."""
-    return float(model_point()["pols_if_init"])
+def policy_count():
+    """The number of policies the model point stands for, its ``policy_count`` column.
 
-
-def duration_inforce():
-    """Completed policy **years** already elapsed when the projection starts; 0 at issue.
-
-    A policy attribute, carried on the model point in the units a contract speaks in,
-    and converted to the grid's months by :func:`proj_start`.
+    A point in force at the valuation date counts the policies in force then, before any
+    month-0 event; any other point counts the policies it issues. Either way the count
+    enters the projection once: as :func:`pols_if_init` for the first, as
+    :func:`pols_new_biz` in the issue month for the second. It is the one weight on every
+    flow: every opening-state column is per policy in force, or a ratio.
     """
-    return int(model_point()["duration_inforce"])
+    return float(model_point()["policy_count"])
+
+
+def pols_if_init():
+    """Policies in force at the valuation date, before any month-0 event.
+
+    ``policy_count()`` for a point already in force at ``t = 0``
+    (``duration_mth_init() > 0``), and 0 for one issued at or after it, whose policies
+    enter through :func:`pols_new_biz` in the issue month instead, as in
+    ``basiclife.BasicTerm_SE``. So on a point issued at ``t = 0`` this is 0, and
+    ``pols_if(0)`` is the issued count.
+    """
+    return policy_count() if duration_mth_init() > 0 else 0.0
+
+
+def duration_mth_init():
+    """Completed policy months at the valuation date, the ``duration_mth`` column.
+
+    The policy's age in months at ``t = 0``: 60 for model point 8, issued five years
+    before the valuation date, 0 for one issued at it, and -13 for one to be issued 13
+    months after it, which ``Data`` admits up to ``future_horizon_mth`` months ahead. It
+    is read as ``basiclife.BasicTerm_SE`` reads it, and is the one fact the policy clock
+    takes from the model point. It replaces :mod:`~.Term_UK_S`'s ``duration_inforce``
+    column, a count of whole years, twelve months to each of which S opened its frame
+    late, on an anniversary only; a point may be valued in any month of its policy year.
+    """
+    return int(model_point()["duration_mth"])
+
+
+def lapse_cum_init():
+    """w_cum at the valuation date: the share of the issued cohort that has lapsed.
+
+    :func:`lapse_cum`'s value entering month 0, a ratio to the policies issued, so the
+    count does not move it. 0 on a point not yet in force, which ``Data`` requires, and
+    on :mod:`~.Term_UK_S`'s point 8, which S opens with nothing lapsed. With
+    :func:`fib_cum_init` it gives :func:`cohort_frac` its opening value.
+    """
+    return float(model_point()["lapse_cum_init"])
+
+
+def fib_cum_init():
+    """FIBcum at the valuation date, per policy in force: the deaths since issue.
+
+    :func:`fib_cum`'s value entering month 0 divided by the count in force then, which
+    :func:`fib_cum` scales by :func:`pols_if_init`. On every shape, as
+    :mod:`~.Term_UK_S`'s ``fib_cum`` counts them, the deaths since issue, which with
+    :func:`lapse_cum_init` give :func:`cohort_frac` its opening value. Which of those
+    deaths' streams are still in payment is :func:`fib_streams_init`, a column of its own.
+    0 on a point not yet in force, which ``Data`` requires.
+    """
+    return float(model_point()["fib_cum_init"])
+
+
+def fib_streams_init():
+    """The family income benefit streams in payment at the valuation date, per policy.
+
+    :func:`fib_streams`'s value entering month 0 divided by the count in force then: the
+    deaths since issue whose instalments were not commuted, each at the take-up of the
+    month it fell in. History, read from the model point: :mod:`~.Term_UK_S` re-derives
+    it as ``(1 - fib_commute_rate()) x FIBcum``, so a take-up set at the valuation date
+    would reach back over every claim already admitted, commuting streams long in payment.
+    At a take-up that never changed it is that, ``(1 - c) x`` :func:`fib_cum_init`, and
+    it is never more than :func:`fib_cum_init`, which ``Data`` requires. 0 on a point not
+    yet in force, and on the level and decreasing shapes, which pay no instalments.
+    """
+    return float(model_point()["fib_streams_init"])
+
+
+def idx_factor_init():
+    """idx at the valuation date: the cover factor of the policy year under way.
+
+    The RPI increases the policy has already been given, as one factor on
+    :func:`sum_assured`, the sum assured at issue: on a valuation on an anniversary, the
+    factor of the policy year it opens. History, read from the model point, not
+    recomputed from ``rpi_rate``, which is the assumed rate from the valuation date on.
+    1 on a point not yet in force or without the option, which ``Data`` requires.
+    """
+    return float(model_point()["idx_factor_init"])
+
+
+def idx_prem_factor_init():
+    """idx_p at the valuation date: the premium factor of the policy year under way.
+
+    :func:`idx_factor_init`'s counterpart on the premium, :func:`premium_mth_pp` the
+    premium at issue.  History, as the cover factor is.  1 on a point not yet in force or
+    without the option, which ``Data`` requires.
+    """
+    return float(model_point()["idx_prem_factor_init"])
+
+
+def wop_waived_frac_init():
+    """u at the valuation date: the share of the policies in force whose premium is waived.
+
+    :func:`wop_waived_frac`'s value entering month 0, the lives who have completed the
+    deferred period and not recovered. 0 on a point not yet in force or without the
+    rider, which ``Data`` requires, and on a point in force no longer than the deferred
+    period, whose first incapacity has not yet run its course, which :func:`proj_len`
+    requires. The lives still inside the deferred period are the pipeline,
+    :func:`wop_deferred_init`.
+    """
+    return float(model_point()["wop_waived_frac_init"])
+
+
+def wop_deferred_init(k):
+    """The share in the deferred period at ``t = 0``, incapacitated ``k`` months before.
+
+    The policies in force whose life became incapacitated in the policy month ``k`` months
+    before the valuation date, from the premium-paying lives, ``inc_m (1 - u)``, and has
+    not recovered by the start of month 0: the incidence of that month after the
+    ``k - 1`` months of recovery it has already been through, at the rates of those
+    months. :func:`wop_waived_frac` takes the cohort in at ``t = wop_defer_mths + 1 - k``,
+    once the deferred period has run, less the recoveries of its remaining ``t`` months,
+    at ``wop_rec_rate``, the assumption from the valuation date on. ``k`` runs from 1 to
+    ``min(wop_defer_mths, duration_mth_init())``: a cohort ``wop_defer_mths + 1`` months
+    back or more has entered the waived share, :func:`wop_waived_frac_init`, already, and
+    none predates issue. History, read from the companion ``wop_pipeline_sec.csv``, keyed
+    ``(point_id, lag)``, not recomputed from ``wop_inc_rate`` or ``wop_rec_rate``: held
+    as the incidence instead, the months of the deferred period already run would be run
+    again at today's recovery rate.
+
+    One float of one ``.loc`` of ``Data.wop_pipeline``, after :func:`proj_len`, which
+    refuses a point whose pipeline does not hold exactly the lags it reads, naming it.
+    """
+    proj_len()
+    return float(data.wop_pipeline().loc[(point_id, k), "wop_deferred_init"])  # noqa: F821
+
+
+def comm_init_pp_init():
+    """c0 paid at issue, per policy, on a point in force at the valuation date.
+
+    The initial commission the policy paid when it was written, which the clawback
+    recovers on a lapse inside its window: history, read from the model point, where
+    :mod:`~.Term_UK_S` re-derives it from ``comm_init_rate`` and the premium, so that a
+    rate changed at the valuation date would change what was paid years before.
+    :func:`comm_init_pp` returns it on a point in force; a point issued at or after the
+    valuation date pays the rate, and holds 0 here, which ``Data`` requires, the
+    commission being an event of the issue month.
+    """
+    return float(model_point()["comm_init_pp_init"])
 
 
 def fib_commute_rate():
@@ -499,63 +676,166 @@ def fib_commute_rate():
     return float(model_point()["fib_commute_rate"])
 
 
-def proj_start():
-    """The first projected month: ``12 x duration_inforce()``, the elapsed months.
-
-    0 at issue, so the acquisition expense and the initial commission fall inside the
-    projection; an in-force model point starts on the anniversary that opens its next
-    policy year and never sees either.
-    """
-    return 12 * duration_inforce()
-
-
 def proj_len():
-    """The number of policy months counted from issue: ``12n``, exactly ``term_mths()``.
+    """The number of months from the valuation date to the end of cover.
 
-    The exclusive end of the frame, which runs ``t = proj_start(), ..., proj_len() - 1``
-    - ``range(proj_len())`` for a point projected from issue.  Cover ceases at the end of
-    the term with no maturity value, no renewal and no conversion [S1][S2][S6][S8][R8],
-    so the horizon is ``N = 12n`` months and there is nothing after ``t = N - 1`` - the
-    structural contrast with ``Term_US_S``, which runs on to attained age 95.
+    ``term_mths() - duration_mth_init()``: 300 for the anchor cell issued at ``t = 0``,
+    240 for model point 8, in force 60 months, and the term's months plus ``k`` for a
+    point issued ``k`` months after the valuation date. The frame is
+    ``t = 0, 1, ..., proj_len() - 1``; ``proj_len()`` is its exclusive end and the row
+    count of :func:`result_cf`. Cover ceases at the end of the term with no maturity
+    value, no renewal and no conversion [S1][S2][S6][S8][R8].
+
+    Seven kinds of point raise here, naming the point, rather than project nothing or a
+    frame the contract does not have, each checked in this order:
+
+    * one whose cover ended at or before the valuation date, which an in-force extract
+      should not carry;
+    * one whose term is above ``policy_term_max``, 50 years, or on the family income
+      benefit ``policy_term_max_fib``, 40;
+    * one with a life issued below ``issue_age_min``, 18;
+    * one with a life whose cover runs past attained age ``expiry_age_max``, 90, or on the
+      family income benefit ``expiry_age_max_fib``, 70: the issue age plus the term;
+    * one with the waiver rider in force while ``wop_inc_rate`` or ``wop_rec_rate``, an
+      annual rate, is outside 0 to 1 or not a number: each is one Reference, with no
+      factor and no cap, and past 1 its monthly rate, ``1 - (1 - r)^(1/12)``, has no real
+      value, which :mod:`~.Term_UK_S` projects as a complex number;
+    * one with the waiver rider in force under a negative ``wop_defer_mths``, or in force
+      no longer than ``wop_defer_mths`` with a waived share other than 0, a state
+      :mod:`~.Term_UK_S` cannot reach, since no incapacity has yet run the deferred period;
+    * one with the waiver rider in force whose pipeline in ``wop_pipeline_sec.csv`` does
+      not hold exactly one lag for each of its last ``min(wop_defer_mths,
+      duration_mth_init())`` months, lags 1 to that.
+
+    The last two rules read ``wop_defer_mths``, a Reference of this Space, which ``Data``
+    cannot see, so they are checked here.
+
+    These are the product's limits (``product-spec.md``), and rules of the product, read
+    from this Space's References, where ``Data`` checks the tables. They are the contract
+    a compiled model's caches are sized from: a frame of at most 50 years and the future
+    horizon, ages from 18 to 90 on the mortality table, a schedule of at most 600 months
+    and an annuity-certain of at most 480. Every report reads this cell first, so no
+    point outside them is projected. A point without the rider reads neither waiver rate,
+    and projects whatever they are.
     """
-    return term_mths()
+    n = term_mths() - duration_mth_init()
+    if n <= 0:
+        raise ValueError(
+            f"point_id {point_id}: duration_mth {duration_mth_init()} "  # noqa: F821
+            f"is at or past the end of cover, policy month {term_mths()}")
+    fib = shape() == "fib"
+    longest = policy_term_max_fib if fib else policy_term_max        # noqa: F821
+    if policy_term() > longest:
+        raise ValueError(
+            f"point_id {point_id}: the term, {policy_term()} years, is above "  # noqa: F821
+            f"{'policy_term_max_fib' if fib else 'policy_term_max'}, {longest}")
+    oldest = expiry_age_max_fib if fib else expiry_age_max           # noqa: F821
+    for life in range(1, 3 if is_joint() else 2):
+        if age_at_entry(life) < issue_age_min:                       # noqa: F821
+            raise ValueError(
+                f"point_id {point_id}: life {life}'s issue age, "    # noqa: F821
+                f"{age_at_entry(life)}, is below issue_age_min, {issue_age_min}")  # noqa: F821
+        if age_at_entry(life) + policy_term() > oldest:
+            raise ValueError(
+                f"point_id {point_id}: life {life}'s cover runs to attained age "  # noqa: F821
+                f"{age_at_entry(life) + policy_term()}, issue age "
+                f"{age_at_entry(life)} and a {policy_term()}-year term, past "
+                f"{'expiry_age_max_fib' if fib else 'expiry_age_max'}, {oldest}")
+    if wop():
+        if not (wop_inc_rate >= 0.0 and wop_inc_rate <= 1.0):        # noqa: F821
+            raise ValueError(f"point_id {point_id}: wop_inc_rate must be "  # noqa: F821
+                             f"a number from 0 to 1, not {wop_inc_rate}")  # noqa: F821
+        if not (wop_rec_rate >= 0.0 and wop_rec_rate <= 1.0):        # noqa: F821
+            raise ValueError(f"point_id {point_id}: wop_rec_rate must be "  # noqa: F821
+                             f"a number from 0 to 1, not {wop_rec_rate}")  # noqa: F821
+        if wop_defer_mths < 0:                                       # noqa: F821
+            raise ValueError(f"point_id {point_id}: wop_defer_mths must be "  # noqa: F821
+                             f"0 months or more, not {wop_defer_mths}")  # noqa: F821
+        if (duration_mth_init() > 0 and duration_mth_init() <= wop_defer_mths  # noqa: F821
+                and wop_waived_frac_init() != 0.0):
+            raise ValueError(
+                f"point_id {point_id}: wop_waived_frac_init is "     # noqa: F821
+                f"{wop_waived_frac_init()}, where a waiver point in force "
+                f"{duration_mth_init()} months, no longer than wop_defer_mths, "
+                f"{wop_defer_mths}, has waived no premium yet: 0")   # noqa: F821
+        lags = min(wop_defer_mths, max(duration_mth_init(), 0))      # noqa: F821
+        held = int(data.wop_pipeline_count()[point_id])              # noqa: F821
+        last = int(data.wop_pipeline_last()[point_id])               # noqa: F821
+        if held != lags or last != lags:
+            raise ValueError(
+                f"point_id {point_id}: wop_pipeline_sec.csv holds {held} lags, "  # noqa: F821
+                f"its last {last}, where a waiver point in force "
+                f"{max(duration_mth_init(), 0)} months holds one for each of its "
+                f"last {lags}, min(wop_defer_mths, duration_mth), lags 1 to {lags}")
+    return n
 
 
 def term_mths():
-    """N = 12n: the term in months, the horizon of the benefit schedules and the frame."""
+    """N = 12n: the term in months, the policy month cover ends at, on the policy clock.
+
+    The horizon of the benefit schedules, and :mod:`~.Term_UK_S`'s frame from issue: the
+    last covered month is ``duration_mth(t) = N - 1``, and :func:`is_active` is false
+    from ``duration_mth(t) = N`` on. :func:`proj_len` counts from the valuation date
+    instead.
+    """
     return 12 * policy_term()
 
 
-def duration(t):
-    """Completed years since entry at the start of month t: ``t // 12``, 0 in the first.
+def t_entry():
+    """The first month the policy is on the books: ``max(0, -duration_mth_init())``.
 
-    The select duration, which is what the UK assured lives tables are indexed by
-    alongside attained age.  ``t`` counts from issue for every model point, so an
-    in-force point's duration is measured from entry, not from the projection start.
+    0 for a point in force at the valuation date or issued at it, ``k`` for one issued
+    ``k`` months later. It is the base of every recursion: the count, the lapse ratio and
+    the cohort's share in force, the waived share and the ledger open there, from the
+    opening state, and none reads a month before it.
     """
-    return t // 12
+    return max(0, -duration_mth_init())
+
+
+def is_active(t):
+    """Whether month t is inside cover: issued, and not yet expired.
+
+    ``0 <= duration_mth(t) < term_mths()``. False before issue and from the month cover
+    has ended, ``t = proj_len()``. Outside cover every count is zero, and so every cash
+    flow; no count cell evaluates a rate there, and no table is read at a policy year, a
+    select duration or an attained age the policy does not have.
+    """
+    return 0 <= duration_mth(t) < term_mths()
+
+
+def duration(t):
+    """Completed policy years at the start of month t: ``duration_mth(t) // 12``.
+
+    0 throughout the first policy year, and negative before issue. The select duration,
+    which is what the UK assured lives tables are indexed by alongside attained age,
+    and the count of anniversaries the indexation factors step on.
+    """
+    return duration_mth(t) // 12
 
 
 def duration_mth(t):
-    """Months elapsed from issue at the start of month t; equal to ``t``.
+    """Completed policy months at the start of month t, the **policy** clock.
 
-    The notes' benefit-schedule index ``k``.  ``t`` is 0-based and counts from issue, so
-    the identity is trivial - the cells exists so the monthly models in this library
-    share one vocabulary.
+    ``duration_mth_init() + t``: ``t`` counts months from the valuation date and
+    ``duration_mth(t)`` months from issue, and the two move together. The notes'
+    benefit-schedule index ``k``. A closed form, where ``basiclife.BasicTerm_SE`` adds one
+    a month by recursion: the same numbers, without a call chain as long as the frame.
+    Negative before issue.
     """
-    return t
+    return duration_mth_init() + t
 
 
 def policy_year(t):
-    """The contractual policy year containing month t: the 1-based label ``t // 12 + 1``.
+    """The contractual policy year containing month t: the 1-based label ``duration(t) + 1``.
 
     Used only where a 1-based schedule is looked up - the lapse table's
-    ``policy_year`` key.  Never the index of anything in the projection.
+    ``policy_year`` key.  Never the index of anything in the projection.  It is 0 or less
+    before issue, where nothing reads a table by it.
     """
     return duration(t) + 1
 
 
-def age(t, life=1):
+def age(t, life):
     """The attained age (ANB) of ``life`` in month t: ``x + duration(t)``.
 
     Advances on the policy anniversary rather than monthly, which is what an
@@ -565,37 +845,61 @@ def age(t, life=1):
 
 
 def select_factor(t):
-    """The select-duration factor applying in month t **[std]**.
+    """The select-duration factor applying in month t **[std]**; 0 outside cover.
 
     A 5-year select period, the structure of TMNL16/TFNL16 [R12], with the factor
     grading from 0.55 at duration 0 to 1.00 at and beyond ``select_period``.  Stepped by
-    completed policy year, like the table it multiplies.  Read only on the *select*
+    completed policy year, like the table it multiplies, read at
+    ``min(duration(t), select_period)`` on the policy clock.  Read only on the *select*
     mortality basis; the *applied* basis takes the table as it stands.  The values are a
     standardization - the real tables are subscriber-only [R11] - and a licensed basis
     drops in by replacing the CSV.
+
+    It is the one cell that reads ``Data.select_factor_table``, and it reads it only in
+    cover: before issue ``duration(t)`` is negative, where :mod:`~.Term_UK_S`'s lookup
+    raised ``KeyError``. A duration past the table's last, ``Data.select_last_duration``,
+    where ``select_period`` runs beyond it, raises ``ValueError``, naming the point.
     """
+    if not is_active(t):
+        return 0.0
     d = min(duration(t), select_period)                              # noqa: F821
+    if d > data.select_last_duration():                              # noqa: F821
+        raise ValueError(f"point_id {point_id}: select_factor_table.csv has no factor "  # noqa: F821
+                         f"at duration {d}")
     return float(data.select_factor_table().loc[d, "factor"])        # noqa: F821
 
 
-def mort_rate_base(t, life=1):
+def mort_rate_base(t, life):
     """The annual mortality table rate for ``life`` at its attained age in month t.
 
     Includes terminal illness, which is an acceleration of the death benefit rather
     than a separate cover [S1][S6][S8]; the 16-Series tables the shipped table proxies
     are graduated on that basis [R10].
+
+    Zero outside cover, where ``age(t, life)`` is not an age the policy reaches in force.
+    Inside it, this is the one cell that reads ``Data.mort_table``. An age outside the
+    table's, ``Data.mort_age_first`` to ``Data.mort_age_last``, raises ``ValueError``,
+    naming the point and the age, where :mod:`~.Term_UK_S`'s lookup raised ``KeyError``.
     """
-    return float(data.mort_table().loc[                              # noqa: F821
-        (sex(life), smoker(life), age(t, life)), "mort_rate"])
+    if not is_active(t):
+        return 0.0
+    a = age(t, life)
+    if a < data.mort_age_first() or a > data.mort_age_last():        # noqa: F821
+        raise ValueError(f"point_id {point_id}: mort_table.csv has no rate at "  # noqa: F821
+                         f"attained age {a}")
+    return float(data.mort_table().loc[(sex(life), smoker(life), a), "mort_rate"])  # noqa: F821
 
 
-def mort_rate_life(t, life=1):
+def mort_rate_life(t, life):
     """The annual mortality (incl. TI) rate applied to ``life`` in month t.
 
     The table rate, then on the *select* basis the select factor and the **[std]** 75%
     proxy scaling, then the selective-lapsation loading.  Capped at 1, the bound second,
     ``min(q, 1.0)``, so that a missing input, a NaN, stays NaN, where ``min(1.0, q)``
-    would read it as 1.
+    would read it as 1: :mod:`~.Term_UK_S`'s cap, and no departure.  ``Data`` refuses a
+    blank, text or infinite value wherever the product reads one, so that none reaches
+    it.  Past 1 the monthly rate, ``1 - (1 - q)^(1/12)``, has no real value; at 1 it is 1,
+    and every policy in force at the start of the month dies in it.
     """
     q = mort_rate_base(t, life)
     if mort_basis() == "select":
@@ -631,15 +935,46 @@ def mort_rate_mth(t):
 
 
 def lapse_cum(t):
-    """w_cum(t): the cumulative lapse proportion of the original cohort before month t.
+    """w_cum(t): the cumulative lapse ratio of the issued cohort at the start of month t.
 
-    A proportion of ``pols_if_init()``, not a running total of :func:`lapse_rate`, and
-    it drives a loading on **mortality** rather than on lapse.  Zero in the first
-    projected month.
+    A share of the policies issued, not a running total of :func:`lapse_rate`, and it
+    drives a loading on **mortality** rather than on lapse.  At :func:`t_entry` it is
+    :func:`lapse_cum_init`, the ratio already reached at the valuation date, 0 on a point
+    issued at or after it; each month after adds that month's lapses as a share of the
+    issued cohort, :func:`cohort_frac` times the month's lapse probability, which
+    :mod:`~.Term_UK_S` writes as ``pols_lapse(t - 1) / pols_if_init()``, the same number
+    on a point that counts one policy issued.  Written count-free, it is the same whatever
+    the count, and needs none of the policies issued, which a point in force does not
+    carry.  0 outside cover.
     """
-    if t <= proj_start():
+    if not is_active(t):
         return 0.0
-    return lapse_cum(t - 1) + pols_lapse(t - 1) / pols_if_init()
+    if t == t_entry():
+        return lapse_cum_init()
+    return (lapse_cum(t - 1) + cohort_frac(t - 1) * (1.0 - mort_rate_mth(t - 1))
+            * lapse_rate_mth(t - 1))
+
+
+def cohort_frac(t):
+    """The share of the issued cohort in force at the start of month t: l(t) per policy
+    issued.
+
+    The notes' in-force probability ``l(t)``, ``l(0) = 1``, counted per policy issued: what
+    :func:`lapse_cum` weights a month's lapse probability by.  1 at issue.  A point in
+    force carries no count of the policies issued, so at :func:`t_entry` it is rebuilt
+    from the opening state: every policy issued is still in force, has died or has lapsed,
+    since none expires before the end of cover, so the policies issued are those in force
+    and the deaths since issue, ``1 + fib_cum_init()`` per policy in force, over the share
+    that has not lapsed, ``1 - lapse_cum_init()``, and this is the inverse of that ratio.
+    Then the notes' roll-forward, ``l(t+1) = l(t)(1 - q_m)(1 - w_m)``, one cell a month.
+    It holds no count, so the count moves none of it.  0 outside cover.
+    """
+    if not is_active(t):
+        return 0.0
+    if t == t_entry():
+        return (1.0 - lapse_cum_init()) / (1.0 + fib_cum_init())
+    return (cohort_frac(t - 1) * (1.0 - mort_rate_mth(t - 1))
+            * (1.0 - lapse_rate_mth(t - 1)))
 
 
 def sel_lapse_factor(t):
@@ -649,7 +984,9 @@ def sel_lapse_factor(t):
     a block that has already shed a large proportion of its lives carries impaired
     mortality on the remainder - guaranteed premiums plus healthy-life rebroking make
     this a structural feature of UK term rather than an incidental one.  Off in the base
-    run (``sel_lapse_lambda = 0``), where it returns 1 in every month.
+    run (``sel_lapse_lambda = 0``), where it returns 1 in every month.  On a point in
+    force the ratio carries on from :func:`lapse_cum_init`, so the loading is what it
+    would have been from issue.
     """
     return 1.0 + sel_lapse_lambda * max(                             # noqa: F821
         0.0, lapse_cum(t) - sel_lapse_ref)                           # noqa: F821
@@ -662,11 +999,17 @@ def lapse_rate_base(t):
     rate for pure protection and to the spike pattern just after the two- and four-year
     commission clawback periods end [R9].  A full duration curve is not public and the
     levels are standardized calibrations.  The table is keyed by the contractual
-    1-based policy year, read at :func:`policy_year` ``(t) = t // 12 + 1``; policy years
-    beyond the table take its last row.
+    1-based policy year, read at :func:`policy_year` ``(t)`` on the policy clock; policy
+    years beyond the table take its last row, ``Data.lapse_last_year``.
+
+    Zero outside cover, where the month has no policy year: before issue
+    :func:`policy_year` is 0 or less, where :mod:`~.Term_UK_S`'s lookup raised
+    ``KeyError``.
     """
-    tbl = data.lapse_table()                                         # noqa: F821
-    return float(tbl.loc[min(policy_year(t), int(tbl.index.max())), "lapse_rate"])
+    if not is_active(t):
+        return 0.0
+    y = min(policy_year(t), data.lapse_last_year())                  # noqa: F821
+    return float(data.lapse_table().loc[y, "lapse_rate"])            # noqa: F821
 
 
 def rebroke_factor(t):
@@ -684,8 +1027,9 @@ def rebroke_factor(t):
 def lapse_rate(t):
     """w(t): the **annual** lapse rate applying in month t.
 
-    The table rate times the rebroking multiplier, capped at 1.  A lapse pays nothing:
-    there is no surrender or paid-up value at any duration [S1][S6][S8][R8].
+    The table rate times the rebroking multiplier, capped at 1, in
+    :mod:`~.Term_UK_S`'s order.  A lapse pays nothing: there is no surrender or paid-up
+    value at any duration [S1][S6][S8][R8].
     """
     return min(1.0, lapse_rate_base(t) * rebroke_factor(t))
 
@@ -702,27 +1046,33 @@ def lapse_rate_mth(t):
 
 
 def pols_if(t):
-    """l(t): the number of policies in force at the **start** of month t.
+    """l(t): the number of policies in force at time t, the count that weights row t.
 
-    ``pols_if_init()`` in the first projected month ``t = proj_start()`` (``l(0) = 1``
-    at issue), then the notes' monthly recursion
-    ``l(t+1) = l(t)(1 - q_m(t))(1 - w_m(t))``.  This is the weight on every cash flow of
-    the same ``result_cf()`` row.  Zero outside ``proj_start() .. proj_len() - 1``: the
-    cover has not started or has expired.
+    ``pols_if_at(t, "BEF_DECR")``: the count carried in from month t - 1, plus month t's
+    new business, before month t's decrements. On a point issued at ``t = 0`` that is
+    exactly :mod:`~.Term_UK_S`'s ``pols_if``, the count at the start of the month, which
+    follows the notes' monthly recursion ``l(t+1) = l(t)(1 - q_m(t))(1 - w_m(t))``. It is
+    ``basiclife.BasicTerm_SE``'s ``BEF_DECR`` count, not its ``pols_if``. Zero outside
+    cover: before issue, and from ``t = proj_len()`` on, when the term has ended.
     """
-    if t < proj_start() or t >= proj_len():
-        return 0.0
-    if t == proj_start():
-        return pols_if_init()
-    return pols_if_at(t - 1, "AFT_DECR")
+    return pols_if_at(t, "BEF_DECR")
 
 
 def pols_if_at(t, timing):
     """The number of policies in force at a point inside month t.
 
+    ``"BEF_NB"``
+        The count carried in from month t - 1, before month t's new business: the
+        survivors of month t - 1's deaths and lapses, out of month t - 1's
+        ``"BEF_DECR"`` count. At :func:`t_entry`, the first month on the books, it is
+        :func:`pols_if_init`, the count in force at the valuation date (0 for a point
+        issued at or after it), and the recursion reads no earlier month. Zero outside
+        cover, so the survivors of the last covered month leave as
+        :func:`pols_maturity`.
+
     ``"BEF_DECR"``
-        l(t), the start of the month, before any decrement; the same number
-        as :func:`pols_if` and the weight on that month's cash flows.
+        ``"BEF_NB"`` plus :func:`pols_new_biz`: l(t), the count that weights month t,
+        which :func:`pols_if` returns.
 
     ``"BEF_LAPSE"``
         after deaths, before lapses - the notes' processing order is
@@ -730,54 +1080,84 @@ def pols_if_at(t, timing):
         lapses are taken from.
 
     ``"AFT_DECR"``
-        l(t+1), the end-of-month state: what is left once the month's deaths
-        and lapses are taken, and zero from the final month ``t = proj_len() - 1``
-        on because the cover expires at its end.
+        l(t+1), the end-of-month state: what is left once the month's deaths and lapses
+        are taken, and zero from the last covered month on, because the cover expires
+        at its end. It is ``"BEF_NB"`` at t + 1 exactly, one product in one order.
+
+    ``"BEF_NB"`` is the one timing running in force adds, as ``basiclife.BasicTerm_SE``
+    names it; the other three are :mod:`~.Term_UK_S`'s, and any other raises.
+    ``"BEF_NB"`` forms month t - 1's ``"BEF_DECR"`` count itself, as ``"BEF_NB"`` plus
+    :func:`pols_new_biz` at t - 1, the same sum in the same order, rather than calling for
+    it. So the chain of calls from month t back to :func:`t_entry` is one cell a month,
+    where :mod:`~.Term_UK_S`'s ``pols_if`` chain runs three: a compiled model runs that
+    chain on the C stack.
     """
+    if timing == "BEF_NB":
+        if not is_active(t):
+            return 0.0
+        if t == t_entry():
+            return pols_if_init()
+        return ((pols_if_at(t - 1, "BEF_NB") + pols_new_biz(t - 1))
+                * (1.0 - mort_rate_mth(t - 1)) * (1.0 - lapse_rate_mth(t - 1)))
     if timing == "BEF_DECR":
-        return pols_if(t)
+        return pols_if_at(t, "BEF_NB") + pols_new_biz(t)
     if timing == "BEF_LAPSE":
+        if not is_active(t):
+            return 0.0
         return pols_if(t) * (1.0 - mort_rate_mth(t))
     if timing == "AFT_DECR":
-        if t < proj_start() or t >= proj_len() - 1:
+        if not is_active(t) or duration_mth(t) >= term_mths() - 1:
             return 0.0
         return pols_if_at(t, "BEF_LAPSE") * (1.0 - lapse_rate_mth(t))
     raise ValueError("invalid timing")
+
+
+def pols_new_biz(t):
+    """The number of policies issued in month t: ``policy_count()`` in the issue month.
+
+    The issue month is the one with ``duration_mth(t) == 0``: ``t = 0`` for a point
+    issued at the valuation date, ``t = k`` for one issued ``k`` months later. A point
+    already in force at the valuation date has none.
+    """
+    return policy_count() if duration_mth(t) == 0 else 0.0
 
 
 def pols_death(t):
     """D(t) = l(t) q_m(t): expected death and terminal illness claims in month t.
 
     One decrement covering both: terminal illness accelerates the death benefit rather
-    than adding to it [S1][S6][S8].
+    than adding to it [S1][S6][S8].  Zero outside cover, before any rate is read.
     """
-    return pols_if(t) * mort_rate_mth(t)
+    return pols_if(t) * mort_rate_mth(t) if is_active(t) else 0.0
 
 
 def pols_lapse(t):
     """Lapses at the end of month t, taken from the survivors of mortality.
 
     Pays nothing - there is no surrender value [S6][R8] - so this moves
-    :func:`pols_if` and nothing else.
+    :func:`pols_if` and nothing else.  Zero outside cover, before any rate is read.
     """
+    if not is_active(t):
+        return 0.0
     return pols_if_at(t, "BEF_LAPSE") * lapse_rate_mth(t)
 
 
 def pols_maturity(t):
     """Policies whose cover expires at the end of the term; zero in every other month.
 
-    Non-zero only in the final month ``t = proj_len() - 1``.  Not a decrement and not a
-    benefit - the contract simply runs out, with no maturity value
-    [S1][S2][S6][S8][R8] - but needed for the in-force roll-forward to close; see the
-    Space docstring and :func:`check_pols_roll_fwd`.
+    Non-zero only in the last covered month, ``duration_mth(t) = term_mths() - 1``, which
+    is the frame's last row, ``t = proj_len() - 1``.  Not a decrement and not a benefit -
+    the contract simply runs out, with no maturity value [S1][S2][S6][S8][R8] - but
+    needed for the in-force roll-forward to close; see the Space docstring and
+    :func:`check_pols_roll_fwd`.
     """
-    if t != proj_len() - 1:
+    if duration_mth(t) != term_mths() - 1:
         return 0.0
     return pols_if_at(t, "BEF_LAPSE") * (1.0 - lapse_rate_mth(t))
 
 
 def wop_waived_frac(t):
-    """The fraction of in-force policies with premiums waived at the start of month t.
+    """u(t): the share of in-force policies with premiums waived at the start of month t.
 
     A two-state incidence/recovery chain at monthly rates **[std]**, with the 26-week
     deferred period [S1] carried explicitly as ``wop_defer_mths`` months between
@@ -786,44 +1166,81 @@ def wop_waived_frac(t):
         u(t+1) = u(t)(1 - rec_m) + inc_m (1 - u(t - defer)) (1 - rec_m)^defer
 
     The entrants of month ``t + 1`` are the lives who became incapacitated ``defer``
-    months earlier and have not recovered since.  That is what the monthly grid buys
-    here: the annual grid could only read the deferred period as "incidence in year
-    ``t``, waiver from year ``t + 1``", rounding 26 weeks to twelve months.
+    months earlier, in month ``src = t - defer``, and have not recovered since.  At
+    :func:`t_entry` the share is :func:`wop_waived_frac_init`, 0 on a point issued at or
+    after the valuation date.  An incidence month after the valuation date reads the share
+    waived then, as :mod:`~.Term_UK_S` reads it; one before it, in the first
+    ``wop_defer_mths`` months of the frame, is the pipeline's, :func:`wop_deferred_init`
+    at lag ``-src``, the lives still in the deferred period at the valuation date, which
+    the months of the deferred period after it, ``t`` of them, carry in at
+    ``wop_rec_rate``; and one before issue has none, as :mod:`~.Term_UK_S` assumes before
+    its frame.
+
+    The recursion is :mod:`~.Term_UK_S`'s, and so is a defect of its specification:
+    ``1 - u(t - defer)``, the base of each month's incidence, counts the lives already in
+    their deferred period among those who can fall ill, so the entrants run slightly high
+    (``model-sec.md``, *Departures from Term_UK_S*). Past an annual incidence of about
+    0.855, at the shipped recovery rate and deferred period, the share passes 1 and the
+    premium turns negative: a share outside 0 to 1 raises ``ValueError`` here, naming the
+    point, the month and the share, in the month it first leaves, rather than project it.
 
     Both rates are placeholders: no public UK incidence basis for the waiver work-tasks
     definitions appears in the fetched sources.  Mortality and lapse are assumed
     independent of the waiver state **[std]** - which is what lets the waived population
-    be carried as a fraction of the in-force rather than as its own decrement.  Zero
-    unless the rider is in force.
+    be carried as a share of the in-force rather than as its own decrement.  Zero
+    unless the rider is in force, and outside cover.
     """
-    if not wop() or t <= proj_start():
+    if not wop() or not is_active(t):
         return 0.0
-    u = wop_waived_frac(t - 1)
+    if t == t_entry():
+        return wop_waived_frac_init()
+    prev = wop_waived_frac(t - 1)
     src = t - 1 - wop_defer_mths                                     # noqa: F821
-    if src < proj_start():
-        entrants = 0.0
-    else:
+    if src >= t_entry():
         entrants = (wop_inc_rate_mth() * (1.0 - wop_waived_frac(src))
                     * (1.0 - wop_rec_rate_mth()) ** wop_defer_mths)  # noqa: F821
-    return u * (1.0 - wop_rec_rate_mth()) + entrants
+    elif duration_mth_init() + src >= 0:
+        entrants = wop_deferred_init(-src) * (1.0 - wop_rec_rate_mth()) ** t
+    else:
+        entrants = 0.0
+    u = prev * (1.0 - wop_rec_rate_mth()) + entrants
+    if not (u >= 0.0 and u <= 1.0):
+        raise ValueError(
+            f"point_id {point_id}: the waived share wop_waived_frac({t}) is {u}, "  # noqa: F821
+            f"outside 0 to 1, under wop_inc_rate {wop_inc_rate}, wop_rec_rate "  # noqa: F821
+            f"{wop_rec_rate} and wop_defer_mths {wop_defer_mths}: Term_UK_S's "  # noqa: F821
+            f"waiver recursion passes 1 at an incidence this high")
+    return u
 
 
 def wop_inc_rate_mth():
-    """inc_m: the monthly waiver incidence rate, ``1 - (1 - inc)^(1/12)`` **[std]**."""
+    """inc_m: the monthly waiver incidence rate, ``1 - (1 - inc)^(1/12)`` **[std]**.
+
+    :mod:`~.Term_UK_S`'s formula, uncapped: on a waiver point :func:`proj_len` refuses a
+    ``wop_inc_rate`` outside 0 to 1: below 0 this is negative, and past 1 it has no
+    real value.
+    """
     return 1.0 - (1.0 - wop_inc_rate) ** (1.0 / 12.0)                # noqa: F821
 
 
 def wop_rec_rate_mth():
-    """rec_m: the monthly waiver recovery rate, ``1 - (1 - rec)^(1/12)`` **[std]**."""
+    """rec_m: the monthly waiver recovery rate, ``1 - (1 - rec)^(1/12)`` **[std]**.
+
+    :mod:`~.Term_UK_S`'s formula, uncapped: on a waiver point :func:`proj_len` refuses a
+    ``wop_rec_rate`` outside 0 to 1: below 0 this is negative, and past 1 it has no
+    real value.
+    """
     return 1.0 - (1.0 - wop_rec_rate) ** (1.0 / 12.0)                # noqa: F821
 
 
 def pols_payer(t):
     """The number of in-force policies actually paying premium in month t.
 
-    ``l(t)`` less the waived fraction.  Equal to :func:`pols_if` unless the waiver of
-    premium rider is in force.
+    ``l(t)`` less the waived share.  Equal to :func:`pols_if` unless the waiver of
+    premium rider is in force.  Zero outside cover.
     """
+    if not is_active(t):
+        return 0.0
     return pols_if(t) * (1.0 - wop_waived_frac(t))
 
 
@@ -834,6 +1251,8 @@ def idx_increase():
     notes' base run is deterministic and always accepts, which is what the shipped
     ``idx_accept_rate = 1`` means; their 80% take-up **[std]** would be a mixture of
     paths, and scaling the increase instead is a deterministic approximation to it.
+    ``rpi_rate`` is the RPI assumed from the valuation date on; the increases already
+    given are the opening state, :func:`idx_factor_init`.
 
     One consequence worth stating: with acceptance certain, the rule removing the option
     after three consecutive declines [S1][S6] (two at one insurer [S8]) is never
@@ -846,42 +1265,53 @@ def idx_factor(t):
     """idx(t): the cumulative **cover** indexation factor in month t.
 
     Steps on the policy anniversary and is level through the policy year, because the
-    increase is offered at an anniversary and not monthly: 1 in the first projected
-    policy year, then one factor of ``1 + idx_increase()`` per anniversary passed.  1
-    whenever the option is not elected.
+    increase is offered at an anniversary and not monthly: :func:`idx_factor_init` in
+    the policy year under way at :func:`t_entry`, 1 at issue, then one factor of
+    ``1 + idx_increase()`` per anniversary passed since, ``duration(t) -
+    duration(t_entry())``.  The increases before the valuation date are history, carried
+    in, and those after it are projected at ``rpi_rate``.  1 whenever the option is not
+    elected, and 0 outside cover, where there is no cover to index.
     """
+    if not is_active(t):
+        return 0.0
     if not indexation():
         return 1.0
-    return (1.0 + idx_increase()) ** max(0, duration(t) - duration(proj_start()))
+    return idx_factor_init() * (1.0 + idx_increase()) ** (duration(t) - duration(t_entry()))
 
 
 def idx_prem_factor(t):
     """idx_p(t): the cumulative **premium** indexation factor in month t.
 
     The premium rises by ``min(1.5 x increase, 15%)`` for a cover increase of
-    ``increase`` [S1][S2][S6], on the same anniversary step as the cover factor.  The
-    1.5 multiplier is what makes an accepted increase premium-margin-accretive if
-    mortality is proportional to cover - and what reverses the sign of that conclusion
-    if acceptance is selective, impaired lives accepting while healthy ones decline
-    **[std]** concern.  No public take-up data exists.
+    ``increase`` [S1][S2][S6], on the same anniversary step as the cover factor, from
+    :func:`idx_prem_factor_init`.  The 1.5 multiplier is what makes an accepted increase
+    premium-margin-accretive if mortality is proportional to cover - and what reverses
+    the sign of that conclusion if acceptance is selective, impaired lives accepting
+    while healthy ones decline **[std]** concern.  No public take-up data exists.  1
+    whenever the option is not elected, and 0 outside cover.
     """
+    if not is_active(t):
+        return 0.0
     if not indexation():
         return 1.0
     step = 1.0 + min(idx_prem_mult * idx_increase(), idx_prem_cap)   # noqa: F821
-    return step ** max(0, duration(t) - duration(proj_start()))
+    return idx_prem_factor_init() * step ** (duration(t) - duration(t_entry()))
 
 
 def premium_pp(t):
     """P_m idx_p(t): the gross premium per policy due in month t.
 
     The contractual monthly premium on a ``monthly`` payer, and ``12 P_m`` in the first
-    month of each policy year and nil in the rest on an ``annual`` one - the timing
-    difference the annual grid could not see.  Indexed if the option is elected, and
-    loaded by ``wop_prem_loading`` where the waiver rider is in force - a **[std]**
-    placeholder, since the rider's extra premium is not published either.
+    month of each policy year, ``duration_mth(t) % 12 == 0``, and nil in the rest on an
+    ``annual`` one - the timing difference the annual grid could not see.  Indexed if the
+    option is elected, and loaded by ``wop_prem_loading`` where the waiver rider is in
+    force - a **[std]** placeholder, since the rider's extra premium is not published
+    either.  Zero outside cover.
     """
+    if not is_active(t):
+        return 0.0
     if premium_mode() == "annual":
-        p = 12.0 * premium_mth_pp() if t % 12 == 0 else 0.0
+        p = 12.0 * premium_mth_pp() if duration_mth(t) % 12 == 0 else 0.0
     else:
         p = premium_mth_pp()
     p = p * idx_prem_factor(t)
@@ -893,8 +1323,7 @@ def premiums(t):
 
     Carried on :func:`pols_payer`, never on the FIB ledger: premiums stop at death
     while family income benefit instalments continue.  Collected only from the policies
-    still in force at the start of the month, so the annual grid's overstatement - a
-    full year's premium taken from a life that leaves mid-year - does not arise.
+    still in force at the start of the month.
     """
     return premium_pp(t) * pols_payer(t)
 
@@ -910,11 +1339,12 @@ def sched_rate_mth():
 
 
 def benefit_sched(k):
-    """B(k): the decreasing shape's benefit after k months [S1][S6][S8].
+    """B(k): the decreasing shape's benefit after k policy months [S1][S6][S8].
 
     ``SA0 [(1+j_m)^N - (1+j_m)^k] / [(1+j_m)^N - 1]``, a mortgage-style amortization
     from ``B(0) = SA0`` to ``B(N) = 0``.  A zero schedule rate degenerates to straight
-    line, which the closed form cannot express.
+    line, which the closed form cannot express.  Keyed by the policy month, not by
+    ``t``: :func:`benefit_pp` reads it at ``duration_mth(t)``, in cover only.
     """
     n_m = term_mths()
     jm = sched_rate_mth()
@@ -928,7 +1358,7 @@ def annuity_certain_factor(m):
     """a(m): the m-month annuity-certain factor at the FIB commutation rate **[std]**.
 
     ``[1 - (1+r_c)^(-m/12)] / [(1+r_c)^(1/12) - 1]``, instalments in arrears.  Used
-    only by the commutation module.
+    only by the commutation module, at the months left to the end of the term.
     """
     if m <= 0:
         return 0.0
@@ -941,24 +1371,28 @@ def annuity_certain_factor(m):
 def fib_commute_pp(t):
     """CV: the commuted value of one FIB stream arising from a death in month t **[std]**.
 
-    ``I a(N - t)`` at the exact death month ``k = t``, so it falls to zero as the term
-    runs out.  The annual grid had to place the death at mid-year, ``k = 12t + 6``; this
-    grid knows the month.  Zero on the level and decreasing shapes.
+    ``I a(N - k)`` at the exact death month on the policy clock, ``k = duration_mth(t)``,
+    so it falls to zero as the term runs out.  :mod:`~.Term_UK_S` reads ``N - t``, the
+    same month only on a point issued at ``t = 0``.  Zero on the level and decreasing
+    shapes, and outside cover.
     """
-    if shape() != "fib":
+    if not is_active(t) or shape() != "fib":
         return 0.0
-    return fib_income() * annuity_certain_factor(term_mths() - t)
+    return fib_income() * annuity_certain_factor(term_mths() - duration_mth(t))
 
 
 def benefit_pp(t):
     """DB(t): the death and terminal illness benefit per policy in month t.
 
-    Level: ``SA0 idx(t)``.  Decreasing: the exact schedule balance ``B(t)``, the
-    outstanding amount through the month the claim falls in - the annual grid's mid-year
-    reading ``B(12t + 6)`` was an approximation to this and is gone.  FIB: the commuted
-    value of the instalment stream, which is what a commuted claim pays; an uncommuted
-    FIB claim has no lump sum at all and goes through ``claims(t, "FIB")`` instead.
+    Level: ``SA0 idx(t)``.  Decreasing: the exact schedule balance ``B(k)`` at the policy
+    month ``k = duration_mth(t)``, the outstanding amount through the month the claim
+    falls in.  FIB: the commuted value of the instalment stream, which is what a
+    commuted claim pays; an uncommuted FIB claim has no lump sum at all and goes through
+    ``claims(t, "FIB")`` instead.  Zero outside cover, before any schedule is read: before
+    issue ``B(k)`` at a negative month would exceed the sum assured without a word.
     """
+    if not is_active(t):
+        return 0.0
     s = shape()
     if s == "level":
         return sum_assured() * idx_factor(t)
@@ -968,15 +1402,41 @@ def benefit_pp(t):
 
 
 def fib_cum(t):
-    """FIBcum(t): the expected FIB streams already in payment at the start of month t.
+    """FIBcum(t): the expected deaths since issue, at the start of month t.
 
-    ``sum of D(s) for s < t``.  **Not decremented** by mortality or lapse: once a claim
-    is admitted the instalments are an annuity-certain to the end of the term whatever
-    happens to any life [S6][S8].  Only *new* claims carry ``l(t)``.
+    ``sum of D(s) for s < t`` since issue: at :func:`t_entry` the deaths before the
+    valuation date, ``fib_cum_init() x pols_if_init()``, 0 on a point issued at or after
+    it, and each month after adds that month's deaths.  **Not decremented** by mortality
+    or lapse.  On every shape it counts the deaths since issue, as :mod:`~.Term_UK_S`'s
+    does, and :func:`cohort_frac` opens from it; :mod:`~.Term_UK_S` pays the family
+    income benefit on ``(1 - c)`` of it, which this model pays on :func:`fib_streams`
+    instead, the streams in payment.  0 outside cover.
     """
-    if t <= proj_start():
+    if not is_active(t):
         return 0.0
+    if t == t_entry():
+        return fib_cum_init() * pols_if_init()
     return fib_cum(t - 1) + pols_death(t - 1)
+
+
+def fib_streams(t):
+    """The expected family income benefit streams in payment at the start of month t.
+
+    At :func:`t_entry` the streams of the deaths before the valuation date that were not
+    commuted, ``fib_streams_init() x pols_if_init()``, history, 0 on a point issued at or
+    after it; each month after adds the share of that month's deaths not commuted at
+    today's take-up, ``(1 - c) D(t - 1)``.  **Not decremented** by mortality or lapse:
+    once a claim is admitted the instalments are an annuity-certain to the end of the
+    term whatever happens to any life [S6][S8].  Only *new* claims carry ``l(t)``.
+    :mod:`~.Term_UK_S` holds no such cell: it pays ``(1 - c) x FIBcum(t)``, the same
+    number at a take-up that never changes, bit for bit on its new business.  0 outside
+    cover, and on the level and decreasing shapes, which pay no instalments.
+    """
+    if not is_active(t) or shape() != "fib":
+        return 0.0
+    if t == t_entry():
+        return fib_streams_init() * pols_if_init()
+    return fib_streams(t - 1) + (1.0 - fib_commute_rate()) * pols_death(t - 1)
 
 
 def claims(t, kind=None):
@@ -989,10 +1449,12 @@ def claims(t, kind=None):
 
     ``"FIB"``
         the family income benefit instalments falling in month t,
-        ``I [D(t) + FIBcum(t)]`` net of the commuted proportion - one
-        instalment for every stream in payment, the month's new claims
-        included, since the instalments are in arrears from the month of
-        death.  Zero on the other two shapes.
+        ``I [(1 - c) D(t) + streams(t)]`` - one instalment for every stream in payment,
+        :func:`fib_streams`, those that began before the valuation date included, and for
+        the month's new claims not commuted, since the instalments are in arrears from
+        the month of death.  :mod:`~.Term_UK_S`'s ``(1 - c) I [D(t) + FIBcum(t)]`` at a
+        take-up that never changes; at one changed at the valuation date, the streams
+        already in payment stay in payment.  Zero on the other two shapes.
 
     ``"LAPSE"``
         zero, always.  There is no surrender or paid-up value at any duration
@@ -1008,8 +1470,8 @@ def claims(t, kind=None):
     if kind == "FIB":
         if shape() != "fib":
             return 0.0
-        return ((1.0 - fib_commute_rate()) * fib_income()
-                * (pols_death(t) + fib_cum(t)))
+        return fib_income() * ((1.0 - fib_commute_rate()) * pols_death(t)
+                               + fib_streams(t))
     if kind == "LAPSE":
         return 0.0
     raise ValueError("invalid kind")
@@ -1025,38 +1487,50 @@ def claim_expenses(t):
 
 
 def inflation_factor(t):
-    """The expense inflation factor in month t: ``(1 + pi)^duration(t)`` **[std]**.
+    """The expense inflation factor in month t, ``(1 + pi)^(t // 12)`` **[std]**.
 
-    Steps on the policy anniversary rather than monthly, which is how the notes write
-    it: ``e(t) = 30 x 1.03^t`` with ``t`` the policy year.  1 in the first policy year.
+    On the **valuation** clock: ``t`` counts months from the valuation date, so the
+    maintenance charge it inflates is in valuation-date pounds, whatever the policy's
+    age, and every point of a block inflates alike, stepping on each anniversary of the
+    valuation date.  :mod:`~.Term_UK_S` inflates from issue, ``(1 + pi)^duration(t)``,
+    the notes' ``e(t) = 30 x 1.03^t`` with ``t`` the policy year; on a point issued at
+    ``t = 0`` the two are the same.  Acquisition is not inflated (see :func:`expenses`).
     """
-    return (1.0 + inflation_rate) ** duration(t)                     # noqa: F821
+    return (1.0 + inflation_rate) ** (t // 12)                       # noqa: F821
 
 
 def expenses(t):
     """E0 and e(t): acquisition and inflating maintenance expense in month t **[std]**.
 
-    £150 per policy at issue (``t = 0``), then £30 per policy per year - a twelfth of it
-    each month - inflating at 3% on each anniversary, both at the start of the month.  An
-    in-force model point starts after ``t = 0`` and never sees the acquisition charge.
-    Premiums as low as £5/month against a £30 annual maintenance expense make this
-    assumption solvency-relevant on small-sum-assured blocks, which is why the notes rate
-    expense inflation a first-order lever despite its size.
+    £150 per policy issued, ``expense_acq * pols_new_biz(t)``: in the issue month, never
+    for a point already in force at the valuation date, and not inflated, as in
+    ``basiclife.BasicTerm_SE``.  :mod:`~.Term_UK_S` charges it on the count at ``t = 0``,
+    which on a point issued then is the count issued.  Then £30 per policy per year - a
+    twelfth of it each month - inflating at 3% on the valuation clock, both at the start
+    of the month.  Premiums as low as £5/month against a £30 annual maintenance expense
+    make this assumption solvency-relevant on small-sum-assured blocks, which is why the
+    notes rate expense inflation a first-order lever despite its size.
     """
-    acq = expense_acq * pols_if(t) if t == 0 else 0.0                # noqa: F821
-    return acq + (expense_maint / 12.0                               # noqa: F821
-                  * inflation_factor(t) * pols_if(t))
+    return (expense_acq * pols_new_biz(t)                            # noqa: F821
+            + expense_maint / 12.0 * inflation_factor(t) * pols_if(t))  # noqa: F821
 
 
 def comm_init_pp():
     """c0: initial commission per policy issued **[std]**.
 
-    150% of the annualized premium of the first policy year, ``12 P_m`` on an
-    unindexed point, paid upfront at issue.  Roughly 96% of protection commission is
-    paid upfront [R9], which with the acquisition expense is what produces the deep
-    first-month new business strain in the worked example.
+    On a point issued at or after the valuation date, 150% of the annualized premium of
+    the first policy year, ``12 P_m``, paid upfront at issue, with the waiver's loading
+    where the rider is in force: the issue premium's, :mod:`~.Term_UK_S` multiplying by
+    ``idx_prem_factor(0)``, which is 1 at issue.  On a point in force at the valuation
+    date, the commission it paid when it was written, :func:`comm_init_pp_init`: history,
+    which ``comm_init_rate``, the rate on new business from the valuation date on, does
+    not reach back to.  Roughly 96% of protection commission is paid upfront [R9], which
+    with the acquisition expense is what produces the deep first-month new business
+    strain in the worked example.
     """
-    p = 12.0 * premium_mth_pp() * idx_prem_factor(0)
+    if duration_mth_init() > 0:
+        return comm_init_pp_init()
+    p = 12.0 * premium_mth_pp()
     if wop():
         p = p * (1.0 + wop_prem_loading)                             # noqa: F821
     return comm_init_rate * p                                        # noqa: F821
@@ -1065,17 +1539,17 @@ def comm_init_pp():
 def comm_clawback(t):
     """Initial commission recovered on lapses inside the clawback window **[std]**.
 
-    ``c0 (clawback_mths - (t+1))/clawback_mths`` per lapsed policy, linear in months in
-    force: a lapse at the end of month t has ``t + 1`` months in force, which this grid
-    counts exactly where the annual one could only step twelve at a time.  Off in the
-    base run (``clawback_mths`` is 0); set it to 48 for the notes' four-year rule.
-    Clawback periods of two to four years are evidenced [R9]; the linear formula is a
+    ``c0 (clawback_mths - m)/clawback_mths`` per lapsed policy, ``m = duration_mth(t) + 1``
+    the months in force at the end of month t on the policy clock, linear in months in
+    force, ``c0`` the commission the policy paid, :func:`comm_init_pp`.  Off in the base
+    run (``clawback_mths`` is 0); set it to 48 for the notes' four-year rule.  Clawback
+    periods of two to four years are evidenced [R9]; the linear formula is a
     standardization.  Inside the window it reverses the sign of the early-lapse
-    sensitivity, which is the point of carrying it.
+    sensitivity, which is the point of carrying it.  Zero outside cover.
     """
-    if clawback_mths <= 0:                                           # noqa: F821
+    if clawback_mths <= 0 or not is_active(t):                       # noqa: F821
         return 0.0
-    mths = t + 1
+    mths = duration_mth(t) + 1
     if mths >= clawback_mths:                                        # noqa: F821
         return 0.0
     return (comm_init_pp() * (clawback_mths - mths)                  # noqa: F821
@@ -1085,12 +1559,13 @@ def comm_clawback(t):
 def commissions(t):
     """Commission outgo in month t **[std]**, net of any clawback recovered.
 
-    The initial commission at issue (``t = 0``), then 2.5% of premium income from the
-    second policy year (``t >= 12``).  Both are levels chosen for the reference
-    implementation; only the upfront *pattern* is evidenced [R9].
+    The initial commission on the policies issued in the month,
+    ``comm_init_pp() * pols_new_biz(t)``, then 2.5% of premium income from the second
+    policy year (``duration_mth(t) >= 12``), on the policy clock.  Both are levels chosen
+    for the reference implementation; only the upfront *pattern* is evidenced [R9].
     """
-    init = comm_init_pp() * pols_if(t) if t == 0 else 0.0
-    renew = comm_renewal_rate * premiums(t) if t >= 12 else 0.0      # noqa: F821
+    init = comm_init_pp() * pols_new_biz(t)
+    renew = comm_renewal_rate * premiums(t) if duration_mth(t) >= 12 else 0.0  # noqa: F821
     return init + renew - comm_clawback(t)
 
 
@@ -1101,12 +1576,6 @@ def net_cf(t):
     acquisition expense and commission.  The notes' own sign - they write ``+ = inflow``
     - which is also the library-wide convention, so unlike the whole life and payout
     annuity models there is no outgo-positive ``liability_cf`` companion to publish.
-
-    The shape to expect on guaranteed term is a deep new business strain in the first
-    month (``t = 0``), upfront commission and acquisition expense against a single
-    month's premium, then thin positive margins: the level premium prefunds rising
-    mortality cost, so early lapses forfeit margin to the insurer and late ones
-    relieve it.
     """
     return (premiums(t) - claims(t) - claim_expenses(t)
             - expenses(t) - commissions(t))
@@ -1115,64 +1584,70 @@ def net_cf(t):
 def check_pols_roll_fwd_resid(t):
     """The in-force roll-forward residual in month t; zero everywhere.
 
-    ``pols_if(t) - pols_if(t+1) - deaths - lapses - expiries``.  Expiries are non-zero
-    only in the final month ``t = proj_len() - 1``, where the survivors neither die nor
-    lapse: their cover runs out.  Without that term the last month appears to lose lives
-    with no cause.
+    ``pols_if(t) - pols_if_at(t + 1, "BEF_NB") - deaths - lapses - expiries``, where the
+    count carried into the next month is taken before its new business, which is no part
+    of month t's movement.  Expiries are non-zero only in the last covered month, where
+    the survivors neither die nor lapse: their cover runs out.  Without that term the
+    last month appears to lose lives with no cause.
     """
-    return (pols_if(t) - pols_if(t + 1)
+    return (pols_if(t) - pols_if_at(t + 1, "BEF_NB")
             - pols_death(t) - pols_lapse(t) - pols_maturity(t))
 
 
 def check_pols_roll_fwd():
-    """True when the in-force roll-forward closes in every projected policy month.
+    """True when the in-force roll-forward closes in every month of the frame.
 
     The library-wide form of a roll-forward check: no argument, one bool over all t, so
     one test can call it across every model.  :func:`check_pols_roll_fwd_resid` gives
     the signed residual of the month that failed.  The tolerance scales with
-    ``pols_if_init()``, since the residual accumulates rounding on that many policies.
+    ``policy_count()``, since the residual accumulates rounding on that many policies,
+    in force at the valuation date or issued after it.
     """
-    return all(abs(check_pols_roll_fwd_resid(t)) <= 1e-10 * max(pols_if_init(), 1.0)
-               for t in range(proj_start(), proj_len()))
+    return all(abs(check_pols_roll_fwd_resid(t)) <= 1e-10 * max(policy_count(), 1.0)
+               for t in range(proj_len()))
 
 
 def check_fib_ledger_resid(t):
     """The family income benefit ledger residual in month t; zero everywhere.
 
     :func:`claims` ``(t, "FIB")`` less an independent rebuild of the same figure: one
-    instalment for every death in month t or any earlier month, summed straight off the
-    death vector with no reference to the :func:`fib_cum` recursion.  A ledger that was
-    decremented by mortality or lapse - the notes' pitfall - or one that paid only the
-    month-of-death instalment would show up here.  Zero by definition on the level and
-    decreasing shapes, which have no ledger.
+    instalment for every stream in payment at the valuation date,
+    ``fib_streams_init() x pols_if_init()``, and for the share not commuted of every death
+    in month t or any earlier month on the books, summed straight off the death vector
+    with no reference to the :func:`fib_streams` recursion.  A ledger that was decremented
+    by mortality or lapse - the notes' pitfall - one that paid only the month-of-death
+    instalment, or one that lost the streams already in payment would show up here.  Zero
+    by definition on the level and decreasing shapes, which have no ledger.
     """
     if shape() != "fib":
         return 0.0
-    built = sum(pols_death(s) for s in range(proj_start(), t + 1))
-    return claims(t, "FIB") - (1.0 - fib_commute_rate()) * fib_income() * built
+    built = fib_streams_init() * pols_if_init() + (1.0 - fib_commute_rate()) * sum(
+        pols_death(s) for s in range(t_entry(), t + 1))
+    return claims(t, "FIB") - fib_income() * built
 
 
 def check_fib_ledger():
-    """True when the family income benefit ledger closes in every projected month.
+    """True when the family income benefit ledger closes in every month of the frame.
 
     No argument, one bool over all t, the library-wide shape of a ``check_*`` cells;
     :func:`check_fib_ledger_resid` gives the signed residual of the month that failed.
+    The tolerance scales with ``policy_count()``, as the roll-forward's does.
     """
-    return all(abs(check_fib_ledger_resid(t)) <= 1e-10 * max(pols_if_init(), 1.0)
-               for t in range(proj_start(), proj_len()))
+    return all(abs(check_fib_ledger_resid(t)) <= 1e-10 * max(policy_count(), 1.0)
+               for t in range(proj_len()))
 
 
 def result_cf():
-    """Result table of cashflows, indexed by policy month t.
+    """Result table of cashflows, one row per month ``t = 0 .. proj_len() - 1``.
 
-    One row per month ``t = proj_start(), ..., proj_len() - 1`` - ``proj_len()`` rows
-    for a point projected from issue.  ``pols_if`` is the start-of-month count, which is
-    the weight applied to every cash flow on the same row.  ``net_cf`` carries the
-    notes' own income-positive sign.  ``claims_lapse`` is a column of zeros by product
-    design - there is no surrender value - and is published rather than dropped; see
-    the Space docstring.
+    Row 0 is the valuation month for every model point, so the frames of a block line up
+    and sum row by row.  A point issued after the valuation date has zeros until its issue
+    month.  ``pols_if`` is the count that weights every cash flow on the same row.  The
+    columns are :mod:`~.Term_UK_S`'s: ``net_cf`` carries the notes' own income-positive
+    sign, and ``claims_lapse`` is a column of zeros by product design - there is no
+    surrender value - and is published rather than dropped; see the Space docstring.
     """
-    ts = list(range(proj_start(), proj_len()))
+    ts = list(range(proj_len()))
     return pd.DataFrame(                                             # noqa: F821
         {
             "pols_if": [pols_if(t) for t in ts],
@@ -1190,23 +1665,31 @@ def result_cf():
 
 
 def result_pols():
-    """Result table of policy counts and decrement rates, indexed by policy month t.
+    """Result table of policy counts and decrement rates, one row per month t.
 
-    The same rows as :func:`result_cf`: ``t = proj_start(), ..., proj_len() - 1``.  The
-    two rate columns are the **monthly** decrements the projection actually applies;
-    the annual rates they come from are :func:`mort_rate` and :func:`lapse_rate`.
+    The same rows as :func:`result_cf`, ``t = 0 .. proj_len() - 1``.  First the counts
+    :func:`result_cf` weights its rows by, and how they move, as
+    ``basiclife.BasicTerm_SE``'s ``result_pols`` sets them out: ``pols_if``, the count of
+    month t; ``pols_new_biz``, the part of it issued in month t; then month t's deaths and
+    lapses in processing order, and the expiries of the last covered month.  Row by row,
+    ``pols_if`` at ``t + 1`` is ``pols_if`` less the three outflows of month t, plus the
+    new business of month ``t + 1``.  Then :mod:`~.Term_UK_S`'s other four columns: the
+    policies paying premium, ``fib_cum``, the deaths since issue, and the **monthly**
+    decrements the projection actually applies, which are 0 outside cover, where the model
+    reads no rate.
     """
-    ts = list(range(proj_start(), proj_len()))
+    ts = list(range(proj_len()))
     return pd.DataFrame(                                             # noqa: F821
         {
             "pols_if": [pols_if(t) for t in ts],
+            "pols_new_biz": [pols_new_biz(t) for t in ts],
             "pols_death": [pols_death(t) for t in ts],
             "pols_lapse": [pols_lapse(t) for t in ts],
             "pols_maturity": [pols_maturity(t) for t in ts],
             "pols_payer": [pols_payer(t) for t in ts],
             "fib_cum": [fib_cum(t) for t in ts],
-            "mort_rate_mth": [mort_rate_mth(t) for t in ts],
-            "lapse_rate_mth": [lapse_rate_mth(t) for t in ts],
+            "mort_rate_mth": [mort_rate_mth(t) if is_active(t) else 0.0 for t in ts],
+            "lapse_rate_mth": [lapse_rate_mth(t) if is_active(t) else 0.0 for t in ts],
         },
         index=pd.Index(ts, name="t"),                                # noqa: F821
     )
@@ -1218,6 +1701,16 @@ def result_pols():
 data = ("Interface", ("..", "Data"), "auto")
 
 point_id = 1
+
+issue_age_min = 18
+
+policy_term_max = 50
+
+policy_term_max_fib = 40
+
+expiry_age_max = 90
+
+expiry_age_max_fib = 70
 
 select_period = 5
 

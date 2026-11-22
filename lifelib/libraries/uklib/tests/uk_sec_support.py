@@ -1089,7 +1089,144 @@ class SecSpec:
 # is uslib's harness, held to uslib/tests/sec_support.py by tools/check_sec_harness.py
 # (UKLIB-SEC-PLAN.md U3).
 
-SEC_SPECS: dict[str, SecSpec] = {}
+
+def _term_ledger_per_policy(s, d):
+    """``Term_UK_S``'s FIB ledger entering month ``d``, per policy in force then.
+
+    S's ``fib_cum(d)``, the deaths since its frame opened, over its count in force,
+    ``pols_if(d)``: per policy, so that the count is the one weight on every flow.  Where
+    no policy is in force, as once a capped mortality has taken every life, there is no
+    policy to carry it, and the column is 0: such a point projects nothing.
+    """
+    count = s.pols_if(d)
+    return s.fib_cum(d) / count if count > 0 else 0.0
+
+
+def _term_streams_per_policy(s, d):
+    """``Term_UK_S``'s FIB streams in payment entering month ``d``, per policy in force.
+
+    S pays ``(1 - c)`` of every death's stream at the take-up ``c`` it holds throughout, so
+    its streams in payment at the start of month ``d`` are ``(1 - c) fib_cum(d)``: over
+    ``pols_if(d)``, as the ledger is.  0 off the family income benefit, which pays no
+    instalments, and where no policy is in force.
+    """
+    count = s.pols_if(d)
+    if s.shape() != "fib" or count <= 0:
+        return 0.0
+    return (1.0 - s.fib_commute_rate()) * s.fib_cum(d) / count
+
+
+def _term_commission_paid(s, d):
+    """The initial commission ``Term_UK_S`` paid at issue, per policy, on a row in force
+    at ``d``: S's ``comm_init_pp()``, an event of the issue month, so 0 at ``d = 0``."""
+    return s.comm_init_pp() if d > 0 else 0.0
+
+
+# Term_UK_SEC's opening state (D6; UKLIB-SEC-PLAN.md §6.1): what Term_UK_S carries into
+# month d, each read as S's own formulas read it, each per policy in force or a ratio, so
+# that policy_count is the one weight.  The selective-lapse ratio, S's lapse_cum(d), a share
+# of the cohort S's frame opened with; the FIB ledger, the deaths since S's frame opened, per
+# policy in force (_term_ledger_per_policy), and the streams of them in payment
+# (_term_streams_per_policy); the two indexation factors of the policy year under way, S's
+# idx_factor(d) and idx_prem_factor(d); the share of the policies in force whose premium is
+# waived, S's wop_waived_frac(d); and the initial commission paid at issue, which the
+# clawback recovers (_term_commission_paid).  At a twin's source_mth these are what S
+# itself assumes where its frame opens: 0 for the ratio, the ledger, the streams, the
+# waived share and the commission, and 1 for the factors, on new business and on S's point
+# 8, in force at 60, which S opens with nothing lapsed, no ledger and no waiver, but with
+# its commission paid.  The deferred period goes in a companion, built by _term_pipeline.
+_TERM_STATE = {
+    "lapse_cum_init": lambda s, d: s.lapse_cum(d),
+    "fib_cum_init": _term_ledger_per_policy,
+    "fib_streams_init": _term_streams_per_policy,
+    "idx_factor_init": lambda s, d: s.idx_factor(d),
+    "idx_prem_factor_init": lambda s, d: s.idx_prem_factor(d),
+    "wop_waived_frac_init": lambda s, d: s.wop_waived_frac(d),
+    "comm_init_pp_init": _term_commission_paid,
+}
+
+_TERM_PIPELINE = ("point_id", "lag", "wop_deferred_init")
+
+
+def _term_pipeline(s_model, table):
+    """``wop_pipeline_sec.csv``: each in-force waiver row's deferred period, month by month.
+
+    For each row of the table in force, restated at S month ``d`` or the twin of a point S
+    opens in force at ``d``, in the table's order, whose point has the waiver rider: one
+    row for each of its last ``min(wop_defer_mths, duration_mth)`` policy months,
+    ``duration_mth`` the row's own.  ``lag`` ``k`` is S's month ``m = d - k``, and
+    ``wop_deferred_init`` the share still in the deferred period at the start of S's
+    month ``d``, the valuation instant, from the incapacity of month ``m``: the incidence
+    ``Term_UK_S``'s ``wop_waived_frac`` takes in, the deferred period later,
+    ``inc_m (1 - u(m))``, S's own product in S's order, after the ``k - 1`` months of
+    recovery since, ``(1 - rec_m)^(k - 1)``.  0 where ``m`` predates S's frame, which S
+    assumes held no incapacity.  So the SEC row's entrants at ``t = wop_defer_mths + 1 -
+    k``, the share times the ``t`` months of recovery still to run, are S's to rounding.
+    A month earlier than the last ``wop_defer_mths`` has entered the waived share,
+    ``wop_waived_frac_init``, already.  The future rows hold none, nor do the
+    new-business twins.  ``point_id`` is the only key to a point.
+
+    It reads only the S cells it needs, and releases nothing: the caller owns the S model,
+    and one T6 passes in may be one it still compares against.
+    """
+    point_of = {pol: pid
+                for pid, pol in s_model.Data.model_point_table()["policy_id"].items()}
+    rows = []
+    for row in table.to_dict("records"):
+        if (row["row_kind"] not in ("derived", "twin") or int(row["duration_mth"]) <= 0
+                or not bool(row["wop"])):
+            continue
+        s = s_model.Projection[point_of[row["source_policy_id"]]]
+        d = int(row["source_mth"])
+        for k in range(1, min(s.wop_defer_mths, int(row["duration_mth"])) + 1):
+            m = d - k
+            incidence = (s.wop_inc_rate_mth() * (1.0 - s.wop_waived_frac(m))
+                         if m >= s.proj_start() else 0.0)
+            rows.append({"point_id": row["point_id"], "lag": k,
+                         "wop_deferred_init":
+                             incidence * (1.0 - s.wop_rec_rate_mth()) ** (k - 1)})
+    return pd.DataFrame(rows, columns=list(_TERM_PIPELINE))
+
+
+SEC_SPECS: dict[str, SecSpec] = {
+    # Term's state is seven columns (_TERM_STATE above) and the waiver pipeline, a long
+    # companion, wop_pipeline_sec.csv, keyed (point_id, lag), lag the months before the
+    # valuation date of an incapacity still in the deferred period there, measured at the
+    # valuation instant (UKLIB-SEC-PLAN.md §6.1, precised at M1), built by _term_pipeline.
+    # pols_if_init becomes policy_count (the default), and
+    # duration_inforce, S's elapsed policy years, is dropped for duration_mth, 60 on S's
+    # point 8.  The derived rows are the indexed point on its fifth anniversary, 60, the
+    # factors of policy year 6 carried in; the family income benefit point mid-year at 66,
+    # its ledger in payment; the waiver point at 66, after the select period's end, its
+    # pipeline full and a share waived, and at 4, inside its deferred period, its pipeline
+    # four months deep and nothing waived yet; and the anchor cell in its last covered
+    # month, 299, a one-row frame.  The future row is the waiver point issued 13 months
+    # after the valuation date: more than a year on and off a valuation anniversary, so that
+    # the months before issue read policy years -1 and 0, where a missing guard would show.
+    # T2's splice grid is built from this spec in a temporary table, not committed.
+    #
+    # T1 holds on Term at any count: S charges acquisition and the initial commission on
+    # the count in force at t = 0, which on a point issued then is the count issued, as SEC
+    # charges them on pols_new_biz.  It skips three S cells besides the default three:
+    #   proj_start: S's first projected month on the policy clock, 60 on S's point 8.
+    #     Every SEC frame opens at t = 0 (D3), which the conventions assert.
+    #   duration_inforce: S's elapsed policy years, which duration_mth replaces (D6).
+    #   result_pols: SEC's gains pols_new_biz, the count D5 puts there, so the frame has a
+    #     column S's lacks and cannot agree as a whole.  Each column it shares with S is a
+    #     cell T1 compares at every month, and test_term_assurance_uk_sec.py compares the
+    #     report itself with S's, on every column both hold.
+    "Term_UK_SEC": SecSpec(
+        twin="Term_UK_S",
+        column_map={"duration_inforce": None},
+        duration_of=lambda row: 12 * int(row["duration_inforce"]),
+        derived=((5, 60), (3, 66), (7, 66), (7, 4), (1, 299)),
+        future=((7, 13),),
+        state=_TERM_STATE,
+        twin_state=_TERM_STATE,
+        exempt=frozenset({"proj_start", "duration_inforce", "result_pols"}),
+        companions={"wop_pipeline_sec.csv": _term_pipeline},
+    ),
+}
 
 # <<< product specs
 

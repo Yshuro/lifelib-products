@@ -98,6 +98,8 @@ ANB, ALB = "ANB", "ALB"
 MODELS = {
     # Protection
     "Term_UK_S": ("products/term_assurance/Term_UK_S", {**MONTHLY, "age_basis": ANB}),
+    "Term_UK_SEC": ("products/term_assurance/Term_UK_SEC",
+                    {**MONTHLY, "age_basis": ANB, "twin": "Term_UK_S", "stage": "E"}),
     "CI_UK_S": ("products/critical_illness/CI_UK_S", {**MONTHLY, "age_basis": ANB}),
     "IP_UK_S": ("products/income_protection/IP_UK_S", {**MONTHLY, "age_basis": ANB}),
     "WOL_UK_S": ("products/whole_of_life/WOL_UK_S", {**MONTHLY, "age_basis": ALB}),
@@ -129,6 +131,9 @@ INPUT_FILES = {
     "Term_UK_S": {
         "lapse_table.csv", "model_point_table.csv", "mort_table.csv",
         "select_factor_table.csv"},
+    "Term_UK_SEC": {
+        "lapse_table.csv", "model_point_table_sec.csv", "mort_table.csv",
+        "select_factor_table.csv", "wop_pipeline_sec.csv"},
     "ULB_UK_S": {"model_point_table.csv", "mort_table.csv", "surr_table.csv"},
     "WOL_UK_S": {"lapse_table.csv", "model_point_table.csv", "mort_table.csv"},
     "WP_UK_S": {"lapse_table.csv", "model_point_table.csv", "mort_table.csv"},
