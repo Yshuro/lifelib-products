@@ -1661,6 +1661,78 @@ def test_the_registry_admits_engine_cells_by_name(monkeypatch):
                      "statutory"], after
 
 
+# The registry's helpers, uk_registry's guards against a key or a parameter of the wrong
+# kind and against a shared entry: Projection's formula for each parameter a toy model
+# takes.  The table of every toy model is labelled 1 and 2.
+PARAMETERS = {
+    "point_id": lambda point_id: None,
+    "idx": lambda idx: None,
+    "policy_id": lambda policy_id: None,
+    "point_id, t": lambda point_id, t: None,
+    "none": None,
+}
+
+
+def _keyed_model(tag, parameter):
+    """A toy model of two points, labelled 1 and 2, its ``Projection`` parameterized as
+    :data:`PARAMETERS` names, or not at all."""
+    model = mx.new_model(_name(tag))
+    data = model.new_space("Data")
+    data.pd = pd
+    data.new_cells("model_point_table", formula=(
+        "lambda: pd.DataFrame({'x': [0.0, 0.0]}, index=pd.Index([1, 2], name='point_id'))"))
+    model.new_space("Projection", formula=PARAMETERS[parameter])
+    return model
+
+
+def test_projection_refuses_a_key_the_table_does_not_hold():
+    """:func:`uk_registry.projection` raises ``KeyError`` where modelx would build an
+    ItemSpace for any argument: on a ``point_id`` model a label the table does not hold,
+    position 0 and the label as text among them; on an ``idx`` model a position past
+    either end, and one that is no integer.  A key the table holds is its point's."""
+    from uk_registry import projection
+    for parameter, good, bad in (("point_id", (1, 2), (0, 3, "1", 1.5)),
+                                 ("idx", (0, 1), (-1, 2, 1.5, "0"))):
+        model = _keyed_model(f"keys_{parameter}", parameter)
+        try:
+            for key in good:
+                assert projection(model, key) is model.Projection[key], (parameter, key)
+            for key in bad:
+                with pytest.raises(KeyError):
+                    projection(model, key)
+        finally:
+            model.close()
+
+
+@pytest.mark.parametrize("parameter", ["policy_id", "point_id, t", "none"])
+def test_the_helpers_refuse_a_parameter_they_do_not_know(parameter):
+    """:func:`uk_registry._parameter`, and :func:`point_keys` and :func:`projection`
+    through it, refuse a ``Projection`` parameterized other than by ``point_id`` or
+    ``idx``: a key of an unknown kind is the error the helpers exist to prevent, so it is
+    not guessed at."""
+    from uk_registry import _parameter, point_keys, projection
+    model = _keyed_model(f"param_{parameter.replace(', ', '_')}", parameter)
+    try:
+        for helper in (_parameter, point_keys, lambda m: projection(m, 1)):
+            with pytest.raises(ValueError, match=r"the registry helpers know \('point_id',"
+                                                 r"\), the table label, and \('idx',\)"):
+                helper(model)
+    finally:
+        model.close()
+
+
+def test_meta_hands_out_a_copy_of_the_entry(monkeypatch):
+    """:func:`uk_registry.meta` returns a dict of its own, equal to the entry: a key a
+    test sets on it reaches no other reader of the registry."""
+    import uk_registry
+    entry = dict(TOY_ENTRY)
+    monkeypatch.setitem(uk_registry.MODELS, TOY, ("products/toy/Toy_UK_SEC", entry))
+    got = uk_registry.meta(TOY)
+    assert got == entry and got is not entry
+    got["stage"] = "E"
+    assert entry == TOY_ENTRY and uk_registry.meta(TOY)["stage"] == "EC"
+
+
 # Engine cells of each kind R14 admits, and of the kinds it does not (uslib's M24).
 ENGINE_KINDS = {
     "statutory": "lambda rate: 0.0015 * rate",
