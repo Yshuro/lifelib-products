@@ -47,12 +47,17 @@ cold call on a 1 MiB stack, and its runner compiled.
 The ``cython_uk`` CI job runs these with the product module's in the model's own leg, one
 shard to a leg (``uk_sec_support.cython_shards``), and
 :func:`test_the_cython_job_runs_every_shard`, which needs no compiler, holds the job's
-matrix to the registry, so that no model at stage ``"EC"`` is left out of it (U7).
+matrix to the registry, so that no model at stage ``"EC"`` is left out of it (U7).  Three
+more read the workflow the same way, each for a job that could otherwise go green and
+prove nothing: the ``cython_uk`` job fails a skip and collects uklib's suite alone, the
+``test`` job runs ``tools/check_sec_harness.py``, and the ``sec_uk`` job runs every SEC
+model's module, which the ``test`` job leaves out.
 """
 import ast
 import builtins
 import itertools
 import re
+import shlex
 import textwrap
 import types
 
@@ -552,3 +557,224 @@ def test_the_cython_job_runs_every_shard():
     passed = r"\s+UKLIB_CYTHON_SHARD:\s*\$\{\{\s*matrix\.shard\s*\}\}\s*"
     assert any(re.fullmatch(passed, line) for line in job), (
         f"the {JOB} job does not set UKLIB_CYTHON_SHARD to its matrix's shard")
+
+
+# uklib's suite: the one tree the cython_uk job collects, and the home of every module the
+# sec_uk job runs.
+UK_TESTS = "lifelib/libraries/uklib/tests"
+
+# The job uklib's SEC test modules run in, one to a leg, as uslib's run in the "sec" job
+# (UKLIB-SEC-PLAN.md U7).  The test job leaves out every test_*_uk_sec.py.
+SEC_JOB = "sec_uk"
+
+# What sets a variable to '1' on a sec_uk leg of the full grid alone, as the sec job sets
+# uslib's, with its whitespace taken out.
+ON_THE_FULL_GRID = "${{matrix.grid=='full'&&'1'||''}}"
+
+
+def _steps(job):
+    """The steps of ``job``'s lines, each ``{key: value}`` at the step's own level.
+
+    A block scalar, ``run: |`` or ``run: >-``, has its lines joined by spaces, and so do a
+    step's ``env:`` variables, one ``NAME: value`` after another; comments and blank lines
+    are left out.  Read as text, as :func:`_job` reads the job.
+    """
+    lines = [line for line in job if line.strip() and not line.lstrip().startswith("#")]
+    start = next((i for i, line in enumerate(lines)
+                  if re.fullmatch(r"\s+steps:\s*", line)), None)
+    if start is None or start + 1 == len(lines) or not lines[start + 1].lstrip().startswith(
+            "- "):
+        return []
+    level = len(lines[start + 1]) - len(lines[start + 1].lstrip())
+    items = []
+    for line in lines[start + 1:]:
+        indent = len(line) - len(line.lstrip())
+        if indent < level or (indent == level and not line.lstrip().startswith("- ")):
+            break
+        if indent == level:
+            items.append([" " * (level + 2) + line.lstrip()[2:]])
+        else:
+            items[-1].append(line)
+    steps = []
+    for item in items:
+        keys, key = {}, None
+        for line in item:
+            found = re.fullmatch(rf" {{{level + 2}}}([\w-]+):\s*(.*?)\s*", line)
+            if found:
+                key, value = found.groups()
+                keys[key] = "" if value in ("|", "|-", ">", ">-") else value
+            elif key is not None:
+                keys[key] = f"{keys[key]} {line.strip()}".strip()
+        steps.append(keys)
+    return steps
+
+
+def _variable(job, step, name):
+    """The value ``step`` of ``job`` runs ``name`` under, as written, or ``None``: the
+    step's own ``env:`` where it sets it, and else the job's, which every step sees."""
+    seen, inside = [], False
+    for line in job:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if re.fullmatch(r"    env:\s*", line):
+            inside = True
+        elif inside and len(line) - len(line.lstrip()) > 4:
+            seen.append(line.strip())
+        else:
+            inside = False
+    value = r"(\$\{\{.*?\}\}|'[^']*'|\"[^\"]*\"|\S+)"
+    given = re.findall(rf"(?<!\w){re.escape(name)}:\s*{value}",
+                       " ".join(seen + [step.get("env", "")]))
+    return given[-1] if given else None
+
+
+def _pytest_args(command):
+    """``(marks, paths)`` of the ``pytest`` a step's ``run`` runs, or ``None`` where it
+    runs none: each ``-m`` expression, and each path pytest collects from."""
+    words = shlex.split(re.sub(r"\$\{\{.*?\}\}", lambda m: "".join(m.group(0).split()),
+                               command))
+    if "pytest" not in words:
+        return None
+    valued = {"-k", "-p", "-c", "-o", "-n", "--rootdir", "--ignore", "--ignore-glob",
+              "--deselect", "--durations", "--maxfail", "--confcutdir"}
+    marks, paths = [], []
+    rest = iter(words[words.index("pytest") + 1:])
+    for word in rest:
+        if word == "-m":
+            marks.append(next(rest, ""))
+        elif word.startswith("-m") and not word.startswith("--"):
+            marks.append(word[2:])
+        elif word in valued:
+            next(rest, None)
+        elif not word.startswith("-"):
+            paths.append(word)
+    return marks, paths
+
+
+def test_the_cython_job_fails_a_skip_and_collects_uklib_alone():
+    """The ``cython_uk`` job runs pytest under ``UKLIB_REQUIRE_CYTHON: '1'``, with ``-m
+    cython``, over ``lifelib/libraries/uklib/tests`` and no other library's tests (U7).
+
+    Each is a way its legs could be green and prove nothing.  Without the variable a
+    compile test that finds no compiler skips, and ``conftest.py`` fails such a skip only
+    under it.  Without ``-m cython`` a leg runs the whole suite beside its shard, the hour
+    spent on what the ``test`` job runs already.  Over another library's tests it runs that
+    library's compile tests under uklib's variables, which govern none of them, and none of
+    uklib's.  The variable is read as the step that runs pytest sees it, the job's or its
+    own.  It skips as :func:`test_the_cython_job_runs_every_shard` does.
+    """
+    tool = LIB.parents[2] / "tools" / "build_sec_cy.py"
+    if not (WORKFLOW.is_file() and tool.is_file()):
+        pytest.skip(f"the {JOB} job's workflow and tools/build_sec_cy.py are this "
+                    f"repository's, and one is absent")
+    job = _job(WORKFLOW.read_text(encoding="utf-8"), JOB)
+    if job is None and not EC_MODELS:
+        pytest.skip(f"{WORKFLOW.name} has no {JOB} job, and no uklib model is at stage "
+                    f"'EC' yet")
+    assert job is not None, f"{WORKFLOW.name} has no {JOB} job"
+    runs = [step for step in _steps(job) if _pytest_args(step.get("run", "")) is not None]
+    assert len(runs) == 1, f"the {JOB} job has {len(runs)} steps that run pytest, not one"
+    step = runs[0]
+    required = _variable(job, step, "UKLIB_REQUIRE_CYTHON")
+    assert required is not None and required.strip("'\"") == "1", (
+        f"the {JOB} job runs pytest under UKLIB_REQUIRE_CYTHON {required!r}, not '1': a "
+        f"compile test that skips there would pass")
+    marks, paths = _pytest_args(step["run"])
+    assert marks == ["cython"], (
+        f"the {JOB} job runs pytest with -m {marks}, not -m cython: {step['run']}")
+    other = [path for path in paths
+             if path.rstrip("/") != UK_TESTS and not path.startswith(UK_TESTS + "/")]
+    assert paths and not other, (
+        f"the {JOB} job's pytest collects {paths or 'the repository'}, not {UK_TESTS} "
+        f"alone: {step['run']}")
+
+
+def test_the_test_job_runs_the_harness_check():
+    """CI's ``test`` job has a step that runs ``python tools/check_sec_harness.py``, on no
+    condition (UKLIB-SEC-PLAN.md U3).
+
+    The check holds uklib's SEC harness to uslib's, and each one's product specs to their
+    rules.  Each library's suite passes on its own copy, so without the step two drifted
+    copies are green, and so they are with a step that runs it only under ``if:``, unless
+    the condition is ``always()``, or that may fail under ``continue-on-error``.  It skips
+    where the workflow or the tool is absent, as from a ``lifelib.create()`` copy.
+    """
+    tool = LIB.parents[2] / "tools" / "check_sec_harness.py"
+    if not (WORKFLOW.is_file() and tool.is_file()):
+        pytest.skip("the test job's workflow and tools/check_sec_harness.py are this "
+                    "repository's, and one is absent")
+    job = _job(WORKFLOW.read_text(encoding="utf-8"), "test")
+    assert job is not None, f"{WORKFLOW.name} has no test job"
+    runs = [step for step in _steps(job)
+            if re.fullmatch(r"python3?\s+tools/check_sec_harness\.py", step.get("run", ""))]
+    assert runs, "no step of the test job runs python tools/check_sec_harness.py"
+
+    def gates(step):
+        condition = re.sub(r"\$\{\{\s*(.*?)\s*\}\}", r"\1", step.get("if", "")).strip()
+        return (condition in ("", "always()", "success()")
+                and step.get("continue-on-error", "false") == "false")
+
+    assert any(gates(step) for step in runs), (
+        f"the test job runs tools/check_sec_harness.py only conditionally: {runs}")
+
+
+def test_the_sec_uk_job_runs_every_sec_module():
+    """The ``sec_uk`` CI job runs every uklib SEC model's test module, and the full grid
+    on Linux, as the ``sec`` job runs uslib's (UKLIB-SEC-PLAN.md U7).
+
+    The ``test`` job leaves out every ``test_*_uk_sec.py``, as it leaves out uslib's
+    ``_us_sec`` modules, whose grids took its legs to their timeout; so a module this job
+    does not list runs in no CI job, and every leg is green.  The job is uslib's ``sec``
+    job read for uklib: a ``module: [...]`` list of product directories, one to a leg, each
+    with its ``test_<module>_uk_sec.py``; a ``grid`` whose ``full`` legs set
+    ``UKLIB_SEC_FULL`` and ``UKLIB_REQUIRE_DOCUTILS`` to ``'1'`` for the step that runs
+    pytest, so that the full splice grid runs there and a docstring parse test that skips
+    fails; and that step's pytest names
+    ``lifelib/libraries/uklib/tests/test_${{ matrix.module }}_uk_sec.py``.  So the list must
+    be exactly the product directories of the registered SEC models, each once, and no
+    ``test_*_uk_sec.py`` may lie outside it.  It skips where the workflow or ``tools/`` is
+    absent, as from a ``lifelib.create()`` copy or from lifelib, and while the job would
+    have nothing to run: no uklib SEC model registered, no ``test_*_uk_sec.py``, and no
+    ``sec_uk`` job.  From the first of them on, a missing job fails.
+    """
+    if not (WORKFLOW.is_file() and (LIB.parents[2] / "tools").is_dir()):
+        pytest.skip(f"the {SEC_JOB} job's workflow and tools/ are this repository's, and "
+                    f"one is absent")
+    job = _job(WORKFLOW.read_text(encoding="utf-8"), SEC_JOB)
+    found = sorted(path.name[len("test_"):-len("_uk_sec.py")]
+                   for path in (LIB / "tests").glob("test_*_uk_sec.py"))
+    want = list(dict.fromkeys(model_path(name).parent.name for name in SEC_MODELS))
+    if job is None and not SEC_MODELS and not found:
+        pytest.skip(f"no uklib SEC model is registered, no test_*_uk_sec.py exists, and "
+                    f"{WORKFLOW.name} has no {SEC_JOB} job")
+    assert job is not None, (
+        f"{WORKFLOW.name} has no {SEC_JOB} job, and the test job leaves out every "
+        f"test_*_uk_sec.py: the modules of {want or found} run in no CI job")
+    listed = _matrix_list(job, "module")
+    assert listed is not None, f"the {SEC_JOB} job's matrix has no module: [...] list"
+    twice = sorted({module for module in listed if listed.count(module) > 1})
+    missing = [module for module in want if module not in listed]
+    extra = [module for module in listed if module not in want]
+    assert not (twice or missing or extra), (
+        f"the {SEC_JOB} job's matrix lists the modules {listed}, and the registered SEC "
+        f"models' product directories are {want}: add {missing}, remove {extra}, list "
+        f"once {twice}; a product's E step adds its module")
+    absent = [f"test_{module}_uk_sec.py" for module in listed
+              if not (LIB / "tests" / f"test_{module}_uk_sec.py").is_file()]
+    assert not absent, f"the {SEC_JOB} job lists modules whose files are absent: {absent}"
+    stray = [f"test_{module}_uk_sec.py" for module in found if module not in listed]
+    assert not stray, (
+        f"{stray} lie outside the {SEC_JOB} job's list {listed}, and the test job leaves "
+        f"them out: they run in no CI job")
+    assert "full" in (_matrix_list(job, "grid") or []), (
+        f"the {SEC_JOB} job's matrix has no full grid, grid: [core, full]")
+    path = re.escape(UK_TESTS) + r"/test_\$\{\{\s*matrix\.module\s*\}\}_uk_sec\.py"
+    runs = [step for step in _steps(job)
+            if re.search(rf"\bpytest\b.*\s{path}(\s|$)", step.get("run", ""))]
+    assert runs, (f"no step of the {SEC_JOB} job runs pytest on "
+                  f"{UK_TESTS}/test_${{{{ matrix.module }}}}_uk_sec.py")
+    for variable in ("UKLIB_SEC_FULL", "UKLIB_REQUIRE_DOCUTILS"):
+        given = _variable(job, runs[0], variable)
+        assert given is not None and "".join(given.split()) == ON_THE_FULL_GRID, (
+            f"the {SEC_JOB} job runs its module under {variable} {given!r}, not "
+            f"{ON_THE_FULL_GRID!r}: '1' on the full grid")
