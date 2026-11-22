@@ -89,7 +89,7 @@ is valued at, its expenses apart, which inflate from the valuation date; and a p
 restated in force at any month continues it too, opened with the state the `_S` model
 carries into that month, which the `_S` model itself restarts where its frame opens. Each
 `model-sec.md` says what running in force changes. `Term_UK_SEC` is the first: it runs in
-force, and does not yet compile.
+force, and compiles.
 
 Assumption tables stay in the units they are quoted in: a mortality rate by attained age
 and a lapse rate by policy year are annual, and each model converts them month by month
@@ -266,7 +266,7 @@ python -m pytest tests -q
 * - `products/<product>/model.md`
   - How the model implements those notes — what was standardized, what diverges, what the tests cover.
 * - `products/<product>/model-sec.md`
-  - Where the product has an `_SEC` model: how it extends the `_S` one — the in-force interface, the two clocks, the departures.
+  - Where the product has an `_SEC` model: how it extends the `_S` one — the in-force interface, the two clocks, the departures — and, once it compiles, the compiled model.
 * - `products/<product>/sources.md`
   - Every source the product's documents cite, with URLs, access dates and retrieval status.
 * - `products/<product>/<Model>/`
@@ -274,7 +274,9 @@ python -m pytest tests -q
 * - `products/<product>/*.csv`
   - The model's inputs, external to the model folder so they can be edited or swapped in place. An `_SEC` model reads the same tables and its own `model_point_table_sec.csv`, with any `*_sec.csv` companion, such as term assurance's waiver pipeline, each generated from the `_S` model and its inputs and checked against them by the tests.
 * - `products/<product>/run.py`
-  - Reads the model and prints its cash flow statement. `run_sec.py` does the same for an `_SEC` model, for one model point or the whole block.
+  - Reads the model and prints its cash flow statement. `run_sec.py` does the same for an `_SEC` model, for one model point or the whole block, and `--cython` runs the compiled model.
+* - `products/<product>/sample_sec.py`, `spec_sec.py`
+  - mx2cy's two inputs for compiling an `_SEC` model: the sample run that types each cell, and the size of each cell's cache.
 * - `references/`
   - The cross-product regulatory and actuarial bibliography, cited as `[REG-R#]`.
 * - `tests/`
