@@ -1,9 +1,10 @@
-"""Compile a uslib SEC model with modelx-cython: export, trace, translate, build.
+"""Compile a uslib or uklib SEC model with modelx-cython: export, trace, translate, build.
 
-USLIB-SEC-PLAN.md's Phase 2 makes each ``<Name>_US_SEC`` model compile (its D12).  The
-compiler is mx2cy, the command modelx-cython installs, and it does not compile a modelx
-model: it compiles the model's **export**, the self-contained Python package that
-``Model.export`` writes.  So a build is three steps, and this tool runs them in order:
+USLIB-SEC-PLAN.md's Phase 2 makes each ``<Name>_US_SEC`` model compile (its D12), and each
+uklib product's C step its ``<Name>_UK_SEC`` (UKLIB-SEC-PLAN.md U2).  The compiler is
+mx2cy, the command modelx-cython installs, and it does not compile a modelx model: it
+compiles the model's **export**, the self-contained Python package that ``Model.export``
+writes.  So a build is three steps, and this tool runs them in order:
 
 1. export the model to ``<out>/<Model>_nomx/``;
 2. copy the product's CSVs to ``<out>``, unless ``<out>`` is the product directory, where
@@ -22,11 +23,11 @@ on ``sys.path`` -- and its spaces are C extension types.
 **The sample and the spec.**  mx2cy types a cell from the values the sample run passes it
 and gets back, so a cell the sample never calls compiles untyped, and the spec sizes each
 cell's C-array cache, which raises ``IndexError`` past its end (the plan's F3 and F4).
-Both are written in Phase 2, one pair per product (§6.1, step 6), and ``Term_US_SEC``'s
-were the first (M14).  A product without them cannot be built here, and
-``test_cython_toolchain.py`` compiles ``Term_US_S`` with a sample and a spec of its own.
-The sample must raise the recursion limit itself: modelx raises it, and the export does
-not (F7).
+Both are written in Phase 2, one pair per product (§6.1, step 6), or at a uklib product's C
+step (UKLIB-SEC-PLAN.md U2), and ``Term_US_SEC``'s were the first (M14).  A product without
+them cannot be built here, and ``test_cython_toolchain.py`` compiles ``Term_US_S`` with a
+sample and a spec of its own.  The sample must raise the recursion limit itself: modelx
+raises it, and the export does not (F7).
 
 **Why the tool adds two compiler directives.**  Between mx2cy's two steps the tool puts
 :data:`DIRECTIVE`, ``# cython: infer_types=True, cpow=True``, at the top of each translated
@@ -136,13 +137,17 @@ Usage::
 
     python tools/build_sec_cy.py term_life                  # Term_US_SEC, in place
     python tools/build_sec_cy.py term_life --out /tmp/term  # elsewhere, with the CSVs
+    python tools/build_sec_cy.py uslib/term_life            # the product, by its library
     python tools/build_sec_cy.py lifelib/libraries/uslib/products/term_life \\
         --model Term_US_S --sample my_sample.py --spec my_spec.py
 
-The product is a product directory, or the folder name of a uslib product.  The tool
-prints the compiled package's path and exits 0.  It exits 1 when a step fails, and 2 when
-it cannot start: a malformed command line, no modelx-cython, a missing model, sample or
-spec, or an ``--out`` it refuses.
+The product is a product directory, or a uslib or uklib product: ``<lib>/<product>``, as
+``uklib/term_assurance``, or its folder name alone where only one library's product of
+that name holds a ``*_SEC`` model, as ``term_life`` names uslib's, since jplib's and
+krlib's hold none (:func:`product_directory`).  The tool prints the compiled package's path
+and exits 0.  It exits 1 when a step fails, and 2 when it cannot start: a malformed command
+line, a product it cannot find or that a bare name leaves ambiguous, no modelx-cython, a
+missing model, sample or spec, or an ``--out`` it refuses.
 """
 import argparse
 import importlib.machinery
@@ -154,7 +159,7 @@ import subprocess
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
-PRODUCTS = REPO / "lifelib" / "libraries" / "uslib" / "products"
+LIBRARIES = REPO / "lifelib" / "libraries"
 
 SAMPLE = "sample_sec.py"
 SPEC = "spec_sec.py"
@@ -183,6 +188,18 @@ class BuildError(RuntimeError):
     """A build step failed.  The message names the step and quotes the end of its log."""
 
 
+def sec_models(product_dir):
+    """The ``*_SEC`` model folders of a product directory, in name order.
+
+    A model folder is one holding a ``_system.json``, as ``tools/gen_scaffolding.py``
+    recognizes it, so an export beside the model, ``<Model>_nomx``, is never counted.
+    :func:`find_model` compiles the one this finds, and :func:`product_directory` resolves
+    a bare product name to the one library whose product of that name holds one.
+    """
+    return [d for d in sorted(pathlib.Path(product_dir).iterdir())
+            if d.is_dir() and d.name.endswith("_SEC") and (d / "_system.json").is_file()]
+
+
 def find_model(product_dir, model=None):
     """The folder of the model to compile: ``model``, or the product's one ``*_SEC`` model.
 
@@ -203,14 +220,14 @@ def find_model(product_dir, model=None):
             raise FileNotFoundError(
                 f"{folder} is not a modelx model folder: it holds no _system.json")
         return folder
-    found = [d for d in sorted(product_dir.iterdir())
-             if d.is_dir() and d.name.endswith("_SEC") and (d / "_system.json").is_file()]
+    found = sec_models(product_dir)
     if len(found) == 1:
         return found[0]
     if not found:
         raise FileNotFoundError(
             f"no *_SEC model in {product_dir}: Phase 1 of USLIB-SEC-PLAN.md adds one per "
-            "product.  Name the model to compile with model= (--model)")
+            "uslib product, and each uklib product's E step one (UKLIB-SEC-PLAN.md U2).  "
+            "Name the model to compile with model= (--model)")
     names = ", ".join(d.name for d in found)
     raise ValueError(
         f"{len(found)} *_SEC models in {product_dir} ({names}); name one with model= "
@@ -222,7 +239,8 @@ def _script(given, default, role):
     path = default if given is None else pathlib.Path(given).resolve()
     if not path.is_file():
         hint = (f"; each product's {default.name} is written in Phase 2 of "
-                "USLIB-SEC-PLAN.md (section 6.1, step 6)" if given is None else "")
+                "USLIB-SEC-PLAN.md (section 6.1, step 6), or at a uklib product's C step "
+                "(UKLIB-SEC-PLAN.md U2)" if given is None else "")
         raise FileNotFoundError(f"no {role} {path}{hint}")
     return path
 
@@ -435,26 +453,85 @@ def build(product_dir, model=None, out=None, sample=None, spec=None):
     return compiled
 
 
-def product_directory(arg):
-    """The product directory a command-line argument names, or ``None``.
+def products():
+    """Every product directory of this repository, ``{(library, product): directory}``.
 
-    An existing directory is taken as it is; anything else is looked up as the folder name
-    of a uslib product, so ``term_life`` works from any working directory.
+    A library is a folder of ``lifelib/libraries/`` that holds ``products/``, and its
+    products are the folders in that, each in name order.
+    """
+    found = {}
+    for lib in sorted(LIBRARIES.iterdir()) if LIBRARIES.is_dir() else ():
+        if (lib / "products").is_dir():
+            for product in sorted((lib / "products").iterdir()):
+                if product.is_dir():
+                    found[lib.name, product.name] = product
+    return found
+
+
+def product_directory(arg):
+    """The product directory a command-line argument names.
+
+    An existing directory is taken as it is.  Anything else names a product of a library in
+    this repository, from any working directory.  ``<lib>/<product>`` names that library's,
+    as ``uklib/term_assurance`` does, with an SEC model or without.  A product's folder name
+    alone names the product of that name in the one library where it holds a ``*_SEC``
+    model (:func:`sec_models`), so ``term_life`` is uslib's: jplib and krlib have a
+    ``term_life`` too, and neither holds one.
+
+    Anything else raises ``ValueError``, listing the candidates.  For ``<lib>/<product>``
+    they are the libraries, or that library's products.  For a folder name they are the
+    products of that name with a ``*_SEC`` model, when more than one library has one; or
+    else every library's product of that name, to be named with its library; or else, when
+    no library has one, every product a folder name alone finds.
     """
     path = pathlib.Path(arg)
     if path.is_dir():
         return path
-    if (PRODUCTS / arg).is_dir():
-        return PRODUCTS / arg
-    return None
+    known = products()
+    given = pathlib.PurePath(arg)
+    parts = () if given.anchor else given.parts
+    if len(parts) == 2:
+        if parts in known:
+            return known[parts]
+        lib, product = parts
+        libraries = sorted({name for name, _ in known})
+        if lib not in libraries:
+            raise ValueError(f"{arg!r} is not a directory, and {lib!r} is no library in "
+                             f"{LIBRARIES}: they are {', '.join(libraries)}")
+        theirs = ", ".join(name for owner, name in known if owner == lib)
+        raise ValueError(f"{arg!r} is not a directory, and {lib} has no product "
+                         f"{product!r}: its products are {theirs}")
+    if len(parts) == 1:
+        name = parts[0]
+        held = [lib for lib, product in known if product == name]
+        with_sec = [lib for lib in held if sec_models(known[lib, name])]
+        if len(with_sec) == 1:
+            return known[with_sec[0], name]
+        if with_sec:
+            raise ValueError(
+                f"{arg!r} is a product with a *_SEC model in {len(with_sec)} libraries, so "
+                f"the name alone is ambiguous: name one, as "
+                f"{' or '.join(f'{lib}/{name}' for lib in with_sec)}")
+        if held:
+            raise ValueError(
+                f"{arg!r} is not a directory, and no product of that name holds a *_SEC "
+                f"model, which a name alone must find: name it with its library, as "
+                f"{' or '.join(f'{lib}/{name}' for lib in held)}")
+    found = ", ".join(f"{lib}/{product}" for (lib, product), folder in known.items()
+                      if sec_models(folder))
+    raise ValueError(f"{arg!r} is neither a directory, nor <lib>/<product>, nor the folder "
+                     f"name of a product with a *_SEC model, which are {found or 'none'}")
 
 
 def main(argv):
     parser = argparse.ArgumentParser(
         prog="python tools/build_sec_cy.py",
-        description="Compile a uslib SEC model with modelx-cython (USLIB-SEC-PLAN.md D12).")
+        description="Compile a uslib or uklib SEC model with modelx-cython "
+                    "(USLIB-SEC-PLAN.md D12, UKLIB-SEC-PLAN.md U4).")
     parser.add_argument(
-        "product", help="a product directory, or the folder name of a uslib product")
+        "product", help="a product directory, or a uslib or uklib product: "
+                        "<lib>/<product>, or its folder name where only one library's "
+                        "product of that name holds a *_SEC model")
     parser.add_argument(
         "--model", help="the model folder to compile (default: the product's *_SEC model)")
     parser.add_argument(
@@ -465,9 +542,10 @@ def main(argv):
         "--spec", help=f"mx2cy's spec file (default: <product>/{SPEC})")
     args = parser.parse_args(argv)
 
-    product = product_directory(args.product)
-    if product is None:
-        parser.error(f"{args.product!r} is neither a directory nor a product in {PRODUCTS}")
+    try:
+        product = product_directory(args.product)
+    except ValueError as err:
+        parser.error(str(err))
     given = (product, args.model, args.out, args.sample, args.spec)
     try:
         _, model_dir, out, _, _ = settle(*given)
