@@ -88,8 +88,11 @@ and a NaN would stay NaN; but an infinity is a number, which the cap reads as 1,
 certain claim. The pivot table is checked by its reader, :func:`ci_rate_table`, before it
 indexes and sorts the table, so that a fault is named by its line of the file; the lapse
 table by :func:`lapse_last_year`, the cell the projection takes the table's extent from,
-which it asks before it reads the table. A read beyond a table's extent is refused by the
-one ``Projection`` cell that reads the table, naming the point.
+which it asks before it reads the table. And a pivot table whose interpolation is not a
+finite number at an age the contract admits, past the largest float, is refused as
+:func:`i_ci_array` and :func:`q_d_array` build it, naming the file, the column, the group
+and the age, though no point may reach that age. A read beyond a table's extent is refused
+by the one ``Projection`` cell that reads the table, naming the point.
 
 **The vectors.** The readers return what the files hold, and no
 :mod:`~.CI_UK_SEC.Projection` cell but ``model_point``, a reporting cell, reads them.
@@ -813,12 +816,21 @@ def i_ci_array():
     ``Projection.ci_rate_base`` refuses an age outside the two, naming the point.  Asks the
     two first, which check the pivot table, so each pivot is a number above 0 and at most
     1, and the ratio's power is real.
+
+    It may still not be finite: two pivots far apart extrapolate past the largest float at
+    an age a point may never reach, where the power overflows, and a pivot below about
+    5.6e-309 can make the ratio itself infinite.  :mod:`~.CI_UK_S` raises ``OverflowError``
+    only when a point reaches such an age, naming nothing, and reads an infinite rate, which
+    its cap takes for a certain claim; here every age the contract admits is built, so the
+    table is refused, ``ValueError`` naming the file, the column, the group and the first
+    age whose rate is not finite, as an infinite rate in the file is refused.
     """
     first, last = rate_age_first(), rate_age_last()
     tbl = ci_rate_table()
     out = np.full((4, last + 1), np.nan)                             # noqa: F821
     for g in range(4):
-        sub = tbl.loc[(("M", "M", "F", "F")[g], ("NS", "S", "NS", "S")[g])]
+        sex, smoker = ("M", "M", "F", "F")[g], ("NS", "S", "NS", "S")[g]
+        sub = tbl.loc[(sex, smoker)]
         ages = sorted(int(a) for a in sub.index)
         for x in range(first, last + 1):
             if x <= ages[0]:
@@ -830,7 +842,16 @@ def i_ci_array():
                 hi = min(a for a in ages if a > x)
             r_lo = float(sub.loc[lo, "i_ci"])
             r_hi = float(sub.loc[hi, "i_ci"])
-            out[g, x] = r_lo * (r_hi / r_lo) ** ((x - lo) / (hi - lo))
+            try:
+                rate = r_lo * (r_hi / r_lo) ** ((x - lo) / (hi - lo))
+            except OverflowError:
+                rate = float("inf")
+            if not rate - rate == 0.0:                               # inf, or NaN
+                raise ValueError(
+                    f"{ci_rate_file}: i_ci for sex {sex}, smoker {smoker} is "  # noqa: F821
+                    f"not a finite number at attained age {x}, an age the contract "
+                    f"admits, interpolated log-linearly from its pivot ages {lo} and {hi}")
+            out[g, x] = rate
     return out
 
 
@@ -841,13 +862,15 @@ def q_d_array():
     :func:`i_ci_array`'s table of the ``q_d`` column: :mod:`~.CI_UK_S`'s
     ``pivot_interp(x, sex, smoker, "q_d")`` at each age the contract admits, by the same
     formula, element by element, and NaN below the first, which
-    ``Projection.mort_rate`` never reads.
+    ``Projection.mort_rate`` never reads.  A rate that is not a finite number refuses the
+    table, as :func:`i_ci_array`'s does.
     """
     first, last = rate_age_first(), rate_age_last()
     tbl = ci_rate_table()
     out = np.full((4, last + 1), np.nan)                             # noqa: F821
     for g in range(4):
-        sub = tbl.loc[(("M", "M", "F", "F")[g], ("NS", "S", "NS", "S")[g])]
+        sex, smoker = ("M", "M", "F", "F")[g], ("NS", "S", "NS", "S")[g]
+        sub = tbl.loc[(sex, smoker)]
         ages = sorted(int(a) for a in sub.index)
         for x in range(first, last + 1):
             if x <= ages[0]:
@@ -859,7 +882,16 @@ def q_d_array():
                 hi = min(a for a in ages if a > x)
             r_lo = float(sub.loc[lo, "q_d"])
             r_hi = float(sub.loc[hi, "q_d"])
-            out[g, x] = r_lo * (r_hi / r_lo) ** ((x - lo) / (hi - lo))
+            try:
+                rate = r_lo * (r_hi / r_lo) ** ((x - lo) / (hi - lo))
+            except OverflowError:
+                rate = float("inf")
+            if not rate - rate == 0.0:                               # inf, or NaN
+                raise ValueError(
+                    f"{ci_rate_file}: q_d for sex {sex}, smoker {smoker} is "  # noqa: F821
+                    f"not a finite number at attained age {x}, an age the contract "
+                    f"admits, interpolated log-linearly from its pivot ages {lo} and {hi}")
+            out[g, x] = rate
     return out
 
 

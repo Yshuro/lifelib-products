@@ -1217,17 +1217,19 @@ def ci_rate_base(t, life):
     ``pivot_interp(age, sex, smoker, "i_ci")`` at every attained age the contract admits,
     made once in ``Data`` by S's own formula: at the life's row, :func:`rate_group`, and its
     attained age, the array's index.  An age outside the array's, ``Data.rate_age_first``
-    to ``Data.rate_age_last``, 18 to 74, raises ``ValueError``, naming the point and the
-    age, rather than reading the array's padding below the first or past its end.
+    to ``Data.rate_age_last``, 18 to 74, raises ``ValueError``, naming the point, the
+    file, as ``Data.ci_rate_file`` names it, and the age, rather than reading the array's
+    padding below the first or past its end.
     """
     if not is_active(t):
         return 0.0
     a = age(t, life)
     if a < data.rate_age_first() or a > data.rate_age_last():        # noqa: F821
         raise ValueError(
-            f"point_id {point_id()}: ci_rate_table.csv is interpolated at attained "
-            f"ages {data.rate_age_first()} to {data.rate_age_last()}, Data's "  # noqa: F821
-            f"rate_age_min to rate_age_max, not at {a}")
+            f"point_id {point_id()}: {data.ci_rate_file} is interpolated at "  # noqa: F821
+            f"attained ages {data.rate_age_first()} to "                       # noqa: F821
+            f"{data.rate_age_last()}, Data's rate_age_min to rate_age_max, "   # noqa: F821
+            f"not at {a}")
     return float(data.i_ci_array()[rate_group(life), a])             # noqa: F821
 
 
@@ -1249,9 +1251,10 @@ def mort_rate(t, life):
     a = age(t, life)
     if a < data.rate_age_first() or a > data.rate_age_last():        # noqa: F821
         raise ValueError(
-            f"point_id {point_id()}: ci_rate_table.csv is interpolated at attained "
-            f"ages {data.rate_age_first()} to {data.rate_age_last()}, Data's "  # noqa: F821
-            f"rate_age_min to rate_age_max, not at {a}")
+            f"point_id {point_id()}: {data.ci_rate_file} is interpolated at "  # noqa: F821
+            f"attained ages {data.rate_age_first()} to "                       # noqa: F821
+            f"{data.rate_age_last()}, Data's rate_age_min to rate_age_max, "   # noqa: F821
+            f"not at {a}")
     return float(data.q_d_array()[rate_group(life), a])              # noqa: F821
 
 

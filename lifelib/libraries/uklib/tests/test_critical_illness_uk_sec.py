@@ -2442,9 +2442,23 @@ GROUPS = (f"{CI_RATES}: each sex and smoker status must hold two pivot ages or m
 YEARS = (f"{LAPSE}: the policy years must run from 1, one row a year, without a gap or a "
          f"repeat; ")
 
+
+def _not_finite(column, sex, smoker, age, lo, hi):
+    """Data's refusal of a pivot table whose interpolation is not a finite number at
+    ``age``, from the group's pivots at ``lo`` and ``hi``."""
+    return (f"{CI_RATES}: {column} for sex {sex}, smoker {smoker} is not a finite number "
+            f"at attained age {age}, an age the contract admits, interpolated "
+            f"log-linearly from its pivot ages {lo} and {hi}")
+
 # A table a reader cannot read, or whose value is not a number in its range, as (case, the
 # file, its edit, the Data cell that refuses it, its message).  A value no point reads is
-# refused too: the female smoker at 65, which no committed point reaches.
+# refused too: the female smoker at 65, which no committed point reaches.  And so is a pivot
+# table whose interpolation passes the largest float at an age the contract admits, which
+# no point may reach: two pivots far apart, the male non-smoker's diagnosis rate 1e-200 at
+# 60 and 1 at 65, whose extrapolation overflows from 68, where the anchor cell, which
+# reaches 64, projects in CI_UK_S; the female smoker's mortality 1 at 40 and 1e-200 at 45,
+# overflowing below 40 from 18, its first age; and a pivot of 1e-310, whose ratio to the
+# next, the male smoker's diagnosis rate at 65, is infinite, and so is every age between.
 UNREADABLE = [
     ("a blank diagnosis rate", CI_RATES,
      _written("i_ci", float("nan"), _pivot("M", "NS", 50)), "ci_rate_table", I_CI + "[4]"),
@@ -2479,6 +2493,17 @@ UNREADABLE = [
     ("a group of one pivot", CI_RATES,
      _dropped(lambda t: _group("F", "NS")(t) & (t["age"] != 50)), "ci_rate_table",
      GROUPS + "sex F, smoker NS holds 1 pivot age"),
+    ("a diagnosis rate past the largest float above the last pivot", CI_RATES,
+     _then(_written("i_ci", 1e-200, _pivot("M", "NS", 60)),
+           _written("i_ci", 1.0, _pivot("M", "NS", 65))),
+     "i_ci_array", _not_finite("i_ci", "M", "NS", 68, 60, 65)),
+    ("a mortality rate past the largest float below the first pivot", CI_RATES,
+     _then(_written("q_d", 1.0, _pivot("F", "S", 40)),
+           _written("q_d", 1e-200, _pivot("F", "S", 45))),
+     "q_d_array", _not_finite("q_d", "F", "S", 18, 40, 45)),
+    ("a ratio of two pivots past the largest float", CI_RATES,
+     _written("i_ci", 1e-310, _pivot("M", "S", 60)),
+     "i_ci_array", _not_finite("i_ci", "M", "S", 61, 60, 65)),
     ("a blank lapse rate", LAPSE, _written("lapse_rate", float("nan"),
                                            _key_is("policy_year", 3)),
      "lapse_last_year", LAPSE_RATE + "[4]"),
@@ -2510,10 +2535,13 @@ def test_a_table_a_reader_cannot_read_is_refused_naming_its_lines(tmp_path, case
     ``CI_UK_S`` reads a blank rate as NaN, which its caps would keep and every flow carry;
     an infinite one, which a cap reads as a certain claim; a rate of 0, at which
     ``pivot_interp``'s ratio divides by zero; a negative one, whose power has no real value;
-    a key that is not whole as one ``int`` truncates; and a group short of two pivots as an
-    ``IndexError``, only where a projection reaches it.  Here the cell the projection asks
-    first refuses each, naming the file, the column and its lines (:data:`UNREADABLE`), and
-    so does a projection of the anchor cell, which reads both tables.
+    a key that is not whole as one ``int`` truncates; a group short of two pivots as an
+    ``IndexError``, only where a projection reaches it; and pivots whose interpolation
+    passes the largest float at an age, with ``OverflowError``, only where a point reaches
+    that age, or as an infinite rate its cap reads as a certain claim.  Here the cell the
+    projection asks first refuses each, naming the file, the column and its lines, or the
+    group and the first age whose rate is not finite (:data:`UNREADABLE`), and so does a
+    projection of the anchor cell, which reads both tables.
     """
     model = _read_edited(tmp_path, lambda t: t, edits={file: edit})
     try:
@@ -4096,7 +4124,51 @@ def _left_to_right(p, t):
     return total
 
 
-def test_the_all_total_is_s_total_bit_for_bit(sec_model, s_model, spliced):
+def _neumaier(p, t, *, swapped=False, checked=True):
+    """The four kinds' total as ``sum`` adds them, and whether a later kind outweighed the
+    running total, where the carried rounding error takes the second form.
+
+    ``swapped`` carries each such kind's error in the first form, as an earlier kind's;
+    ``checked=False`` adds the carried error at the end even where it is not finite.  Each
+    is a way to miswrite ``Projection.claims``' total that a comparison with S sees only
+    on a row that reaches it, which the test asserts each of its rows does.
+    """
+    kinds = [p.claims(t, _code(p, kind)) for kind in KINDS]
+    f, c, taken = 0.0 + kinds[0], 0.0, False
+    for x in kinds[1:]:
+        s = f + x
+        if abs(f) >= abs(x):
+            c = c + ((f - s) + x)
+        else:
+            taken = True
+            c = c + (((f - s) + x) if swapped else ((x - s) + f))
+        f = s
+    if c != 0.0 and (not checked or abs(c) <= sys.float_info.max):
+        f = f + c
+    return f, taken
+
+
+# The domain edges at which a later kind outweighs the running total, each with what the
+# total test asserts of the twins of S's seven points under it: (months, months where a
+# later kind outweighs it, months where carrying its error in the first form would part
+# from S).  At 12 additional payments a year for each diagnosis, the additional payment
+# outweighs the main claim in every month of cover of every point but in the oldest
+# years, the main claim's mortality part then the larger; with no claim paid before the
+# survival period, the standalone contract's main claim is 0, and its children's claim
+# outweighs its additional payment in five months that carry an error.
+TOTAL_EDGES = [({"ap_freq_factor": 12.0}, (2040, 2016, 298)),
+               ({"survival_slip": 1.0}, (2040, 300, 5))]
+
+
+def _infinite_main_claim():
+    """S's anchor cell and its twin with a sum assured of 1e306 and 1e10 policies, whose
+    main claim is past the largest float in every month: ``(S's row, SEC's row)``."""
+    s_row = _s_table().loc[[1]].assign(sum_assured=1e306, pols_if_init=1e10)
+    sec_row = _committed().loc[[1]].assign(sum_assured=1e306, policy_count=1e10)
+    return s_row, sec_row
+
+
+def test_the_all_total_is_s_total_bit_for_bit(sec_model, s_model, spliced, tmp_path):
     """``claims(t, ALL)`` is ``CI_UK_S``'s ``claims(t)``, its ``sum``, to the last bit.
 
     S totals its four kinds with Python's ``sum``, which compensates, Neumaier's way, and
@@ -4110,6 +4182,15 @@ def test_the_all_total_is_s_total_bit_for_bit(sec_model, s_model, spliced):
     standalone and the joint contract reviewable and the point issued at 50 below the
     ancillary caps among them, under the splice's References, the reviews moving premiums
     and opening windows.
+
+    The main claim outweighs the other kinds in every month of those rows, so ``sum``'s
+    second form, where a later kind outweighs the running total, is compared too on the
+    twins of S's points at the domain edges of :data:`TOTAL_EDGES`, each in both models,
+    where it is taken and where carrying its error in the first form would part from S, in
+    the months asserted.  And on S's anchor cell and its twin with a main claim past the
+    largest float in every month (:func:`_infinite_main_claim`), S's ``sum`` is inf, the
+    carried error being NaN, which ``sum`` leaves out: the total here is inf too, compared
+    by ``repr``, where adding the carried error unchecked would make it NaN in every month.
     """
     found, apart, months = [], 0, 0
     total = _code(sec_model.Projection, "ALL")
@@ -4132,6 +4213,43 @@ def test_the_all_total_is_s_total_bit_for_bit(sec_model, s_model, spliced):
                       if p.claims(t, total).hex() != sp.claims(t).hex()]
         finally:
             _release(sec, key)
+    for n, (refs, counts) in enumerate(TOTAL_EDGES):
+        s = mx.read_model(model_path(TWIN), name=_name(f"edge_s{n}"))
+        sec = mx.read_model(model_path(SEC), name=_name(f"edge{n}"))
+        try:
+            months = taken = parted = 0
+            for model in (s, sec):
+                for ref, value in refs.items():
+                    setattr(model.Projection, ref, value)
+            for point_id in table.index[table["row_kind"] == "twin"]:
+                sp, p = _point(s, point_id), _point(sec, point_id)
+                for t in range(p.proj_len()):
+                    months += 1
+                    want = sp.claims(t).hex()
+                    if p.claims(t, total).hex() != want:
+                        found.append(f"{refs}, point {point_id}, t = {t}")
+                    taken += _neumaier(p, t)[1]
+                    parted += _neumaier(p, t, swapped=True)[0].hex() != want
+            assert (months, taken, parted) == counts, (refs, months, taken, parted)
+        finally:
+            sec.close()
+            s.close()
+    s_row, sec_row = _infinite_main_claim()
+    s = mx.read_model(temp_inputs(tmp_path / "s", model_path(TWIN), model_points=s_row),
+                      name=_name("infinite_s"))
+    sec = mx.read_model(_sec_inputs(tmp_path / "sec", sec_row), name=_name("infinite"))
+    try:
+        sp, p = _point(s, 1), _point(sec, 1)
+        main, months = _code(p, "MAIN"), p.proj_len()
+        assert months == 300
+        for t in range(months):
+            assert p.claims(t, main) == sp.claims(t) == math.inf, t
+            assert math.isnan(_neumaier(p, t, checked=False)[0]), t
+            if repr(p.claims(t, total)) != repr(sp.claims(t)):
+                found.append(f"the infinite main claim, t = {t}: {p.claims(t, total)!r}")
+    finally:
+        sec.close()
+        s.close()
     assert not found, found[:10]
 
 
@@ -4294,8 +4412,9 @@ def test_every_padded_array_holds_nan_and_no_reader_reads_it(sec_model, tmp_path
 
     And on the extract labelled otherwise than by position (:func:`_extract`), where a
     label read as ``idx + 1`` would name another point, each reader of the pivot arrays
-    refuses an attained age outside them before it reads it, either side, naming the point
-    and the age: the contract's bounds moved, ``issue_age_min`` to 17 and
+    refuses an attained age outside them before it reads it, either side, naming the point,
+    the age and the pivot table by the name ``Data.ci_rate_file`` gives it, here a name
+    other than the shipped one: the contract's bounds moved, ``issue_age_min`` to 17 and
     ``expiry_age_max`` to 76, past the arrays' ages, a life issued at 17 is refused at 17,
     and one covered to its 76th birthday at 75, in its last policy year, each through its
     projection and each reader on its own; the age before, 74, is read.
@@ -4313,13 +4432,17 @@ def test_every_padded_array_holds_nan_and_no_reader_reads_it(sec_model, tmp_path
     young, old = (extract.index[extract["policy_id"] == p][0]
                   for p in ("CI-000001", "CI-000002"))
     edit = _then(_set("age_at_entry", [young], 17), _set("age_at_entry", [old], 51))
-    model = mx.read_model(_sec_inputs(tmp_path, edit(extract)), name=_name("padded"))
+    folder = _sec_inputs(tmp_path, edit(extract))
+    renamed = "ci_rate_table_renamed.csv"
+    (folder.parent / CI_RATES).rename(folder.parent / renamed)
+    model = mx.read_model(folder, name=_name("padded"))
     try:
+        model.Data.ci_rate_file = renamed
         model.Projection.issue_age_min = 17
         model.Projection.expiry_age_max = 76
         p, q = _point(model, young), _point(model, old)
         assert p.point_id() == young != list(extract.index).index(young) + 1
-        message = ("point_id {}: ci_rate_table.csv is interpolated at attained ages 18 to "
+        message = ("point_id {}: " + renamed + " is interpolated at attained ages 18 to "
                    "74, Data's rate_age_min to rate_age_max, not at {}")
         for proj, label, t, age in ((p, young, 0, 17), (q, old, 288, 75)):
             assert proj.age(t, 1) == age
@@ -5764,6 +5887,36 @@ def test_the_compiled_model_computes_what_modelx_computes_where_the_caps_bind(se
     rows.loc[emptied, "policy_count"] = 1.0
     folder = compiled_case(build, tmp_path / "capped", model_points=rows, edits=CAPPED)
     found = compiled_mismatches(build, folder, refs=SPLICED_REFS)
+    assert not found, _mismatch_lines(found)
+
+
+@pytest.mark.cython
+def test_the_compiled_total_is_modelx_s_where_a_later_kind_outweighs_or_is_infinite(
+        sec_build, tmp_path):
+    """C4 on the total's two cases no other compiled row reaches: every cell compiled.
+
+    ``claims(t, ALL)`` adds the four kinds as ``sum`` adds them (``Projection.claims``):
+    where a later kind outweighs the running total it carries the rounding error in the
+    second form, and the carried error is added at the end only where it is finite.  The
+    main claim outweighs the other kinds in every month of the splice grid, the extremes
+    and the capped rows, so the committed points are swept here under each domain edge of
+    :data:`TOTAL_EDGES`, where the additional payment, or the children's claim, outweighs
+    it; and S's anchor cell's twin with a main claim past the largest float
+    (:func:`_infinite_main_claim`), where the carried error is NaN and the total inf.  The
+    total test holds modelx to S on each, by its bits and by ``repr``; this holds the
+    compiled model to modelx, identically on x86-64 and to 1e-12 relative elsewhere, NaN
+    meeting NaN (``uk_sec_support.compiled_mismatches``).
+    """
+    build = sec_build(SEC)
+    found = []
+    folder = compiled_case(build, tmp_path / "committed")
+    for refs, _ in TOTAL_EDGES:
+        found += [f"{refs}: {line}"
+                  for line in compiled_mismatches(build, folder, refs=refs)]
+    folder = compiled_case(build, tmp_path / "infinite",
+                           model_points=_infinite_main_claim()[1])
+    found += [f"the infinite main claim: {line}"
+              for line in compiled_mismatches(build, folder)]
     assert not found, _mismatch_lines(found)
 
 
