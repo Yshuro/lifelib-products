@@ -118,10 +118,15 @@ The model point table is `model_point_table_sec.csv`. It carries `Term_UK_S`'s c
 of them restated as the in-force interface under `basiclife/BasicTerm_SE`'s names, and
 seven columns of opening state. Each state column is per policy in force, or a ratio, so
 that `policy_count` is the one weight on every flow, and each is measured at the valuation
-instant, the start of month 0, before any month-0 event (USLIB-SEC-PLAN.md D6). Each is
-history: what the policy has had or paid, never re-derived from a Reference, which is an
-assumption from the valuation date on, so that a Reference changed there reaches back over
-no month already run (UKLIB-SEC-PLAN.md K14, §9 item 5):
+instant, the start of month 0, before any month-0 event. An event that falls at the
+valuation date itself is month 0's, the projection's first, made at the References of the
+valuation date, as it is on a policy issued then, and is not history (USLIB-SEC-PLAN.md
+D6, precised at its M7): on a point valued on its anniversary, that anniversary's RPI
+increase is made at `t = 0` at the `rpi_rate` of the day, and the factors carried in are
+those of the policy year it closes. Each column is history: what the policy has had or
+paid, never re-derived from a Reference, which is an assumption from the valuation date
+on, so that a Reference changed there reaches back over no month already run
+(UKLIB-SEC-PLAN.md K14, §9 item 5):
 
 | Column | Unit | Measured at | Meaning |
 |---|---|---|---|
@@ -130,8 +135,8 @@ no month already run (UKLIB-SEC-PLAN.md K14, §9 item 5):
 | `lapse_cum_init` | a share of the policies issued, 0 to below 1 | the start of month 0 | the selective-lapse ratio `w_cum`: the share of the issued cohort that has lapsed |
 | `fib_cum_init` | deaths per policy in force, 0 or more | the start of month 0 | the deaths since issue, for each policy still in force, on every shape, which `cohort_frac` opens from |
 | `fib_streams_init` | streams per policy in force, 0 to `fib_cum_init` | the start of month 0 | on the family income benefit, the streams in payment: the deaths since issue whose instalments were not commuted, at the take-up of the month each fell in; 0 on the other shapes |
-| `idx_factor_init` | a factor, 1 or more | the policy year under way at the valuation date; on an anniversary, the one it opens | the RPI cover increases already given, on the sum assured at issue |
-| `idx_prem_factor_init` | a factor, 1 or more | as `idx_factor_init` | the RPI premium increases already given, on the premium at issue |
+| `idx_factor_init` | a factor, 1 or more | the start of month 0: mid-year, the policy year under way; on an anniversary, the one it closes | the RPI cover increases given before month 0, on the sum assured at issue; 1 on a policy in force 12 months or fewer |
+| `idx_prem_factor_init` | a factor, 1 or more | as `idx_factor_init` | the RPI premium increases given before month 0, on the premium at issue |
 | `wop_waived_frac_init` | a share of the policies in force, 0 to 1 | the start of month 0 | the policies whose premium the waiver of premium rider waives; 0 while the policy has been in force no longer than the deferred period |
 | `comm_init_pp_init` | pounds per policy, 0 or more | issue | the initial commission the policy paid when it was written, which the clawback recovers; 0 on a point issued at or after the valuation date, which pays `comm_init_rate` in its issue month |
 
@@ -147,6 +152,16 @@ new business it is S's bit for bit at the take-ups the shipped points hold, 0 an
 compares the ledger's residual, a rounding about zero, at a floor of 1e-9. And it rebuilds
 the commission paid at issue from `comm_init_rate`, which the clawback recovers; here a
 point in force reads it.
+
+`Term_UK_S` re-derives the two indexation factors from `rpi_rate` too, every increase from
+issue at the rate of the day; here they are history up to month 0. So the indexed point
+valued on its fifth anniversary carries the factors of policy year 5, `1.03^4` and
+`1.045^4`, and its frame takes the fifth step at `t = 0`: at the shipped 3% that is
+`Term_UK_S`'s own `1.03^5` from month 60, and with the RPI set to 5% at the valuation date
+it is `1.03^4 × 1.05`, its cover 177,267.64 in month 0, where a column that held the year
+the anniversary opens would carry the step made at 3%, and pay 173,891.11. A policy in
+force 12 months or fewer has been given no increase, its first anniversary falling in
+month 0 or later, so `Data` holds its factors to 1.
 
 The waiver's deferred period is a vector whose length is a Reference,
 `Projection.wop_defer_mths`, six months as shipped, so it goes in a companion,
@@ -239,15 +254,15 @@ below `2**53`, and −120 or more, future new business being written over a hori
 `Data.future_horizon_mth`, 120 months as shipped, which set to 0 refuses future new
 business altogether; each state column is a number in its range; a point not yet in force
 holds the issue values, 0 for the ratio, the deaths, the streams, the waived share and the
-commission, and 1 for the factors; each flag is True or False; each code is one
-`Term_UK_S` knows; the ages and the term are finite numbers, the amounts and the schedule
-rate zero or more, and the commutation share from 0 to 1; a joint point has a second life;
-indexation is elected on the level shape alone; the factors are 1 without indexation, the
-waived share 0 without the waiver, and the streams 0 off the family income benefit; and
-the streams in payment are no more than the deaths since issue. `Term_UK_S` meets most
-of these only when a projection reaches them, and some never: a blank flag reads as
-True, and one stray word in a flag column turns every `False` in it to text that reads as
-True.
+commission, and 1 for the factors; a point in force 12 months or fewer holds factors of 1;
+each flag is True or False; each code is one `Term_UK_S` knows; the ages and the term are
+finite numbers, the amounts and the schedule rate zero or more, and the commutation share
+from 0 to 1; a joint point has a second life; indexation is elected on the level shape
+alone; the factors are 1 without indexation, the waived share 0 without the waiver, and
+the streams 0 off the family income benefit; and the streams in payment are no more than
+the deaths since issue. `Term_UK_S` meets most of these only when a projection reaches
+them, and some never: a blank flag reads as True, and one stray word in a flag column
+turns every `False` in it to text that reads as True.
 
 A point whose cover had ended by the valuation date, `duration_mth ≥ 12 × policy_term`,
 reads, but `proj_len()` refuses it, naming the point: the end of cover is the product's
@@ -286,7 +301,7 @@ edit to a `Term_UK_S` row reaches them or fails the suite. In the source reposit
 |---|---|---|---|
 | 1 to 7 | twin | S points 1 to 7 | issued at `t = 0`: `Term_UK_S`'s worked example and its shapes, bases and options |
 | 8 | twin | S point 8, in force at S month 60 | in force five years, opened where `Term_UK_S` opens it: nothing lapsed, no ledger, no waiver, no index step |
-| 9 | derived | S point 5 at S month 60 | the indexed point on its fifth anniversary, its factors those of policy year 6 |
+| 9 | derived | S point 5 at S month 60 | the indexed point on its fifth anniversary, its factors those of policy year 5, the anniversary's step its month 0's |
 | 10 | derived | S point 3 at S month 66 | the family income benefit mid-year, its streams in payment |
 | 11 | derived | S point 7 at S month 66 | the waiver point after its select period, a share waived and six months of deferred lives in the pipeline |
 | 12 | derived | S point 7 at S month 4 | the waiver point inside its deferred period, four months of deferred lives and none waived |
@@ -296,10 +311,11 @@ edit to a `Term_UK_S` row reaches them or fails the suite. In the source reposit
 A derived row's `policy_count` is the count `Term_UK_S` carries into that month, its
 `pols_if(d)`, and its state what S carries there, so the row continues the S projection
 from there: point 9 opens with 0.685393 policies, 31.2% of the cohort lapsed, and cover
-and premium factors of `1.03^5` and `1.045^5`. Its `policy_id` is the S row's with the
-month appended, `TA-000005-M60`, and a future row's carries the months to issue,
-`TA-000007-F13`. Row `t` of a generated point is month `t + source_mth` of its S point.
-The pipeline holds point 11's six lags and point 12's four.
+and premium factors of `1.03^4` and `1.045^4`, which it steps at `t = 0`, as S steps them
+in month 60. Its `policy_id` is the S row's with the month appended, `TA-000005-M60`, and
+a future row's carries the months to issue, `TA-000007-F13`. Row `t` of a generated point
+is month `t + source_mth` of its S point. The pipeline holds point 11's six lags and point
+12's four.
 
 ## Counts and timings
 
@@ -373,7 +389,7 @@ fail it.
 | `claims(t, FIB)`; `fib_streams`, new | `(1 − c) I [D(t) + FIBcum(t)]` | `I [(1 − c) D(t) + fib_streams(t)]`, the streams opening at `fib_streams_init() × pols_if_init()` | The streams in payment are history, which a take-up changed at the valuation date does not commute; S's number at a take-up that never changes |
 | `wop_active_frac` | 1 at `proj_start()`, then `act(t − 1)(1 − inc_m) + (1 − act(t − 1)) rec_m` | `1 − wop_waived_frac_init() − Σ wop_deferred_init(lag)` at `t_entry()`, 1 on a point not yet in force, then the same chain; 0 outside cover | The lives active at the valuation date are what the waived share and the deferred period leave |
 | `wop_waived_frac` | 0 at `proj_start()`, no entrants from before it | `wop_waived_frac_init()` at `t_entry()`; entrants from before it, `wop_deferred_init(lag) (1 − rec_m)^t`, from after issue | The waived share and the deferred period carried in, at the valuation instant |
-| `idx_factor`, `idx_prem_factor` | a step per anniversary since `proj_start()`'s, from 1 | `idx_factor_init()` and `idx_prem_factor_init()`, then a step per anniversary since `t_entry()`'s | The increases already given are history |
+| `idx_factor`, `idx_prem_factor` | a step per anniversary since `proj_start()`'s, from 1 | `idx_factor_init()` and `idx_prem_factor_init()`, then a step for each anniversary from month 0 on, month 0's own among them | The increases given before month 0 are history; an anniversary at the valuation date is the projection's, at the day's `rpi_rate` (*The in-force interface*) |
 | `premium_pp` | an annual premium where `t % 12 == 0` | where `duration_mth(t) % 12 == 0` | An anniversary is a policy month |
 | `fib_commute_pp` | `I a(N − t)` | `I a(N − duration_mth(t))` | The months left to the end of the term |
 | `benefit_pp`, `select_factor`, `mort_rate_base`, `lapse_rate_base`, the counts | unguarded: no `Term_UK_S` frame has a month outside cover | zero outside cover, before any table or rate is read; the tables' extents from `Data`, a read past them refused by name | Before issue S raises `KeyError` on the tables, and `B(k)` at a negative month exceeds the sum assured without a word |
@@ -852,20 +868,21 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   multiplies every flow and counted cell and moves no per-policy value, bit for bit, the
   lapse ratio and the cohort's share among them; and both checks, their tolerances scaled
   by the count, close on a million policies.
-- **Validation and regeneration**: each malformed row of the table, 76 cases, each `2**53`
-  bound at the bound among them, and of the pipeline, 18, is refused naming its point or
-  its line, and so is a waiver point whose waived and deferred shares sum past 1, 4 cases
-  more, by as little as a unit in the last place, where a sum of exactly 1 opens the
-  active share at 0 and projects; the horizon is a Reference; a point past its cover,
-  outside the contract's bounds or with a pipeline not exactly its lags, 8 cases, among
-  them none at all and a gap, is refused by `proj_len()`, each bound just inside it and
-  each moved past a committed point, and `run_sec.py --block` refuses such a point before
-  printing anything; so is a share waived before the deferred period has run, at its last
-  month among them; a waiver point under a waiver rate a float outside 0 to 1, or NaN, is
-  refused by the frame, where at 0 and 1 for either rate and at incidences of 0.855 and
-  0.856 every waiver point projects its share inside 0 to 1 and the twin of S's waiver
-  point is S's in every cell, and at an incidence of 1 with no recovery, the worst, every
-  waiver point's share reaches 1 and no more; a family income benefit point under a
+- **Validation and regeneration**: each malformed row of the table, 78 cases, each `2**53`
+  bound at the bound among them, and an increase given on the first anniversary, the
+  first-year rule's edge, which one month on is read, and of the pipeline, 18, is refused
+  naming its point or its line, and so is a waiver point whose waived and deferred shares
+  sum past 1, 4 cases more, by as little as a unit in the last place, where a sum of
+  exactly 1 opens the active share at 0 and projects; the horizon is a Reference; a point
+  past its cover, outside the contract's bounds or with a pipeline not exactly its lags, 8
+  cases, among them none at all and a gap, is refused by `proj_len()`, each bound just
+  inside it and each moved past a committed point, and `run_sec.py --block` refuses such a
+  point before printing anything; so is a share waived before the deferred period has run,
+  at its last month among them; a waiver point under a waiver rate a float outside 0 to 1,
+  or NaN, is refused by the frame, where at 0 and 1 for either rate and at incidences of
+  0.855 and 0.856 every waiver point projects its share inside 0 to 1 and the twin of S's
+  waiver point is S's in every cell, and at an incidence of 1 with no recovery, the worst,
+  every waiver point's share reaches 1 and no more; a family income benefit point under a
   commutation discount that is not a finite number above −1 is refused by the frame, S's
   own outcome beside it, where at 0 and −0.99 the twins of S's family income benefit
   points are S's in every cell, at 1e-17 and 1.1e-16 the factor is `m`, and at the float
@@ -889,6 +906,10 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   they leave, the committed waiver state a three-state ladder's, rebuilt month by month
   from the rates, and the take-up, the commission rate and the recovery rate each changed
   at the valuation date reaching back over no month already run (UKLIB-SEC-PLAN.md K14);
+  the RPI set to 5% at the valuation date of the indexed point on its fifth anniversary,
+  whose factors are `Term_UK_S`'s at 3% in month 59, before the event, and whose fifth
+  step is made at 5% at `t = 0`, each figure recomputed by hand, and of the same point
+  restated on its first, which is `Term_UK_S`'s at 5% from month 12 in every cell;
   expense inflation on the valuation clock at the shipped 3%, which only this test sees;
   acquisition and the initial commission on new business alone; renewal commission and the
   clawback on the policy clock; an annual premium on the anniversary of a point valued
@@ -927,7 +948,10 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   when its E step ended, to 1e-12 of the column's largest value, frozen at the end of the
   module by `tools/gen_sec_fingerprint.py` before the C step changed anything, and refrozen
   once since, alone, when both models' waiver came to take its incidence from the active
-  lives, which moved the waiver points 7, 11, 12 and 14 and no other number.
+  lives, which moved the waiver points 7, 11, 12 and 14 and no other number. Measuring the
+  factors before an anniversary at the valuation date, rather than after it, moved point
+  9's opening factors and none of its numbers but by rounding, at most 5.2e-15 of a value
+  of `net_cf`, which the freeze holds unchanged.
 - **Compiled**, the tests marked `cython`, which compile the model once a session into a
   temporary directory and run it in child processes: in
   `tests/test_compiled_conventions_uk.py`, C3, the typing guard, on the declarations, the

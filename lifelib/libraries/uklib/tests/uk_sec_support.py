@@ -1159,25 +1159,48 @@ def _term_commission_paid(s, d):
     return s.comm_init_pp() if d > 0 else 0.0
 
 
+def _term_cover_factor(s, d):
+    """``Term_UK_S``'s cover indexation factor entering month ``d``, before its own step.
+
+    The opening state is measured before any month-``d`` event, and an anniversary's RPI
+    increase is one, the restated row's month 0's, made at the References of its valuation
+    date (D6, precised at uslib's M7).  So it is S's ``idx_factor(d - 1)``, the factor of
+    the month before: mid-year that of the policy year under way, and on an anniversary
+    that of the year it closes.  Where S's frame opens, at issue or at ``proj_start()`` on
+    S's point 8, there is no month before it, and it is S's own opening factor,
+    ``idx_factor(d)``, 1.
+    """
+    return s.idx_factor(d - 1) if d > s.proj_start() else s.idx_factor(d)
+
+
+def _term_premium_factor(s, d):
+    """``Term_UK_S``'s premium indexation factor entering month ``d``, before its own step,
+    at the instant :func:`_term_cover_factor` reads the cover factor: S's
+    ``idx_prem_factor(d - 1)``, or where S's frame opens its own opening factor."""
+    return s.idx_prem_factor(d - 1) if d > s.proj_start() else s.idx_prem_factor(d)
+
+
 # Term_UK_SEC's opening state (D6; UKLIB-SEC-PLAN.md §6.1): what Term_UK_S carries into
-# month d, each read as S's own formulas read it, each per policy in force or a ratio, so
-# that policy_count is the one weight.  The selective-lapse ratio, S's lapse_cum(d), a share
-# of the cohort S's frame opened with; the FIB ledger, the deaths since S's frame opened, per
-# policy in force (_term_ledger_per_policy), and the streams of them in payment
-# (_term_streams_per_policy); the two indexation factors of the policy year under way, S's
-# idx_factor(d) and idx_prem_factor(d); the share of the policies in force whose premium is
-# waived, S's wop_waived_frac(d); and the initial commission paid at issue, which the
-# clawback recovers (_term_commission_paid).  At a twin's source_mth these are what S
-# itself assumes where its frame opens: 0 for the ratio, the ledger, the streams, the
-# waived share and the commission, and 1 for the factors, on new business and on S's point
-# 8, in force at 60, which S opens with nothing lapsed, no ledger and no waiver, but with
-# its commission paid.  The deferred period goes in a companion, built by _term_pipeline.
+# month d, before any month-d event, each read as S's own formulas read it, each per policy
+# in force or a ratio, so that policy_count is the one weight.  The selective-lapse ratio,
+# S's lapse_cum(d), a share of the cohort S's frame opened with; the FIB ledger, the deaths
+# since S's frame opened, per policy in force (_term_ledger_per_policy), and the streams of
+# them in payment (_term_streams_per_policy); the two indexation factors entering month d,
+# before its own anniversary's step, S's idx_factor(d - 1) and idx_prem_factor(d - 1)
+# (_term_cover_factor, _term_premium_factor); the share of the policies in force whose
+# premium is waived, S's wop_waived_frac(d); and the initial commission paid at issue,
+# which the clawback recovers (_term_commission_paid).  At a twin's source_mth these are
+# what S itself assumes where its frame opens: 0 for the ratio, the ledger, the streams,
+# the waived share and the commission, and 1 for the factors, on new business and on S's
+# point 8, in force at 60, which S opens with nothing lapsed, no ledger and no waiver, but
+# with its commission paid.  The deferred period goes in a companion, built by
+# _term_pipeline.
 _TERM_STATE = {
     "lapse_cum_init": lambda s, d: s.lapse_cum(d),
     "fib_cum_init": _term_ledger_per_policy,
     "fib_streams_init": _term_streams_per_policy,
-    "idx_factor_init": lambda s, d: s.idx_factor(d),
-    "idx_prem_factor_init": lambda s, d: s.idx_prem_factor(d),
+    "idx_factor_init": _term_cover_factor,
+    "idx_prem_factor_init": _term_premium_factor,
     "wop_waived_frac_init": lambda s, d: s.wop_waived_frac(d),
     "comm_init_pp_init": _term_commission_paid,
 }
@@ -1504,14 +1527,15 @@ SEC_SPECS: dict[str, SecSpec] = {
     # pols_if_init becomes policy_count (the default), and
     # duration_inforce, S's elapsed policy years, is dropped for duration_mth, 60 on S's
     # point 8.  The derived rows are the indexed point on its fifth anniversary, 60, the
-    # factors of policy year 6 carried in; the family income benefit point mid-year at 66,
-    # its ledger in payment; the waiver point at 66, after the select period's end, its
-    # pipeline full and a share waived, and at 4, inside its deferred period, its pipeline
-    # four months deep and nothing waived yet; and the anchor cell in its last covered
-    # month, 299, a one-row frame.  The future row is the waiver point issued 13 months
-    # after the valuation date: more than a year on and off a valuation anniversary, so that
-    # the months before issue read policy years -1 and 0, where a missing guard would show.
-    # T2's splice grid is built from this spec in a temporary table, not committed.
+    # factors of policy year 5 carried in and the anniversary's step its month 0's; the
+    # family income benefit point mid-year at 66, its ledger in payment; the waiver point
+    # at 66, after the select period's end, its pipeline full and a share waived, and at
+    # 4, inside its deferred period, its pipeline four months deep and nothing waived yet;
+    # and the anchor cell in its last covered month, 299, a one-row frame.  The future row
+    # is the waiver point issued 13 months after the valuation date: more than a year on
+    # and off a valuation anniversary, so that the months before issue read policy years -1
+    # and 0, where a missing guard would show.  T2's splice grid is built from this spec in
+    # a temporary table, not committed.
     #
     # T1 holds on Term at any count: S charges acquisition and the initial commission on
     # the count in force at t = 0, which on a point issued then is the count issued, as SEC

@@ -63,8 +63,10 @@ the rest of the plan's tests (its §5) and the product's own facts:
   continuing their S points; each history column read rather than recomputed, the
   indexation factors, the streams in payment, the commission paid at issue and the
   waiver's pipeline, and a take-up, a commission rate and a recovery rate changed at the
-  valuation date reaching back over no month already run (UKLIB-SEC-PLAN.md K14), and the
-  lapse ratio's cohort; expense inflation on the valuation clock;
+  valuation date reaching back over no month already run (UKLIB-SEC-PLAN.md K14), and an
+  RPI changed there making the increase of an anniversary that falls at the valuation
+  date, month 0's own event (USLIB-SEC-PLAN.md D6, precised at its M7), and the lapse
+  ratio's cohort; expense inflation on the valuation clock;
   acquisition and the initial commission on new business, renewal commission and the
   clawback on the policy clock, and an annual premium on the anniversary; the cap on
   mortality and a NaN that reaches a bound; the values outside cover; the block; an
@@ -803,12 +805,21 @@ def _src(x, t):
     return t - 1 - x.wop_defer_mths
 
 
+def _anniversaries_before(x):
+    """The anniversaries row ``x`` passed before month 0, whose increases its factors carry:
+    those up to policy month ``duration_mth_init() - 1`` on a point in force, none on one
+    issued at or after the valuation date.  An anniversary at the valuation date is month
+    0's own event, the projection's (D6, precised at uslib's M7)."""
+    return max(x.duration_mth_init() - 1, 0) // 12
+
+
 # What test_the_core_grid_reaches_every_branch asks of the core's rows in the model's own
 # values, which no column of the table shows: each holds of some core row, or of a core row
 # in some month of its frame.  At the valuation date, every opening-state column in use,
 # a factor apart from 1 and a ratio, a ledger, the streams, a waived share and a
-# commission apart from 0, a deferred share in the pipeline, and the pipeline both
-# partly and wholly filled.  Later in the frame, every branch and both sides of each
+# commission apart from 0, a deferred share in the pipeline, the pipeline both partly
+# and wholly filled, and an anniversary's index step made at t = 0, the projection's
+# first event.  Later in the frame, every branch and both sides of each
 # min and max the full grid reaches: the select duration's min, the lapse table's last
 # year, the selective-lapse excess's max, the waiver's three sources of entrants, the
 # clawback window, an index step, the expiry.
@@ -830,6 +841,8 @@ AT_VALUATION = {
         x.shape() == "fib" and x.claims(0, _code(x, "FIB")) > x.fib_income()
         * (1.0 - x.fib_commute_rate()) * x.pols_death(0)),
     "the lapse ratio past its reference at t = 0": lambda x: _excess(x, 0) > 0.0,
+    "an index step at the valuation date": lambda x: (
+        x.indexation() and x.idx_factor(0) > x.idx_factor_init()),
 }
 IN_FRAME = {
     "inside the select period": lambda x, t: (
@@ -853,7 +866,7 @@ IN_FRAME = {
     "past the clawback window": lambda x, t: (
         x.duration_mth(t) + 1 >= x.clawback_mths and x.pols_lapse(t) > 0.0),
     "an index step in the frame": lambda x, t: (
-        x.indexation() and x.duration(t) > x.duration(x.t_entry())),
+        x.indexation() and x.duration(t) > _anniversaries_before(x)),
     "a renewal commission": lambda x, t: (
         x.duration_mth(t) >= 12 and x.premiums(t) > 0.0),
     "an annual premium due": lambda x, t: (
@@ -1467,6 +1480,18 @@ MALFORMED = [
     ("a premium factor on future business", _set("idx_prem_factor_init", [14], 1.045),
      "{file}: idx_prem_factor_init must be 1 on a policy not yet in force, duration_mth 0 "
      "or less; it is not at point_id [14]"),
+    # No increase is given before month 0 in a policy's first twelve months: its first
+    # anniversary, at policy month 12, is month 0's own event on a policy valued then
+    # (USLIB-SEC-PLAN.md D6, precised at its M7).  The indexed point on its fifth
+    # anniversary, moved back to its first with its factors, is refused there, the rule's
+    # edge, and in its first month; the edges test reads it one month on.
+    ("a cover factor on the first anniversary", _set("duration_mth", [9], 12),
+     "{file}: idx_factor_init must be 1 on a policy in force 12 months or fewer, whose "
+     "first anniversary falls in month 0 or later; it is not at point_id [9]"),
+    ("a premium factor in the first policy year",
+     _then(_set("duration_mth", [9], 1), _set("idx_factor_init", [9], 1.0)),
+     "{file}: idx_prem_factor_init must be 1 on a policy in force 12 months or fewer, whose "
+     "first anniversary falls in month 0 or later; it is not at point_id [9]"),
     ("a waived share on new business", _set("wop_waived_frac_init", [7], 0.01),
      "{file}: wop_waived_frac_init must be 0 on a policy not yet in force, duration_mth 0 "
      "or less; it is not at point_id [7]"),
@@ -2488,20 +2513,34 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
     valuation date, the shipped ``future_horizon_mth``, is the last one the table admits,
     with a frame of 360 months, 240 of cover after 120 before issue.  A row valued in its
     first month, 1, holds a lapse ratio, a ledger and a pipeline of one lag, the state a
-    policy in force holds where one not yet in force holds none.  And each bound of the
-    contract at its edge projects: a 50-year term, a family income benefit of 40 years,
-    issue at 18, of each life of a joint point, and cover to 90, 70 on the family income
-    benefit, of each life.  A single life's second age, which no cell reads and ``Data``
-    holds as 0, is read whatever it holds, here 1e300, past what an int64 can hold, on
-    point 2.
+    policy in force holds where one not yet in force holds none.  The indexed point valued
+    on its first anniversary, 12, holds no increase, the anniversary being month 0's own,
+    which the projection makes at ``t = 0``; one month on, at 13, it holds the first, and
+    steps next at ``t = 11``, policy month 24: the first-year rule's edges, read either
+    side.  And each bound of the contract at its edge projects: a 50-year term, a family
+    income benefit of 40 years, issue at 18, of each life of a joint point, and cover to
+    90, 70 on the family income benefit, of each life.  A single life's second age, which
+    no cell reads and ``Data`` holds as 0, is read whatever it holds, here 1e300, past what
+    an int64 can hold, on point 2.  The extra rows are copies of the indexed point under
+    labels of their own, 21 and 22.
     """
     committed = _committed()
     last = _label(committed, "derived", 1, 299)
     future = _label(committed, "future", 7, -13)
     first = _label(committed, "derived", 7, 4)
     fib = _label(committed, "derived", 3, 66)
+    indexed = _label(committed, "derived", 5, 60)
+    copies = {21: {"duration_mth": 12, "idx_factor_init": 1.0, "idx_prem_factor_init": 1.0},
+              22: {"duration_mth": 13, "idx_factor_init": 1.03,
+                   "idx_prem_factor_init": 1.045}}
 
     def edit(table):
+        extra = []
+        for label, changes in copies.items():
+            row = table.loc[[indexed]].assign(policy_id=f"TA-9000{label}", **changes)
+            row.index = pd.Index([label], name="point_id")
+            extra.append(row)
+        table = pd.concat([table, *extra])
         table = _set("policy_count", [last], 0.0)(table)
         table = _set("duration_mth", [first], 1)(table)
         table = table.assign(duration_mth=table["duration_mth"].astype(float))
@@ -2532,6 +2571,12 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
         assert (one.duration_mth_init(), one.proj_len(), one.lapse_cum_init() > 0.0) == (
             1, 239, True)
         assert one.wop_deferred_init(1) > 0.0
+        on, after = _point(model, 21), _point(model, 22)
+        assert len(on.result_cf()) == on.proj_len() == 288
+        assert len(after.result_cf()) == after.proj_len() == 287
+        assert (on.idx_factor(0), on.idx_prem_factor(0)) == (1.03, 1.045)
+        assert (after.idx_factor(10), after.idx_prem_factor(10)) == (1.03, 1.045)
+        assert after.idx_factor(11) == pytest.approx(1.03 ** 2, rel=1e-15)
         for point, months in ((1, 600), (3, 480), (6, 300), (2, 300)):
             assert len(_point(model, point).result_cf()) == months, point
             assert _point(model, point).check_pols_roll_fwd(), point
@@ -2543,10 +2588,12 @@ def _every_state_months(start, end):
     """The S months a point whose S frame runs from ``start`` to ``end`` is restated at.
 
     By default the edges of its windows (USLIB-SEC-PLAN.md §5.2, T5): every month of the
-    first policy year and the first anniversary, through which the waiver's pipeline fills
-    and ``Data``'s rule for a policy not yet in force ends, each anniversary and the month
-    before it, and the last month of the frame, before expiry.  With ``UKLIB_SEC_FULL=1``,
-    every month.  Each after ``start``, the twin's month.
+    first policy year, the first anniversary and the month after it, through which the
+    waiver's pipeline fills and ``Data``'s rules for a policy not yet in force and for one
+    before its first increase end, an anniversary in the valuation month being month 0's
+    own (D6), each anniversary and the month before it, and the last month of the frame,
+    before expiry.  With ``UKLIB_SEC_FULL=1``, every month.  Each after ``start``, the
+    twin's month.
     """
     if SEC_FULL:
         return list(range(start + 1, end))
@@ -2896,7 +2943,8 @@ def test_the_two_clocks_on_the_shipped_points(sec_model):
     On a twin of S's new business the two coincide, and its policies enter as new business
     at ``t = 0``.  S's point 8, in force 60 months, is in policy year 6 at attained age 40
     at ``t = 0``, has 240 months of cover left, and is on the books from ``t = 0`` with no
-    new business.  The indexed point valued on its fifth anniversary steps its factors at
+    new business.  The indexed point valued on its fifth anniversary carries the factors of
+    policy year 5, steps them at ``t = 0``, the anniversary's own month, and again at
     ``t = 12``.  The waiver point valued four months in has its first entrants at
     ``t = 3``, incidence from its first month.  The point issued 13 months on has nothing in
     force and nothing to do before ``t = 13``, and a frame of 253 months.  The point in its
@@ -2915,8 +2963,9 @@ def test_the_two_clocks_on_the_shipped_points(sec_model):
     assert old.is_active(239) and not old.is_active(240)
     assert old.pols_if(0) == old.pols_if_init() == old.policy_count() == 1.0
     idx = _row(sec_model, "derived", 5, 60)
-    assert idx.idx_factor(11) == idx.idx_factor_init() == pytest.approx(1.03 ** 5, rel=1e-12)
-    assert idx.idx_factor(12) == pytest.approx(idx.idx_factor_init() * 1.03, rel=1e-12)
+    assert idx.idx_factor_init() == pytest.approx(1.03 ** 4, rel=1e-12)
+    assert idx.idx_factor(0) == idx.idx_factor(11) == pytest.approx(1.03 ** 5, rel=1e-12)
+    assert idx.idx_factor(12) == pytest.approx(idx.idx_factor_init() * 1.03 ** 2, rel=1e-12)
     wop = _row(sec_model, "derived", 7, 4)
     assert [wop.wop_waived_frac(t) for t in range(3)] == [0.0, 0.0, 0.0]
     assert wop.wop_waived_frac(3) > 0.0
@@ -3013,25 +3062,110 @@ def test_the_indexation_history_is_read_from_the_model_point(sec_model, tmp_path
     ``Term_UK_S`` recomputes the factors from a flat ``rpi_rate``, so a model that dropped
     the two columns and did the same would pass the splice, since S and the splice
     recompute them alike.  So the indexed point on its fifth anniversary is projected with
-    factors no flat rate gives: cover 1.25 and premium 1.40, the increases of five years
-    of an RPI other than the 3% assumed from the valuation date.  Its cover is the sum
-    assured at issue times 1.25 through the year under way, and times 1.03 for each
-    anniversary after; its premium the issue premium times 1.40, and times 1.045 for each;
-    and the initial commission, a charge at issue, reads the issue premium, untouched.
+    factors no flat rate gives: cover 1.25 and premium 1.40, the increases of the four
+    years before it of an RPI other than the 3% assumed from the valuation date.  Its cover
+    is the sum assured at issue times 1.25, and times 1.03 for each anniversary from the
+    valuation date on, its fifth among them, at ``t = 0``; its premium the issue premium
+    times 1.40, and times 1.045 for each; and the initial commission, a charge at issue,
+    reads the issue premium, untouched.
     """
     row = _label(_committed(), "derived", 5, 60)
     model = _read_edited(tmp_path, _then(_set("idx_factor_init", [row], 1.25),
                                          _set("idx_prem_factor_init", [row], 1.40)))
     try:
         p = _point(model, row)
-        for t, years in ((0, 0), (11, 0), (12, 1), (30, 2), (239, 19)):
-            assert p.benefit_pp(t) == pytest.approx(150000.0 * 1.25 * 1.03 ** years,
+        for t, steps in ((0, 1), (11, 1), (12, 2), (30, 3), (239, 20)):
+            assert p.benefit_pp(t) == pytest.approx(150000.0 * 1.25 * 1.03 ** steps,
                                                     rel=1e-12), t
-            assert p.premium_pp(t) == pytest.approx(12.0 * 1.40 * 1.045 ** years,
+            assert p.premium_pp(t) == pytest.approx(12.0 * 1.40 * 1.045 ** steps,
                                                     rel=1e-12), t
         assert p.comm_init_pp() == _point(sec_model, row).comm_init_pp() == 1.5 * 144.0
     finally:
         model.close()
+
+
+# The RPI the K14 anniversary test sets at the valuation date, apart from the shipped 3%,
+# and the increases it gives, recomputed by hand: the cover's min(max(5%, 0), 10%), and the
+# premium's min(1.5 x 5%, 15%).
+RPI_TODAY = 0.05
+COVER_STEP, PREMIUM_STEP = 1.05, 1.075
+
+
+def test_an_anniversary_at_the_valuation_date_is_made_at_today_s_rpi(s_model, tmp_path):
+    """On a point valued on its anniversary, the factors carried in are those before it,
+    and the anniversary's increase is the projection's, at today's RPI (K14; D6).
+
+    The opening state is measured before any month-0 event, and an anniversary's RPI
+    increase is one: an event that falls at the valuation date is the projection's first,
+    made at the References of the valuation date, as on a point issued then
+    (USLIB-SEC-PLAN.md D6, precised at its M7).  So with the RPI raised from the shipped 3%
+    to 5% at the valuation date, the figures, recomputed here by hand:
+
+    * The indexed point on its fifth anniversary carries the factors of policy year 5,
+      ``1.03^4`` and ``1.045^4``, and takes its fifth step at ``t = 0`` at 5%, and each
+      later one too: its cover at ``t = 0`` is ``150,000 x 1.03^4 x 1.05 = 177,267.637575``
+      and its premium ``12 x 1.045^4 x 1.075 = 15.383489948``.  A column measured after
+      month 0's event would carry ``1.03^5``, the step made at the history's 3%, and pay
+      ``173,891.111145``.
+    * Against S run under the history's 3%: the columns are S's factors in month 59, the
+      month before the event, and not in month 60, where S has made the step at 3%.
+    * The same point restated on its first anniversary, at month 12, by the generator from
+      S at 3%, carries factors of 1, no increase having been given before it, and takes its
+      first at 5% at ``t = 0``.  No state before month 12 reads the RPI, so S run at 5% is S
+      under the history's References up to the event and today's from it: the row is S's
+      at 5% from month 12 on, in every cell, as the twin issued at ``t = 0`` is S's from
+      issue.
+    """
+    cover0, prem0 = 1.03 ** 4, 1.045 ** 4
+    s = _point(s_model, 5)
+    assert s.rpi_rate == 0.03
+    row = _label(_committed(), "derived", 5, 60)
+    model = mx.read_model(model_path(SEC), name=_name("rpi_today"))
+    try:
+        model.Projection.rpi_rate = RPI_TODAY
+        p = _point(model, row)
+        assert p.idx_factor_init() == pytest.approx(cover0, rel=1e-15)
+        assert p.idx_prem_factor_init() == pytest.approx(prem0, rel=1e-15)
+        assert (p.idx_factor_init(), p.idx_prem_factor_init()) == (
+            s.idx_factor(59), s.idx_prem_factor(59))
+        assert s.idx_factor(60) == pytest.approx(1.03 ** 5, rel=1e-15)
+        assert s.idx_prem_factor(60) == pytest.approx(1.045 ** 5, rel=1e-15)
+        for t, steps in ((0, 1), (11, 1), (12, 2), (239, 20)):
+            assert p.idx_factor(t) == pytest.approx(cover0 * COVER_STEP ** steps,
+                                                    rel=1e-12), t
+            assert p.idx_prem_factor(t) == pytest.approx(prem0 * PREMIUM_STEP ** steps,
+                                                         rel=1e-12), t
+            assert p.benefit_pp(t) == pytest.approx(
+                150000.0 * cover0 * COVER_STEP ** steps, rel=1e-12), t
+            assert p.premium_pp(t) == pytest.approx(
+                12.0 * prem0 * PREMIUM_STEP ** steps, rel=1e-12), t
+        assert p.benefit_pp(0) == pytest.approx(177267.637575, rel=1e-12)
+        assert p.premium_pp(0) == pytest.approx(15.383489948062500, rel=1e-12)
+        assert p.benefit_pp(0) != pytest.approx(150000.0 * s.idx_factor(60), rel=1e-6)
+        assert 150000.0 * s.idx_factor(60) == pytest.approx(173891.111145, rel=1e-12)
+    finally:
+        model.close()
+    rows, companions = build_sec_table(
+        dataclasses.replace(SPEC, derived=((5, 12),), future=()), s_model)
+    assert s_model.Projection.rpi_rate == 0.03
+    today = {"rpi_rate": RPI_TODAY, "inflation_rate": 0.0}
+    sec = mx.read_model(_sec_inputs(tmp_path, rows, companions[PIPELINE]),
+                        name=_name("first_anniversary"))
+    s_today = mx.read_model(model_path(TWIN), name=_name("rpi_today_s"))
+    try:
+        for m in (sec, s_today):
+            for ref, value in today.items():
+                setattr(m.Projection, ref, value)
+        first, theirs = _row(sec, "derived", 5, 12), _point(s_today, 5)
+        assert (first.idx_factor_init(), first.idx_prem_factor_init()) == (1.0, 1.0)
+        assert (first.idx_factor(0), first.idx_prem_factor(0)) == (COVER_STEP, PREMIUM_STEP)
+        assert first.policy_count() == s.pols_if(12) == theirs.pols_if(12)
+        _sweep_s(theirs)
+        assert _compare(theirs, first, 12, SPLICE_EXEMPT) == []
+        assert _row(sec, "twin", 5, 0).idx_factor(12) == COVER_STEP
+    finally:
+        s_today.close()
+        sec.close()
 
 
 def test_the_streams_in_payment_are_read_from_the_model_point(sec_model, s_model,
@@ -3367,8 +3501,10 @@ def test_an_annual_payer_valued_mid_year_pays_on_its_anniversary(sec_model, tmp_
     ``Term_UK_S`` charges an annual payer ``12 P_m`` where ``t % 12 == 0``, its own policy
     months.  The family income benefit point valued at 66, made an annual payer, pays
     nothing until its anniversary at ``t = 6``, policy month 72, then twelve months'
-    premium, then nothing for eleven months; the same point valued on an anniversary pays
-    at ``t = 0``.  The amounts are the issue premium times twelve: the point is not indexed.
+    premium, then nothing for eleven months.  The amounts are the issue premium times
+    twelve: the point is not indexed.  The indexed point valued on its fifth anniversary,
+    made an annual payer, pays at ``t = 0``, its premium raised by the anniversary's step,
+    month 0's own, on the factor of policy year 5 it carries in.
     """
     mid = _label(_committed(), "derived", 3, 66)
     on = _label(_committed(), "derived", 5, 60)
@@ -3378,7 +3514,8 @@ def test_an_annual_payer_valued_mid_year_pays_on_its_anniversary(sec_model, tmp_
         assert [p.premium_pp(t) for t in range(19)] == (
             [0.0] * 6 + [144.0] + [0.0] * 11 + [144.0])
         q = _point(model, on)
-        assert q.premium_pp(0) == pytest.approx(144.0 * q.idx_prem_factor_init(), rel=1e-12)
+        assert q.premium_pp(0) == pytest.approx(144.0 * q.idx_prem_factor_init() * 1.045,
+                                                rel=1e-12)
         assert q.premium_pp(1) == 0.0
     finally:
         model.close()

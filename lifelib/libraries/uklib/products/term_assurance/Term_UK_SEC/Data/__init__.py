@@ -61,7 +61,8 @@ are sized for the shipped 120 months (``spec_sec.py``): it needs ``t`` there rai
 too, what :mod:`~.Term_UK_S` projects without a word or meets only when a projection
 reaches it: a flag that is not True or False, a code that names no shape, sex, smoker
 status, premium mode or mortality basis, an age, a term or an amount that is not a number
-in its range, a joint point with no second life, and indexation off the level shape. The
+in its range, a joint point with no second life, indexation off the level shape, and an
+indexation history on a policy whose first anniversary falls in month 0 or later. The
 checks run in turn, and the first that fails raises, naming the missing column or every
 point that fails it.
 
@@ -239,22 +240,26 @@ def model_point_table():
     7. a policy not yet in force, ``duration_mth`` 0 or less, holds the issue values: 0
        for the lapse ratio, the deaths, the streams, the waived share and the commission,
        an event of the issue month, and 1 for the factors;
-    8. each of ``joint_first_death``, ``indexation`` and ``wop`` is True or False. pandas
+    8. a policy in force 12 months or fewer holds indexation factors of 1: its first
+       anniversary, policy month 12, falls in month 0 or later, and an anniversary at the
+       valuation date is month 0's event, the projection's, not history
+       (USLIB-SEC-PLAN.md D6, precised at its M7), so no increase was given before it;
+    9. each of ``joint_first_death``, ``indexation`` and ``wop`` is True or False. pandas
        reads a column of them as booleans, but one blank or one other text leaves the
        whole column text or mixed, and ``bool("False")`` is True;
-    9. ``shape`` is level, decreasing or fib, ``sex`` M or F, ``smoker`` N or S,
-       ``premium_mode`` monthly or annual and ``mort_basis`` applied or select;
-    10. ``age_at_entry`` and ``policy_term`` are finite numbers, which
+    10. ``shape`` is level, decreasing or fib, ``sex`` M or F, ``smoker`` N or S,
+        ``premium_mode`` monthly or annual and ``mort_basis`` applied or select;
+    11. ``age_at_entry`` and ``policy_term`` are finite numbers, which
         :mod:`~.Term_UK_S` reads with ``int``, below ``2**53`` in size, which numpy would
         otherwise cast to the least int64 without a word; ``sum_assured``,
         ``fib_income``, ``premium_mth`` and ``sched_rate`` numbers, zero or more; and
         ``fib_commute_rate``, a share of the claims, from 0 to 1;
-    11. a joint first-death point has a second life: ``joint_age`` a finite number below
+    12. a joint first-death point has a second life: ``joint_age`` a finite number below
         ``2**53`` in size, ``joint_sex`` M or F and ``joint_smoker`` N or S;
-    12. indexation is elected on the level shape only;
-    13. the factors are 1 without indexation, the waived share 0 without the waiver, and
+    13. indexation is elected on the level shape only;
+    14. the factors are 1 without indexation, the waived share 0 without the waiver, and
         the streams in payment 0 off the family income benefit;
-    14. the streams in payment are no more than the deaths since issue,
+    15. the streams in payment are no more than the deaths since issue,
         ``fib_streams_init`` at most ``fib_cum_init``: a commuted claim stops a stream, and
         nothing starts one but a death.
     """
@@ -319,6 +324,12 @@ def model_point_table():
         if bad:
             raise ValueError(f"{name}: {column} must be {value} on a policy not yet in "
                              f"force, duration_mth 0 or less; it is not at point_id {bad}")
+    for column in ("idx_factor_init", "idx_prem_factor_init"):
+        bad = table.index[(months > 0) & (months <= 12) & (state[column] != 1)].tolist()
+        if bad:
+            raise ValueError(f"{name}: {column} must be 1 on a policy in force 12 months "
+                             f"or fewer, whose first anniversary falls in month 0 or "
+                             f"later; it is not at point_id {bad}")
     for column in ("joint_first_death", "indexation", "wop"):
         flag = table[column]
         bad = table.index[~flag.map(lambda v: str(v).lower() in ("true", "false"))].tolist()

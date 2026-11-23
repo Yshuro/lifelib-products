@@ -141,8 +141,9 @@ month 0, before any month-0 event:
 * :func:`fib_streams_init`, on the family income benefit, the streams in payment per
   policy in force: the deaths whose streams were not commuted, at the take-up of the
   month each fell in;
-* :func:`idx_factor_init` and :func:`idx_prem_factor_init`, the indexation factors of the
-  policy year under way, the RPI increases already given;
+* :func:`idx_factor_init` and :func:`idx_prem_factor_init`, the indexation factors
+  entering month 0, the RPI increases given before it: on an anniversary, those of the
+  policy year it closes;
 * :func:`wop_waived_frac_init`, the share of the policies in force whose premiums are
   waived; and, in the companion ``wop_pipeline_sec.csv``, :func:`wop_deferred_init`, the
   share of the policies in force still inside the deferred period, by the month their
@@ -151,7 +152,11 @@ month 0, before any month-0 event:
   clawback recovers.
 
 Each is history, read from the model point, never recomputed from a Reference, which is
-an assumption from the valuation date on. From :func:`lapse_cum_init` and
+an assumption from the valuation date on. An event that falls at the valuation date
+itself is month 0's, the projection's first, made at the References of the valuation
+date, as on a point issued then (USLIB-SEC-PLAN.md D6, precised at its M7): on a point
+valued on its anniversary, that anniversary's RPI increase is made at ``rpi_rate``, and
+the factors carried in are those before it. From :func:`lapse_cum_init` and
 :func:`fib_cum_init`, :func:`cohort_frac` rebuilds the share of the issued cohort in
 force, which turns a month's lapse rate into the lapse ratio's increment without dividing
 by the count; and from :func:`wop_waived_frac_init` and :func:`wop_deferred_init`,
@@ -786,24 +791,30 @@ def fib_streams_init():
 
 
 def idx_factor_init():
-    """idx at the valuation date: the cover factor of the policy year under way.
+    """idx at the valuation instant: the cover factor entering month 0.
 
-    The RPI increases the policy has already been given, as one factor on
-    :func:`sum_assured`, the sum assured at issue: on a valuation on an anniversary, the
-    factor of the policy year it opens. History, read from the model point, not
-    recomputed from ``rpi_rate``, which is the assumed rate from the valuation date on.
-    1 on a point not yet in force or without the option, which ``Data`` requires. From
+    The RPI increases the policy was given before month 0, as one factor on
+    :func:`sum_assured`, the sum assured at issue: mid-year, the factor of the policy year
+    under way; on a valuation on an anniversary, the factor of the policy year it closes,
+    the anniversary's own increase being month 0's event, which :func:`idx_factor` makes
+    at ``rpi_rate``, the References of the valuation date (USLIB-SEC-PLAN.md D6, precised
+    at its M7). History, read from the model point, not recomputed from ``rpi_rate``,
+    which is the assumed rate from the valuation instant on. 1 on a point not yet in
+    force, on one in force 12 months or fewer, whose first anniversary is month 0's or
+    later, and on one without the option, which ``Data`` requires. From
     ``Data.idx_factor_init``.
     """
     return float(data.idx_factor_init()[idx])                        # noqa: F821
 
 
 def idx_prem_factor_init():
-    """idx_p at the valuation date: the premium factor of the policy year under way.
+    """idx_p at the valuation instant: the premium factor entering month 0.
 
     :func:`idx_factor_init`'s counterpart on the premium, :func:`premium_mth_pp` the
-    premium at issue.  History, as the cover factor is.  1 on a point not yet in force or
-    without the option, which ``Data`` requires.  From ``Data.idx_prem_factor_init``.
+    premium at issue, measured at the same instant: on an anniversary, the factor of the
+    policy year it closes.  History, as the cover factor is.  1 on a point not yet in
+    force, on one in force 12 months or fewer, and on one without the option, which
+    ``Data`` requires.  From ``Data.idx_prem_factor_init``.
     """
     return float(data.idx_prem_factor_init()[idx])                   # noqa: F821
 
@@ -1520,8 +1531,9 @@ def idx_increase():
     notes' base run is deterministic and always accepts, which is what the shipped
     ``idx_accept_rate = 1`` means; their 80% take-up **[std]** would be a mixture of
     paths, and scaling the increase instead is a deterministic approximation to it.
-    ``rpi_rate`` is the RPI assumed from the valuation date on; the increases already
-    given are the opening state, :func:`idx_factor_init`.
+    ``rpi_rate`` is the RPI assumed from the valuation instant on, an anniversary at the
+    valuation date's increase among them; the increases given before month 0 are the
+    opening state, :func:`idx_factor_init`.
 
     One consequence worth stating: with acceptance certain, the rule removing the option
     after three consecutive declines [S1][S6] (two at one insurer [S8]) is never
@@ -1534,12 +1546,15 @@ def idx_factor(t):
     """idx(t): the cumulative **cover** indexation factor in month t.
 
     Steps on the policy anniversary and is level through the policy year, because the
-    increase is offered at an anniversary and not monthly: :func:`idx_factor_init` in
-    the policy year under way at :func:`t_entry`, 1 at issue, then one factor of
-    ``1 + idx_increase()`` per anniversary passed since, ``duration(t) -
-    duration(t_entry())``.  The increases before the valuation date are history, carried
-    in, and those after it are projected at ``rpi_rate``.  1 whenever the option is not
-    elected, and 0 outside cover, where there is no cover to index.
+    increase is offered at an anniversary and not monthly: :func:`idx_factor_init`, the
+    factor entering month 0, 1 at issue, then one factor of ``1 + idx_increase()`` for
+    each anniversary from month 0 on, month 0's own among them: ``duration(t)`` less the
+    anniversaries passed before month 0, ``(duration_mth_init() - 1) // 12`` on a point in
+    force and none on one issued at or after the valuation date.  The increases before
+    the valuation instant are history, carried in, and those from it on are projected at
+    ``rpi_rate``, an anniversary that falls at the valuation date the first of them, as on
+    a point issued then (USLIB-SEC-PLAN.md D6, precised at its M7).  1 whenever the option
+    is not elected, and 0 outside cover, where there is no cover to index.
 
     The exponent is a whole number of years, 0 or more, so the power is real whatever the
     base.  It passes the largest float only where the References put the increase above
@@ -1554,7 +1569,7 @@ def idx_factor(t):
     if not indexation():
         return 1.0
     base = 1.0 + idx_increase()
-    n = duration(t) - duration(t_entry())
+    n = duration(t) - max(duration_mth_init() - 1, 0) // 12
     factor = base ** n
     if factor - factor != 0.0 and base - base == 0.0:
         raise float.__pow__(base, n)
@@ -1565,12 +1580,12 @@ def idx_prem_factor(t):
     """idx_p(t): the cumulative **premium** indexation factor in month t.
 
     The premium rises by ``min(1.5 x increase, 15%)`` for a cover increase of
-    ``increase`` [S1][S2][S6], on the same anniversary step as the cover factor, from
-    :func:`idx_prem_factor_init`.  The 1.5 multiplier is what makes an accepted increase
-    premium-margin-accretive if mortality is proportional to cover - and what reverses
-    the sign of that conclusion if acceptance is selective, impaired lives accepting
-    while healthy ones decline **[std]** concern.  No public take-up data exists.  1
-    whenever the option is not elected, and 0 outside cover.
+    ``increase`` [S1][S2][S6], on the same anniversary steps as the cover factor, from
+    :func:`idx_prem_factor_init`, month 0's own among them.  The 1.5 multiplier is what
+    makes an accepted increase premium-margin-accretive if mortality is proportional to
+    cover - and what reverses the sign of that conclusion if acceptance is selective,
+    impaired lives accepting while healthy ones decline **[std]** concern.  No public
+    take-up data exists.  1 whenever the option is not elected, and 0 outside cover.
 
     The exponent is a whole number of years, as :func:`idx_factor`'s is, and the power
     passes the largest float only where the References put the step above about 2 million
@@ -1582,7 +1597,7 @@ def idx_prem_factor(t):
     if not indexation():
         return 1.0
     step = 1.0 + min(idx_prem_mult * idx_increase(), idx_prem_cap)   # noqa: F821
-    n = duration(t) - duration(t_entry())
+    n = duration(t) - max(duration_mth_init() - 1, 0) // 12
     factor = step ** n
     if factor - factor != 0.0 and step - step == 0.0:
         raise float.__pow__(step, n)
