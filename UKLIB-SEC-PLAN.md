@@ -3,10 +3,11 @@
 **Status:** Accepted, 2026-11-22, with §9's eleven decisions confirmed as recommended;
 drafted the same day. Phase 0 (M0) is done, 2026-11-22, its gate met by the Tests
 workflow's run 43 (§3, *Record — M0*), and so is Term's in-force step, M1, by run 45
-(§6.1, *Record — M1*). Term's compile step, M2, is done on Linux, and open until run
-46's Windows legs pass (§6.1, *Record — M2*). Like USLIB-SEC-PLAN.md, this document is
-both the specification and the record: each milestone records what it actually did,
-including where the implementation departed from the plan.
+(§6.1, *Record — M1*). Term's compile step, M2, is done too, 2026-11-23, by run 46
+(§6.1, *Record — M2*). The in-force steps of critical illness, M3, and of the
+unit-linked bond, M9, are next, one in each stream (§7). Like USLIB-SEC-PLAN.md, this
+document is both the specification and the record: each milestone records what it
+actually did, including where the implementation departed from the plan.
 
 Every number in it was measured in this repository, under modelx 0.33.0 and pandas 3.0.5
 as USLIB-SEC-PLAN.md's were, or is quoted from USLIB-SEC-PLAN.md, and each is given with
@@ -951,12 +952,11 @@ test meant to catch it.
     `Term_UK_SEC` with them.
   - It is outside this plan, and left as S has it.
 
-#### Record — M2, done on Linux 2026-11-22
+#### Record — M2, done 2026-11-23
 
 Built in two commits after the Phase 1 fingerprint, which M1 froze (`f041c4c`): the C step
 (`8fef0a2`) and its docs with C6 (`6b48830`). Three more followed from the review. The
-gate's Windows legs are the Tests workflow's run 46, so M2 stays open until they pass
-(§7).
+gate was met on Linux here at landing, and on Windows by the Tests workflow's run 46.
 - One agent built it, injecting 10 faults, one for each kind the C step guards against.
 - A second agent reviewed it against this note, the plan and USLIB-SEC-PLAN.md, injecting
   24 faults of its own, of which 20 were caught. It confirmed that no number had moved,
@@ -1134,8 +1134,19 @@ gate's Windows legs are the Tests workflow's run 46, so M2 stays open until they
     - both shards;
     - the generators' and the harness's checks, doccheck at 0 warnings, and the scaffolding
       at 0 files.
-- *CI.* The Tests workflow's run 46, dispatched on `06a6a46` at landing, is the first to
-  run the `cython_uk` job's `term_assurance` legs, on Ubuntu and on Windows.
+- *CI.* The Tests workflow's run 46 on `06a6a46` passed all 81 jobs, 1 h 18 min from
+  dispatch to the last.
+  - Its `cython_uk` legs were the first to compile a uklib model. The `term_assurance`
+    shard passed its 13 tests in 161 s on Ubuntu and in 153 s on Windows, and the
+    `toolchain` shard passed on both.
+  - `sec_uk`'s three Term legs passed: the full grid on Ubuntu in 3.9 min, and the core
+    on Windows in 3.1 and on macOS in 1.8.
+  - The `test` job on Python 3.14 and Ubuntu passed 6,967 tests and skipped 102, in
+    36 min 33 s.
+  - *The stack, as the test records it.* The cold call ran on a thread of 384 KiB and
+    not of 256 KiB on Windows, under MSVC. On Ubuntu it ran on 1 MiB and not on 512 KiB:
+    two to four times what it needs here. Both are inside the 1 MiB the test asserts,
+    but on Ubuntu with less than a factor of 2 to spare.
 
 **Faults.** Each fault was injected into a copy of its own, and each run was held to the
 test meant to catch it.
@@ -1166,6 +1177,15 @@ test meant to catch it.
     engines.
   - Measured limits and derived sizes are written in comments, and held by tests.
   - A batched refusal child rewrites file paths in messages to file names.
+- *The stack on the Ubuntu runner* (K12). Term's cold call needs two to four times as
+  much stack on CI's Ubuntu legs as on this machine, so a chain measured here can fail
+  the 1 MiB thread there.
+  - Why is not known. The runner's gcc, numpy 2.5.5 and pandas 3.1.1 all differ from
+    this machine's.
+  - IP, PA and WP run deeper chains than Term's. Each C step reads its stack record
+    from CI's Ubuntu and Windows legs, as well as from here, before settling its chain.
+  - K12's margin for `SPIA_US_SEC`, 1.33 to 1.6 times, was measured under gcc, not on
+    that runner.
 - *What the harness cannot see.* C3 reads the builtins a compiled formula calls by name.
   Cython reaches `float.__pow__` through `&PyFloat_Type`, not by such a name, so C3 sees
   M22's call only if its result lands in a Python-object local. It is C5 that confines
