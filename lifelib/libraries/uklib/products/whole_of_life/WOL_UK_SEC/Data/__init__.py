@@ -6,8 +6,8 @@
 """Input data shared by every by-policy projection.
 
 The three input CSVs are read here, **once per model**, and referenced from
-:mod:`~.WOL_UK_S.Projection` as ``data``. :mod:`~.WOL_UK_S.Projection` is parameterized by
-``point_id``, so each ``Projection[N]`` is a separate ItemSpace with its own cells
+:mod:`~.WOL_UK_SEC.Projection` as ``data``. :mod:`~.WOL_UK_SEC.Projection` is parameterized
+by ``point_id``, so each ``Projection[N]`` is a separate ItemSpace with its own cells
 cache; if the readers lived there, every model point would re-read every file. Holding
 them in an unparameterized Space reads each file once no matter how many policies are
 projected.
@@ -20,8 +20,14 @@ contrast ``basiclife.BasicTerm_S``, which keeps its inputs *inside* the model th
 modelx's IOSpec machinery.
 
 The consequence worth knowing: **the model is not portable on its own.** Copying the
-``WOL_UK_S`` folder without its parent's CSVs produces a model that reads and then fails
-on first evaluation.
+``WOL_UK_SEC`` folder without its parent's CSVs produces a model that reads and then
+fails on first evaluation.
+
+**Two of the tables are WOL_UK_S's.** The mortality and lapse tables are the files
+:mod:`~.WOL_UK_S` reads, read here in place by :mod:`~.WOL_UK_S`'s own readers: one copy of
+each table serves both models, so an edit to one reaches both. The model point table,
+``model_point_table_sec.csv``, is this model's own, and sits beside :mod:`~.WOL_UK_S`'s
+``model_point_table.csv``, which this model never opens.
 
 :func:`input_dir` resolves the directory from ``_model.path.parent`` at run time, so
 the model works wherever the repository is checked out. Each table has a filename
@@ -30,7 +36,7 @@ Reference and a reader Cells:
 ======================  ==========================  ==============================
 Reference               Cells                       File
 ======================  ==========================  ==============================
-model_point_file        model_point_table()         model_point_table.csv
+model_point_file        model_point_table()         model_point_table_sec.csv
 mort_table_file         mort_table()                mort_table.csv
 lapse_table_file        lapse_table()               lapse_table.csv
 ======================  ==========================  ==============================
@@ -42,6 +48,40 @@ underwriting and takes an assured-lives shape; the guaranteed-acceptance cell ca
 better than the population and self-selects worse, so it takes a population shape with an
 anti-selection loading. The FCA's price differential between the two designs — £71.73
 against £8.10 per £1,000 of cover — is the scale of the error a basis mix-up produces.
+
+**The model point table is checked as it is read.** Seven of its columns are the in-force
+interface: ``policy_count`` and ``duration_mth``, as in ``basiclife.BasicTerm_SE``, and
+the opening state of a point in force, the paid-up strand's ``pols_pu_init`` and
+``pu_benefit_pp_init``, the premiums paid, ``prem_cum_pp_init``, and the cover and premium
+of the policy year under way, ``cover_pp_init`` and ``premium_pp_init``.
+:func:`model_point_table` refuses a table that lacks one, repeats a ``point_id``, holds a
+count, a duration or a state no policy can have, or a policy to be issued more than
+``future_horizon_mth`` months after the valuation date, 120 as shipped: future new
+business is written over a stated horizon, so that no frame runs longer than cover from
+issue plus that horizon. Set to 0, the Reference refuses future new business altogether.
+It refuses, too, what :mod:`~.WOL_UK_S` projects without a word or meets only when a
+projection reaches it: a flag that is not True or False, a code that names no cell,
+escalation, sex or smoker status, an age, an amount or a month count that is not a number
+in its range, the pro-rata paid-up variant without a premium cessation date, and a history
+the contract cannot have given. The checks run in turn, and the first that fails raises,
+naming the missing column or every point that fails it. Whether a point is still short of
+the limiting age at the valuation date, and whether the contract issues it, are rules of
+the product, and ``Projection.proj_len`` checks them, against its own References.
+
+**Each assumption table is checked before a value of it is read.** Its keys are read by
+their value, so an age written ``70.0`` is age 70, and a key that is not whole, text among
+them, is refused; so are keys that repeat or leave a gap the projection would read. A
+value that is blank, text, infinite or outside its range is refused, whether or not a
+point reads it: ``Projection.mort_rate`` caps the annual rate with ``min``, which keeps
+its first argument unless a later one compares smaller, and no comparison with NaN
+holds, so the cap is written with its bound second and a NaN would stay NaN; but an
+infinity is a number, which the cap reads as 1, certain death. The check of each table is
+in the cell the projection takes the table's extent from, which it asks before it reads
+the table: :func:`mort_age_first` and :func:`mort_age_last` for the mortality table, and
+:func:`lapse_last_year` for the lapse table. Each refusal names the table's lines, the
+header line 1: the check reads the file as it stands, :func:`mort_table_rows` and
+:func:`lapse_table_rows`, where :mod:`~.WOL_UK_S`'s readers, :func:`mort_table` and
+:func:`lapse_table`, sort the tables, and with the order would lose the lines.
 """
 
 from modelx.serialize.jsonvalues import *
@@ -68,9 +108,192 @@ def input_dir():
 
 
 def model_point_table():
-    """The model point table, read from *model_point_table.csv*."""
-    return pd.read_csv(                                              # noqa: F821
-        input_dir() / model_point_file, index_col="point_id")        # noqa: F821
+    """The model point table, read from *model_point_table_sec.csv* and checked.
+
+    Indexed by ``point_id``. Seven columns are the in-force interface: ``policy_count``
+    and ``duration_mth``, the completed policy months at the valuation date, as in
+    ``basiclife.BasicTerm_SE``, and the five of a point's opening state. The rest are
+    :mod:`~.WOL_UK_S`'s, but ``pols_if_init``, which ``policy_count`` replaces, and
+    ``row_kind``, ``source_policy_id`` and ``source_mth``, which record where the generator
+    took each shipped row from and which no formula reads.
+
+    The checks run over the whole table at once, and the first that fails raises
+    ``ValueError``, naming the missing column or every point it fails on:
+
+    1. the seven in-force columns are present;
+    2. no ``point_id`` appears twice;
+    3. ``policy_count`` is a number, zero or more: the policies on full cover;
+    4. ``duration_mth`` is a whole number of months, below ``2**53`` in size, which numpy
+       would otherwise cast to the least int64 without a word: positive for a policy in
+       force, 0 for one issued at the valuation date, negative for one issued later;
+    5. no policy is issued more than ``future_horizon_mth`` months after the valuation
+       date, so ``duration_mth`` is ``-future_horizon_mth`` or more. At 0 the model takes
+       no future new business, and the message says so; a horizon that is not a whole
+       number of months, 0 or more, is itself refused, since a NaN one fails every
+       comparison and so would admit every policy, and an infinite one bounds nothing;
+    6. the opening state is a number, zero or more: ``pols_pu_init``, a count;
+       ``pu_benefit_pp_init``, ``prem_cum_pp_init``, ``cover_pp_init`` and
+       ``premium_pp_init``, amounts per policy;
+    7. each of ``variant_adb_2x`` and ``variant_paid_up`` is True or False. pandas reads a
+       column of them as booleans, but one blank or one other text leaves the whole
+       column text or mixed, and ``bool("False")`` is True;
+    8. ``cell`` is O50 or UW, ``escalation`` level, fixed_5pct or rpi, ``sex`` M or F and
+       ``smoker`` NS or S, the codes the formulas branch on and the tables are keyed by;
+    9. ``entry_age`` is a finite number, which :mod:`~.WOL_UK_S` reads with ``int``;
+       ``sum_assured`` and ``premium_mth`` numbers, zero or more; and
+       ``cessation_months`` and ``moratorium_months`` whole numbers of months, 0 or more,
+       below ``2**53``;
+    10. a point with the pro-rata paid-up variant has a premium cessation date,
+        ``cessation_months`` above 0, which the paid-up value is measured to, and which
+        :mod:`~.WOL_UK_S` asks for only when a projection reaches it;
+    11. a policy not yet in force, ``duration_mth`` 0 or less, holds the issue values: no
+        paid-up policy, no paid-up cover and no premium paid, and the sum assured and the
+        premium at issue as its cover and premium;
+    12. a policy in force fewer than 12 months, before its first anniversary, holds the
+        sum assured and the premium at issue, no increase having been given;
+    13. on a level point the cover and the premium are the sum assured and the premium at
+        issue, which never move; on an escalating one they are those or more, each
+        increase being floored at 0;
+    14. the paid-up strand, ``pols_pu_init`` and ``pu_benefit_pp_init``, is 0 on a point
+        without the pro-rata paid-up variant, and before the earliest policy month a
+        converted policy can be in force at, half of ``cessation_months``, rounded up:
+        a would-be lapse converts once half the expected payments have been made, and a
+        policy converted at the end of a month is paid-up from the start of the next;
+    15. ``pu_benefit_pp_init``, an amount per paid-up policy, is 0 where no paid-up policy
+        is in force.
+
+    Each rule of the history holds of every state :mod:`~.WOL_UK_S` reaches, under any
+    References: the relations it states are the contract's. The cumulative premiums are
+    held to no premium schedule, since a policy's premiums paid are what its history
+    paid.
+    """
+    name = model_point_file                                          # noqa: F821
+    table = pd.read_csv(input_dir() / name, index_col="point_id")    # noqa: F821
+    state_columns = ("pols_pu_init", "pu_benefit_pp_init", "prem_cum_pp_init",
+                     "cover_pp_init", "premium_pp_init")
+    for column in ("policy_count", "duration_mth", *state_columns):
+        if column not in table.columns:
+            raise ValueError(f"{name} has no {column} column")
+    repeated = table.index[table.index.duplicated()].unique().tolist()
+    if repeated:
+        raise ValueError(f"{name}: point_id {repeated} appears more than once")
+    count = pd.to_numeric(table["policy_count"], errors="coerce")    # noqa: F821
+    bad = table.index[~((count >= 0) & (count < float("inf")))].tolist()
+    if bad:
+        raise ValueError(f"{name}: policy_count must be a number, zero or more; it is "
+                         f"not at point_id {bad}")
+    months = pd.to_numeric(table["duration_mth"], errors="coerce")   # noqa: F821
+    bad = table.index[~(months % 1 == 0)].tolist()
+    if bad:
+        raise ValueError(f"{name}: duration_mth must be a whole number of months; it "
+                         f"is not at point_id {bad}")
+    bad = table.index[~(months.abs() < 2.0 ** 53)].tolist()
+    if bad:
+        raise ValueError(f"{name}: duration_mth must be below 2**53 months; it is not at "
+                         f"point_id {bad}")
+    horizon = future_horizon_mth                                     # noqa: F821
+    if not (horizon >= 0 and horizon % 1 == 0):
+        raise ValueError(f"future_horizon_mth must be a whole number of months, 0 or more, "
+                         f"not {horizon}")
+    bad = table.index[months < -horizon].tolist()
+    if bad and horizon == 0:
+        raise ValueError(f"{name}: duration_mth must be 0 or more: this model takes no "
+                         f"future new business; it is not at point_id {bad}")
+    if bad:
+        raise ValueError(f"{name}: duration_mth must be -{horizon} or more, a policy "
+                         f"issued at most {horizon} months after the valuation date; it "
+                         f"is not at point_id {bad}")
+    state = {}
+    for column in state_columns:
+        v = pd.to_numeric(table[column], errors="coerce")            # noqa: F821
+        bad = table.index[~((v >= 0) & (v < float("inf")))].tolist()
+        if bad:
+            raise ValueError(f"{name}: {column} must be a number, zero or more; it is not "
+                             f"at point_id {bad}")
+        state[column] = v
+    flags = {}
+    for column in ("variant_adb_2x", "variant_paid_up"):
+        flag = table[column]
+        bad = table.index[~flag.map(lambda v: str(v).lower() in ("true", "false"))].tolist()
+        if bad:
+            raise ValueError(f"{name}: {column} must be True or False; it is not at "
+                             f"point_id {bad}")
+        flags[column] = flag.map(lambda v: str(v).lower() == "true")
+    for column, codes in (("cell", ("O50", "UW")),
+                          ("escalation", ("level", "fixed_5pct", "rpi")),
+                          ("sex", ("M", "F")), ("smoker", ("NS", "S"))):
+        bad = table.index[~table[column].isin(codes)].tolist()
+        if bad:
+            raise ValueError(f"{name}: {column} must be {' or '.join(codes)}; it is not "
+                             f"at point_id {bad}")
+    rules = {"finite": ("a finite number",
+                        lambda v: (v > -float("inf")) & (v < float("inf"))),
+             "amount": ("a number, zero or more",
+                        lambda v: (v >= 0) & (v < float("inf"))),
+             "months": ("a whole number of months, 0 or more, below 2**53",
+                        lambda v: (v >= 0) & (v % 1 == 0) & (v < 2.0 ** 53))}
+    numbers = {}
+    for column, kind in (("entry_age", "finite"), ("sum_assured", "amount"),
+                         ("premium_mth", "amount"), ("cessation_months", "months"),
+                         ("moratorium_months", "months")):
+        rule, holds = rules[kind]
+        v = pd.to_numeric(table[column], errors="coerce")            # noqa: F821
+        bad = table.index[~holds(v)].tolist()
+        if bad:
+            raise ValueError(f"{name}: {column} must be {rule}; it is not at point_id "
+                             f"{bad}")
+        numbers[column] = v
+    paid_up = flags["variant_paid_up"]
+    cessation = numbers["cessation_months"]
+    bad = table.index[paid_up & (cessation <= 0)].tolist()
+    if bad:
+        raise ValueError(f"{name}: a pro-rata paid-up point must have a premium cessation "
+                         f"date, cessation_months above 0, which the paid-up value is "
+                         f"measured to; it is not at point_id {bad}")
+    issue = {"pols_pu_init": 0.0, "pu_benefit_pp_init": 0.0, "prem_cum_pp_init": 0.0,
+             "cover_pp_init": numbers["sum_assured"],
+             "premium_pp_init": numbers["premium_mth"]}
+    at_issue = {"cover_pp_init": "the sum assured", "premium_pp_init": "the premium at issue"}
+    for column in state_columns:
+        bad = table.index[(months <= 0) & (state[column] != issue[column])].tolist()
+        if bad:
+            what = at_issue.get(column, "0")
+            raise ValueError(f"{name}: {column} must be {what} on a policy not yet in "
+                             f"force, duration_mth 0 or less; it is not at point_id {bad}")
+    for column in ("cover_pp_init", "premium_pp_init"):
+        bad = table.index[(months > 0) & (months < 12)
+                          & (state[column] != issue[column])].tolist()
+        if bad:
+            raise ValueError(f"{name}: {column} must be {at_issue[column]} on a policy in "
+                             f"force fewer than 12 months, before its first anniversary; "
+                             f"it is not at point_id {bad}")
+    level = table["escalation"] == "level"
+    for column in ("cover_pp_init", "premium_pp_init"):
+        bad = table.index[level & (state[column] != issue[column])].tolist()
+        if bad:
+            raise ValueError(f"{name}: {column} must be {at_issue[column]} on a level "
+                             f"point, which never escalates; it is not at point_id {bad}")
+        bad = table.index[~level & ~(state[column] >= issue[column])].tolist()
+        if bad:
+            raise ValueError(f"{name}: {column} must be {at_issue[column]} or more on an "
+                             f"escalating point, each increase being floored at 0; it is "
+                             f"not at point_id {bad}")
+    for column in ("pols_pu_init", "pu_benefit_pp_init"):
+        bad = table.index[~paid_up & (state[column] != 0)].tolist()
+        if bad:
+            raise ValueError(f"{name}: {column} must be 0 on a point without the pro-rata "
+                             f"paid-up variant; it is not at point_id {bad}")
+        bad = table.index[(months < -(-cessation // 2)) & (state[column] != 0)].tolist()
+        if bad:
+            raise ValueError(f"{name}: {column} must be 0 before the first policy month a "
+                             f"converted policy can be in force at, half of "
+                             f"cessation_months, rounded up; it is not at point_id {bad}")
+    bad = table.index[(state["pols_pu_init"] == 0)
+                      & (state["pu_benefit_pp_init"] != 0)].tolist()
+    if bad:
+        raise ValueError(f"{name}: pu_benefit_pp_init must be 0 where no paid-up policy is "
+                         f"in force, pols_pu_init 0; it is not at point_id {bad}")
+    return table
 
 
 def mort_table():
@@ -83,36 +306,201 @@ def mort_table():
     rates are shaped like the "00" Series permanent assurance tables.  Neither is a
     published table, and the file's ``provenance`` column says which cells are anchors
     and which come from a sex or smoker factor.  Sorted on read, because
-    ``Projection.mort_rate`` indexes into it.
+    ``Projection.mort_rate`` indexes into it.  :mod:`~.WOL_UK_S`'s reader, indexed and
+    sorted as it is, from the one read of the file, :func:`mort_table_rows`;
+    :func:`mort_age_first` checks the table.
     """
-    return pd.read_csv(                                              # noqa: F821
-        input_dir() / mort_table_file,                               # noqa: F821
-        index_col=["basis", "sex", "smoker", "age"]).sort_index()
+    return mort_table_rows().set_index(["basis", "sex", "smoker", "age"]).sort_index()
+
+
+def mort_table_rows():
+    """*mort_table.csv* as the file holds it: one row a line, in the file's order.
+
+    The one read of the file.  :func:`mort_age_first` checks it here, so that each refusal
+    names the lines at fault, the header line 1, which the sort of :func:`mort_table`, the
+    reader the projection indexes into, would lose.
+    """
+    return pd.read_csv(input_dir() / mort_table_file)                # noqa: F821
 
 
 def lapse_table():
     """The annual lapse rates by cell and policy year, from *lapse_table.csv*.
 
     ``policy_year`` is the contractual 1-based label (1 for the first policy year), not
-    the projection's 0-based month index; ``Projection.lapse_rate_base`` maps into it
-    through ``policy_year(t) = t // 12 + 1``, so the file's keys are left as written.
+    the projection's 0-based month index; ``Projection.lapse_rate_base`` reads it at
+    ``policy_year(t)`` on the policy clock, so the file's keys are left as written.
     The two cells carry different tables: the guaranteed-acceptance one lapses faster
     early, on affordability attrition.  Both are **[std]** drafting constructions - no
     public UK whole of life lapse study was retrieved - and on a product with no
     surrender value they are the single largest lever on the liability.
+    :mod:`~.WOL_UK_S`'s reader, indexed and sorted as it is, from the one read of the file,
+    :func:`lapse_table_rows`; :func:`lapse_last_year` checks the table.
     """
-    return pd.read_csv(                                              # noqa: F821
-        input_dir() / lapse_table_file,                              # noqa: F821
-        index_col=["cell", "policy_year"]).sort_index()
+    return lapse_table_rows().set_index(["cell", "policy_year"]).sort_index()
+
+
+def lapse_table_rows():
+    """*lapse_table.csv* as the file holds it: one row a line, in the file's order.
+
+    The one read of the file.  :func:`lapse_last_year` checks it here, so that each
+    refusal names the lines at fault, the header line 1, which the sort of
+    :func:`lapse_table` would lose.
+    """
+    return pd.read_csv(input_dir() / lapse_table_file)               # noqa: F821
+
+
+def mort_age_first():
+    """The first attained age *mort_table.csv* gives a rate for, the table checked first.
+
+    ``Projection.mort_rate`` asks it, and :func:`mort_age_last`, before it reads the
+    table, so a table it cannot read is refused before any value of it is.  The check
+    reads the file as it stands, :func:`mort_table_rows`, not :func:`mort_table`, which
+    sorts it, so that each refusal names the lines at fault, the header line 1.  The
+    rules, each over the whole table, the first that fails raising ``ValueError``:
+
+    1. each age is a whole number, read by its value, so ``70.0`` is 70;
+    2. each basis is population or assured, each sex M or F and each smoker status NS or
+       S, the codes the model point table and the cell give;
+    3. each of the eight groups, the two bases by M and F by NS and S, runs over the
+       table's ages from the first to the last, one row an age, none below 0: the
+       projection reads a rate at each attained age a policy reaches. Every fault is named
+       in one message: an age below 0 and an age a group repeats each with its lines, and
+       each span of ages a group lacks;
+    4. each ``mort_rate`` is a number from 0 to 1, a probability, read by the cap.
+    """
+    name = mort_table_file                                           # noqa: F821
+    tbl = mort_table_rows()
+    lines = tbl.index + 2
+    ages = pd.to_numeric(tbl["age"], errors="coerce")                # noqa: F821
+    bad = lines[(~(ages % 1 == 0)).to_numpy()].tolist()
+    if bad:
+        raise ValueError(f"{name}: age must be a whole number; it is not on line {bad}")
+    bad = lines[(~(tbl["basis"].isin(["population", "assured"])
+                   & tbl["sex"].isin(["M", "F"])
+                   & tbl["smoker"].isin(["NS", "S"]))).to_numpy()].tolist()
+    if bad:
+        raise ValueError(f"{name}: basis must be population or assured, sex M or F, and "
+                         f"smoker NS or S; they are not on line {bad}")
+    ages = ages.astype("int64")
+    faults = []
+    for a in sorted(set(ages[ages < 0])):
+        faults.append(f"age {a}, below 0, is on lines "
+                      f"{lines[(ages == a).to_numpy()].tolist()}")
+    kept = ages[ages >= 0]
+    if kept.empty:
+        raise ValueError(f"{name}: no line holds an age of 0 or more")
+    first, last = int(kept.min()), int(kept.max())
+    for b in ("population", "assured"):
+        for s in ("M", "F"):
+            for k in ("NS", "S"):
+                group = ((tbl["basis"] == b) & (tbl["sex"] == s) & (tbl["smoker"] == k)
+                         & (ages >= 0)).to_numpy()
+                run = ages[group]
+                for a in sorted(set(run[run.duplicated()])):
+                    faults.append(f"basis {b}, sex {s}, smoker {k}, age {a} repeats on "
+                                  f"lines {lines[group & (ages == a).to_numpy()].tolist()}")
+                spans = []
+                for a in sorted(set(range(first, last + 1)) - set(run)):
+                    if spans and spans[-1][1] == a - 1:
+                        spans[-1][1] = a
+                    else:
+                        spans.append([a, a])
+                for low, high in spans:
+                    faults.append(f"no line holds basis {b}, sex {s}, smoker {k}, "
+                                  + (f"ages {low} to {high}" if high > low
+                                     else f"age {low}"))
+    if faults:
+        raise ValueError(f"{name}: the ages of each basis, sex and smoker status must run "
+                         f"from {first} to {last}, the table's first and last, one row an "
+                         f"age, none below 0; " + "; ".join(faults))
+    rates = pd.to_numeric(tbl["mort_rate"], errors="coerce")         # noqa: F821
+    bad = lines[(~((rates >= 0) & (rates <= 1))).to_numpy()].tolist()
+    if bad:
+        raise ValueError(f"{name}: mort_rate must be a number from 0 to 1; it is not on "
+                         f"line {bad}")
+    return first
+
+
+def mort_age_last():
+    """The last attained age *mort_table.csv* gives a rate for, read once
+    :func:`mort_age_first` has checked the table."""
+    mort_age_first()
+    ages = pd.to_numeric(mort_table_rows()["age"], errors="coerce")  # noqa: F821
+    return int(ages.max())
+
+
+def lapse_last_year(cell):
+    """The last policy year *lapse_table.csv* gives ``cell``'s rate for, the table checked.
+
+    ``Projection.lapse_rate_base`` asks it before it reads the table, and reads every
+    later policy year at it, :mod:`~.WOL_UK_S`'s ``tbl.index.max()`` on the cell's own rows.
+    The check reads the file as it stands, :func:`lapse_table_rows`, so that each refusal
+    names the lines at fault, the header line 1, and runs over the whole table whichever
+    cell asks.  The rules, the first that fails raising ``ValueError``:
+
+    1. each policy year is a whole number, read by its value;
+    2. each cell is O50 or UW, the codes the model point table holds;
+    3. each cell's years run from 1, one row a year, without a gap or a repeat, since each
+       policy year from the first is read: every fault named in one message, a year below
+       1 and a repeated one each with its lines, and each span a cell lacks, a cell with
+       no line lacking its first year;
+    4. each ``lapse_rate`` is a number from 0 to 1, a probability, which the lapse rate's
+       ``min`` reads.
+    """
+    name = lapse_table_file                                          # noqa: F821
+    tbl = lapse_table_rows()
+    lines = tbl.index + 2
+    years = pd.to_numeric(tbl["policy_year"], errors="coerce")       # noqa: F821
+    bad = lines[(~(years % 1 == 0)).to_numpy()].tolist()
+    if bad:
+        raise ValueError(f"{name}: policy_year must be a whole number; it is not on line "
+                         f"{bad}")
+    bad = lines[(~tbl["cell"].isin(["O50", "UW"])).to_numpy()].tolist()
+    if bad:
+        raise ValueError(f"{name}: cell must be O50 or UW; it is not on line {bad}")
+    keys = years.astype("int64")
+    faults = []
+    held = {}
+    for c in ("O50", "UW"):
+        mine = (tbl["cell"] == c).to_numpy()
+        run = keys[mine]
+        for y in sorted(set(run[run < 1])):
+            faults.append(f"cell {c}, policy_year {y}, below 1, is on lines "
+                          f"{lines[mine & (keys == y).to_numpy()].tolist()}")
+        for y in sorted(set(run[run.duplicated() & (run >= 1)])):
+            faults.append(f"cell {c}, policy_year {y} repeats on lines "
+                          f"{lines[mine & (keys == y).to_numpy()].tolist()}")
+        held[c] = sorted(set(run[run >= 1]))
+        spans = []
+        for y in sorted(set(range(1, max(held[c], default=1) + 1)) - set(held[c])):
+            if spans and spans[-1][1] == y - 1:
+                spans[-1][1] = y
+            else:
+                spans.append([y, y])
+        for low, high in spans:
+            faults.append(f"no line holds cell {c}, "
+                          + (f"policy years {low} to {high}" if high > low
+                             else f"policy_year {low}"))
+    if faults:
+        raise ValueError(f"{name}: the policy years of each cell must run from 1, one row "
+                         f"a year, without a gap or a repeat; " + "; ".join(faults))
+    rates = pd.to_numeric(tbl["lapse_rate"], errors="coerce")        # noqa: F821
+    bad = lines[(~((rates >= 0) & (rates <= 1))).to_numpy()].tolist()
+    if bad:
+        raise ValueError(f"{name}: lapse_rate must be a number from 0 to 1; it is not on "
+                         f"line {bad}")
+    return int(held[cell][-1])
 
 
 # ---------------------------------------------------------------------------
 # References
 
-model_point_file = "model_point_table.csv"
+model_point_file = "model_point_table_sec.csv"
 
 mort_table_file = "mort_table.csv"
 
 lapse_table_file = "lapse_table.csv"
+
+future_horizon_mth = 120
 
 pd = ("Module", "pandas")

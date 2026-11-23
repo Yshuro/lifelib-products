@@ -1353,6 +1353,59 @@ def _ulb_claims_total(name, args):
     return args
 
 
+def _wol_paid_up_cover(s, d):
+    """``WOL_UK_S``'s paid-up cover entering month ``d``, per paid-up policy.
+
+    S's ``pu_benefit(d)``, the summed paid-up cash sums, over its paid-up count,
+    ``pols_pu(d)``: per policy, so that the counts are the only weights.  Where no paid-up
+    policy is in force, as on a point without the variant, before the first conversion or
+    once a capped mortality has taken every life, there is no policy to carry it, and the
+    column is 0.
+    """
+    count = s.pols_pu(d)
+    return s.pu_benefit(d) / count if count > 0 else 0.0
+
+
+def _wol_premiums_paid(s, d):
+    """``WOL_UK_S``'s premiums paid per policy entering month ``d``.
+
+    S's ``prem_cum_pp(d - 1)``, the running total to the end of the month before, which
+    ``prem_cum_pp(d)`` carries on: the total entering month ``d``, before its premium.  0
+    at issue, where S's total starts.
+    """
+    return s.prem_cum_pp(d - 1) if d > 0 else 0.0
+
+
+def _wol_premium(s, d):
+    """``WOL_UK_S``'s monthly premium of the policy year under way at month ``d``.
+
+    S's ``premium_pp(d)`` while premiums are payable, and once they have ceased, the last
+    one paid, S's ``premium_pp`` of the last premium-paying month, which the in-force
+    crossover carries back over the premium-paying months.  On a point paying for life,
+    ``premium_pp(d)``.
+    """
+    cessation = s.cessation_mths()
+    return s.premium_pp(min(d, cessation - 1) if cessation > 0 else d)
+
+
+# WOL_UK_SEC's opening state (D6; UKLIB-SEC-PLAN.md §6.4): what WOL_UK_S carries into month
+# d, each per policy or a count, so that policy_count and the paid-up count are the only
+# weights.  The paid-up strand, S's pols_pu(d) and its cover per paid-up policy
+# (_wol_paid_up_cover); the premiums paid to the end of month d - 1 (_wol_premiums_paid);
+# and the cover and premium of the policy year under way, S's cover_pp(d) and its premium
+# (_wol_premium), the history of increases S rebuilds from issue at today's rpi_rate,
+# esc_fixed_cover and esc_take_up.  At a twin's source_mth, 0 on every S point, these are
+# what S itself assumes at issue: no paid-up policy, nothing paid, and the sum assured and
+# the premium at issue.
+_WOL_STATE = {
+    "pols_pu_init": lambda s, d: s.pols_pu(d),
+    "pu_benefit_pp_init": _wol_paid_up_cover,
+    "prem_cum_pp_init": _wol_premiums_paid,
+    "cover_pp_init": lambda s, d: s.cover_pp(d),
+    "premium_pp_init": _wol_premium,
+}
+
+
 SEC_SPECS: dict[str, SecSpec] = {
     # Term's state is seven columns (_TERM_STATE above) and the waiver pipeline, a long
     # companion, wop_pipeline_sec.csv, keyed (point_id, lag), lag the months before the
@@ -1546,6 +1599,60 @@ SEC_SPECS: dict[str, SecSpec] = {
         exempt=frozenset({"av_init_pp"}),
         derived_refs={(4, 66): {"fund_return": 0.0}},
         twin_arg_map=_ulb_claims_total,
+    ),
+    # WOL's state is five columns (_WOL_STATE above), with no companion: the paid-up
+    # strand's count and its cover per paid-up policy, which need no cohort of conversion
+    # months, since paid-up policies neither lapse nor escalate; the premiums paid; and
+    # the cover and premium of the policy year under way.  pols_if_init becomes
+    # policy_count (the default), the full-cover count, and every S point is new business.
+    # The derived rows are the anchor cell at 6, inside its moratorium and its first
+    # policy year, its refund reading the premiums paid and its commission still due; the
+    # anchor cell at 166, its crossover month; the pro-rata paid-up point at 200, its
+    # paid-up strand in force beside full cover; the RPI point at 186, past its own
+    # crossover, the increases of fifteen anniversaries carried in; the underwritten
+    # increasing point at 12, on its first anniversary, its first increase at t = 0 and its
+    # suicide window just closed; and point 7 at 300, the month its premiums cease.  The
+    # future row is the RPI point issued 13 months after the valuation date: more than a
+    # year on and off a valuation anniversary, so that the months before issue read policy
+    # years -1 and 0, where a missing guard would show, and its increases fall a month
+    # after the valuation anniversaries.  T2's splice grid is built from this spec in a
+    # temporary table, not committed.
+    #
+    # And three rows S reaches only under References of its own (derived_refs), since at
+    # S's References each history is what today's References rebuild, so that C2 would
+    # freeze no path that reads a column rather than a Reference: the RPI point at 120,
+    # from S under an RPI of 5%, its cover and premium 1.05 and 1.075 to the tenth power;
+    # the underwritten increasing point at 120, from S under a take-up of a half, its
+    # increases 2.5% and 5% a year; and the pro-rata paid-up point at 180, from S under a
+    # crossover stress of 100, which lapses every policy past its crossover at policy month
+    # 166 and so converts the whole full-cover strand to paid-up there: a point paid-up
+    # entirely, its policy_count 0.  At the shipped References the committed model
+    # projects each from that history at today's References.
+    #
+    # T1 holds on WOL at any count: S charges acquisition on the count in force at t = 0,
+    # which on a point issued then is the count issued, as SEC charges it on pols_new_biz.
+    # It skips one S cell besides the default three:
+    #   result_pols: SEC's gains pols_new_biz, the count D5 puts there, and the paid-up
+    #     deaths and the truncation residual, so the frame has columns S's lacks and cannot
+    #     agree as a whole.  Each column it shares with S is a cell T1 compares at every
+    #     month, and test_whole_of_life_uk_sec.py compares the report itself with S's, on
+    #     every column both hold.
+    #
+    # Phase 2 sizes its caches from the contract:
+    #   t 0..1,345: a policy issued at issue_age_min, 18, to omega_age, 120, a cover of
+    #     1,224 months, issued future_horizon_mth, 120 months, after the valuation date, a
+    #     frame of 1,344 months, its month after, and the roll-forward's t + 1 there.
+    # proj_len() refuses an issue age below issue_age_min, one at or past omega_age, and a
+    # point at or past the limiting age at the valuation date, each naming the point.
+    "WOL_UK_SEC": SecSpec(
+        twin="WOL_UK_S",
+        derived=((1, 6), (1, 166), (3, 200), (4, 186), (6, 12), (7, 300)),
+        future=((4, 13),),
+        state=_WOL_STATE,
+        twin_state=_WOL_STATE,
+        exempt=frozenset({"result_pols"}),
+        derived_refs={(4, 120): {"rpi_rate": 0.05}, (6, 120): {"esc_take_up": 0.5},
+                      (3, 180): {"lapse_crossover_beta": 100.0}},
     ),
 }
 
