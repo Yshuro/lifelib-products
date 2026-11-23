@@ -48,26 +48,27 @@ intermediate ages are interpolated log-linearly. The interpolation therefore liv
 swapping in a licensed AC04 or "16" Series basis means replacing a 24-row table, not a
 generated one.
 
-**The model point table is checked as it is read.** Seven of its columns are the
+**The model point table is checked as it is read.** Eight of its columns are the
 in-force interface: ``policy_count`` and ``duration_mth``, as in
 ``basiclife.BasicTerm_SE``, and the opening state of a point in force,
 ``idx_factor_init``, ``idx_prem_factor_init``, ``review_prem_factor_init``,
-``ci_sel_factor_init`` and ``review_prem_shock_init``. :func:`model_point_table` refuses
-a table that lacks one, repeats a ``point_id``, holds a count, a duration or a state no
-policy can have, or a policy to be issued more than ``future_horizon_mth`` months after
-the valuation date, 120 as shipped: future new business is written over a stated
-horizon, so that no frame runs longer than cover from issue plus that horizon. Set to 0,
-the Reference refuses future new business altogether. It refuses, too, what
-:mod:`~.CI_UK_S` projects without a word or meets only when a projection reaches it: a
-flag that is not True or False, a code that names no contract type, life basis, sex,
-smoker status, cover basis, premium guarantee or premium mode, an age, a term or an
-amount that is not a number in its range, a joint point with no second life or on the
-standalone contract, and a history of indexation or reviews on a point without the
-option or the reviews. The checks run in turn, and the first that fails raises, naming
-the missing column or every point that fails it. Whether a point is still in cover at the
-valuation date, whether the contract issues it, and whether a reviewable point has had a
-review yet, are rules of the product, and ``Projection.proj_len`` checks them, against
-its own References.
+``ci_sel_latched_init``, ``ci_sel_factor_init`` and ``review_prem_shock_init``.
+:func:`model_point_table` refuses a table that lacks one, repeats a ``point_id``, holds a
+count, a duration or a state no policy can have, or a policy to be issued more than
+``future_horizon_mth`` months after the valuation date, 120 as shipped: future new
+business is written over a stated horizon, so that no frame runs longer than cover from
+issue plus that horizon. Set to 0, the Reference refuses future new business altogether.
+It refuses, too, what :mod:`~.CI_UK_S` projects without a word or meets only when a
+projection reaches it: a flag that is not True or False, a code that names no contract
+type, life basis, sex, smoker status, cover basis, premium guarantee or premium mode, an
+age, a term or an amount that is not a number in its range, a joint point with no second
+life or on the standalone contract, an indexation history before the first anniversary,
+an open latch with a factor, and a history of indexation or reviews on a point without
+the option or the reviews. The checks run in turn, and the first that fails raises,
+naming the missing column or every point that fails it. Whether a point is still in cover
+at the valuation date, whether the contract issues it, and whether a reviewable point has
+had the reviews its history says, are rules of the product, and ``Projection.proj_len``
+checks them, against its own References.
 
 **Each assumption table is checked before a value of it is read.** Its keys are read by
 their value, so an age written ``40.0`` is age 40, and a key that is not whole, text among
@@ -110,9 +111,9 @@ def input_dir():
 def model_point_table():
     """The model point table, read from *model_point_table_sec.csv* and checked.
 
-    Indexed by ``point_id``. Seven columns are the in-force interface: ``policy_count``
+    Indexed by ``point_id``. Eight columns are the in-force interface: ``policy_count``
     and ``duration_mth``, the completed policy months at the valuation date, as in
-    ``basiclife.BasicTerm_SE``, and the five of a point's opening state. The rest are
+    ``basiclife.BasicTerm_SE``, and the six of a point's opening state. The rest are
     :mod:`~.CI_UK_S`'s, but ``pols_if_init``, which ``policy_count`` replaces, and
     ``row_kind``, ``source_policy_id`` and ``source_mth``, which record where the generator
     took each shipped row from and which no formula reads.
@@ -120,7 +121,7 @@ def model_point_table():
     The checks run over the whole table at once, and the first that fails raises
     ``ValueError``, naming the missing column or every point it fails on:
 
-    1. the seven in-force columns are present;
+    1. the eight in-force columns are present;
     2. no ``point_id`` appears twice;
     3. ``policy_count`` is a number, zero or more;
     4. ``duration_mth`` is a whole number of months, below ``2**53`` in size, which numpy
@@ -132,32 +133,37 @@ def model_point_table():
        refused;
     6. the opening state is a number in its range: the two indexation factors 1 or more,
        the RPI increase being floored at 0; ``review_prem_factor_init``, a factor on a
-       premium, and ``ci_sel_factor_init``, a multiple of a diagnosis rate, each 0 or more;
-       and ``review_prem_shock_init``, a premium change, -1 or more, since no review takes
-       a premium below 0;
+       premium, 0 or more; ``ci_sel_latched_init``, the latch, 0 or 1;
+       ``ci_sel_factor_init``, a multiple of a diagnosis rate, above 0; and
+       ``review_prem_shock_init``, a premium change, -1 or more, since no review takes a
+       premium below 0;
     7. a policy not yet in force, ``duration_mth`` 0 or less, holds the issue values: 1
-       for the four factors and 0 for the review's change;
-    8. each of ``children_cover`` and ``indexation`` is True or False. pandas reads a
-       column of them as booleans, but one blank or one other text leaves the whole column
-       text or mixed, and ``bool("False")`` is True;
-    9. ``contract_type`` is accelerated or standalone, ``life_basis`` single or
-       joint_first_event, ``sex`` M or F, ``smoker`` NS or S, ``cover_basis`` level,
-       ``premium_guarantee`` guaranteed or reviewable and ``premium_mode`` monthly or
-       annual;
-    10. ``age_at_entry`` and ``policy_term`` are finite numbers, which :mod:`~.CI_UK_S`
+       for the four factors, and 0 for the latch and the review's change;
+    8. a policy in force fewer than 12 months, before its first anniversary, holds
+       indexation factors of 1, no increase having been given;
+    9. an open latch, ``ci_sel_latched_init`` 0, holds a factor of 1: the factor is read
+       only once the latch has closed;
+    10. each of ``children_cover`` and ``indexation`` is True or False. pandas reads a
+        column of them as booleans, but one blank or one other text leaves the whole
+        column text or mixed, and ``bool("False")`` is True;
+    11. ``contract_type`` is accelerated or standalone, ``life_basis`` single or
+        joint_first_event, ``sex`` M or F, ``smoker`` NS or S, ``cover_basis`` level,
+        ``premium_guarantee`` guaranteed or reviewable and ``premium_mode`` monthly or
+        annual;
+    12. ``age_at_entry`` and ``policy_term`` are finite numbers, which :mod:`~.CI_UK_S`
         reads with ``int``; and ``sum_assured`` and ``premium_mth`` numbers, zero or more;
-    11. a joint first-event point has a second life: ``joint_age`` a finite number,
+    13. a joint first-event point has a second life: ``joint_age`` a finite number,
         ``joint_sex`` M or F and ``joint_smoker`` NS or S;
-    12. no joint first-event point is on the standalone contract, which
+    14. no joint first-event point is on the standalone contract, which
         :mod:`~.CI_UK_S` scopes out;
-    13. the indexation factors are 1 without indexation, and on a guaranteed point the
-        review factor and the select factor 1 and the review's change 0.
+    15. the indexation factors are 1 without indexation, and on a guaranteed point the
+        review factor 1, the latch open and the review's change 0.
     """
     name = model_point_file                                          # noqa: F821
     table = pd.read_csv(input_dir() / name, index_col="point_id")    # noqa: F821
     for column in ("policy_count", "duration_mth", "idx_factor_init",
-                   "idx_prem_factor_init", "review_prem_factor_init", "ci_sel_factor_init",
-                   "review_prem_shock_init"):
+                   "idx_prem_factor_init", "review_prem_factor_init", "ci_sel_latched_init",
+                   "ci_sel_factor_init", "review_prem_shock_init"):
         if column not in table.columns:
             raise ValueError(f"{name} has no {column} column")
     repeated = table.index[table.index.duplicated()].unique().tolist()
@@ -189,25 +195,37 @@ def model_point_table():
                          f"issued at most {horizon} months after the valuation date; it "
                          f"is not at point_id {bad}")
     state = {}
-    for column, low, rule in (
-            ("idx_factor_init", 1.0, "a number, 1 or more"),
-            ("idx_prem_factor_init", 1.0, "a number, 1 or more"),
-            ("review_prem_factor_init", 0.0, "a number, zero or more"),
-            ("ci_sel_factor_init", 0.0, "a number, zero or more"),
-            ("review_prem_shock_init", -1.0, "a number, -1 or more")):
+    for column, holds, rule in (
+            ("idx_factor_init", lambda v: v >= 1.0, "a number, 1 or more"),
+            ("idx_prem_factor_init", lambda v: v >= 1.0, "a number, 1 or more"),
+            ("review_prem_factor_init", lambda v: v >= 0.0, "a number, zero or more"),
+            ("ci_sel_latched_init", lambda v: (v == 0) | (v == 1), "0 or 1"),
+            ("ci_sel_factor_init", lambda v: v > 0.0, "a number above 0"),
+            ("review_prem_shock_init", lambda v: v >= -1.0, "a number, -1 or more")):
         v = pd.to_numeric(table[column], errors="coerce")            # noqa: F821
-        bad = table.index[~((v >= low) & (v < float("inf")))].tolist()
+        bad = table.index[~(holds(v) & (v < float("inf")))].tolist()
         if bad:
             raise ValueError(f"{name}: {column} must be {rule}; it is not at point_id "
                              f"{bad}")
         state[column] = v
     issue = {"idx_factor_init": 1, "idx_prem_factor_init": 1, "review_prem_factor_init": 1,
-             "ci_sel_factor_init": 1, "review_prem_shock_init": 0}
+             "ci_sel_latched_init": 0, "ci_sel_factor_init": 1, "review_prem_shock_init": 0}
     for column, value in issue.items():
         bad = table.index[(months <= 0) & (state[column] != value)].tolist()
         if bad:
             raise ValueError(f"{name}: {column} must be {value} on a policy not yet in "
                              f"force, duration_mth 0 or less; it is not at point_id {bad}")
+    for column in ("idx_factor_init", "idx_prem_factor_init"):
+        bad = table.index[(months > 0) & (months < 12) & (state[column] != 1)].tolist()
+        if bad:
+            raise ValueError(f"{name}: {column} must be 1 on a policy in force fewer than "
+                             f"12 months, before its first anniversary; it is not at "
+                             f"point_id {bad}")
+    open_latch = state["ci_sel_latched_init"] == 0
+    bad = table.index[open_latch & (state["ci_sel_factor_init"] != 1)].tolist()
+    if bad:
+        raise ValueError(f"{name}: ci_sel_factor_init must be 1 on an open latch, "
+                         f"ci_sel_latched_init 0; it is not at point_id {bad}")
     for column in ("children_cover", "indexation"):
         flag = table[column]
         bad = table.index[~flag.map(lambda v: str(v).lower() in ("true", "false"))].tolist()
@@ -258,7 +276,7 @@ def model_point_table():
             ("idx_factor_init", 1, ~indexed, "without indexation"),
             ("idx_prem_factor_init", 1, ~indexed, "without indexation"),
             ("review_prem_factor_init", 1, guaranteed, "on a guaranteed point"),
-            ("ci_sel_factor_init", 1, guaranteed, "on a guaranteed point"),
+            ("ci_sel_latched_init", 0, guaranteed, "on a guaranteed point"),
             ("review_prem_shock_init", 0, guaranteed, "on a guaranteed point")):
         bad = table.index[flag & (state[column] != value)].tolist()
         if bad:

@@ -1255,19 +1255,30 @@ def _ci_review_change(s, d):
     return float(s.review_prem_shock) if s.reviews_passed(d) >= 1 else 0.0
 
 
+def _ci_latched(s, d):
+    """Whether ``CI_UK_S``'s select latch has closed by month ``d``, 1 or 0, which S has no
+    cell for: S's ``ci_sel_factor`` takes ``1 + sel_lapse_ci_loading`` on a reviewable
+    point once a review has passed and ``review_prem_shock`` is past the threshold, and
+    those are its branches here.  The factor alone cannot say it: at a loading of 0 a
+    closed latch's factor is 1."""
+    return int(s.premium_guarantee() == "reviewable" and s.reviews_passed(d) >= 1
+               and s.review_prem_shock > s.review_lapse_threshold)
+
+
 # CI_UK_SEC's opening state (D6; UKLIB-SEC-PLAN.md §6.2): the facts of the contract
 # CI_UK_S recomputes from flat References, each read as S's own formulas read it, each a
-# factor or a rate, so that policy_count is the one weight.  The two indexation factors of
-# the policy year under way, S's idx_factor(d) and idx_prem_factor(d); the premium factor
-# of the review period under way (_ci_review_factor); the select latch, S's
-# ci_sel_factor(d); and the premium change the last review made (_ci_review_change),
-# which the SEC model reads while that review's shock window runs.  At a twin's
-# source_mth, 0 on every S point, these are the issue values: 1 for the four factors and 0
-# for the change.
+# factor, a rate or a flag, so that policy_count is the one weight.  The two indexation
+# factors of the policy year under way, S's idx_factor(d) and idx_prem_factor(d); the
+# premium factor of the review period under way (_ci_review_factor); the select latch,
+# whether it has closed (_ci_latched) and its factor, S's ci_sel_factor(d); and the premium
+# change the last review made (_ci_review_change), which the SEC model reads while that
+# review's shock window runs.  At a twin's source_mth, 0 on every S point, these are the
+# issue values: 1 for the four factors, and 0 for the latch and the change.
 _CI_STATE = {
     "idx_factor_init": lambda s, d: s.idx_factor(d),
     "idx_prem_factor_init": lambda s, d: s.idx_prem_factor(d),
     "review_prem_factor_init": _ci_review_factor,
+    "ci_sel_latched_init": _ci_latched,
     "ci_sel_factor_init": lambda s, d: s.ci_sel_factor(d),
     "review_prem_shock_init": _ci_review_change,
 }
@@ -1332,7 +1343,7 @@ SEC_SPECS: dict[str, SecSpec] = {
         companions={"wop_pipeline_sec.csv": _term_pipeline},
         twin_arg_map=_term_claims_total,
     ),
-    # CI's state is five columns (_CI_STATE above), with no companion: the reviews, the
+    # CI's state is six columns (_CI_STATE above), with no companion: the reviews, the
     # latch and the factors are closed forms on the policy clock, and the count is the one
     # chain.  pols_if_init becomes policy_count (the default), and every S point is new
     # business, so duration_of is the default too.  The derived rows are the indexed point

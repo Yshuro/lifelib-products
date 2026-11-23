@@ -48,6 +48,8 @@ Cells Descriptions
 
 .. autofunction:: review_prem_factor_init
 
+.. autofunction:: ci_sel_latched_init
+
 .. autofunction:: ci_sel_factor_init
 
 .. autofunction:: review_prem_shock_init

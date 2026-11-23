@@ -110,8 +110,10 @@ start of month 0, before any month-0 event:
   policy year under way, the RPI increases already given;
 * :func:`review_prem_factor_init`, the premium factor of the review period under way, the
   premium changes the reviews already made have given;
-* :func:`ci_sel_factor_init`, the select latch: the anti-selection factor on the diagnosis
-  rate, other than 1 once a review before the valuation date has shocked lapses;
+* :func:`ci_sel_latched_init`, the select latch, 1 once a review before the valuation date
+  has shocked lapses and 0 before, and :func:`ci_sel_factor_init`, the anti-selection
+  factor on the diagnosis rate it closed at, read only while it is closed: a latch closed
+  at a loading of 0 holds a factor of 1, and stays closed;
 * :func:`review_prem_shock_init`, the premium change the last review before the valuation
   date made, which sets the shock lapse of its twelve-month window, read only while that
   window is still running.
@@ -135,8 +137,9 @@ reads. What running in force adds is named as ``basiclife.BasicTerm_SE`` names i
 ``duration_mth_init``, the policy months completed at the valuation date, takes
 ``UL_US_S``'s name; ``t_entry``, ``expiry_mth``, ``review_prem_factor`` and
 ``review_prem_change`` are this model's own, and each opening-state cell is the cell it
-opens with ``_init`` added, ``review_prem_shock_init`` the Reference's. The technical
-notes use compact actuarial symbols instead. The mapping is:
+opens with ``_init`` added, ``review_prem_shock_init`` the Reference's and
+``ci_sel_latched_init`` the latch's. The technical notes use compact actuarial symbols
+instead. The mapping is:
 
 ===================  ===============================  ================================
 Notes symbol         Cells                            Meaning
@@ -165,7 +168,8 @@ i_ci(a)              ci_rate_base(t, life)            Table CI diagnosis rate
 (1 + tau)^(t//12)    ci_trend_factor(t)               CI trend, valuation clock
 eta                  sel_lapse_ci_loading             Anti-selection loading on i_ci
 (none)               ci_sel_factor(t)                 Anti-selection factor applied
-(latch at t = 0)     ci_sel_factor_init()             The factor at the valuation date
+(latch at t = 0)     ci_sel_latched_init()            Whether the latch had closed
+(factor at t = 0)    ci_sel_factor_init()             The factor it closed at
 i_ci x trend x sel   ci_rate(t, life)                 CI diagnosis rate applied
 q_d(a)               mort_rate(t, life)               Best-estimate mortality rate
 k                    overlap_k                        Death/CI overlap factor, 0.10
@@ -332,8 +336,8 @@ responses hang off the same switch, both **[std]**:
   review before the valuation date, :func:`review_prem_shock_init`; and
 - **selective lapsation** from the first such shock onward, loading the diagnosis rate
   by ``1 + eta`` on the lives that remain, because the healthier ones leave first: on a
-  point in force, from :func:`ci_sel_factor_init` where the latch closed before the
-  valuation date.
+  point in force whose latch closed before the valuation date,
+  :func:`ci_sel_latched_init`, at :func:`ci_sel_factor_init`.
 
 The economics are the point of the variant rather than the cash flows: guaranteed
 premiums mean morbidity deterioration and definition drift fall entirely on the
@@ -620,18 +624,33 @@ def review_prem_factor_init():
     return float(model_point()["review_prem_factor_init"])
 
 
-def ci_sel_factor_init():
-    """The select latch at the valuation date: the anti-selection factor applied then.
+def ci_sel_latched_init():
+    """The select latch at the valuation date: 1 once it has closed, and 0 before.
 
-    :func:`ci_sel_factor`'s value in month 0: ``1 + eta``, at the loading of its day, once
-    a review at or before the valuation date has raised premiums past the shock
-    threshold, and 1 before.  History, read from the model point: :mod:`~.CI_UK_S`
+    Whether a review at or before the valuation date raised premiums past the shock
+    threshold of its day, so that the lives remaining carry an anti-selection factor,
+    :func:`ci_sel_factor_init`, from then on.  A flag of its own, not read off the factor:
+    a latch closed at a loading of 0 holds a factor of 1, and stays closed, where read as
+    open it would close again at the next shock review, at today's
+    ``sel_lapse_ci_loading``.  History, read from the model point: :mod:`~.CI_UK_S`
     re-derives the latch from ``review_prem_shock``, so a change set at the valuation date
-    would open or close it at reviews long past.  A factor other than 1 is a latch that has
-    closed, and :func:`ci_sel_factor` carries it unchanged; at 1, a review after the
-    valuation date closes the latch at ``1 + sel_lapse_ci_loading``.  1 on a point not yet
-    in force, on a guaranteed point, which ``Data`` requires, and on a reviewable point in
-    force before its first review, which :func:`proj_len` requires.
+    would open or close it at reviews long past.  0 on a point not yet in force and on a
+    guaranteed point, which ``Data`` requires, and on a reviewable point in force before
+    its first review, which :func:`proj_len` requires.
+    """
+    return int(model_point()["ci_sel_latched_init"])
+
+
+def ci_sel_factor_init():
+    """The anti-selection factor the select latch closed at, read only once it has.
+
+    :func:`ci_sel_factor`'s value in month 0 on a point whose latch had closed by the
+    valuation date, :func:`ci_sel_latched_init` 1: ``1 + eta``, at the loading of its day,
+    which :func:`ci_sel_factor` carries unchanged, whatever it is, 1 among them.  History,
+    read from the model point, as the latch is.  A number above 0, and 1 on an open latch,
+    which ``Data`` requires: on a point not yet in force, on a guaranteed point, and on a
+    reviewable point in force before its first review.  While the latch is open a review
+    after the valuation date closes it at ``1 + sel_lapse_ci_loading``.
     """
     return float(model_point()["ci_sel_factor_init"])
 
@@ -690,10 +709,17 @@ def proj_len():
       and ``review_lapse_slope`` a finite number, 0 or more, since below 0 the window lapses
       fewer the more the premium rises, and a NaN reads as the cap through
       :func:`lapse_rate`'s ``min``, its bound first as in :mod:`~.CI_UK_S`;
-    * and a reviewable point in force for fewer months than ``review_period_mths`` with a
-      review history, a review factor or a select factor other than 1 or a last change
-      other than 0, a state :mod:`~.CI_UK_S` cannot reach, since no review has yet been
-      made.
+    * a reviewable point in force for fewer months than ``review_period_mths`` with a
+      review history, a review factor other than 1, a closed latch or a last change other
+      than 0, a state :mod:`~.CI_UK_S` cannot reach, since no review has yet been made;
+    * and a reviewable point between its first review and its second whose review factor
+      is not ``1 + review_prem_shock_init()``, to 1e-12 of it, as an extract may spell
+      the two: the one review made has made that change and no other.
+
+    What depends on an assumption of its day is not refused: a latch left open after a
+    change past today's ``review_lapse_threshold`` is a history some point can have, the
+    threshold having been higher then; and two reviews or more give a factor any changes
+    can make.
 
     A domain is a comparison no NaN passes, and a finite number one that ``x - x == 0.0``
     holds of, which an infinity fails too, an infinity less itself being NaN.  All but the
@@ -793,18 +819,27 @@ def proj_len():
                     f"{review_prem_factor_init()}, where a reviewable point in force {d} "
                     f"months, fewer than review_period_mths, "
                     f"{review_period_mths}, has had no review yet: 1")  # noqa: F821
-            if ci_sel_factor_init() != 1.0:
+            if ci_sel_latched_init() != 0:
                 raise ValueError(
-                    f"point_id {point_id}: ci_sel_factor_init is "   # noqa: F821
-                    f"{ci_sel_factor_init()}, where a reviewable point in force {d} "
+                    f"point_id {point_id}: ci_sel_latched_init is "  # noqa: F821
+                    f"{ci_sel_latched_init()}, where a reviewable point in force {d} "
                     f"months, fewer than review_period_mths, "
-                    f"{review_period_mths}, has had no review yet: 1")  # noqa: F821
+                    f"{review_period_mths}, has had no review yet: 0")  # noqa: F821
             if review_prem_shock_init() != 0.0:
                 raise ValueError(
                     f"point_id {point_id}: review_prem_shock_init is "  # noqa: F821
                     f"{review_prem_shock_init()}, where a reviewable point in force {d} "
                     f"months, fewer than review_period_mths, "
                     f"{review_period_mths}, has had no review yet: 0")  # noqa: F821
+        if review_period_mths <= d < 2 * review_period_mths:         # noqa: F821
+            once = 1.0 + review_prem_shock_init()
+            if not abs(review_prem_factor_init() - once) <= 1e-12 * abs(once):
+                raise ValueError(
+                    f"point_id {point_id}: review_prem_factor_init is "  # noqa: F821
+                    f"{review_prem_factor_init()}, where a reviewable point in force {d} "
+                    f"months, review_period_mths {review_period_mths}, has "  # noqa: F821
+                    f"had one review, whose change, review_prem_shock_init, is "
+                    f"{review_prem_shock_init()}: {once}")
     return n
 
 
@@ -969,8 +1004,9 @@ def ci_sel_factor(t):
     threshold; ``sel_lapse_ci_loading`` is 0.10 in the notes and the magnitude is a
     placeholder.
 
-    On a point in force, a latch closed before the valuation date is history:
-    :func:`ci_sel_factor_init` other than 1, which the factor stays at.  Otherwise the
+    On a point in force, a latch closed before the valuation date is history,
+    :func:`ci_sel_latched_init` 1, and the factor stays at :func:`ci_sel_factor_init`,
+    whatever it is: 1 for a latch closed at a loading of 0, or below 1.  Otherwise the
     latch closes at the first review after the valuation instant, ``reviews_passed(t)``
     past ``reviews_passed(t_entry())``, that raises the premium by ``review_prem_shock``,
     past ``review_lapse_threshold``.  On a point issued at or after the valuation date
@@ -980,7 +1016,7 @@ def ci_sel_factor(t):
         return 0.0
     if premium_guarantee() != "reviewable":
         return 1.0
-    if ci_sel_factor_init() != 1.0:
+    if ci_sel_latched_init() == 1:
         return ci_sel_factor_init()
     if reviews_passed(t) <= reviews_passed(t_entry()):
         return 1.0
