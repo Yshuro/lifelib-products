@@ -127,6 +127,9 @@ MODELS = {
     "WP_UK_S": ("products/with_profits/WP_UK_S", {**MONTHLY, "age_basis": ANB}),
     # Annuity
     "PA_UK_S": ("products/pension_annuity/PA_UK_S", {**MONTHLY, "age_basis": ALB}),
+    "PA_UK_SEC": ("products/pension_annuity/PA_UK_SEC",
+                  {**MONTHLY, "age_basis": ALB, "twin": "PA_UK_S", "stage": "E",
+                   "closing_pols_if": True}),
 }
 
 
@@ -148,6 +151,7 @@ INPUT_FILES = {
         "inception_table.csv", "lapse_table.csv", "model_point_table.csv",
         "mort_table.csv", "termination_table.csv"},
     "PA_UK_S": {"model_point_table.csv", "mort_table.csv"},
+    "PA_UK_SEC": {"model_point_table_sec.csv", "mort_table.csv"},
     "Term_UK_S": {
         "lapse_table.csv", "model_point_table.csv", "mort_table.csv",
         "select_factor_table.csv"},

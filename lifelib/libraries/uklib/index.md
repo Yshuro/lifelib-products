@@ -129,7 +129,7 @@ close, and whose guarantee is an order of magnitude too large a decade later.
 
 | Product | Model | Grid | Representative design |
 |---|---|---|---|
-| [Pension annuity](products/pension_annuity/index.md) | `PA_UK_S` | monthly | Immediate lifetime annuity on a single carrier's pattern: single or joint life, escalation nil / fixed / RPI-floored / LPI, guarantee period XOR value protection, enhanced terms as a mortality-rating overlay. Longevity is the model |
+| [Pension annuity](products/pension_annuity/index.md) | `PA_UK_S`, `PA_UK_SEC` | monthly | Immediate lifetime annuity on a single carrier's pattern: single or joint life, escalation nil / fixed / RPI-floored / LPI, guarantee period XOR value protection, enhanced terms as a mortality-rating overlay. Longevity is the model |
 
 ### One shape, enforced
 

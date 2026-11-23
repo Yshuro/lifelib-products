@@ -289,7 +289,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [term_assurance, critical_illness, whole_of_life, unit_linked_bond]
+        module: [term_assurance, critical_illness, whole_of_life, unit_linked_bond,
+                 pension_annuity]
         os: [ubuntu-latest, windows-latest, macos-latest]
         grid: [core, full]
         exclude:

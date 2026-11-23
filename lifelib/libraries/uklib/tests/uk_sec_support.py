@@ -1433,6 +1433,69 @@ _WOL_STATE = {
 }
 
 
+def _pa_rpi_linked(s):
+    """Whether ``PA_UK_S``'s point ``s`` escalates with the RPI: ``lpi5`` or
+    ``rpi_catchup``."""
+    return s.escalation_type() in ("lpi5", "rpi_catchup")
+
+
+def _pa_year(d):
+    """The policy year under way at the start of S's month ``d``, before any month-``d``
+    event: the year of month ``d - 1``, and 1 at the start date.  On an anniversary, the
+    year the anniversary closes, whose escalation is the restated row's month-0 event."""
+    return max(d - 1, 0) // 12 + 1
+
+
+def _pa_income(s, d):
+    """``PA_UK_S``'s income of the policy year under way entering month ``d``, on RPI-linked
+    escalation: ``annual_income`` of :func:`_pa_year`, before any month-``d`` anniversary.
+    Blank, NaN, on level and fixed escalation, whose schedule the SEC model re-derives."""
+    return s.annual_income(_pa_year(d)) if _pa_rpi_linked(s) else math.nan
+
+
+def _pa_peak(s, d):
+    """``PA_UK_S``'s ratchet peak over the latest index entering month ``d``, on
+    ``rpi_catchup``: ``rpi_peak(a0) / rpi_index(a0)``, ``a0`` the anniversary that opened
+    the year under way, so 1 while the index has never fallen.  Blank elsewhere."""
+    if s.escalation_type() != "rpi_catchup":
+        return math.nan
+    a0 = _pa_year(d) - 1
+    return s.rpi_peak(a0) / s.rpi_index(a0)
+
+
+def _pa_paid(s, d):
+    """``PA_UK_S``'s as-if-alive annuitant instalments by time ``d``, ``cum_annuity_pp(d,
+    "ANNUITANT")``, where the SEC model reads them: on RPI-linked escalation with value
+    protection on the first death.  Blank elsewhere, where the SEC model sums the
+    schedule."""
+    if not (_pa_rpi_linked(s) and s.vp_pct() > 0.0 and s.vp_basis() == "first_death"):
+        return math.nan
+    return s.cum_annuity_pp(d, "ANNUITANT")
+
+
+# PA_UK_SEC's opening state (D6; UKLIB-SEC-PLAN.md §6.7): what PA_UK_S carries into month d,
+# each per contract, so that policy_count is the one weight.  Each life's survival to time d,
+# before month d's deaths; the payments made by time d on every stream, S's
+# cum_annuity_pp(d, "ALL"); and on RPI-linked escalation the history no flat rpi_rate
+# re-derives: the income of the policy year under way before any month-d anniversary
+# (_pa_income), the ratchet's peak over the latest index (_pa_peak), and where value
+# protection is on the first death the annuitant's as-if-alive instalments by time d
+# (_pa_paid).  The count is S's pols_if_init, the contracts the point stands for, and not
+# S's pols_if, which is a closing measure (D5): mortality decrements each life, never the
+# count.  At a twin's source_mth, 0 on every S point, these are the start date's values:
+# each covered life 1, life 2 at 0 on a single-life contract, nothing paid, the first
+# year's income and a peak of 1.
+_PA_STATE = {
+    "policy_count": lambda s, d: s.pols_if_init(),
+    "lives_if_init_1": lambda s, d: s.lives_if(d, 1),
+    "lives_if_init_2": lambda s, d: s.lives_if(d, 2),
+    "cum_annuity_all_init": lambda s, d: s.cum_annuity_pp(d, "ALL"),
+    "annual_income_init": _pa_income,
+    "rpi_peak_init": _pa_peak,
+    "cum_annuity_pp_init": _pa_paid,
+}
+
+
 SEC_SPECS: dict[str, SecSpec] = {
     # Term's state is seven columns (_TERM_STATE above) and the waiver pipeline, a long
     # companion, wop_pipeline_sec.csv, keyed (point_id, lag), lag the months before the
@@ -1686,6 +1749,64 @@ SEC_SPECS: dict[str, SecSpec] = {
         exempt=frozenset({"result_pols"}),
         derived_refs={(4, 120): {"rpi_rate": 0.05}, (6, 120): {"esc_take_up": 0.5},
                       (3, 180): {"lapse_crossover_beta": 100.0}},
+    ),
+    # PA's state is six columns per contract (_PA_STATE above), with no companion: each
+    # life's survival, the payments made to date on every stream, and on RPI-linked
+    # escalation the income of the year under way, the ratchet's peak over the latest
+    # index and the annuitant's payments to date, the last three blank where the SEC model
+    # does not read them.  pols_if_init becomes policy_count (the default), set by
+    # _PA_STATE to S's count and not S's pols_if, a closing measure (D5).  Every S point is
+    # new business.  The derived rows are the worked example at 17, the month after the
+    # annuitant's death, the dependant's first instalment at t = 0; the proportionate
+    # payment's point at 16, the month of the death, value protection and the proportionate
+    # payment both at t = 0; the guarantee's point at 120, the guarantee ended and the
+    # dependant's income starting without overlap; the LPI point at 24, its second
+    # anniversary in month 0; the RPI catch-up point at 30, mid-year; the first-death value
+    # protection at 101, the last month its balance opens above 0; the last-survivor value
+    # protection at 170, likewise; the rated single life at 575, the month before its
+    # mortality cap binds; and the table basis's joint point at 635, a one-row frame.  The
+    # future row is the RPI catch-up point starting 13 months after the valuation date: more
+    # than a year on and off every payment step, so that the months before the start read
+    # policy years -1 and 0, where a missing guard would show.  T2's splice grid is built
+    # from this spec in a temporary table, not committed.
+    #
+    # And two rows S reaches only under an RPI of their own (derived_refs).  At the shipped
+    # flat 3% the index never falls, so no state S reaches holds a ratchet's peak above its
+    # index, nor an LPI increase capped, and C2 would freeze neither path.  So the catch-up
+    # point is restated at S month 60, its fifth anniversary in month 0, from S run under an
+    # RPI of -2%: its income frozen at the first year's and its peak 1 / 0.98^4 over the
+    # latest index, so that at the shipped 3% from the valuation date its income stays
+    # frozen through two anniversaries and catches up at the third.  And the LPI point at
+    # S month 42 from S run under 8%: its income raised by the cap's 5% a year, where the
+    # shipped 3% would have raised it by 3%.
+    #
+    # T1 holds on PA at any count: neither model charges acquisition, and every flow is the
+    # count times a per-contract amount.  It skips one S cell besides the default three:
+    #   result_pols: SEC's gains pols_new_biz and puts pols_if first, so the frame has a
+    #     column S's lacks and cannot agree as a whole.  Each column it shares with S is a
+    #     cell T1 compares at every month, and test_pension_annuity_uk_sec.py compares the
+    #     report itself with S's, column by column.
+    # S's annual_income_init, the first year's income, is SEC's annual_income_first; SEC's
+    # annual_income_init is the income of the year under way at the valuation date, which on
+    # a point starting at the valuation date is the first year's, so T1 compares the two.
+    #
+    # Phase 2 sizes its caches from the contract, as UKLIB-SEC-PLAN.md §6.7's C list
+    # derives them (t 1,502, k 1,382, y and a 117, x 116): issue_age_min, 0, the youngest
+    # issue age of every life, since S projects any age on the scenario basis; the limiting
+    # age omega_age, 115; and future_horizon_mth, 120, so that the longest frame is
+    # 12 x (115 - 0) + 120 months, and lives_if and cum_annuity_all read the closing time
+    # point t = proj_len().  proj_len() refuses an issue age of any life below
+    # issue_age_min, and a guarantee above 12 x (omega_age - issue_age_min) months, the
+    # longest frame from the start date, each naming the point.
+    "PA_UK_SEC": SecSpec(
+        twin="PA_UK_S",
+        derived=((1, 17), (9, 16), (3, 120), (7, 24), (6, 30), (2, 101), (10, 170),
+                 (8, 575), (2, 635)),
+        future=((6, 13),),
+        state=_PA_STATE,
+        twin_state={c: f for c, f in _PA_STATE.items() if c != "policy_count"},
+        exempt=frozenset({"result_pols"}),
+        derived_refs={(6, 60): {"rpi_rate": -0.02}, (7, 42): {"rpi_rate": 0.08}},
     ),
 }
 

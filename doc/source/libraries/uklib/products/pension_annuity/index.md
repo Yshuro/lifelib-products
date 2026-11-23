@@ -4,7 +4,9 @@
 [Technical Notes](technical-notes.md) derive its liability cash flow model.
 [Implementation Notes](model.md) explain how `PA_UK_S` implements those notes and what was
 standardized to do so; the cells reference generated from the model's own docstrings
-follows it. Every source any of them cites is in [Sources](sources.md).
+follows it. How `PA_UK_SEC` extends `PA_UK_S` is explained in [In-Force Implementation
+Notes](model-sec.md), and the cells reference of `PA_UK_SEC` follows it. Every source any of
+them cites is in [Sources](sources.md).
 
 ```{toctree}
 :maxdepth: 1
@@ -13,5 +15,7 @@ product-spec
 technical-notes
 model
 PA_UK_S/PA_UK_S
+model-sec
+PA_UK_SEC/PA_UK_SEC
 sources
 ```
