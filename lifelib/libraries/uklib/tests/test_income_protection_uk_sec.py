@@ -39,8 +39,10 @@ the product's own facts:
   an active cell on the exit basis, the youngest entry ages below the inception table's
   first pivot, and the oldest entry age to the latest expiry, past its last.  The twins of
   S's two claims on the exit basis are splice cases, on their policy clocks; the claim on
-  the active-lives basis, whose recovered lives S lapses at first-year rates, is spliced
-  under a flat lapse table by a test of its own.
+  the active-lives basis, whose recovered lives S lapses on its clock restarted at the
+  valuation date, a year behind the clock its twin is given, is spliced under a flat lapse
+  table by a test of its own; and so is the inception rate's floor at 0, on a schedule in a
+  copy of the inception table that falls below 0 above the youngest issue age.
 * T3, future new business: a point issued ``k`` months after the valuation date is S's
   projection ``k`` months on, with zeros before issue and no table read there.
 * D11's R1 and R2, and D3's and D5's chains: on the splice's grid no cell is called at a
@@ -60,17 +62,20 @@ the product's own facts:
   assumption table, malformed or holding a value that is not a number in its range, is
   refused before a value of it is read, naming its lines; the future horizon is a
   Reference that bounds future business; a point past its policy end date, one the
-  contract does not issue and one that reads a Reference off its domain are refused by the
-  frame, each domain at both its edges, NaN and the infinities included; a value past the
-  floats is refused in the cell where it first is; the edges of the interface are
-  accepted, the shares' tolerance pinned from both sides; and so is every state
-  ``IP_UK_S`` reaches, on each set of inputs on which those states differ.
+  contract does not issue, one whose escalation history the contract cannot have and one
+  that reads a Reference off its domain are refused by the frame, each domain at both its
+  edges, NaN and the infinities included, and each bound of the history a cent outside
+  and accepted half a cent inside; a value past the floats is refused in the cell where it
+  first is; the edges of the interface are accepted, the shares' tolerance pinned from
+  both sides; and so is every state ``IP_UK_S`` reaches, on each set of inputs on which
+  those states differ.
 * T6, regeneration: the committed ``model_point_table_sec.csv`` and
   ``inforce_cohorts_sec.csv`` are what the generator makes of ``IP_UK_S`` and its table as
   they stand.
 * Then the product's own facts: the two clocks on the shipped points; the twins of S's
   claims on their policy clocks, and the claim on the active-lives basis under a flat
-  lapse table, S's restarted clock recorded where the table is not flat; the committed rows
+  lapse table, where the table is not flat its twin's clock running a year ahead of S's
+  restarted one; the committed rows
   continuing their S points, those read under an RPI of their own continuing S under it;
   each history column read rather than recomputed (UKLIB-SEC-PLAN.md K14), the healthy
   share, the claim cohorts, the benefit and the premium; an anniversary at the valuation
@@ -444,6 +449,12 @@ IN_COVER_ONLY = ("age", "duration", "policy_year", "mort_rate_mth", "lapse_rate_
 # The opening state, in the table's order, and the cells running in force adds to
 # IP_UK_S's, each of which the symbol map must name.
 STATE = ("pols_active_init", "benefit_pp_init", "premium_pp_init")
+
+# IP_UK_S's columns the projection reads, each of which Data requires; status, IP_UK_S's
+# label, which no formula reads, is not among them.
+S_COLUMNS_READ = ("entry_age", "sex", "occ_class", "benefit_mth", "earnings_annual",
+                  "deferred_weeks", "expiry_age", "escalation", "premium_mth",
+                  "premium_basis", "recovery_basis")
 NEW_CELLS = ("policy_count", "duration_mth_init", "duration_init", "t_entry", "is_active",
              "expiry_mth", "pols_new_biz", "pols_sick_dur_init", "result_pols", *STATE)
 
@@ -1012,11 +1023,14 @@ def _held(x, t):
 # table inside and past its last year, the termination table inside and past its last
 # year, the inception rate interpolated between pivots and extrapolated beyond each end,
 # the recovery rate's bound binding and not, an active cell on the exit basis and the
-# policy end date's last month.  Three bounds bind elsewhere, each in a test of its own:
-# the caps on mortality and inception and the lapse rate's bound.  Two are idle on every
-# input the model accepts: the inception rate's floor at 0, since the shipped schedules,
-# one shape scaled, extrapolate to 0 only below age 13.3, under the youngest issue age; and
-# the in-claim mortality's cap, since Data holds the termination table's rates to 0 to 1.
+# policy end date's last month.  Four bounds bind elsewhere, each in a test of its own: the
+# caps on mortality and inception, the lapse rate's bound, and the inception rate's floor
+# at 0, which no shipped schedule reaches, each extrapolating to 0 only below age 13.3,
+# under the youngest issue age, but which Data accepts a schedule that does, spliced in a
+# copy of the inception table (test_the_inception_floor_continues_s_on_a_schedule_below_0).
+# One is idle on every input the model accepts: the in-claim mortality's cap, since Data
+# holds the termination table's rates to 0 to 1 and no factor multiplies them; its NaN
+# test holds its order.
 AT_VALUATION = {
     "lives in health and in claim": lambda x: 0.0 < x.pols_active_init() < 1.0,
     "every life in claim": lambda x: (
@@ -1215,14 +1229,18 @@ def test_future_new_business_is_the_s_projection_k_months_on(spliced, splice_rec
 # The claim on the active-lives basis, under a flat lapse table
 #
 # IP_UK_S's point 7 is the worked example's claim on the return_to_h basis: its recovered
-# lives return to health and lapse there.  S restarts the policy clock at the valuation
-# date, so it lapses them at the first policy year's rate, 10%, where the twin, issued a
-# year before, lapses them at the second's, 8%, and so on down the table: S's restarted
-# clock is a defect of S (UKLIB-SEC-PLAN.md §6.3, model-sec.md).  So the twin and its rows
-# are compared with S under a lapse table that is flat, every year at 10%, the shipped
-# first year's rate, on which the two clocks lapse alike.  The first year's rate being the
-# shipped one, S's states up to any month are what the shipped table gives them, so the
-# committed row of point 7 at month 12 continues S there too.
+# lives return to health and lapse there.  S's row holds no issue date: S restarts the
+# policy clock at the valuation date, and the twin is given one, issued a whole year before
+# it, the least whole year that holds the claim, though a claim at duration 0 after a
+# 26-week deferral fits a policy 7 to 11 months old.  So the twin's clock runs a year
+# ahead of S's: in each year S lapses the recovered lives at a policy year's rate, 10% in
+# its first, where the twin lapses them at the next year's, 8% in its second, and so on
+# down the table (UKLIB-SEC-PLAN.md §6.3, model-sec.md).  Neither is the policy's real
+# clock, which S's row does not record.  So the twin and its rows are compared with S under
+# a lapse table that is flat, every year at 10%, the shipped first year's rate, on which
+# the two clocks lapse alike.  The first year's rate being the shipped one, S's states up
+# to any month are what the shipped table gives them, so the committed row of point 7 at
+# month 12 continues S there too.
 FLAT_LAPSE = {"lapse_table.csv": lambda t: t.assign(lapse_rate=0.10)}
 POINT7_MTHS = {"core": (1, 12), "full": (13, 24, 60, 359)}
 
@@ -1240,10 +1258,12 @@ def test_the_claim_on_the_active_lives_basis_continues_s_under_a_flat_lapse_tabl
     cohort, the recoveries back to health and every flow.  The default run compares the
     twin and the rows at months 1 and 12, and the full grid the rows at 13, 24, 60 and 359.
 
-    And at the shipped lapse table the twin parts from S, as S's restarted clock makes it:
-    its recovered lives lapse at the second policy year's 8% where S's lapse at the first's
-    10%, so that 60 months on 0.8002 of the policy is in force where S holds 0.7791.  That
-    is S's defect, which model-sec.md records, and no departure of this model's.
+    And at the shipped lapse table the twin parts from S, its clock a year ahead of S's
+    restarted one: in their first year its recovered lives lapse at the second policy
+    year's 8% where S's lapse at the first's 10%, so that 60 months on 0.8002 of the policy
+    is in force where S holds 0.7791.  The difference is the clock each model gives the
+    claim, S's row recording none: S's restarted clock, which model-sec.md records, against
+    the least whole year the generator gives the twin, and no departure of this model's.
     """
     s = mx.read_model(temp_inputs(tmp_path / "s", model_path(TWIN), edits=FLAT_LAPSE),
                       name=_name("flat_s"))
@@ -1858,7 +1878,7 @@ MALFORMED = [
      "{file}: duration_mth must be -120 or more, a policy issued at most 120 months after "
      "the valuation date; it is not at point_id [17]"),
     *[(f"no {column} column", _drop(column), f"{{file}} has no {column} column")
-      for column in ("policy_count", "duration_mth", *STATE)],
+      for column in ("policy_count", "duration_mth", *STATE, *S_COLUMNS_READ)],
     ("a repeated point_id",
      lambda t: pd.concat([t, t.loc[[8]].assign(policy_id="IP-900099")]),
      "{file}: point_id [8] appears more than once"),
@@ -2370,6 +2390,124 @@ def test_a_point_the_contract_does_not_issue_is_refused_by_proj_len(tmp_path, ca
             shipped.close()
 
 
+def _raised_by(amount, rise, years):
+    """``amount`` raised by ``rise`` at each of ``years`` anniversaries, multiplied in turn,
+    as proj_len() multiplies it."""
+    for _ in range(years):
+        amount = amount * rise
+    return amount
+
+
+# The escalation history of the anchor cell in force at 60, point 9, its four anniversaries
+# before the valuation date each raising the benefit by an increase j from 0 to the cap,
+# 10%, and the premium by 1.5 j.  At the cap each time, the benefit and premium of
+# TOP_BENEFIT and TOP_PREMIUM; at 5% each time, the history IP_UK_S gives at an RPI of 5%,
+# 2,000 x 1.05^4 beside the most premium that benefit allows, 35 x 1.075^4, its increases
+# equal; and beside that benefit the least premium it allows, its increases made at the
+# cap twice and once part-way (proj_len()).
+TOP_BENEFIT = _raised_by(2000.0, 1.0 + 0.1, 4)
+TOP_PREMIUM = _raised_by(35.0, 1.0 + 1.5 * 0.1, 4)
+BENEFIT_5 = 2000.0 * 1.05 ** 4
+PREMIUM_5 = 35.0 * (1.0 + 1.5 * 0.05) ** 4
+LEAST_PREMIUM_5 = 35.0 * 1.15 ** 2 * (1.0 + 1.5 * (1.05 ** 4 / 1.1 ** 2 - 1.0))
+
+# What proj_len() says of a history past a bound, in parts, each of which the message must
+# hold: the amount read back is left out, since the CSV may return a computed float two
+# ulps off.
+_BENEFIT_PAST = ("point_id 9: benefit_pp_init ",
+                 f" is above {TOP_BENEFIT}, the benefit at issue, 2000.0, increased by "
+                 f"esc_cap, 0.1, at each of the 4 anniversaries before the valuation date, "
+                 f"by more than half a cent: no increase passes the cap")
+_PREMIUM_PAST = ("point_id 9: premium_pp_init ",
+                 f" is above {TOP_PREMIUM}, the premium at issue, 35.0, increased by "
+                 f"esc_prem_mult times esc_cap, 1.5 x 0.1, at each of the 4 anniversaries "
+                 f"before the valuation date, by more than half a cent")
+def _outside(mult=1.5):
+    """The parts of what proj_len() says of a premium outside the range its benefit's
+    increases allow, at a premium multiplier of ``mult``."""
+    return ("point_id 9: premium_pp_init ", " is outside ",
+            ", by more than half a cent: the premiums its benefit's increases allow, from "
+            "2000.0 to ", " over the 4 anniversaries before the valuation date, each "
+            f"increase j of the benefit's raising the premium by esc_prem_mult x j, {mult} x j")
+
+
+_OUTSIDE = _outside()
+
+# The history's bounds, as (case, point 9's benefit and premium, the References set, the
+# message's parts, or None where the history is accepted): each bound a cent outside, and
+# half a cent inside, where an extract rounded to the cent may sit; the two states M7's
+# review found the K14 tests opened with, a benefit risen faster than its premium and a
+# premium faster than its benefit; and the committed history, at 3%, under a cap lowered to
+# 2% and under a premium multiplier raised to 2, which the contract it was written under
+# did not have.
+HISTORY_BOUNDS = [
+    ("a benefit a cent past the cap", (TOP_BENEFIT + 0.01, TOP_PREMIUM), {}, _BENEFIT_PAST),
+    ("a benefit half a cent past the cap", (TOP_BENEFIT + 0.005, TOP_PREMIUM), {}, None),
+    ("a premium a cent past the cap", (TOP_BENEFIT, TOP_PREMIUM + 0.01), {}, _PREMIUM_PAST),
+    ("a premium a cent above the most its benefit allows", (BENEFIT_5, PREMIUM_5 + 0.01),
+     {}, _OUTSIDE),
+    ("a premium half a cent above the most its benefit allows",
+     (BENEFIT_5, PREMIUM_5 + 0.005), {}, None),
+    ("a premium a cent below the least its benefit allows",
+     (BENEFIT_5, LEAST_PREMIUM_5 - 0.01), {}, _OUTSIDE),
+    ("a premium half a cent below the least its benefit allows",
+     (BENEFIT_5, LEAST_PREMIUM_5 - 0.005), {}, None),
+    ("a benefit risen faster than its premium", (2400.0, 41.73815102187499), {}, _OUTSIDE),
+    ("a premium risen faster than its benefit", (2251.01762, 45.0), {}, _OUTSIDE),
+    ("the committed history past a cap lowered to 2%", (2251.01762, 41.73815102187499),
+     {"esc_cap": 0.02},
+     ("point_id 9: benefit_pp_init 2251.01762 is above "
+      f"{_raised_by(2000.0, 1.0 + 0.02, 4)}, the benefit at issue, 2000.0, increased by "
+      f"esc_cap, 0.02, at each of the 4 anniversaries",)),
+    ("the committed history under a premium multiplier of 2",
+     (2251.01762, 41.73815102187499), {"esc_prem_mult": 2.0}, _outside(2.0)),
+]
+
+
+@pytest.mark.parametrize("case, amounts, refs, message", HISTORY_BOUNDS,
+                         ids=[c[0] for c in HISTORY_BOUNDS])
+def test_the_escalation_history_is_bounded_by_the_contract(tmp_path, case, amounts, refs,
+                                                           message):
+    """``proj_len()`` refuses an escalation history the contract cannot have (§6.3).
+
+    ``Data``'s rule 12 bounds an escalating point's benefit and premium from below, at the
+    amounts at issue.  Above, the contract bounds them by References, which ``Data`` cannot
+    see: no increase passes ``esc_cap``, and each raises the premium ``esc_prem_mult``
+    times as much as the benefit, so a benefit of one increase bounds its premium on both
+    sides, the premium having risen least when the benefit's increases fell at the cap,
+    one part-way and the rest none, and most when they were equal.  So ``proj_len()``
+    refuses each history outside them, naming the point, and the projection with it
+    (:data:`HISTORY_BOUNDS`): each bound tried a cent outside, refused, and half a cent
+    inside, accepted, the tolerance an extract rounded to the cent needs; the two
+    histories M7's review found unreachable; and the committed history under a contract
+    it was not written under.  Each case reads the history back as written, within the two
+    ulps the CSV's text can cost a computed float, and exactly where a case sits at a
+    bound's edge computed alike, and sets its References on a model just read (K7).
+    """
+    benefit, premium = amounts
+    model = _read_edited(tmp_path, _then(_set("benefit_pp_init", [9], benefit),
+                                         _set("premium_pp_init", [9], premium)))
+    try:
+        for ref, value in refs.items():
+            setattr(model.Projection, ref, value)
+        table = model.Data.model_point_table()
+        read = (table.at[9, "benefit_pp_init"], table.at[9, "premium_pp_init"])
+        assert read == pytest.approx(amounts, rel=1e-15, abs=0.0)
+        if "half a cent past the cap" in case:
+            assert read == amounts
+        if message is None:
+            assert len(_point(model, 9).result_cf()) == 300
+        else:
+            with pytest.raises(Exception) as excinfo:
+                _point(model, 9).result_cf()
+            text = str(excinfo.value)
+            assert "ValueError" in text, text
+            missing = [part for part in message if part not in text]
+            assert not missing, (missing, text)
+    finally:
+        model.close()
+
+
 # Each Reference proj_len() holds to a domain, as (case, the References set, the point,
 # the message where refused, and where an accepted edge takes a value past the floats, the
 # refusal its report meets there).  NaN and the infinities are outside every domain.
@@ -2509,10 +2647,14 @@ def test_each_reference_is_held_to_its_domain_at_both_edges(case, refs, point, m
 
 # A value past the floats from an opening state and References each in its domain, as
 # (case, the table's edit, the References set, the point, the call, a report that reads it,
-# the start of the message).  The anchor cell at 60, opened on a benefit near the largest
-# float, which month 0's escalation, its sixth anniversary's, takes past it; the female
-# cell at 13 on a premium near it, which its second anniversary, at t = 11, takes past it;
-# a count of 1e307 paying 35 a month; the claim at 24 paying 1e300 a month on a count of
+# the start of the message).  The anchor cell at 60, issued on a benefit near the largest
+# float and not yet increased, its premium neither, a history an RPI of 0 gives, which
+# month 0's escalation, its fifth anniversary's, takes past it; the female cell at 13,
+# issued on a premium near it and its first anniversary's increase not taken, which its
+# second anniversary, at t = 11, takes past it; each history within the contract's bounds
+# (test_the_escalation_history_is_bounded_by_the_contract), which an amount near the
+# largest float beside an amount at issue far below it is not.  Then a count of 1e307
+# paying 35 a month; the claim at 24 paying 1e300 a month on a count of
 # 1e300; the claims-in-payment twin paying 1.75e308 a month beside a claim expense of the
 # largest float, each finite and their sum, the net cash flow, not; the same twin's present
 # value at 1e308 a month; the lapse shock under an escalation of 1e300 and a slope of 1e10;
@@ -2521,14 +2663,16 @@ def test_each_reference_is_held_to_its_domain_at_both_edges(case, refs, point, m
 # a rate a hair above -1.  Each is refused in the cell where it first is, naming the point,
 # the month and what makes it.
 PAST_THE_FLOATS = [
-    ("a benefit", _set("benefit_pp_init", [9], 1.79e308), {}, 9, ("benefit_pp", 0),
-     "result_cf",
+    ("a benefit",
+     _then(_set("benefit_mth", [9], 1.75e308), _set("benefit_pp_init", [9], 1.75e308),
+           _set("premium_pp_init", [9], 35.0)), {}, 9, ("benefit_pp", 0), "result_cf",
      "point_id 9: the benefit benefit_pp(0) is inf, not a finite number, from "
-     "benefit_pp_init 1.79e+308 and an annual increase of 0.03"),
-    ("a premium", _set("premium_pp_init", [14], 1.79e308), {}, 14, ("premium_pp", 11),
-     "result_cf",
+     "benefit_pp_init 1.75e+308 and an annual increase of 0.03"),
+    ("a premium",
+     _then(_set("premium_mth", [14], 1.75e308), _set("premium_pp_init", [14], 1.75e308),
+           _set("benefit_pp_init", [14], 1500.0)), {}, 14, ("premium_pp", 11), "result_cf",
      "point_id 14: the premium premium_pp(11) is inf, not a finite number, from "
-     "premium_pp_init 1.79e+308 and an annual increase of 0.045"),
+     "premium_pp_init 1.75e+308 and an annual increase of 0.045"),
     ("the premiums", _set("policy_count", [1], 1e307), {}, 1, ("premiums", 0), "result_cf",
      "point_id 1: the premiums premiums(0) are inf, not a finite number, from "
      "premium_pp(0) 35.0 on pols_active(0) 1e+307 healthy lives"),
@@ -3173,7 +3317,7 @@ def test_a_key_written_as_a_float_reads_as_ip_uk_s_reads_it(sec_model, tmp_path,
 # T6 -- regeneration
 
 
-def test_the_committed_sec_inputs_are_what_s_generates(s_model):
+def test_the_committed_sec_inputs_are_what_s_generates():
     """``model_point_table_sec.csv`` and ``inforce_cohorts_sec.csv`` are what IP_UK_S and
     its table generate today.
 
@@ -3182,9 +3326,13 @@ def test_the_committed_sec_inputs_are_what_s_generates(s_model):
     row's state is read from, fails here until ``python tools/gen_sec_points.py
     IP_UK_SEC`` regenerates them, in the same commit.  Text and integers compare exactly,
     and a float by its value, to 1e-12, because the text the writer picks for a computed
-    float depends on the platform's parser (``uk_sec_support``'s module docstring).
+    float depends on the platform's parser (``uk_sec_support``'s module docstring).  The
+    generator reads IP_UK_S afresh, as CI's and WOL's T6 let it: the spec's
+    ``derived_refs`` rows set References on the S model they are read from, which drops
+    its ItemSpaces, and the module's swept S model, which other tests compare with, is not
+    handed to it.
     """
-    assert check_generated(SEC, s_model=s_model) == []
+    assert check_generated(SEC) == []
 
 
 # ---------------------------------------------------------------------------
@@ -3286,10 +3434,12 @@ def test_the_committed_rows_continue_their_s_points(sec_model, s_model, tmp_path
     inflation moves (:func:`_continues_s`), which the inflation test holds.  The twins are
     T1's and T2's.  The row of S's claim on the active-lives basis at its month 12 is
     compared under :data:`FLAT_LAPSE`, read by S and SEC alike, on which S's restarted
-    clock lapses as the policy's does: its state at month 12 is the shipped table's, whose
+    clock lapses as the twin's does: its state at month 12 is the shipped table's, whose
     first year's rate the flat one is.  The two rows read from S under an RPI of their own
     continue S under that RPI, which the shipped one replaces from the valuation date, and
-    their own test holds them.  The default run takes the rows among :data:`CORE_POINTS`,
+    their own test holds them.  Each S point is swept here first (:func:`_sweep_s`), so
+    that the comparison reaches every cell S evaluates, whatever an earlier test has done
+    with the module's S model.  The default run takes the rows among :data:`CORE_POINTS`,
     and the full grid the rest.
     """
     table = sec_model.Data.model_point_table()
@@ -3313,9 +3463,9 @@ def test_the_committed_rows_continue_their_s_points(sec_model, s_model, tmp_path
                                                       edits=FLAT_LAPSE),
                                           name=_name("flat_sec")))
                 s_proj, sec_proj = _point(flat[0], 7), _point(flat[1], point_id)
-                _sweep_s(s_proj)
             else:
                 s_proj, sec_proj = _point(s_model, s_point), _point(sec_model, point_id)
+            _sweep_s(s_proj)
             found += [f"point {point_id}: {line}"
                       for line in _continues_s(s_proj, sec_proj, month)]
     finally:
@@ -3451,27 +3601,47 @@ def test_the_claim_cohorts_are_read_from_the_model_point(sec_model, tmp_path):
         model.close()
 
 
+def _history_under(rpi, s_point, month):
+    """The benefit and premium ``IP_UK_S``, run under an RPI of ``rpi``, carries into S month
+    ``month`` on ``s_point``: its ``benefit_pp(month - 1)`` and ``premium_pp(month - 1)``,
+    the opening state a row restated there under that RPI holds, a history the contract
+    can have."""
+    s = mx.read_model(model_path(TWIN), name=_name("history"))
+    try:
+        s.Projection.rpi_rate = rpi
+        sp = _point(s, s_point)
+        return sp.benefit_pp(month - 1), sp.premium_pp(month - 1)
+    finally:
+        s.close()
+
+
 def test_the_benefit_is_read_from_the_model_point(sec_model, tmp_path):
     """The benefit entering month 0 is the point's, not rebuilt from issue (K14).
 
     ``IP_UK_S`` rebuilds an RPI cell's benefit from issue at today's flat ``rpi_rate``, so
     a model that did the same would pass the splice.  So the anchor cell at 60 is opened
-    with a benefit of 2,400 a month, which no flat RPI gives beside its premium: it pays
-    that times 1.03 from ``t = 0``, month 0's anniversary step at today's RPI, through
-    policy year 6, and times 1.03 again from ``t = 12``; its claims pay it on the lives in
-    claim.  The committed row's own benefit, 2,000 x 1.03^4, projects as that.
+    with the history ``IP_UK_S`` gives it at its month 60 under an RPI of 5%, a benefit of
+    2,000 x 1.05^4 beside a premium of 35 x 1.075^4, and valued under today's 3%: it pays
+    that benefit times 1.03 from ``t = 0``, month 0's anniversary step at today's RPI,
+    through policy year 6, and times 1.03 again from ``t = 12``, where a model that rebuilt
+    it from issue at 3% would pay 2,000 x 1.03^5; its claims pay it on the lives in claim.
+    The committed row's own benefit, 2,000 x 1.03^4, projects as that.
     """
     row = _label(_committed(), "derived", 1, 60)
-    model = _read_edited(tmp_path, _set("benefit_pp_init", [row], 2400.0))
+    benefit, premium = _history_under(0.05, 1, 60)
+    assert (benefit, premium) == (pytest.approx(2000.0 * 1.05 ** 4, rel=1e-15),
+                                  pytest.approx(35.0 * 1.075 ** 4, rel=1e-15))
+    model = _read_edited(tmp_path, _then(_set("benefit_pp_init", [row], benefit),
+                                         _set("premium_pp_init", [row], premium)))
     try:
         p, q = _point(model, row), _point(sec_model, row)
         for t, years in ((0, 1), (11, 1), (12, 2), (299, 25)):
-            assert p.benefit_pp(t) == pytest.approx(2400.0 * 1.03 ** years, rel=1e-12), t
+            assert p.benefit_pp(t) == pytest.approx(benefit * 1.03 ** years, rel=1e-12), t
         assert p.claims(0, _code(p, "BENEFIT")) == pytest.approx(
             p.benefit_pp(0) * p.pols_sick_surv(0), rel=1e-15)
         assert q.benefit_pp_init() == pytest.approx(2000.0 * 1.03 ** 4, rel=1e-12)
         assert q.benefit_pp(0) == pytest.approx(2000.0 * 1.03 ** 5, rel=1e-12)
-        assert p.premium_pp(0) == q.premium_pp(0)
+        assert p.benefit_pp(0) > q.benefit_pp(0) * 1.07
     finally:
         model.close()
 
@@ -3480,20 +3650,25 @@ def test_the_premium_is_read_from_the_model_point(sec_model, tmp_path):
     """The premium entering month 0 is the point's, not rebuilt from issue (K14).
 
     ``IP_UK_S`` rebuilds an RPI cell's premium from issue at 1.5 times today's flat
-    ``rpi_rate``, as it does the benefit.  So the anchor cell at 60 is opened with a premium
-    of 45 a month: it charges that times 1.045 from ``t = 0`` through policy year 6, and
-    times 1.045 again from ``t = 12``, on its healthy lives.  The committed row's own,
-    35 x 1.045^4, projects as that.
+    ``rpi_rate``, as it does the benefit.  So the anchor cell at 60 is opened, as in the
+    test above, with the history ``IP_UK_S`` gives it at its month 60 under an RPI of 5%, a
+    premium of 35 x 1.075^4 beside a benefit of 2,000 x 1.05^4, and valued under today's
+    3%: it charges that premium times 1.045 from ``t = 0`` through policy year 6, and times
+    1.045 again from ``t = 12``, on its healthy lives, where a model that rebuilt it from
+    issue at 3% would charge 35 x 1.045^5.  The committed row's own, 35 x 1.045^4,
+    projects as that.
     """
     row = _label(_committed(), "derived", 1, 60)
-    model = _read_edited(tmp_path, _set("premium_pp_init", [row], 45.0))
+    benefit, premium = _history_under(0.05, 1, 60)
+    model = _read_edited(tmp_path, _then(_set("benefit_pp_init", [row], benefit),
+                                         _set("premium_pp_init", [row], premium)))
     try:
         p, q = _point(model, row), _point(sec_model, row)
         for t, years in ((0, 1), (11, 1), (12, 2), (299, 25)):
-            assert p.premium_pp(t) == pytest.approx(45.0 * 1.045 ** years, rel=1e-12), t
+            assert p.premium_pp(t) == pytest.approx(premium * 1.045 ** years, rel=1e-12), t
         assert p.premiums(0) == p.premium_pp(0) * p.pols_active(0)
         assert q.premium_pp_init() == pytest.approx(35.0 * 1.045 ** 4, rel=1e-12)
-        assert p.benefit_pp(0) == q.benefit_pp(0)
+        assert p.premium_pp(0) > q.premium_pp(0) * 1.11
     finally:
         model.close()
 
@@ -3676,6 +3851,63 @@ def test_a_rate_past_1_is_capped_in_both_models(bound, refs, cell, s_point, firs
                 assert np.isfinite(frame.to_numpy(dtype=float)).all(), (bound, report)
     finally:
         sec.close()
+        s.close()
+
+
+# The inception rate's floor at 0, max(0.0, r) before the overlay and the cap, which no
+# shipped schedule reaches: each, one shape scaled, extrapolates below its first pivot, 30,
+# to 0 only below age 13.3, under the youngest issue age.  Data accepts a schedule that
+# falls below 0 above it, so the floor is spliced on one: in a copy of the inception table,
+# variant 9's schedule, male, class 4, 4 weeks, made 0.0005 at its first pivot and 0.01 at
+# its second, extrapolates below 0 under age 29.7, and variant 9, issued at 22, is floored
+# until it is 30, in its first 96 months.
+FLOOR_INCEPTION = {INCEPTION: _then(
+    _written("inception_rate", 0.0005, _pivot("M", 4, 4, 30)),
+    _written("inception_rate", 0.01, _pivot("M", 4, 4, 35)))}
+FLOOR_MTHS = (1, 12, 95)
+
+
+def test_the_inception_floor_continues_s_on_a_schedule_below_0(tmp_path):
+    """The inception rate's floor at 0 holds where a schedule falls below 0 (§6.3).
+
+    ``IP_UK_S`` floors the interpolated inception rate at 0 before the overlay and the
+    cap, and so does this model, as its C step must; but no shipped schedule reaches the
+    floor, so no other test would see it dropped.  ``Data`` accepts a schedule that falls
+    below 0 above the youngest issue age, so one is spliced here (:data:`FLOOR_INCEPTION`),
+    with the main set's References (:data:`MAIN`) in S and SEC alike: variant 9, issued at
+    22, has an inception rate of 0 in S in each of its first 96 months, and its twin and
+    the rows restated at its months 1, 12 and 95, each opening at an inception rate of 0,
+    are S's from their months on, in every cell, as the splice compares them
+    (:func:`_compare`).
+    """
+    s = mx.read_model(temp_inputs(tmp_path / "s", model_path(TWIN),
+                                  model_points=_s_table_with_variants((9,)),
+                                  edits=FLOOR_INCEPTION), name=_name("floor_s"))
+    sec = None
+    try:
+        for ref, value in MAIN.items():
+            setattr(s.Projection, ref, value)
+        spec = dataclasses.replace(SPEC, derived=tuple((9, d) for d in FLOOR_MTHS),
+                                   future=(), derived_refs={})
+        table, companions = build_sec_table(spec, s)
+        sec = mx.read_model(_sec_inputs(tmp_path / "sec", table, companions[COHORTS],
+                                        edits=FLOOR_INCEPTION), name=_name("floor"))
+        for ref, value in MAIN.items():
+            setattr(sec.Projection, ref, value)
+        s_proj = _point(s, 9)
+        _sweep_s(s_proj)
+        assert [t for t in range(s_proj.proj_len())
+                if s_proj.inception_rate(t) == 0.0] == list(range(96))
+        found = []
+        for case in (("twin", 9, 0), *(("derived", 9, d) for d in FLOOR_MTHS)):
+            row = _row(sec, *case)
+            assert row.inception_rate(0) == 0.0, case
+            found += [f"{case}: {line}"
+                      for line in _compare(s_proj, row, case[2], SPLICE_EXEMPT)]
+        assert not found, found[:20]
+    finally:
+        if sec is not None:
+            sec.close()
         s.close()
 
 
@@ -3879,8 +4111,9 @@ def test_the_points_sum_row_by_row_into_a_block(spliced):
 
 def _extract():
     """The committed table as an administration extract would hold it: without the
-    generator's columns, and labelled :data:`EXTRACT_LABELS`."""
-    extract = _committed().drop(columns=list(GENERATED_COLUMNS))
+    generator's columns, nor ``IP_UK_S``'s ``status``, a label no formula reads, and
+    labelled :data:`EXTRACT_LABELS`."""
+    extract = _committed().drop(columns=[*GENERATED_COLUMNS, "status"])
     extract.index = pd.Index(EXTRACT_LABELS, name="point_id")
     return extract
 
@@ -3917,7 +4150,8 @@ def test_an_in_force_extract_needs_none_of_the_generator_columns(sec_model, tmp_
     and names each point by its label, wherever the row stands.
 
     ``row_kind``, ``source_policy_id`` and ``source_mth`` record how the generator made each
-    shipped row, and an administration extract carries none of them.  Read without them,
+    shipped row, and an administration extract carries none of them, nor ``IP_UK_S``'s
+    ``status``, the kind of S row a point was, which no formula reads.  Read without them,
     and with every label changed, in the table and its claim cohorts alike, every point
     projects what the committed table projects, in ``result_cf``, ``result_states`` and
     ``result_pols``, to 1e-12, and ``run_sec.py``, run beside that extract, prints the point
@@ -3934,7 +4168,7 @@ def test_an_in_force_extract_needs_none_of_the_generator_columns(sec_model, tmp_
     model = mx.read_model(folder, name=_name("extract"))
     try:
         table = model.Data.model_point_table()
-        assert not set(GENERATED_COLUMNS) & set(table.columns)
+        assert not {*GENERATED_COLUMNS, "status"} & set(table.columns)
         assert list(table.index) == list(EXTRACT_LABELS)
         for key, base_key, label in zip(point_keys(model), point_keys(sec_model),
                                         _committed().index):
@@ -4125,30 +4359,44 @@ def test_no_cell_takes_a_default_but_the_claims_total():
 # Term's, CI's and ULB's (R9).
 CODES = frozenset({*TIMINGS, *KINDS})
 
+# The cells the claim cohorts' tuples come from, which the C step restructures (M8): a cell
+# that calls one, to sum, index or step its tuple, must change with it.
+TUPLE_CELLS = frozenset({"sick_cohorts", "claim_rate_vectors"})
+
+# The model point's text columns, which the C step decodes to ints: a cell that reads one
+# returns or compares a text, and must change with it.  policy_id, the generator's columns
+# and status are labels no formula reads.
+TEXT_COLUMNS = frozenset(c for c in _committed().columns if _committed()[c].dtype == object)
+
 # The cells the static check leaves to the C step, each an item of UKLIB-SEC-PLAN.md §6.3's
 # C list or a cell that stays Python, every one of them IP_UK_S's as it ships but the
 # companion's reader and result_pols:
 #
 # * the reports and the checks, which stay Python;
-# * the six decodes, which read int columns once the text columns are decoded, and the five
-#   cells that compare a decoded column with its text, esc_rate, esc_lapse_factor,
-#   pols_active, pols_exit and pols_maturity, which then compare ints;
+# * the seven decodes, which read the text columns sex, escalation, premium_basis, status
+#   and recovery_basis, or check occ_class and deferred_weeks against their menus, and
+#   which read int columns once the text columns are decoded; and the five cells that
+#   compare a decoded column with its text, esc_rate, esc_lapse_factor, pols_active,
+#   pols_exit and pols_maturity, which then compare ints;
 # * the five readers of the assumption tables, by sex, class, deferred period and age, by
 #   claim duration year and by policy year, and the reader of the claim cohorts,
 #   pols_sick_dur_init, keyed (point_id, z): array reads;
 # * the claim cohorts, the tuples IP_UK_S carries them in: sick_cohorts, one a month, and
-#   claim_rate_vectors, its rates by claim duration, and the three sums over them,
-#   pols_sick_surv, pols_recovery and pols_death_sick, which the C step restructures into
-#   pols_sick_dur(t, z), based at t_entry() on a [point, z] array of the companion (M8);
+#   claim_rate_vectors, its rates by claim duration, and the five cells that read them,
+#   pols_sick, their sum, pols_sick_dur, an element of one, and pols_sick_surv,
+#   pols_recovery and pols_death_sick, the month's flows out of them, which the C step
+#   restructures into pols_sick_dur(t, z), based at t_entry() on a [point, z] array of
+#   the companion (M8);
 # * the claims total, left to right on int kinds (R12), and the present value, a sum over
 #   the frame.
 STATIC_EXEMPT = {
     "result_cf", "result_states", "result_pols", "check_pols_roll_fwd", "check_states",
-    "occ_class", "deferred_weeks", "escalation", "premium_basis", "status",
+    "sex", "occ_class", "deferred_weeks", "escalation", "premium_basis", "status",
     "recovery_basis", "esc_rate", "esc_lapse_factor", "pols_active", "pols_exit",
     "pols_maturity", "inception_rate", "mort_rate", "rec_rate", "mort_rate_sick",
     "lapse_rate_base", "pols_sick_dur_init", "sick_cohorts", "claim_rate_vectors",
-    "pols_sick_surv", "pols_recovery", "pols_death_sick", "claims", "pv_benefits"}
+    "pols_sick", "pols_sick_dur", "pols_sick_surv", "pols_recovery", "pols_death_sick",
+    "claims", "pv_benefits"}
 
 
 def test_no_computed_cell_builds_a_python_object(sec_model):
@@ -4160,9 +4408,11 @@ def test_no_computed_cell_builds_a_python_object(sec_model):
     holds a tuple, a list, a set, a dict, a comprehension, a generator or an f-string, or a
     text other than a kind or a timing (:data:`CODES`) or the name of a column it reads off
     ``model_point()``, but inside a ``raise`` statement, read from the source as the build
-    reads it.  ``try`` is allowed: a power that leaves the floats raises Python's
-    ``OverflowError``, which the cell names.  Every cell of the Space is read, and every
-    exemption is a cell of it.
+    reads it; and none calls a cell of :data:`TUPLE_CELLS`, whose tuples it would sum,
+    index or step, or reads one of :data:`TEXT_COLUMNS`, whose text it would return or
+    compare, each of which must change with what it reads.  ``try`` is allowed: a power
+    that leaves the floats raises Python's ``OverflowError``, which the cell names.  Every
+    cell of the Space is read, and every exemption is a cell of it.
     """
     source = (model_path(SEC) / "Projection" / "__init__.py").read_text(encoding="utf-8")
     built = (ast.Tuple, ast.List, ast.Set, ast.Dict, ast.GeneratorExp, ast.ListComp,
@@ -4189,6 +4439,14 @@ def test_no_computed_cell_builds_a_python_object(sec_model):
             elif (isinstance(inner, ast.Constant) and isinstance(inner.value, str)
                   and inner.value not in CODES and id(inner) not in columns):
                 found.append(f"{node.name}: the text {inner.value!r} at line "
+                             f"{inner.lineno}")
+            elif (isinstance(inner, ast.Call)
+                  and getattr(inner.func, "id", None) in TUPLE_CELLS):
+                found.append(f"{node.name}: reads the tuple cell {inner.func.id} at line "
+                             f"{inner.lineno}")
+            elif (isinstance(inner, ast.Constant) and inner.value in TEXT_COLUMNS
+                  and id(inner) in columns):
+                found.append(f"{node.name}: reads the text column {inner.value!r} at line "
                              f"{inner.lineno}")
     assert read == set(sec_model.Projection.cells)
     assert STATIC_EXEMPT <= read

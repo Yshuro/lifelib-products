@@ -177,8 +177,9 @@ represented, and it rebuilds the benefit and premium from issue at today's flat
   that an anniversary at the valuation date steps them at `t = 0`. The benefit escalates
   for everyone in health and in claim alike, so no cohort carries an amount of its own.
 
-`status` stays, a label no formula reads, and `claim_duration_months` is gone, the
-companion its successor. On a point issued at the valuation date each state holds its
+`status` stays, a label no formula reads, which an extract may leave out, and
+`claim_duration_months` is gone, the companion its successor. On a point issued at the
+valuation date each state holds its
 issue value, and the model is `IP_UK_S`. A model that dropped the columns and recomputed
 them from the References and the status would pass the splice, since `IP_UK_S` and the
 splice recompute them alike, so the tests write each off that path and project through
@@ -188,16 +189,22 @@ it.
 
 `Data.model_point_table()` checks the table as it reads it, the first rule that fails
 raising `ValueError` and naming the missing column or every point it fails on, by its
-`point_id`: the five in-force columns present; no `point_id` twice; a count that is a
-number, 0 or more; a `duration_mth` that is a whole number below `2**53` and no further
-from the valuation date than the horizon, itself a whole number 0 or more below `2**53`; a
-healthy share from 0 to 1 and amounts 0 or more; the codes `IP_UK_S` branches on, and a
-`premium_basis` of `guaranteed`, the one the model prices, which `IP_UK_S` checks in a
-cell no formula calls; an occupation class from 1 to 4 and a deferred period of 4, 8, 13,
-26 or 52 weeks; finite ages below `2**53`; and the history: a policy not yet in force all
-healthy and at its issue amounts, a policy in force 12 months or fewer at its issue
-amounts, a level policy at them always, and an escalating policy at them or above, to half
-a cent, each increase floored at 0.
+`point_id`: the five in-force columns present, and the eleven of `IP_UK_S`'s the projection
+reads, `status`, a label, not among them; no `point_id` twice; a count that is a number, 0
+or more; a `duration_mth` that is a whole number below `2**53` and no further from the
+valuation date than the horizon, itself a whole number 0 or more below `2**53`; a healthy
+share from 0 to 1 and amounts 0 or more; the codes `IP_UK_S` branches on, `status`'s where
+the table has it, and a `premium_basis` of `guaranteed`, the one the model prices, which
+`IP_UK_S` checks in a cell no formula calls; an occupation class from 1 to 4 and a
+deferred period of 4, 8, 13, 26 or 52 weeks; finite ages below `2**53`; and the history
+from below: a policy not yet in force all healthy and at its issue amounts, a policy in
+force 12 months or fewer at its issue amounts, a level policy at them always, and an
+escalating policy at them or above, to half a cent, each increase floored at 0. The
+history's upper bounds read References, so `proj_len()` holds them. Rule 12 refuses one
+state `IP_UK_S` cannot reach either: a policy whose escalation option has lapsed after
+increases refused, its benefit above its benefit at issue and its escalation `none`. The
+model cannot represent a lapsed option, which would keep the increases already given and
+take no more, so such a policy is not one it projects.
 
 `Data.inforce_cohorts()` checks the companion by eight rules, naming the lines, the header
 line 1: the three columns; keys whole and below `2**53`; a point of the table; one row a
@@ -222,8 +229,16 @@ product, not of the table, so the frame applies them, naming the point: a point 
 its policy end date at the valuation date; an issue age outside `issue_age_min` to
 `issue_age_max`, 18 to 59, or an expiry age outside `expiry_age_min` to `expiry_age_max`,
 50 to 70, the bounds the compiled caches will be sized from; and an issue age at or past
-the expiry age. And each Reference off its domain, NaN and both infinities outside every
-one:
+the expiry age. So is an escalation history the contract cannot have, after the
+anniversaries before the valuation date: a benefit above the benefit at issue increased by
+`esc_cap` at each, a premium above the premium at issue increased by `esc_prem_mult` times
+`esc_cap` at each, or a premium outside the range its benefit's increases allow, each
+increase `j` of the benefit's raising the premium by `esc_prem_mult × j`, least when the
+benefit's increases fell at the cap, one part-way and the rest none, most when they were
+equal. Each holds to half a cent, the benefit's own half cent carried into the premium's
+range, for an extract rounded to the cent; a level point, at its amounts at issue, meets
+them, and so does every state `IP_UK_S` reaches. And each Reference off its domain, NaN
+and both infinities outside every one:
 
 | Reference | Domain | Off it |
 |---|---|---|
@@ -271,7 +286,11 @@ to an `IP_UK_S` row reaches them or fails the suite. In the source repository,
 
 A derived row's `policy_count` is the count `IP_UK_S` carries into that month, its
 `pols_if(d)`, and its state and cohorts what S carries there, so the row continues the S
-projection from there. At the shipped 3% no state holds a lapse shocked by escalation, nor
+projection from there. Where S carries no policy into the month, as on a claim on the exit
+basis whose every life has recovered, which the recovery bound's splice set reaches, the
+generator writes a point of no policies, all healthy, its share 1 and no cohort, which
+projects nothing, as S does; no committed row is one. At the shipped 3% no state holds a
+lapse shocked by escalation, nor
 an increase capped, so two rows are read from `IP_UK_S` run under an RPI of their own,
 which the spec's `derived_refs` records, their cohorts read under it too: points 18 and
 19. At the shipped References they step at today's 3% from their next anniversary, and a
@@ -281,16 +300,21 @@ of a generated point is month `t + source_mth` of its S point.
 
 **The in-claim twins.** `IP_UK_S` opens its three `in_claim` points in claim at the
 valuation date with their policy clock restarted there, so they have no policy clock to
-copy (UKLIB-SEC-PLAN.md D8). Each twin is issued `n` whole years before, the least that
-holds the claim, `n = ⌈(z0 + 1) / 12⌉` for a claim at duration `z0`, with `duration_mth =
-12n` and issue age `entry_age − n`: its anniversaries are then S's, a year apart, its
-attained ages S's, and its claim cohort S's. Points 2 and 5 then match S in every count,
-cash flow and check, since their healthy state is empty and only the clock cells differ.
-On point 7 the recovered lives return to health, and lapse at the real policy year's rate,
-8% from the second year, where `IP_UK_S`, its clock restarted, lapses them at the first
-year's 10%: 60 months on, 0.8002 of the policy is in force against `IP_UK_S`'s 0.7791. That
-is a defect of `IP_UK_S`, recorded below, so the tests compare point 7 and its rows under a
-flat lapse table, on which the two clocks lapse alike. An `in_claim` point with RPI
+copy (UKLIB-SEC-PLAN.md D8): S's row records no issue date. Each twin is given one, issued
+`n` whole years before, the least whole number of years that holds the claim,
+`n = ⌈(z0 + 1) / 12⌉` for a claim at duration `z0`, with `duration_mth = 12n` and issue
+age `entry_age − n`: its anniversaries are then S's, a year apart, its attained ages S's,
+and its claim cohort S's. That clock is the generator's choice, not the policy's: a claim
+at duration 0 after a 26-week deferral fits a policy anywhere from 7 to 11 months old.
+Points 2 and 5 then match S in every count, cash flow and check, since their healthy state
+is empty and only the clock cells differ. On point 7 the recovered lives return to health
+and lapse there, and the twin's clock runs a year ahead of S's restarted one: in each year
+S lapses them at a policy year's rate, 10% in its first, where the twin lapses them at the
+next year's, 8% in its second, so that 60 months on 0.8002 of the twin is in force against
+`IP_UK_S`'s 0.7791. Neither is the policy's own clock, which S's row does not record; the
+difference is the clock each model gives the claim, S's restarted one recorded below. So
+the tests compare point 7 and its rows under a flat lapse table, on which the two clocks
+lapse alike, and under which the twin equals S in every cell. An `in_claim` point with RPI
 escalation has no twin: valued on an anniversary, it would escalate at `t = 0`, where
 `IP_UK_S` takes no step, and the generator refuses it, naming the point. No shipped point
 is one.
@@ -329,11 +353,16 @@ The caps are `IP_UK_S`'s since M0: active-life mortality, in-claim mortality and
 `min(q, 1.0)`, the bound second, so that a NaN stays NaN; recovery and lapse
 `min(1.0, w)`, the bound first, `IP_UK_S`'s order, which no NaN reaches, `Data` and
 `proj_len()` holding every rate and Reference they read to a number. At the shipped
-References none binds; the tests bind each, mortality at a factor of 100, inception at an
+References none binds. The tests bind four: mortality at a factor of 100, inception at an
 overlay of 50, the lapse rate at an RPI of 12% under a shock slope of 300 and the recovery
-rate at an overlay of 0.35, which every splice under it crosses. The inception rate's floor
-at 0 is idle: the shipped schedules, one shape scaled, extrapolate to 0 only below age
-13.3, under the youngest issue age.
+rate at an overlay of 0.35, which every splice under it crosses. The in-claim mortality's
+cap no test binds, and none can: `Data` holds the termination table's rates to 0 to 1 and
+no factor multiplies them, so the cap meets only a rate of 1 at most; a test holds its
+order, a NaN rate staying NaN through it. The inception rate's floor at 0 binds on no
+shipped schedule, each, one shape scaled, extrapolating to 0 only below age 13.3, under
+the youngest issue age; but `Data` accepts a schedule that falls below 0 above it, and a
+test splices one, a copy of the inception table whose schedule for variant 9, issued at
+22, reads 0 until 30, where `IP_UK_S` and this model floor it alike.
 
 ## Departures from IP_UK_S
 
@@ -351,7 +380,7 @@ once through a `*_rows` cell that the check and the indexed reader share.
 | Cells | `IP_UK_S` | `IP_UK_SEC` | Why |
 |---|---|---|---|
 | `duration_mth`, `duration` | `t`, `t // 12` | `duration_mth_init() + t`, `duration_mth(t) // 12` | The policy clock, opened from the model point |
-| `proj_len`; `expiry_mth`, new | `12 × (expiry_age − entry_age)`, from issue | `expiry_mth() − duration_mth_init()`, from the valuation date; raises at or past the policy end date, outside the contract's bounds and on a Reference off its domain | The frame starts at the valuation date |
+| `proj_len`; `expiry_mth`, new | `12 × (expiry_age − entry_age)`, from issue | `expiry_mth() − duration_mth_init()`, from the valuation date; raises at or past the policy end date, outside the contract's bounds, on an escalation history past them and on a Reference off its domain | The frame starts at the valuation date |
 | `pols_active`, `sick_cohorts` | from `pols_if_init()` on an `active` cell, into cohort `claim_duration_months + 1` on an `in_claim` one | from `policy_count` split by the healthy share and the companion's cohort shares at `t_entry()`, new business healthy | Lives in health and in claim at once, at every claim duration, are history |
 | `max_dur` | `proj_len() + claim_duration_months() + 1` | `expiry_mth() + 1`, the cover from issue and a cohort of headroom | A claim is no older than its policy; on a future row the horizon would size `z` |
 | `pols_if`, `pols_if_at`, `pols_if_init` | `pols_if_at(t + 1)` read for the roll-forward; `pols_if_init()` the column | `"BEF_NB"` added, `pols_if(t) − pols_new_biz(t)`; the roll-forward and `"AFT_DECR"` read it at `t + 1`; `pols_if_init()` 0 unless in force | Next month's new business is not this month's survivors |
@@ -364,17 +393,20 @@ once through a `*_rows` cell that the check and the indexed reader share.
 | `check_pols_roll_fwd`, `check_states`, `check_states_resid` | tolerance `1e-10 × max(pols_if_init(), 1)`; the identity on `pols_if_init()` | tolerance on `policy_count()`; the identity on `policy_count()` in cover and 0 outside it | `pols_if_init()` is 0 on new business |
 | `inception_rate`, `mort_rate`, `lapse_rate_base`, `lapse_rate` | evaluated before issue by `result_states()`, the lapse lookup raising there | 0.0 outside cover, without a read | No table read at a policy year or an age the policy does not have |
 | `result_pols`, new | — | the counts and amounts behind the reports, row by row | D5's report |
-| `status`, `premium_basis` | branched on; checked by a cell no formula calls | a label no formula reads; refused by `Data` unless `guaranteed` | The shares are read, not decided by status; a reviewable premium is not priced |
+| `status`, `premium_basis` | branched on; checked by a cell no formula calls | a label no formula reads, which an extract may leave out; refused by `Data` unless `guaranteed` | The shares are read, not decided by status; a reviewable premium is not priced |
 
 Every cell outside cover holds 0, False or a vector of zeros, as its docstring says, and
-reads no rate: no count evaluates a rate before issue or from the policy end date.
+reads no rate: no count evaluates a rate before issue or from the policy end date. The
+generator, not the model, departs once more: a month at which `IP_UK_S` carries no policy
+is written as a point of no policies, all healthy, where S's shares are 0 over 0.
 
 **Defects of `IP_UK_S`** found in this work, which `IP_UK_SEC` does not share or, for the
 first, compares around:
 
-- point 7's recovered lives lapse at first-year rates, its policy clock restarted at the
-  valuation date where the policy is in its second year: 0.7791 in force at month 60
-  against the 0.8002 the policy's own clock gives;
+- an `in_claim` cell's policy clock restarts at the valuation date, its row recording no
+  issue date, so point 7's recovered lives lapse at first-year rates in the year after
+  it, whatever the policy's age: 0.7791 in force at month 60, against 0.8002 on its twin,
+  whose clock, the least whole year that holds the claim, runs a year ahead;
 - `premium_basis()` has no caller, so its check never runs, and a point set to
   `reviewable` projects as guaranteed;
 - `annuity_dis()` divides by the amount payable alone, so on a point of more than one
@@ -402,9 +434,15 @@ first, compares around:
   restated in force at months about its events — the anniversaries, 11 to 13; the lapse
   table's last year, 59 to 61; the inception table's pivot ages; the claim-duration years
   of the two claims on the exit basis; the first month and the last two — and the twins of
-  S's claims on their policy clocks, continue the S projection in every cell the two share
-  but `proj_len`, the cohort vector element by element among them, and in both reports, to
-  1e-9 relative with no absolute floor, the residuals at 1e-9. Every assumption that ships
+  S's claims on their policy clocks, continue the S projection in both reports and in every
+  cell the two share, the cohort vector element by element among them, to 1e-9 relative
+  with no absolute floor, the residuals at 1e-9. Four kinds of cell are compared otherwise:
+  `proj_len`, which counts from the valuation date, by the frames ending together; the
+  cumulative counts, which restart on the books, by their increments; away from month 0
+  the discount factor, the present value and the annuity factor, which discount to each
+  model's own start, by a test of their own; and on a row of one of S's claims the clock
+  and cohort cells, by checks that its policy clock is S's plus `12n`, its issue age S's
+  less `n`, and its cohort vector S's, with zeros past S's length. Every assumption that ships
   idle is on: the escalation lapse shock at an RPI of 5%, beside the cycle overlay at 1.25,
   the active-life mortality factor at 1.1, the amount-payable ratio at 0.9 and the claim
   severity at 0.95; and three more sets reach the escalation cap at 12%, the RPI's floor at
@@ -416,7 +454,9 @@ first, compares around:
   runs by default, and the full grid with `UKLIB_SEC_FULL=1`; a test asserts the core
   reaches every branch, opening-state column, month-0 event and side of every `min` and
   `max` the full grid reaches. Point 7 and its rows are spliced under a flat lapse table,
-  and its departure at the shipped table asserted as `IP_UK_S`'s defect.
+  and their difference at the shipped table asserted, the twin's clock a year ahead of
+  S's restarted one; and the inception rate's floor is spliced on a copy of the inception
+  table with a schedule below 0, which no shipped schedule reaches.
 - **Future new business**: issued 1, 12 and 120 months after the valuation date, each S
   point is the S projection moved on, with zeros before issue and no table read there, and
   so is each variant issued 13 months on.
@@ -432,15 +472,20 @@ first, compares around:
 - **Counts**: the counts roll forward through the states; `result_pols()` is S's counts and
   amounts with `pols_new_biz` beside them; multiplying `policy_count` by 2.5, with every
   idle assumption on, multiplies every flow and counted cell, each cohort element among
-  them, each nonzero on some point, and moves no per-policy value; a point restated a
-  month on continues its own flows; and both checks close on ten million policies.
-- **Validation and regeneration**: each malformed row of the table, 64 cases, and of the
-  companion, 23, is refused naming its point or its lines, and naming its label on an
-  extract labelled otherwise, table and companion alike; the horizon is a Reference; a
-  point past its policy end date is refused by `proj_len()`, and `run_sec.py --block`
-  refuses it before printing anything; so is a point outside the contract's bounds, 9
-  cases; each of 23 References off its domain, the value next outside each edge, NaN and
-  both infinities, where each edge is accepted; a value past the floats, 11 cases, where it
+  them, each nonzero on some point, and moves no per-policy value, bit for bit, but the
+  annuity factor, the present value over the count, a ratio of two scaled sums, which
+  agrees to 1e-12; a point restated a month on continues its own flows; and both checks
+  close on ten million policies.
+- **Validation and regeneration**: each malformed row of the table, 75 cases, a missing
+  column among them, and of the companion, 23, is refused naming its point or its lines,
+  and naming its label on an extract labelled otherwise, table and companion alike; the
+  horizon is a Reference; a point past its policy end date is refused by `proj_len()`,
+  and `run_sec.py --block` refuses it before printing anything; so is a point outside the
+  contract's bounds, 9 cases; so is an escalation history past them, each bound a cent
+  outside and accepted half a cent inside, beside two histories the contract cannot have
+  and the committed history under a contract it was not written under, 11 cases; each of
+  23 References off its domain, the value next outside each edge, NaN and both
+  infinities, where each edge is accepted; a value past the floats, 11 cases, where it
   first is; each assumption table with one fault, 42 cases, before a value of it is read;
   the edges of the interface, the shares' tolerance pinned from both sides and an
   escalated amount half a cent below its issue value among them; and every state `IP_UK_S`
@@ -455,25 +500,33 @@ first, compares around:
   restarting on the books; expense inflation on the valuation clock; the RPI's floor, cap
   and lapse shock; the caps on mortality and inception and the lapse rate's bound, in both
   models; a NaN that reaches a cap; a check whose residual is NaN; the values outside
-  cover; the block; an in-force extract; the runner; the static check the C step will make;
-  the docstrings; and the shared tables.
+  cover; the block; an in-force extract, without the generator's columns or `status`; the
+  runner; the static check the C step will make; the docstrings; and the shared tables.
+  The K14 tests open the anchor cell in force at 60 with histories the contract can have:
+  the benefit and premium `IP_UK_S` gives it under an RPI of 5%, valued under today's 3%.
 - **The fingerprint (C2)**: every committed point's `result_cf()` and `result_pols()`,
   frozen when this step ended, in a commit of its own, which every later version must
   reproduce to 1e-12.
 
-The default run takes about three minutes and 1.6 GB.
+The default run takes three to five minutes, by the machine's load: about 190 seconds
+alone, at a peak of 1.4 GB, and 291 seconds measured at a load of 4 to 5.
 
 ## Carried into the C step (M8)
 
 The cohort vector and its rates are tuples here, `IP_UK_S`'s: `sick_cohorts(t)`, one a
-month, and `claim_rate_vectors()`, with `pols_sick_surv`, `pols_recovery` and
-`pols_death_sick` summing over them. The C step restructures them into
-`pols_sick_dur(t, z)`, based at `t_entry()` on a `[point, z]` array of the companion, with
-the sums in `z` order (UKLIB-SEC-PLAN.md §6.3, *C — the restructure*). The static check in
-`tests/test_income_protection_uk_sec.py` names every cell the C step must change, and
-nothing this step wrote adds to `IP_UK_S`'s but the companion's reader and `result_pols`:
-the decodes and the five cells that compare a decoded column with its text, the readers of
-the four tables and of the companion, the tuples and their sums, the claims total and the
-present value. The caches will be sized from the contract: `t` 0..745, a policy issued at
+month, and `claim_rate_vectors()`, with five cells reading them: `pols_sick`, their sum,
+`pols_sick_dur`, an element, and `pols_sick_surv`, `pols_recovery` and `pols_death_sick`,
+the month's flows out of them. The C step restructures them into `pols_sick_dur(t, z)`,
+based at `t_entry()` on a `[point, z]` array of the companion, with the sums in `z` order
+(UKLIB-SEC-PLAN.md §6.3, *C — the restructure*). The static check in
+`tests/test_income_protection_uk_sec.py` names every cell the C step must change, flagging
+besides a Python object or a text each cell that calls a tuple cell or reads a text
+column, and nothing this step wrote adds to `IP_UK_S`'s but the companion's reader and
+`result_pols`: the seven decodes, `sex`, which returns a text, among them, and the five
+cells that compare a decoded column with its text; the readers of the four tables and of
+the companion; the tuples and the five cells that read them; the claims total and the
+present value. The inception table's array read must keep the rate's floor at 0, which the
+floor's splice holds, and the history's bounds in `proj_len()` are loops and powers, no
+Python object. The caches will be sized from the contract: `t` 0..745, a policy issued at
 18 to expire at 70, 624 months, issued 120 months on, and the roll-forward's `t + 1`; and
 `z` 0..625, `max_dur()`, which does not grow with the horizon.

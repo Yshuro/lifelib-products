@@ -131,12 +131,16 @@ def model_point_table():
     :mod:`~.IP_UK_S`'s, but ``pols_if_init``, which ``policy_count`` replaces,
     ``claim_duration_months``, which the claim cohorts replace, and ``row_kind``,
     ``source_policy_id`` and ``source_mth``, which record where the generator took each
-    shipped row from and which no formula reads.
+    shipped row from and which no formula reads.  :mod:`~.IP_UK_S`'s ``status`` is kept as
+    a label, which no formula reads either, so an extract may leave it out.
 
     The checks run over the whole table at once, and the first that fails raises
     ``ValueError``, naming the missing column or every point it fails on:
 
-    1. the five in-force columns are present;
+    1. the five in-force columns are present, and the eleven of :mod:`~.IP_UK_S`'s the
+       projection reads: ``entry_age``, ``sex``, ``occ_class``, ``benefit_mth``,
+       ``earnings_annual``, ``deferred_weeks``, ``expiry_age``, ``escalation``,
+       ``premium_mth``, ``premium_basis`` and ``recovery_basis``;
     2. no ``point_id`` appears twice;
     3. ``policy_count`` is a number, zero or more: the policies in force, healthy and in
        claim, or the policies issued;
@@ -152,10 +156,11 @@ def model_point_table():
     6. the opening state is a number in its range: ``pols_active_init``, a share of the
        count, from 0 to 1; ``benefit_pp_init`` and ``premium_pp_init``, amounts, 0 or
        more;
-    7. ``sex`` is M or F, ``escalation`` RPI or none, ``status`` active or in_claim and
-       ``recovery_basis`` return_to_h or exit, the codes the formulas branch on and the
-       tables are keyed by; and ``premium_basis`` is guaranteed, the one basis the model
-       prices, which :mod:`~.IP_UK_S` checks in a cell no formula calls;
+    7. ``sex`` is M or F, ``escalation`` RPI or none and ``recovery_basis`` return_to_h
+       or exit, the codes the formulas branch on and the tables are keyed by; ``status``,
+       where the table has it, active or in_claim; and ``premium_basis`` is guaranteed,
+       the one basis the model prices, which :mod:`~.IP_UK_S` checks in a cell no formula
+       calls;
     8. ``occ_class`` is a whole number from 1 to 4, a CMI occupation class, and
        ``deferred_weeks`` one of the deferred periods 4, 8, 13, 26 and 52, which key the
        inception table;
@@ -178,12 +183,21 @@ def model_point_table():
     there the opening amount is no history but the contract's own first year's, and an
     extract writes the same number in both columns.  Each rule of the history holds of
     every state :mod:`~.IP_UK_S` reaches, under any References: the relations it states
-    are the contract's.
+    are the contract's.  The history's upper bounds, an increase at most the cap and the
+    premium's increases ``esc_prem_mult`` times the benefit's, read References, which
+    this Space cannot see, so ``Projection.proj_len`` holds them.  Rule 12 refuses one
+    state :mod:`~.IP_UK_S` cannot reach either: a point whose escalation option has lapsed
+    after increases refused, its benefit above its benefit at issue and its escalation
+    none.  The model has no representation of a lapsed option, which would project the
+    increases already given and no more.
     """
     name = model_point_file                                          # noqa: F821
     table = pd.read_csv(input_dir() / name, index_col="point_id")    # noqa: F821
     state_columns = ("pols_active_init", "benefit_pp_init", "premium_pp_init")
-    for column in ("policy_count", "duration_mth", *state_columns):
+    read_columns = ("entry_age", "sex", "occ_class", "benefit_mth", "earnings_annual",
+                    "deferred_weeks", "expiry_age", "escalation", "premium_mth",
+                    "premium_basis", "recovery_basis")
+    for column in ("policy_count", "duration_mth", *state_columns, *read_columns):
         if column not in table.columns:
             raise ValueError(f"{name} has no {column} column")
     repeated = table.index[table.index.duplicated()].unique().tolist()
@@ -231,6 +245,8 @@ def model_point_table():
                           ("premium_basis", ("guaranteed",)),
                           ("status", ("active", "in_claim")),
                           ("recovery_basis", ("return_to_h", "exit"))):
+        if column not in table.columns:                 # status, the one label, only
+            continue
         bad = table.index[~table[column].isin(codes)].tolist()
         if bad:
             raise ValueError(f"{name}: {column} must be {' or '.join(codes)}; it is not "

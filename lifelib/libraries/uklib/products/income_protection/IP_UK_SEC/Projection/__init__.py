@@ -526,7 +526,8 @@ def status():
     population in H and an ``in_claim`` cell's in S at a stated claim duration; here the
     opening state says where each life is, the healthy share :func:`pols_active_init`
     and the claim cohorts :func:`pols_sick_dur_init`, and the row keeps :mod:`~.IP_UK_S`'s
-    label for what it was.  ``Data`` refuses any other code.
+    label for what it was.  ``Data`` refuses any other code where the table has the
+    column; an extract may leave it out, since nothing calls this cell.
     """
     v = model_point()["status"]
     if v not in ("active", "in_claim"):
@@ -757,7 +758,20 @@ def proj_len():
       - ``inflation_rate``, finite, -1 or more: below -1 the inflation factor changes sign
         each year;
       - ``disc_rate``, finite and above -1: the discount factor raises ``1 + disc_rate`` to
-        a negative power, which at -1 divides by zero.
+        a negative power, which at -1 divides by zero;
+    * a point in force whose escalation history the contract cannot have, after the
+      ``n = duration_init()`` anniversaries before the valuation date: a benefit above the
+      benefit at issue increased by ``esc_cap`` at each, a premium above the premium at
+      issue increased by ``esc_prem_mult`` times ``esc_cap`` at each, or a premium outside
+      the range its benefit's increases allow, each increase ``j`` of the benefit's raising
+      the premium by ``esc_prem_mult x j``.  For a given increase of the benefit, the
+      premium has risen least when the benefit's increases fell at the cap, one part-way
+      and the rest none, and most when they were equal, or the reverse for an
+      ``esc_prem_mult`` below 1.  Each bound holds to half a cent, for an extract rounded
+      to the cent, the benefit's own half cent carried into the premium's range.
+      ``Data``'s rule 12 bounds the history from below, at the amounts at issue; these
+      bounds read References, which ``Data`` cannot see.  A level point, whose amounts are
+      those at issue, meets them, and so does every state :mod:`~.IP_UK_S` reaches.
 
     The rules read this Space's References, which ``Data`` cannot see, so they are checked
     here.  They are the contract a compiled model's caches are sized from: a frame of at
@@ -771,13 +785,11 @@ def proj_len():
     through ``float()``.  A value a formula computes past the floats, from References and
     an opening state each in its domain, is refused in the cell where it first is, naming
     the point: the benefit, the premium, the lapse shock, the premiums, the claims, the
-    expenses, the net cash flow and the present value of the benefit.  A power that
-    overflows is not: modelx, as Python, raises ``OverflowError``, with the platform's own
-    message, from the ``**`` itself, before the cell can look at the result - the benefit's
+    expenses, the net cash flow and the present value of the benefit.  So is a power that
+    would pass the largest float, from a rate in its domain but large enough: the benefit's
     and the premium's step to the policy years since the valuation date, the inflation
-    factor and the discount factor, each at a rate in its domain but large enough.  The
-    compiled model will take uslib's M22 form there, Python's own float power where the
-    compiled ``pow`` gives an infinity, so that both engines raise the same error.
+    factor and the discount factor, each refused by name where Python's ``**`` raises
+    ``OverflowError``, naming neither, and the compiled ``pow`` gives an infinity.
     """
     if not (issue_age_min > -9007199254740992.0                       # noqa: F821
             and issue_age_min < 9007199254740992.0                    # noqa: F821
@@ -901,6 +913,71 @@ def proj_len():
     if not (disc_rate > -1.0 and disc_rate <= 1.7976931348623157e308):  # noqa: F821
         raise ValueError(f"point_id {point_id}: disc_rate must be a finite number "  # noqa: F821
                          f"above -1, not {float(disc_rate)}")        # noqa: F821
+    n = duration_init()
+    if n > 0:
+        b0 = benefit_mth()
+        p0 = premium_mth()
+        b = benefit_pp_init()
+        p = premium_pp_init()
+        rise_b = 1.0 + esc_cap                                        # noqa: F821
+        rise_p = 1.0 + esc_prem_mult * esc_cap                        # noqa: F821
+        top_b = b0
+        top_p = p0
+        for _ in range(n):
+            top_b = top_b * rise_b
+            top_p = top_p * rise_p
+        if not b <= top_b + 0.005:
+            raise ValueError(
+                f"point_id {point_id}: benefit_pp_init {b} is above {top_b}, the benefit "  # noqa: F821
+                f"at issue, {b0}, increased by esc_cap, {float(esc_cap)}, at each of the "  # noqa: F821
+                f"{n} anniversaries before the valuation date, by more than half a cent: "
+                f"no increase passes the cap")
+        if not p <= top_p + 0.005:
+            raise ValueError(
+                f"point_id {point_id}: premium_pp_init {p} is above {top_p}, the premium "  # noqa: F821
+                f"at issue, {p0}, increased by esc_prem_mult times esc_cap, "
+                f"{float(esc_prem_mult)} x {float(esc_cap)}, at each of the {n} "  # noqa: F821
+                f"anniversaries before the valuation date, by more than half a cent: no "
+                f"increase passes the cap")
+        if b0 > 0.0 and p0 > 0.0:
+            # The least premium: the benefit's increase at its least, b less half a cent,
+            # made by increases at the cap, one part-way and the rest none, or equal ones.
+            r = max(b - 0.005, b0) / b0
+            try:
+                even = (1.0 + esc_prem_mult * (r ** (1.0 / n) - 1.0)) ** n  # noqa: F821
+            except OverflowError:
+                even = top_p / p0
+            left = r
+            steep = 1.0
+            k = 0
+            while k < n and left > rise_b:
+                left = left / rise_b
+                steep = steep * rise_p
+                k = k + 1
+            steep = steep * (1.0 + esc_prem_mult * (left - 1.0))      # noqa: F821
+            low = p0 * min(even, steep)
+            # The most: the benefit's increase at its most, b and half a cent, the cap's.
+            r = min(b + 0.005, top_b) / b0
+            try:
+                even = (1.0 + esc_prem_mult * (r ** (1.0 / n) - 1.0)) ** n  # noqa: F821
+            except OverflowError:
+                even = top_p / p0
+            left = r
+            steep = 1.0
+            k = 0
+            while k < n and left > rise_b:
+                left = left / rise_b
+                steep = steep * rise_p
+                k = k + 1
+            steep = steep * (1.0 + esc_prem_mult * (left - 1.0))      # noqa: F821
+            high = p0 * max(even, steep)
+            if not (p >= low - 0.005 and p <= high + 0.005):
+                raise ValueError(
+                    f"point_id {point_id}: premium_pp_init {p} is outside {low} to {high}, "  # noqa: F821
+                    f"by more than half a cent: the premiums its benefit's increases "
+                    f"allow, from {b0} to {b} over the {n} anniversaries before the "
+                    f"valuation date, each increase j of the benefit's raising the premium "
+                    f"by esc_prem_mult x j, {float(esc_prem_mult)} x j")  # noqa: F821
     return expiry_mth() - d
 
 
