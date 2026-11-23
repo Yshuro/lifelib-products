@@ -7,10 +7,10 @@
 
 The three input CSVs are read here, **once per model**, and referenced from
 :mod:`~.ULB_UK_SEC.Projection` as ``data``. :mod:`~.ULB_UK_SEC.Projection` is parameterized
-by ``point_id``, so each ``Projection[N]`` is a separate ItemSpace with its own cells
-cache; if the readers lived there, every model point would re-read every file. Holding
-them in an unparameterized Space reads each file once no matter how many policies are
-projected.
+by ``idx``, the position of a model point in the table, so each ``Projection[i]`` is a
+separate ItemSpace with its own cells cache; if the readers lived there, every model point
+would re-read every file. Holding them in an unparameterized Space reads each file once no
+matter how many policies are projected.
 
 Inputs are **external files**: plain CSVs in the model folder's parent directory,
 ``products/unit_linked_bond/``, rather than data stored inside the model. The model
@@ -54,7 +54,8 @@ It refuses, too, what :mod:`~.ULB_UK_S` projects without a word or meets only wh
 projection reaches it: a flag that is not True or False, a code that names no sex or
 withdrawal pattern, a joint bond, which :mod:`~.ULB_UK_S`'s guard on ``lives`` would refuse
 but which no formula of it calls, an age, a premium, a charge or a rate that is not a
-number in its range, and a number of segments that is not a whole number, 1 or more. The
+number in its range, an issue age ``2**53`` or more in size, and a number of segments that
+is not a whole number, 1 or more. The
 checks run in turn, and the first that fails raises, naming the missing column or every
 point that fails it. Whether a bond is still in cover at the valuation date, whether the
 contract issues it, and whether its fund is exhausted there, are rules of the product,
@@ -62,7 +63,8 @@ and ``Projection.proj_len`` checks them, against its own References.
 
 **Each assumption table is checked before a value of it is read.** Its keys are read by
 their value, so an age written ``35.0`` is age 35, and a key that is not whole, text among
-them, is refused; so are keys that repeat or leave a gap the projection would read. A
+them, or is ``2**53`` or more in size, which int64 would hold inexactly, is refused; so are
+keys that repeat or leave a gap the projection would read. A
 value that is blank, text, infinite or outside its range is refused, whether or not a
 point reads it: ``Projection.mort_rate`` caps the annual rate with ``min``, which keeps
 its first argument unless a later one compares smaller, and no comparison with NaN
@@ -79,7 +81,72 @@ point, where :mod:`~.ULB_UK_S`'s lookup raised ``KeyError``.
 
 To swap in a licensed mortality basis, replace ``mort_table.csv`` with a same-schema file,
 or point ``mort_table_file`` at a different name, then clear the cache. No formula
-changes. Replacing a file changes :mod:`~.ULB_UK_S` too, which reads the same one.
+changes. Replacing a file changes :mod:`~.ULB_UK_S` too, which reads the same one. A
+compiled model clears no cache, so there the name is set on a package just imported,
+before anything is read.
+
+**The vectors.** The readers return what the files hold, and no
+:mod:`~.ULB_UK_SEC.Projection` cell but ``model_point``, a reporting cell, reads them.
+The others read the arrays below instead, one element at a time, a model point's
+attribute being the element at its position, ``data.premium()[idx]``. That is what lets
+the model compile to C, as ``basiclife.BasicTerm_SC`` does: each array is a numpy vector
+or table of int64 or float64, which compiles to a typed memoryview, never one of bools,
+objects or text, and each extent of a table is an int.
+
+Text the projection needs is decoded here, into the number it selects, for every point at
+once, as :mod:`~.ULB_UK_S` reads each value: the sex into the mortality table's row, its
+schedule, M 0 and F 1; the withdrawal pattern into its code, none 0, allowance_5pct 1 and
+custom 2, ``Projection``'s References ``NONE``, ``ALLOWANCE_5PCT`` and ``CUSTOM``, which
+stays a code because the anchor pattern's rate is ``Projection.wd_allowance_rate``, a
+Reference this Space cannot read; and the rider's True or False into a 0/1 flag. And each
+table keyed by more than a number becomes an integer-indexed array. The mortality table,
+keyed by sex and age, is tabled by its schedule and padded from age 0, so that the index
+is the attained age; the surrender table is a vector by policy year, padded at year 0:
+
+==============================  =======  ================  =================================
+Cells                           dtype    Shape             From
+==============================  =======  ================  =================================
+point_id()                      int64    [point]           the table's index
+age_at_entry()                  int64    [point]           ``age_at_entry``
+mort_schedule()                 int64    [point]           ``sex``, decoded: M 0, F 1
+premium()                       float64  [point]           ``premium``
+n_segments()                    int64    [point]           ``n_segments``
+db_uplift()                     float64  [point]           ``db_uplift``
+amc_rate()                      float64  [point]           ``amc_rate``
+further_costs_rate()            float64  [point]           ``further_costs_rate``
+tax_provision_rate()            float64  [point]           ``tax_provision_rate``
+wd_pattern_code()               int64    [point]           ``wd_pattern``, decoded: none 0,
+                                                           allowance_5pct 1, custom 2
+wd_rate_custom()                float64  [point]           ``wd_rate_custom``
+oac_rate()                      float64  [point]           ``oac_rate``
+gmdb_flag()                     int64    [point]           ``gmdb_flag``, 0/1
+policy_count()                  float64  [point]           ``policy_count``
+duration_mth()                  int64    [point]           ``duration_mth``
+av_pp_init()                    float64  [point]           ``av_pp_init``
+wd_cum_pp_init()                float64  [point]           ``wd_cum_pp_init``
+allowance_cum_pp_init()         float64  [point]           ``allowance_cum_pp_init``
+mort_age_first()                int      scalar            *mort_table.csv*, checked
+mort_age_last()                 int      scalar            *mort_table.csv*
+mort_table_array()              float64  [schedule, age]   *mort_table.csv*
+surr_last_year()                int      scalar            *surr_table.csv*, checked
+surr_table_array()              float64  [policy year]     *surr_table.csv*
+==============================  =======  ================  =================================
+
+**An array is read by element, never whole,** in this Space as in
+:mod:`~.ULB_UK_SEC.Projection`. The compiler types an array cell as a memoryview only
+once it has seen that every use of it, in either Space, is an element read: one
+``len()``, slice, loop over it or numpy call on it anywhere, and the cell compiles as a
+Python object. So an array derived here reads the table's column, never another cell's
+array, and a width comes from a table.
+
+**What cannot be held is refused** when the table is first read, naming every point or
+line at fault, beside the checks above: a ``point_id`` that is not a whole number below
+``2**53`` in size, when :func:`point_id` is first read, as a refusal reads it; an
+``age_at_entry`` that is not below ``2**53`` in size, by :func:`model_point_table`
+itself; and a mortality age or a surrender policy year ``2**53`` or more in size, by the
+table's check, each of which numpy would otherwise cast to int64 inexactly, or to the
+least int64, without a word. A fraction of a year of age truncates, as
+:mod:`~.ULB_UK_S`'s ``int`` truncates it.
 
 Note what is **not** an input file. The charge rates — the annual management charge, the
 fund-borne further costs, the tax provision rate, the death-benefit uplift — are model
@@ -150,8 +217,10 @@ def model_point_table():
        ``bool("False")`` is True;
     9. ``sex`` is M or F, ``lives`` single and ``wd_pattern`` none, allowance_5pct or
        custom;
-    10. ``age_at_entry`` is a finite number, which :mod:`~.ULB_UK_S` reads with ``int``;
-        ``premium`` and ``wd_rate_custom`` numbers, zero or more; ``db_uplift`` a number,
+    10. ``age_at_entry`` is a finite number, which :mod:`~.ULB_UK_S` reads with ``int``,
+        below ``2**53`` in size, which numpy would otherwise cast to the least int64
+        without a word; ``premium`` and ``wd_rate_custom`` numbers, zero or more;
+        ``db_uplift`` a number,
         1 or more, the death benefit being at least the bid value of units; ``amc_rate``,
         ``further_costs_rate``, ``tax_provision_rate`` and ``oac_rate``, annual rates on the
         fund or shares of its return, from 0 to 1; and ``n_segments`` a whole number, 1 or
@@ -243,6 +312,11 @@ def model_point_table():
         if bad:
             raise ValueError(f"{name}: {column} must be {rule}; it is not at point_id "
                              f"{bad}")
+        if kind == "finite":
+            bad = table.index[~(v.abs() < 2.0 ** 53)].tolist()
+            if bad:
+                raise ValueError(f"{name}: {column} must be below 2**53 in size; it is "
+                                 f"not at point_id {bad}")
     return table
 
 
@@ -298,12 +372,15 @@ def mort_age_first():
     sorts it, so that each refusal names the lines at fault, the header line 1.  The
     rules, each over the whole table, the first that fails raising ``ValueError``:
 
-    1. each age is a whole number, read by its value, so ``35.0`` is 35;
+    1. each age is a whole number, read by its value, so ``35.0`` is 35, and below
+       ``2**53`` in size, which int64 holds exactly, the check made before the ages are
+       cast;
     2. each sex is M or F, the codes the model point table holds;
     3. each sex runs over the table's ages from the first to the last, one row an age,
        none below 0: the projection reads a rate at each attained age a bond reaches.
        Every fault is named in one message: an age below 0 and an age a sex repeats each
-       with its lines, and each span of ages a sex lacks;
+       with its lines, and each span of ages a sex lacks, found from the ages each sex
+       holds, so that a key far from the rest costs no more than the rows;
     4. each ``mort_rate`` is a number from 0 to 1, a probability, read by the cap.
     """
     name = mort_table_file                                           # noqa: F821
@@ -313,6 +390,10 @@ def mort_age_first():
     bad = lines[(~(ages % 1 == 0)).to_numpy()].tolist()
     if bad:
         raise ValueError(f"{name}: age must be a whole number; it is not on line {bad}")
+    bad = lines[(~(ages.abs() < 2.0 ** 53)).to_numpy()].tolist()
+    if bad:
+        raise ValueError(f"{name}: age must be below 2**53 in size; it is not on line "
+                         f"{bad}")
     bad = lines[(~tbl["sex"].isin(["M", "F"])).to_numpy()].tolist()
     if bad:
         raise ValueError(f"{name}: sex must be M or F; it is not on line {bad}")
@@ -331,12 +412,11 @@ def mort_age_first():
         for a in sorted(set(run[run.duplicated()])):
             faults.append(f"sex {s}, age {a} repeats on lines "
                           f"{lines[group & (ages == a).to_numpy()].tolist()}")
-        spans = []
-        for a in sorted(set(range(first, last + 1)) - set(run)):
-            if spans and spans[-1][1] == a - 1:
-                spans[-1][1] = a
-            else:
-                spans.append([a, a])
+        spans, before = [], first - 1
+        for a in [*(int(a) for a in sorted(set(run))), last + 1]:
+            if a > before + 1:
+                spans.append([before + 1, a - 1])
+            before = a
         for low, high in spans:
             faults.append(f"no line holds sex {s}, "
                           + (f"ages {low} to {high}" if high > low else f"age {low}"))
@@ -366,7 +446,8 @@ def surr_last_year():
     ``Projection.surr_rate_base`` asks it before it reads the table, and reads every
     later policy year at it, :mod:`~.ULB_UK_S`'s ``tbl.index.max()``.  The rules, the
     first that fails raising ``ValueError`` and naming the lines, the header line 1: each
-    policy year is a whole number, read by its value; the years run from 1, one row a
+    policy year is a whole number, read by its value, below ``2**53`` in size, which int64
+    holds exactly, the check made before the years are cast; the years run from 1, one row a
     year, without a gap or a repeat, since each policy year from the first is read, every
     fault named in one message, a year below 1 and a repeated one each with its lines, and
     each span the table lacks; and each ``surr_rate`` is a number from 0 to 1, a
@@ -380,6 +461,10 @@ def surr_last_year():
     if bad:
         raise ValueError(f"{name}: policy_year must be a whole number; it is not on line "
                          f"{bad}")
+    bad = lines[(~(years.abs() < 2.0 ** 53)).to_numpy()].tolist()
+    if bad:
+        raise ValueError(f"{name}: policy_year must be below 2**53 in size; it is not on "
+                         f"line {bad}")
     keys = years.astype("int64")
     faults = []
     for y in sorted(set(keys[keys < 1])):
@@ -389,12 +474,13 @@ def surr_last_year():
         faults.append(f"policy_year {y} repeats on lines "
                       f"{lines[(keys == y).to_numpy()].tolist()}")
     held = sorted(set(keys[keys >= 1]))
-    spans = []
-    for y in sorted(set(range(1, max(held, default=1) + 1)) - set(held)):
-        if spans and spans[-1][1] == y - 1:
-            spans[-1][1] = y
-        else:
-            spans.append([y, y])
+    spans, before = [], 0
+    for y in (int(y) for y in held):
+        if y > before + 1:
+            spans.append([before + 1, y - 1])
+        before = y
+    if not held:
+        spans.append([1, 1])
     for low, high in spans:
         faults.append("no line holds " + (f"policy years {low} to {high}" if high > low
                                           else f"policy_year {low}"))
@@ -409,6 +495,224 @@ def surr_last_year():
     return int(held[-1])
 
 
+def point_id():
+    """The ``point_id`` of every model point, in table order: int64 [point].
+
+    ``Projection`` is indexed by position, ``idx``, so this is how a projection names its
+    point: ``Projection.point_id()`` is the element at ``idx``, and every refusal quotes
+    it.  Read by value, so that a label written ``3.0`` is 3, and refused when it is first
+    read, naming every label at fault, where one is not a whole number, text and a blank
+    among them, or is ``2**53`` or more in size.  A projection that names no point reads
+    no label, and runs.
+    """
+    table = model_point_table()
+    labels = pd.to_numeric(pd.Series(table.index), errors="coerce")  # noqa: F821
+    bad = table.index[~(labels % 1 == 0).to_numpy()].tolist()
+    if bad:
+        raise ValueError(f"{model_point_file}: point_id must be a whole "  # noqa: F821
+                         f"number; {bad} is not")
+    bad = table.index[~(labels.abs() < 2.0 ** 53).to_numpy()].tolist()
+    if bad:
+        raise ValueError(f"{model_point_file}: point_id must be below 2**53 "  # noqa: F821
+                         f"in size; {bad} is not")
+    return labels.to_numpy(dtype="int64")
+
+
+def age_at_entry():
+    """The issue age (ALB) of every model point: int64 [point].
+
+    Read as :mod:`~.ULB_UK_S` reads it, ``int`` of the number, which truncates a
+    fraction; :func:`model_point_table` has refused one that is not a finite number below
+    ``2**53`` in size.
+    """
+    ages = pd.to_numeric(model_point_table()["age_at_entry"])        # noqa: F821
+    return ages.to_numpy(dtype="int64")
+
+
+def mort_schedule():
+    """The mortality table's row for every model point, its sex decoded: int64 [point].
+
+    The point's ``sex``, the key :mod:`~.ULB_UK_S` reads *mort_table.csv* by beside the
+    age, numbered as :func:`mort_table_array` tables the two: M 0 and F 1.
+    :func:`model_point_table` has refused any other code, so every point has one of the
+    two, and each is a whole run of the table's ages, which :func:`mort_age_first` checks.
+    """
+    sexes = model_point_table()["sex"].tolist()
+    out = np.zeros(len(sexes), dtype="int64")                        # noqa: F821
+    for i in range(len(sexes)):
+        out[i] = ("M", "F").index(sexes[i])
+    return out
+
+
+def premium():
+    """The single premium of every model point: float64 [point]."""
+    return pd.to_numeric(model_point_table()["premium"]).to_numpy(   # noqa: F821
+        dtype="float64")
+
+
+def n_segments():
+    """The segments each model point's bond is written in: int64 [point].
+
+    :func:`model_point_table` has refused one that is not a whole number, 1 or more,
+    below ``2**53``.
+    """
+    segments = pd.to_numeric(model_point_table()["n_segments"])      # noqa: F821
+    return segments.to_numpy(dtype="int64")
+
+
+def db_uplift():
+    """The death-benefit uplift of every model point: float64 [point]."""
+    return pd.to_numeric(model_point_table()["db_uplift"]).to_numpy(  # noqa: F821
+        dtype="float64")
+
+
+def amc_rate():
+    """The annual management charge of every model point: float64 [point]."""
+    return pd.to_numeric(model_point_table()["amc_rate"]).to_numpy(  # noqa: F821
+        dtype="float64")
+
+
+def further_costs_rate():
+    """The fund-borne further costs of every model point: float64 [point]."""
+    return pd.to_numeric(                                            # noqa: F821
+        model_point_table()["further_costs_rate"]).to_numpy(dtype="float64")
+
+
+def tax_provision_rate():
+    """The tax provision rate of every model point: float64 [point]."""
+    return pd.to_numeric(                                            # noqa: F821
+        model_point_table()["tax_provision_rate"]).to_numpy(dtype="float64")
+
+
+def wd_pattern_code():
+    """The withdrawal pattern of every model point, as its code: int64 [point].
+
+    none 0, allowance_5pct 1 and custom 2, the ``Projection`` References ``NONE``,
+    ``ALLOWANCE_5PCT`` and ``CUSTOM``, in the order :mod:`~.ULB_UK_S`'s ``wd_rate``
+    compares the text.  A code, not the rate it selects, because the anchor pattern's rate
+    is ``Projection.wd_allowance_rate``, a Reference this Space cannot read.
+    :func:`model_point_table` has refused any other pattern, naming the point.
+    """
+    patterns = model_point_table()["wd_pattern"].tolist()
+    out = np.zeros(len(patterns), dtype="int64")                     # noqa: F821
+    for i in range(len(patterns)):
+        out[i] = ("none", "allowance_5pct", "custom").index(patterns[i])
+    return out
+
+
+def wd_rate_custom():
+    """The custom withdrawal rate of every model point: float64 [point]."""
+    return pd.to_numeric(model_point_table()["wd_rate_custom"]).to_numpy(  # noqa: F821
+        dtype="float64")
+
+
+def oac_rate():
+    """The ongoing adviser charge of every model point: float64 [point]."""
+    return pd.to_numeric(model_point_table()["oac_rate"]).to_numpy(  # noqa: F821
+        dtype="float64")
+
+
+def gmdb_flag():
+    """Whether each model point elects the GMDB rider: int64 [point], 1 or 0.
+
+    :mod:`~.ULB_UK_S` reads the column with ``bool``.  :func:`model_point_table` has
+    refused a value whose text is not True or False, in either case, so pandas reads the
+    column as booleans, and each is decoded by its text, element by element, which is
+    ``bool`` of each wherever the table reads.  An int, not a bool: a numpy bool array
+    compiles as a Python object, not a memoryview.
+    """
+    flags = model_point_table()["gmdb_flag"].tolist()
+    out = np.zeros(len(flags), dtype="int64")                        # noqa: F821
+    for i in range(len(flags)):
+        out[i] = 1 if str(flags[i]).lower() == "true" else 0
+    return out
+
+
+def policy_count():
+    """The ``policy_count`` of every model point: float64 [point].
+
+    :func:`model_point_table` has checked it: a number, zero or more.
+    """
+    return pd.to_numeric(model_point_table()["policy_count"]).to_numpy(  # noqa: F821
+        dtype="float64")
+
+
+def duration_mth():
+    """The ``duration_mth`` of every model point, in whole months: int64 [point].
+
+    :func:`model_point_table` has checked that each is whole and below ``2**53`` in size,
+    so a duration written as ``30.0`` is the int 30.
+    """
+    months = pd.to_numeric(model_point_table()["duration_mth"])      # noqa: F821
+    return months.to_numpy(dtype="int64")
+
+
+def av_pp_init():
+    """The unit fund per policy the frame opens with, of every model point: float64
+    [point]."""
+    return pd.to_numeric(model_point_table()["av_pp_init"]).to_numpy(  # noqa: F821
+        dtype="float64")
+
+
+def wd_cum_pp_init():
+    """The withdrawals and adviser charges since issue per policy, of every model point:
+    float64 [point]."""
+    return pd.to_numeric(model_point_table()["wd_cum_pp_init"]).to_numpy(  # noqa: F821
+        dtype="float64")
+
+
+def allowance_cum_pp_init():
+    """The 5% allowance accrued since issue per policy, of every model point: float64
+    [point]."""
+    return pd.to_numeric(                                            # noqa: F821
+        model_point_table()["allowance_cum_pp_init"]).to_numpy(dtype="float64")
+
+
+def mort_table_array():
+    """The mortality rates by schedule and attained age, from *mort_table.csv*: float64
+    [schedule, age].
+
+    Row ``s`` is a sex, M 0 and F 1, as :func:`mort_schedule` numbers each point's, and
+    column ``a`` the attained age ``a``: padded from age 0, as ``basiclife.BasicTerm_SC``'s
+    ``mort_table_array`` pads its table, so that the index **is** the age, and
+    :func:`mort_age_last` plus one wide.  The ages below the table's first, 0 to 17 as
+    shipped, hold NaN, which no formula reads: ``Projection.mort_rate`` refuses an age
+    outside the table, naming the point.  Asks :func:`mort_age_first` first, which checks
+    the table: each sex runs over every age from the first to the last, one row an age, so
+    no cell between them is padding, and each rate is a number from 0 to 1.  Read from the
+    one read of the file, :func:`mort_table_rows`, which :mod:`~.ULB_UK_S`'s reader sorts.
+    """
+    mort_age_first()
+    last = mort_age_last()
+    tbl = mort_table_rows()
+    ages = pd.to_numeric(tbl["age"]).to_numpy(dtype="int64")         # noqa: F821
+    rates = pd.to_numeric(tbl["mort_rate"]).to_numpy(dtype="float64")  # noqa: F821
+    sexes = tbl["sex"].tolist()
+    out = np.full((2, last + 1), np.nan)                             # noqa: F821
+    for i in range(len(sexes)):
+        out[("M", "F").index(sexes[i]), ages[i]] = rates[i]
+    return out
+
+
+def surr_table_array():
+    """The annual surrender rate by policy year, from *surr_table.csv*: float64 [policy
+    year].
+
+    Element ``y`` is the rate of policy year ``y``, from 1 to :func:`surr_last_year`, which
+    checks the table first: the years run from 1 without a gap.  Element 0, no policy year,
+    holds NaN, which no formula reads: ``Projection.surr_rate_base`` reads a policy year of
+    cover, 1 or more, at most the last, which it reads every later year at, as
+    :mod:`~.ULB_UK_S` does.
+    """
+    last = surr_last_year()
+    tbl = surr_table().reset_index()
+    years = pd.to_numeric(tbl["policy_year"]).to_numpy(dtype="int64")  # noqa: F821
+    rates = pd.to_numeric(tbl["surr_rate"]).to_numpy(dtype="float64")  # noqa: F821
+    out = np.full(last + 1, np.nan)                                  # noqa: F821
+    out[years] = rates
+    return out
+
+
 # ---------------------------------------------------------------------------
 # References
 
@@ -421,3 +725,5 @@ surr_table_file = "surr_table.csv"
 future_horizon_mth = 120
 
 pd = ("Module", "pandas")
+
+np = ("Module", "numpy")

@@ -120,7 +120,8 @@ MODELS = {
     # Savings
     "ULB_UK_S": ("products/unit_linked_bond/ULB_UK_S", {**MONTHLY, "age_basis": ALB}),
     "ULB_UK_SEC": ("products/unit_linked_bond/ULB_UK_SEC",
-                   {**MONTHLY, "age_basis": ALB, "twin": "ULB_UK_S", "stage": "E"}),
+                   {**MONTHLY, "age_basis": ALB, "twin": "ULB_UK_S", "stage": "EC",
+                    "param": "idx", "reporting": ("lives", "sex", "wd_pattern")}),
     "WP_UK_S": ("products/with_profits/WP_UK_S", {**MONTHLY, "age_basis": ANB}),
     # Annuity
     "PA_UK_S": ("products/pension_annuity/PA_UK_S", {**MONTHLY, "age_basis": ALB}),

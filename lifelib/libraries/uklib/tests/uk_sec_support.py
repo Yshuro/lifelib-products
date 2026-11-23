@@ -1338,6 +1338,21 @@ _ULB_STATE = {
 }
 
 
+def _ulb_claims_total(name, args):
+    """``ULB_UK_S``'s ``claims`` keys as ``ULB_UK_SEC`` takes them at stage ``"EC"`` (R9,
+    R12).
+
+    S's ``claims(t, kind=None)`` is cached under ``(t, None)`` where S asks for the total,
+    which its ``check_unit_funding_resid`` does: SEC's code ``ALL``, so ``None`` is mapped to
+    ``"ALL"``, which :func:`codes` then turns into the int, as it turns S's kinds and
+    timings.  Every other key, and every other cell's arguments, pass as they are, SEC's
+    own codes among them, where a comparison of two SEC models passes it SEC's keys.
+    """
+    if name == "claims" and len(args) == 2 and args[1] is None:
+        return (args[0], "ALL")
+    return args
+
+
 SEC_SPECS: dict[str, SecSpec] = {
     # Term's state is seven columns (_TERM_STATE above) and the waiver pipeline, a long
     # companion, wop_pipeline_sec.csv, keyed (point_id, lag), lag the months before the
@@ -1503,13 +1518,24 @@ SEC_SPECS: dict[str, SecSpec] = {
     # at the end of month 322, S projects month 323 and SEC does not; the conventions' T1
     # compares that twin over the months the two frames run alike (TWIN_FRAME_ENDS there),
     # and test_unit_linked_bond_uk_sec.py the rest.
+    # At stage EC (M10), S's timings and kinds are SEC's int codes, BEF_NB to AFT_WD and
+    # DEATH to SURRENDER, which codes maps, and S's claims(t, None) keys, the kind=None
+    # total its check_unit_funding_resid caches, are SEC's code ALL: the spec's
+    # twin_arg_map, _ulb_claims_total, maps None to "ALL", and codes maps it and the rest.
+    # S's label accessors stay S's, called by reporting and T1 alone, sex() now refusing
+    # any value but M and F as lives() and wd_pattern() refuse theirs: each returns the
+    # column of its own name.
     #
-    # Phase 2 sizes its caches from the contract:
-    #   t 0..1,345: a bond issued at issue_age_min, 18, whose fund lasts to omega_age, 120,
-    #     a cover of 1,224 months, issued future_horizon_mth, 120 months, after the valuation
-    #     date, a frame of 1,344 months, its month after, and the roll-forward's t + 1 there.
-    # proj_len() refuses an issue age below issue_age_min, one at or past omega_age, and a
-    # bond in force whose fund is at or below depletion_threshold, each naming the point.
+    # Phase 2 sizes its caches from the contract (spec_sec.py holds each derivation):
+    #   t 0..1,345: a bond issued at issue_age_min, 18, whose fund lasts to omega_age_max,
+    #     120, a cover of 1,224 months, issued future_horizon_mth, 120 months, after the
+    #     valuation date, a frame of 1,344 months, its month after, and the roll-forward's
+    #     t + 1 there;
+    #   y 2..102, the policy years whose openings the fund, the withdrawals since issue and
+    #     the count are blocked by, to the policy year of the longest cover's last month.
+    # proj_len() refuses an issue age below issue_age_min, an omega_age above
+    # omega_age_max, one at or past omega_age, and a bond in force whose fund is at or below
+    # depletion_threshold, each naming the point.
     "ULB_UK_SEC": SecSpec(
         twin="ULB_UK_S",
         column_map={"uf_init": "av_pp_init"},
@@ -1519,6 +1545,7 @@ SEC_SPECS: dict[str, SecSpec] = {
         twin_state=_ULB_STATE,
         exempt=frozenset({"av_init_pp"}),
         derived_refs={(4, 66): {"fund_return": 0.0}},
+        twin_arg_map=_ulb_claims_total,
     ),
 }
 

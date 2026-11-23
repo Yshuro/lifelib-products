@@ -8,9 +8,13 @@ Cells Descriptions
 
 .. autofunction:: model_point
 
+.. autofunction:: point_id
+
 .. autofunction:: age_at_entry
 
 .. autofunction:: sex
+
+.. autofunction:: mort_schedule
 
 .. autofunction:: lives
 
@@ -27,6 +31,8 @@ Cells Descriptions
 .. autofunction:: tax_provision_rate
 
 .. autofunction:: wd_pattern
+
+.. autofunction:: wd_pattern_code
 
 .. autofunction:: wd_rate
 
@@ -88,7 +94,11 @@ Cells Descriptions
 
 .. autofunction:: av_pp
 
+.. autofunction:: av_pp_py
+
 .. autofunction:: av_pp_at
+
+.. autofunction:: av_pp_grown_refusal
 
 .. autofunction:: av_per_segment_pp
 
@@ -114,6 +124,8 @@ Cells Descriptions
 
 .. autofunction:: wd_cum_pp
 
+.. autofunction:: wd_cum_pp_py
+
 .. autofunction:: allowance_cum_pp
 
 .. autofunction:: excess_gain_pp
@@ -121,6 +133,8 @@ Cells Descriptions
 .. autofunction:: pols_if
 
 .. autofunction:: pols_if_at
+
+.. autofunction:: pols_if_py
 
 .. autofunction:: pols_new_biz
 
