@@ -114,6 +114,8 @@ MODELS = {
     "WOL_UK_S": ("products/whole_of_life/WOL_UK_S", {**MONTHLY, "age_basis": ALB}),
     # Savings
     "ULB_UK_S": ("products/unit_linked_bond/ULB_UK_S", {**MONTHLY, "age_basis": ALB}),
+    "ULB_UK_SEC": ("products/unit_linked_bond/ULB_UK_SEC",
+                   {**MONTHLY, "age_basis": ALB, "twin": "ULB_UK_S", "stage": "E"}),
     "WP_UK_S": ("products/with_profits/WP_UK_S", {**MONTHLY, "age_basis": ANB}),
     # Annuity
     "PA_UK_S": ("products/pension_annuity/PA_UK_S", {**MONTHLY, "age_basis": ALB}),
@@ -145,6 +147,7 @@ INPUT_FILES = {
         "lapse_table.csv", "model_point_table_sec.csv", "mort_table.csv",
         "select_factor_table.csv", "wop_pipeline_sec.csv"},
     "ULB_UK_S": {"model_point_table.csv", "mort_table.csv", "surr_table.csv"},
+    "ULB_UK_SEC": {"model_point_table_sec.csv", "mort_table.csv", "surr_table.csv"},
     "WOL_UK_S": {"lapse_table.csv", "model_point_table.csv", "mort_table.csv"},
     "WP_UK_S": {"lapse_table.csv", "model_point_table.csv", "mort_table.csv"},
 }

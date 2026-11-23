@@ -965,6 +965,36 @@ TWIN_FLOORS = {
     "Term_UK_SEC": {"check_fib_ledger_resid": 1e-9},
 }
 
+# The SEC models whose frame may end before their S twin's on a new-business twin, by
+# design, each with the cells that hold where a frame ends, and its reason.  Where it does,
+# T1 compares the twin, cell by cell, at every argument S cached before the SEC frame's
+# last month, the months the two frames run alike, and leaves those cells, and the months
+# from that one on, to the product module, which compares them and states the departure on
+# each S point.  Where the two frames end together, as on every other twin, T1 compares the
+# whole frame and every cell, as it does for every other model.
+#
+# ULB_UK_SEC ends a bond's frame at the first month its fund opens at or below
+# depletion_threshold, where ULB_UK_S ends it at the first that opens on exactly 0 or less
+# (UKLIB-SEC-PLAN.md §6.6, §9 item 10).  ULB_UK_S's point 3 closes its fund on a rounding of
+# 3.4e-15 at the end of month 322, and projects month 323 on it, which ULB_UK_SEC does not;
+# so in month 322 its survivors leave the SEC frame, and carry on in S's.
+TWIN_FRAME_ENDS = {
+    "ULB_UK_SEC": frozenset({"fund_exhaust_mth", "proj_len", "result_cf", "result_uf"}),
+}
+
+
+def _before_month(s_proj, last, arg_map):
+    """An ``arg_map`` that skips every key S cached at month ``last`` or later, the month
+    passed as ``t``, and maps the rest as ``arg_map`` does, the identity where ``None``."""
+    def mapped(name, args):
+        params = s_proj.cells[name].parameters
+        if "t" in params and params.index("t") < len(args):
+            t = args[params.index("t")]
+            if isinstance(t, int) and not isinstance(t, bool) and t >= last:
+                return None
+        return args if arg_map is None else arg_map(name, args)
+    return mapped
+
 
 @sec_family
 def test_new_business_twins_agree_with_s_cell_by_cell(name, model, twin_model, read_log):
@@ -997,7 +1027,10 @@ def test_new_business_twins_agree_with_s_cell_by_cell(name, model, twin_model, r
 
     Every cell is compared to 1e-9 relative with no absolute floor, so that an error in a
     count below 1e-9, which late in a long frame is most of what is in force, fails: but
-    for :data:`TWIN_FLOORS`, the cells a product names with its floor and its reason.
+    for :data:`TWIN_FLOORS`, the cells a product names with its floor and its reason.  And
+    a twin whose SEC frame ends before S's, by a design :data:`TWIN_FRAME_ENDS` names, is
+    compared over the months before the SEC frame's last, where the two run alike, its
+    product module holding the rest.
 
     At least one pair must be compared. Every S table has new-business points, so an empty
     comparison means the twins have gone missing, and a check that compares nothing is how
@@ -1041,11 +1074,15 @@ def test_new_business_twins_agree_with_s_cell_by_cell(name, model, twin_model, r
             s_proj = projection(twin_model, s_key)
             sweep(s_proj)
             sec_proj = projection(model, sec_key)
-            found = twin_mismatches(s_proj, sec_proj, exempt=exempt | set(floors),
-                                    arg_map=arg_map, codes=codes(sec_proj), atol=0.0)
+            pair_map, pair_exempt = arg_map, exempt
+            if name in TWIN_FRAME_ENDS and sec_proj.proj_len() < s_proj.proj_len():
+                pair_map = _before_month(s_proj, sec_proj.proj_len() - 1, arg_map)
+                pair_exempt = exempt | TWIN_FRAME_ENDS[name]
+            found = twin_mismatches(s_proj, sec_proj, exempt=pair_exempt | set(floors),
+                                    arg_map=pair_map, codes=codes(sec_proj), atol=0.0)
             for cell, floor in floors.items():
                 others = set(s_proj.cells) - {cell}
-                found += twin_mismatches(s_proj, sec_proj, exempt=others, arg_map=arg_map,
+                found += twin_mismatches(s_proj, sec_proj, exempt=others, arg_map=pair_map,
                                          codes=codes(sec_proj), atol=floor)
             mismatches += [f"point {point_id}: {m}" for m in found]
     finally:

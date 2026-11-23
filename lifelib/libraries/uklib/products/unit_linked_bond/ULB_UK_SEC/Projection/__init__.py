@@ -3,24 +3,23 @@
 # It can be imported as a Python module, but functions defined herein
 # are model formulas and may not be executable as standard Python.
 
-"""The by-policy projection of the :mod:`~.ULB_UK_S` model.
+"""The by-policy projection of the :mod:`~.ULB_UK_SEC` model; holds all formulas.
 
 The Space is parameterized by ``point_id``, so ``Projection[1]`` is an ItemSpace
-projecting model point 1::
+projecting model point 1, the twin of :mod:`~.ULB_UK_S`'s anchor cell, issued at the
+valuation date::
 
-    >>> Projection[1].result_cf()          # the worked-example anchor cell
-    >>> Projection.point_id = 2            # the accumulation cell, no withdrawals
+    >>> Projection[1].result_cf()          # one row per month from the valuation date
+    >>> Projection[1].result_pols()        # the counts behind it
+    >>> Projection.point_id = 7            # or switch the default
 
-``t`` counts **policy months** from issue and is **0-based**: ``t = 0`` is the first
-month, month ``t`` runs from time ``t`` to time ``t + 1``, and the frame is
-``range(proj_len())`` — ``t = 0, 1, ..., proj_len() - 1``. The policy year is the
-1-based contractual label ``policy_year(t) = t // 12 + 1``. The notes index the unit
-fund ``UF(t)`` at **time** ``t`` — the start of month ``t``, with ``UF(0) = P`` — and so
-does :func:`av_pp`: ``av_pp(t)`` is the notes' ``UF(t)``, the column their
-worked-example table prints first, and the notes' ``UF(t + 1)``, the fund after the
-month's cancellations, is ``av_pp_at(t, "AFT_WD")``, which equals ``av_pp(t + 1)``.
-The in-force count is indexed the same way: ``pols_if(t)`` is the notes' ``l(t)``, the
-count at time ``t`` with ``l(0) = 1``.
+This is :mod:`~.ULB_UK_S` taught to run in force at a valuation date, as lifelib's
+``basiclife.BasicTerm_SE`` extends ``basiclife.BasicTerm_S``. A formula of
+:mod:`~.ULB_UK_S` is rewritten where it depends on where the projection starts, where it
+must answer for a month outside cover, or where it read a policy month as ``t``; every
+other formula is :mod:`~.ULB_UK_S`'s own, the cap on mortality, ``min(q, 1.0)``, among
+them. ``products/unit_linked_bond/model-sec.md`` lists the rewritten cells with the reason
+for each.
 
 .. rubric:: Input data
 
@@ -33,38 +32,122 @@ input can be edited or swapped without rewriting the model. This follows
 *inside* the model through modelx's IOSpec machinery.
 
 The consequence worth knowing: **the model is not portable on its own.** Copying the
-``ULB_UK_S`` folder without its parent's CSVs produces a model that reads and then fails
-on first evaluation.
+``ULB_UK_SEC`` folder without its parent's CSVs produces a model that reads and then
+fails on first evaluation.
 
-Each table has a filename Reference and a reader Cells, both on :mod:`~.ULB_UK_S.Data`,
-reached here through the ``data`` Reference:
+The two assumption tables are the files :mod:`~.ULB_UK_S` reads, read in place; the model
+point table is this model's own. Each table has a filename Reference and a reader Cells,
+both on :mod:`~.ULB_UK_SEC.Data`, reached here through the ``data`` Reference:
 
 ======================  ==============================  ==========================
 Reference               Cells                           File
 ======================  ==============================  ==========================
-model_point_file        data.model_point_table()        model_point_table.csv
+model_point_file        data.model_point_table()        model_point_table_sec.csv
 mort_table_file         data.mort_table()               mort_table.csv
 surr_table_file         data.surr_table()               surr_table.csv
 ======================  ==============================  ==========================
+
+.. rubric:: Two clocks
+
+``t`` counts months from the **valuation date**, 0-based, the clock
+``basiclife.BasicTerm_SE`` runs on: ``t = 0`` is the valuation month for every model
+point, however old the bond, month ``t`` runs from time ``t`` to time ``t + 1``, and the
+frame is ``t = 0 .. proj_len() - 1``, where :func:`proj_len` counts the months from the
+valuation date to the end of the bond's projection: the limiting age, or the month its
+fund is exhausted, whichever comes first. Row ``t`` is the same month for every point, so
+the frames of a block line up and sum row by row.
+
+``duration_mth(t)`` counts **policy months**, the months the bond has been in force at
+time ``t``: ``duration_mth(t) = duration_mth_init() + t``, where
+:func:`duration_mth_init` is read from the model point — positive for a bond in force at
+the valuation date, 0 for one issued at it, ``-k`` for one issued ``k`` months later, at
+most ten years later. Everything contractual reads it: the completed policy years
+``duration(t) = duration_mth(t) // 12``, the 1-based ``policy_year(t) = duration(t) + 1``,
+which is the insurance year of the tax allowance, the attained age
+``age(t) = age_at_entry() + duration(t)``, and through them the mortality and surrender
+tables, the surrender bands, the allowance-exhaustion step from policy year 21 and the
+twenty years of 5% allowance. The limiting age and the fund's exhaustion are policy
+months too, :func:`horizon_mths` and :func:`fund_exhaust_mth`.
+
+One input reads the valuation clock instead: expense inflation,
+``inflation_factor(t) = (1 + inflation_rate) ** (t // 12)``, stepping on each
+anniversary of the valuation date, so that the maintenance charge is in valuation-date
+pounds for every point alike. Acquisition is charged per policy issued, in the issue
+month, and not inflated, as in ``basiclife.BasicTerm_SE``. The fund return and the return
+shock are flat References, the same on either clock.
+
+On a point issued at ``t = 0`` the two clocks coincide and this model computes what
+:mod:`~.ULB_UK_S` computes: every cell the two share agrees at every argument
+:mod:`~.ULB_UK_S` evaluates in its sweep, but for those whose meaning changed —
+``pols_if_init``, now the count already in force at the valuation date, and
+``model_point``, a row of another table — and :mod:`~.ULB_UK_S`'s ``av_init_pp``, which
+:func:`av_pp_init` replaces. The one exception by design is where the fund runs out
+(*The fund runs out, and the frame ends there*, below).
+``tests/test_model_conventions_uk.py`` asserts it cell by cell.
+
+.. rubric:: Counts
+
+``pols_if(t)`` is the count that weights row ``t``: ``pols_if_at(t, "BEF_DECR")``, the
+count carried in from ``t - 1`` (``"BEF_NB"``) plus the month's new business,
+:func:`pols_new_biz`, before the month's decrements. A point in force at the valuation
+date opens with :func:`pols_if_init`, its ``policy_count``; one issued at or after the
+valuation date opens with none, and takes its ``policy_count`` as new business in its
+issue month. The recursion's base is :func:`t_entry`, the first month on the books, and
+nothing is counted outside the frame: before issue every count, and so every cash flow,
+is zero, and the survivors of the frame's last month leave as :func:`pols_maturity`.
+:mod:`~.ULB_UK_S`'s three timings are kept, ``"BEF_DECR"``, ``"BEF_SURR"`` and
+``"AFT_DECR"``, and ``"BEF_NB"`` is the one running in force adds.
+
+.. rubric:: The opening state
+
+A bond in force carries, beside its count, what :mod:`~.ULB_UK_S` carries into the month
+a point is valued at, each per policy, so that the count is the one weight on every flow,
+and each measured at the valuation instant, the start of month 0, before any month-0
+event:
+
+* :func:`av_pp_init`, the unit fund, the bid value of units: :mod:`~.ULB_UK_S`'s
+  ``uf_init`` renamed, holding ``av_pp`` of the month it opens, so the fund at outset on a
+  bond not yet in force, its premium as shipped;
+* :func:`wd_cum_pp_init`, the withdrawals and adviser charges cancelled since issue,
+  which carry on the allowance-relevant total and open the guaranteed minimum death
+  benefit, ``max(0, P - wd_cum_pp_init)``.
+
+Each is history, read from the model point, never recomputed from a Reference, which is
+an assumption from the valuation date on: a fund return or a withdrawal rate changed at
+the valuation date reaches back over no month already run. The 5% allowance accrued, the
+excess gain and the allowance-exhaustion step are closed forms on the policy year; the
+premium, the charges, the withdrawal pattern and the rider are columns fixed at issue.
 
 .. rubric:: Naming
 
 Cells names follow lifelib's ``savings.CashValue_SE`` and ``basiclife.BasicTerm_S``
 wherever those models have an analogue, and the account-value vocabulary the U.S. models
 in this library settled on — ``av_pp_at(t, timing)`` for the fund read at a point inside
-the month, ``check_av_roll_fwd`` for its identity. The technical notes use compact
-symbols instead. The mapping is:
+the month, ``check_av_roll_fwd`` for its identity. What running in force adds is named as
+``basiclife.BasicTerm_SE`` names it: ``duration_mth`` read from the model point,
+``policy_count``, ``pols_new_biz``, ``pols_if_at``'s ``"BEF_NB"`` timing, ``is_active``
+and ``result_pols``. ``duration_mth_init``, the policy months completed at the valuation
+date, takes ``UL_US_S``'s name; ``t_entry`` is this model's own, and each opening-state
+cell is the cell it opens with ``_init`` added. The technical notes use compact symbols
+instead. The mapping is:
 
 =========================  ==============================  ==========================
 Notes symbol               Cells                           Meaning
 =========================  ==============================  ==========================
-t                          (the cells argument)            Policy month, 0-based
-y = t // 12 + 1            policy_year(t)                  Policy year containing month t
+t                          (the cells argument)            Months from the valuation
+(none)                     duration_mth(t)                 Policy months at time t
+(none)                     duration_mth_init()             Policy months at t = 0
+(none)                     t_entry()                       First month on the books
+(none)                     is_active(t)                    Whether month t is in cover
+y = duration + 1           policy_year(t)                  Policy year containing month t
 a                          age(t)                          Attained age (ALB)
-(none)                     duration(t)                     Completed policy years, t // 12
-(none)                     duration_mth(t)                 Months elapsed at time t, = t
+(none)                     duration(t)                     Completed policy years
+(none)                     horizon_mths()                  Policy month of omega_age
+(none)                     fund_exhaust_mth()              Policy month the fund is out
+(frame)                    proj_len()                      Months to the frame's end
 P                          premium()                       Single premium
 UF(t)                      av_pp(t)                        Unit fund at time t (start of month t)
+UF at t = 0                av_pp_init()                    Unit fund at the valuation
 UF_g(t), UF'(t), UF(t+1)   av_pp_at(t, timing)             The fund inside month t
 (per segment)              av_per_segment_pp(t)            The fund divided by the segments
 g                          fund_return                     Annual gross fund return
@@ -90,12 +173,16 @@ w_base(y)                  surr_rate_base(t)               Table surrender rate
 M_perf(t)                  perf_factor(t)                  Performance lapse multiplier
 M_allow(y)                 allow_factor(t)                 Allowance-exhaustion step
 w_ann(y,t), w_m(t)         surr_rate(t), surr_rate_mth(t)  Surrender rates applied
-l(t)                       pols_if(t)                      In force at time t (start of month t)
-l(t+1) (AFT_DECR)          pols_if_at(t, timing)           BEF_DECR / BEF_SURR / AFT_DECR
+(none)                     policy_count()                  Policies the point stands for
+l(t)                       pols_if(t)                      Count weighting month t
+(l at t = 0)               pols_if_init()                  Count in force at t = 0
+(none)                     pols_new_biz(t)                 Policies issued in month t
+l(t+1) (AFT_DECR)          pols_if_at(t, timing)           The within-month counts
 (none)                     pols_death(t)                   Deaths in month t
 (none)                     pols_surr(t)                    Surrenders at the end of month t
-(none)                     pols_maturity(t)                In force when the projection ends
+(none)                     pols_maturity(t)                In force when the frame ends
 CumWD(n)                   wd_cum_pp(t)                    Cumulative withdrawals + charges
+(CumWD at t = 0)           wd_cum_pp_init()                Withdrawn since issue, t = 0
 CumAllow(n)                allowance_cum_pp(t)             Cumulative 5% allowable element
 ExcessGain(n)              excess_gain_pp(t)               Excess-event gain, policyholder side
 E(t)                       expenses(t)                     Acquisition + maintenance
@@ -107,9 +194,10 @@ AMC$ x l                   amc_charges(t)                  AMC margin collected
 FC$ x l                    further_costs(t)                Further costs, a pass-through
 TX x l                     tax_provisions(t)               Tax provision, a pass-through
 NUCF(t)                    net_cf(t)                       Non-unit cash flow, income positive
+(none)                     result_pols()                   The counts, month by month
 =========================  ==============================  ==========================
 
-Four names needed care.
+Four names needed care in :mod:`~.ULB_UK_S`, and keep their reasons here.
 
 ``UF`` is the unit fund, and the library calls a policyholder-owned fund
 :func:`av_pp_at`. The house name wins, because one concept must not carry two names
@@ -131,8 +219,8 @@ against the fund.
 
 ``pols_maturity`` is borrowed from the term models and, as in ``WOL_UK_S``, means
 something different: a bond has no maturity date, so this is the population still in
-force when the projection ends. It pays nothing and exists only so the roll-forward
-closes in the last month.
+force when the frame ends. It pays nothing and exists only so the roll-forward closes in
+the last month.
 
 .. rubric:: The unit fund recursion, and the order the charges come in
 
@@ -147,7 +235,11 @@ daily through the unit price, so it is levied on the post-growth, pre-cancellati
 Charging it on ``UF(t)`` instead, or after the withdrawal, moves the margin by about
 half a month's growth or withdrawal — small in one month and systematic over decades.
 :func:`av_pp_at` exposes all three points so the ordering is inspectable rather than
-buried in one expression.
+buried in one expression. :func:`av_pp` writes the same three steps of the month before
+inline, in the same order, so that the fund's chain of calls from month ``t`` back to
+:func:`t_entry` is one cell a month, where :mod:`~.ULB_UK_S`'s runs through
+:func:`av_pp_at` at three timings, four cells a month: a compiled model runs that chain
+on the C stack.
 
 .. rubric:: What is margin and what is a pass-through
 
@@ -193,16 +285,39 @@ listed pitfall. It is carried because it drives behaviour: the allowance-exhaust
 in :func:`allow_factor` raises surrender from policy year 21, once twenty years of
 allowance have been drawn.
 
-.. rubric:: The fund runs out, and the projection ends there
+.. rubric:: The fund runs out, and the frame ends there
 
 A 5% withdrawal against a 5% gross return is not sustainable once the tax provision and
 the charges are taken: the fund drifts down and, on the deterministic base run, reaches
 zero inside the annuitant's lifetime. :func:`wd_pp` caps the withdrawal at what the fund
-can pay, so the fund never goes negative, and :func:`proj_len` ends the projection at
+can pay, so the fund never goes negative, and :func:`proj_len` ends the frame at
 :func:`fund_exhaust_mth` — a bond with no units has no liability, no margin and nothing
 left to project. That is a product fact worth seeing rather than an artefact to hide:
 the anchor cell's fund is exhausted around policy year 30, and every margin the insurer
 was counting on stops there.
+
+Where the withdrawal cap binds, the month closes the fund on a subtraction that is 0 in
+exact arithmetic, which in floating point leaves 0 or a rounding of either sign, floored
+at 0; with an adviser or rider charge beside the withdrawal it is a rounding as often as
+not. :mod:`~.ULB_UK_S` ends its frame at the first month the fund opens on 0 or less, so a
+rounding above 0 runs it on, a month or several, charging expenses against a fund of
+1e-15, and whether it does turns on the fund's last bit. This model ends it at the first
+month the fund opens at or below ``depletion_threshold``, half a pence **[std]**, which
+the rounding never reaches and a fund in use is never near, as ``VA_US_SEC`` tests its
+depletion: a recorded departure from :mod:`~.ULB_UK_S`'s exact test of 0. Its effect on
+each of :mod:`~.ULB_UK_S`'s six points:
+
+* points 1, 4 and 5, on which nothing but the withdrawal is cancelled, close their funds
+  on 0 exactly at the end of policy month 352, and their frames, 353 months, are S's;
+* points 2 and 6 never exhaust their funds, and run to the limiting age, 660 and 780
+  months, as in S;
+* point 3, whose adviser charge leaves a rounding of 3.4e-15 at the end of month 322, is
+  projected for 323 months where :mod:`~.ULB_UK_S` projects 324: its survivors, 0.0194
+  policies, mature in month 322 rather than carry on, and its net cash flow differs by
+  S's month 323 alone, £0.18 of maintenance against an AMC of 6e-20.
+
+A bond in force whose fund is at or below the threshold at the valuation date has nothing
+to project, and :func:`proj_len` refuses it.
 
 .. rubric:: Behaviour is the whole valuation
 
@@ -220,6 +335,14 @@ sit on the base table, both **[std]** and both inert in the deterministic base r
 
 There is no interest-sensitive dynamic lapse and no paid-up state: the product is single
 premium, so there is no premium obligation to stop.
+
+.. rubric:: The contract's bounds
+
+What running in force adds is the contract's own bounds, which :func:`proj_len` holds a
+point to: an issue age of ``issue_age_min``, 18, or more, the youngest the mortality table
+rates, though the product admits issue from 3 months; cover from issue below
+``omega_age``; and a bond still inside it at the valuation date. ``Data`` bounds future
+new business by ``future_horizon_mth``, 120 months.
 """
 
 from modelx.serialize.jsonvalues import *
@@ -236,7 +359,11 @@ _spaces = []
 # Cells
 
 def model_point():
-    """The selected model point as a Series."""
+    """The selected model point, its row of ``model_point_table_sec.csv``, as a Series.
+
+    A row of this model's own table, which carries the in-force interface beside
+    :mod:`~.ULB_UK_S`'s columns. Each attribute a formula reads has an accessor below.
+    """
     return data.model_point_table().loc[point_id]                    # noqa: F821
 
 
@@ -246,7 +373,8 @@ def age_at_entry():
     ALB is chosen to index directly into the single-year-of-age table used as the
     **[std]** mortality proxy.  The anchor documents quote contractual age limits next
     birthday; the difference is immaterial to a product whose death strain is a tenth of
-    a percent of the fund.
+    a percent of the fund.  The age at issue, not at the valuation date: ``age(0)`` is
+    the attained age there.
     """
     return int(model_point()["age_at_entry"])
 
@@ -257,7 +385,11 @@ def sex():
 
 
 def lives():
-    """``single``.  Joint last-death bonds are out of scope in this composite."""
+    """``single``.  Joint last-death bonds are out of scope in this composite.
+
+    :mod:`~.ULB_UK_S`'s guard, which no formula calls, so that a joint row would project
+    as single: ``Data`` refuses any other value as the table is read.
+    """
     v = model_point()["lives"]
     if v != "single":
         raise ValueError("invalid lives")
@@ -268,7 +400,9 @@ def premium():
     """P: the single premium, net of any set-up adviser charge.
 
     Top-ups are excluded from the base projection: a top-up is a new model point with
-    its own premium, allowance clock and segments **[std]**.
+    its own premium, allowance clock and segments **[std]**.  The premium paid at issue,
+    on a bond in force as on new business: the GMDB guarantees it, less what has been
+    drawn, and the 5% allowance accrues on it.
     """
     return float(model_point()["premium"])
 
@@ -331,7 +465,7 @@ def wd_pattern():
     ``allowance_5pct`` is the anchor: 5% of premium a year, taken monthly.  That is the
     pattern every fetched key features document leads with, it sits inside the 7.5%
     product cap, and adviser charges consume the same tax allowance - so rational
-    take-up gravitates to 5% inclusive of charges.
+    take-up gravitates to 5% inclusive of charges.  ``Data`` refuses any other value.
     """
     v = model_point()["wd_pattern"]
     if v not in ("none", "allowance_5pct", "custom"):
@@ -343,7 +477,8 @@ def wd_rate():
     """The annual regular withdrawal as a fraction of the premium.
 
     Zero on ``none``, 5% on ``allowance_5pct``, and the model point's own rate on
-    ``custom``.
+    ``custom``.  The election from the valuation date on: what was withdrawn before it is
+    :func:`wd_cum_pp_init`.
     """
     p = wd_pattern()
     if p == "none":
@@ -373,35 +508,124 @@ def gmdb_flag():
     return bool(model_point()["gmdb_flag"])
 
 
-def av_init_pp():
-    """The unit fund at outset; the premium on a new-business cell."""
-    return float(model_point()["uf_init"])
+def policy_count():
+    """The number of policies the model point stands for, its ``policy_count`` column.
+
+    A point in force at the valuation date counts the bonds in force then, before any
+    month-0 event; any other point counts the bonds it issues. Either way the count
+    enters the projection once: as :func:`pols_if_init` for the first, as
+    :func:`pols_new_biz` in the issue month for the second. It is the one weight on every
+    flow: every opening-state column is per policy.
+    """
+    return float(model_point()["policy_count"])
 
 
 def pols_if_init():
-    """Initial number of policies in force; 1.0 on a single-policy model point."""
-    return float(model_point()["pols_if_init"])
+    """Policies in force at the valuation date, before any month-0 event.
+
+    ``policy_count()`` for a point already in force at ``t = 0``
+    (``duration_mth_init() > 0``), and 0 for one issued at or after it, whose policies
+    enter through :func:`pols_new_biz` in the issue month instead, as in
+    ``basiclife.BasicTerm_SE``. So on a point issued at ``t = 0`` this is 0, and
+    ``pols_if(0)`` is the issued count.
+    """
+    return policy_count() if duration_mth_init() > 0 else 0.0
+
+
+def duration_mth_init():
+    """Completed policy months at the valuation date, the ``duration_mth`` column.
+
+    The bond's age in months at ``t = 0``: 66 for a bond issued five and a half years
+    before the valuation date, 0 for one issued at it, and -13 for one to be issued 13
+    months after it, which ``Data`` admits up to ``future_horizon_mth`` months ahead. It
+    is read as ``basiclife.BasicTerm_SE`` reads it, and is the one fact the policy clock
+    takes from the model point.
+    """
+    return int(model_point()["duration_mth"])
+
+
+def av_pp_init():
+    """UF at the valuation date: the unit fund per policy entering month 0.
+
+    :mod:`~.ULB_UK_S`'s ``uf_init`` column, renamed: the bid value of units at the start of
+    the month the frame opens, before its growth, charges and cancellations, so on a bond
+    in force at the valuation date :mod:`~.ULB_UK_S`'s ``av_pp`` of that month. History, read
+    from the model point: what the fund has earned and borne since issue, which no
+    ``fund_return`` set at the valuation date reaches back to. On a bond not yet in force
+    it keeps :mod:`~.ULB_UK_S`'s meaning, the fund at outset, the premium on every shipped
+    point. Above 0, which ``Data`` requires; on a bond in force above
+    ``depletion_threshold``, which :func:`proj_len` requires, a bond whose fund is
+    exhausted having nothing to project.
+    """
+    return float(model_point()["av_pp_init"])
+
+
+def wd_cum_pp_init():
+    """CumWD at the valuation date: the withdrawals and adviser charges since issue.
+
+    :func:`wd_cum_pp`'s value entering month 0, per policy: every withdrawal and adviser
+    charge cancelled at the end of a month before the valuation date, the total the tax
+    allowance is measured against. History, read from the model point, not recomputed
+    from the withdrawal pattern, which is the election from the valuation date on: a
+    withdrawal taken once, or a pattern changed since issue, is in it. It also opens the
+    guaranteed minimum death benefit, :func:`gmdb_guarantee_pp`, ``max(0, P -
+    wd_cum_pp_init)``. 0 on a bond not yet in force, which ``Data`` requires.
+    """
+    return float(model_point()["wd_cum_pp_init"])
+
+
+def t_entry():
+    """The first month the bond is on the books: ``max(0, -duration_mth_init())``.
+
+    0 for a point in force at the valuation date or issued at it, ``k`` for one issued
+    ``k`` months later. It is the base of every recursion: the count, the unit fund and
+    the withdrawals since issue open there, from the opening state, and none reads a
+    month before it. :func:`fund_exhaust_mth` scans the fund from it.
+    """
+    return max(0, -duration_mth_init())
+
+
+def is_active(t):
+    """Whether month t is inside cover: issued, and short of the limiting age.
+
+    ``0 <= duration_mth(t) < horizon_mths()``. False before issue and from the month the
+    bond reaches ``omega_age``. Outside cover the unit fund is 0, and so is every flow,
+    charge and rate read at a policy year or an attained age the bond does not have.
+
+    It reads the limiting age alone, not :func:`proj_len`: the frame also ends where the
+    fund runs out, which :func:`fund_exhaust_mth` finds by projecting the fund, and the
+    fund reads this. So in the months after the fund is exhausted and before the limiting
+    age, a bond is in cover and holds no units; there the counts are 0, because the frame
+    has ended.
+    """
+    return 0 <= duration_mth(t) < horizon_mths()
 
 
 def duration(t):
-    """Completed policy years at the start of month t: ``t // 12``; 0 in the first year."""
-    return t // 12
+    """Completed policy years at the start of month t: ``duration_mth(t) // 12``.
+
+    0 throughout the first policy year, and negative before issue.
+    """
+    return duration_mth(t) // 12
 
 
 def duration_mth(t):
-    """Months elapsed from issue at the start of month t; equal to t.
+    """Completed policy months at the start of month t, the **policy** clock.
 
-    ``t`` is 0-based and counts from issue, so the identity is trivial - the cells
-    exists so the monthly models in this library share one vocabulary.
+    ``duration_mth_init() + t``: ``t`` counts months from the valuation date and
+    ``duration_mth(t)`` months from issue, and the two move together. A closed form,
+    where ``basiclife.BasicTerm_SE`` adds one a month by recursion: the same numbers,
+    without a call chain as long as the frame. Negative before issue.
     """
-    return t
+    return duration_mth_init() + t
 
 
 def policy_year(t):
-    """y = t // 12 + 1: the 1-based policy year containing month t; 1 for t = 0..11.
+    """y = duration(t) + 1: the 1-based policy year containing month t.
 
-    A contractual label derived from the 0-based ``t``, never the index itself.  Also
-    the **insurance year** the tax allowance is tracked against.
+    A contractual label derived from the policy clock, never the index itself.  Also
+    the **insurance year** the tax allowance is tracked against.  It is 0 or less before
+    issue, where nothing reads a table or a band by it.
     """
     return duration(t) + 1
 
@@ -412,43 +636,124 @@ def age(t):
 
 
 def horizon_mths():
-    """The mortality horizon in months: ``12 x (omega_age - age_at_entry)``.
+    """The mortality horizon in policy months: ``12 x (omega_age - age_at_entry)``.
 
-    The number of months from issue to the limiting age, so the last month before it
-    is ``t = horizon_mths() - 1``.
+    The policy month at which the bond reaches the limiting age, on the policy clock, so
+    the last month of cover is ``duration_mth(t) = horizon_mths() - 1``. :func:`proj_len`
+    counts from the valuation date instead.
     """
     return 12 * (omega_age - age_at_entry())                         # noqa: F821
 
 
 def fund_exhaust_mth():
-    """The time at which the unit fund has been drawn to nothing.
+    """The policy month at which the unit fund has been drawn to nothing.
 
-    The first ``t`` with ``av_pp(t) == 0``.  A time point, not a row: the fund is zero at
-    the start of month ``t``, having been
-    cancelled to nothing at the end of month ``t - 1``, so ``t`` is also the number of
-    months the bond carried units.  ``horizon_mths() + 1`` if it never is.  A 5%
-    withdrawal against a 5% gross return is not sustainable once the tax provision and
+    The first month on the books whose opening fund ``av_pp(t)`` is at or below
+    ``depletion_threshold``, as a policy month, ``duration_mth(t)``: the fund is
+    exhausted at the start of that month, having been cancelled to nothing at the end of
+    the month before, so the month is also the number of months the bond carried units
+    from issue.  ``horizon_mths() + 1`` if the fund never is, before the limiting age.  A
+    5% withdrawal against a 5% gross return is not sustainable once the tax provision and
     the charges are taken, so on the deterministic base run the anchor cell's fund does
-    run out - around policy year 30 - and every margin the insurer was counting on stops
-    there.  Searched rather than solved, so that any withdrawal pattern and charge basis
-    resolves.
+    run out - at policy month 353, in policy year 30 - and every margin the insurer was
+    counting on stops there.  Searched rather than solved, so that any withdrawal pattern
+    and charge basis resolves.
+
+    The search is one loop in this cell, over the months from :func:`t_entry` to the
+    limiting age, ascending, so that it reads each month's fund once that of the month
+    before is known: the far read R2 admits, as ``DIA_US_SEC``'s survival to its payout
+    date is, and the only one it makes, the policy month being formed from
+    :func:`duration_mth_init` rather than read.  It starts at :func:`t_entry`, not at 0,
+    because a bond issued later holds no fund before its issue month, which a search from
+    0 would read as exhausted at once.
+
+    :mod:`~.ULB_UK_S` tests the fund against 0, so that a month the withdrawal cap closes
+    on a rounding above 0, rather than on 0, runs the frame on; the threshold ends it
+    there (the Space docstring).
     """
-    last = horizon_mths()
-    for t in range(last):
-        if av_pp(t) <= 0.0:
-            return t
-    return last + 1
+    end = horizon_mths() - duration_mth_init()
+    for t in range(t_entry(), end):
+        if av_pp(t) <= depletion_threshold:                          # noqa: F821
+            return duration_mth_init() + t
+    return horizon_mths() + 1
 
 
 def proj_len():
-    """The number of projected months: the mortality horizon, or the fund running out.
+    """The number of months from the valuation date to the end of the frame.
 
-    The exclusive end of the frame, which is ``t = 0, 1, ..., proj_len() - 1``.  A bond
-    has no maturity date, so the horizon is a limiting age - but a bond with no units has
-    no liability, no margin and nothing left to project, so the projection also ends when
-    the fund does: the last month is the one whose closing fund is zero.
+    ``min(horizon_mths(), fund_exhaust_mth()) - duration_mth_init()``: the limiting age
+    or the fund's exhaustion, whichever comes first, counted from the valuation date
+    rather than from issue.  353 for the anchor cell issued at ``t = 0``, whose fund is
+    exhausted at policy month 353; 287 for it valued at month 66; and the frame from
+    issue plus ``k`` for a bond issued ``k`` months after the valuation date.  The frame is
+    ``t = 0, 1, ..., proj_len() - 1``; ``proj_len()`` is its exclusive end and the row
+    count of :func:`result_cf`.  A bond has no maturity date, so the horizon is a limiting
+    age - but a bond with no units has no liability, no margin and nothing left to
+    project, so the projection also ends when the fund does: the last month is the one
+    whose closing fund is exhausted.
+
+    These raise here, naming the point, rather than project nothing or a frame the
+    contract does not have, each checked in this order:
+
+    * one issued below ``issue_age_min``, 18, the youngest age the mortality table rates,
+      though the product admits issue from 3 months;
+    * one issued at or past ``omega_age``, which has no cover from issue;
+    * one whose cover had ended by the valuation date, at or past the limiting age, which
+      an in-force extract should not carry;
+    * one read under a Reference outside its domain, each named: ``fund_return`` that is
+      not a number, -1 or more, below which its monthly rate, ``(1 + g)^(1/12) - 1``, has
+      no real value, and ``inflation_rate`` the same, below which the inflation factor
+      changes sign each year; ``mort_be_factor``, ``wd_allowance_rate`` and
+      ``allowance_years`` that are not numbers, zero or more, below which a mortality
+      rate, a withdrawal or the allowance accrued is negative; and ``depletion_threshold``
+      that is not a finite number, zero or more, under which no fund would ever count as
+      exhausted;
+    * one in force at the valuation date whose fund, :func:`av_pp_init`, is at or below
+      ``depletion_threshold``: the fund is exhausted, and the bond has nothing to project;
+    * one not yet in force whose fund at outset, :func:`av_pp_init`, is at or below it,
+      which holds nothing to project from its issue month.
+
+    The rules read this Space's References, which ``Data`` cannot see, so they are
+    checked here.  They are the contract a compiled model's caches are sized from: a
+    frame of at most ``omega_age - issue_age_min`` years and the future horizon, and ages
+    from 18 to ``omega_age`` on the mortality table.  Every report reads this cell first,
+    and so does every count, so no point outside them is projected.
     """
-    return min(horizon_mths(), fund_exhaust_mth())
+    x = age_at_entry()
+    if x < issue_age_min:                                            # noqa: F821
+        raise ValueError(f"point_id {point_id}: the issue age, {x}, is below "  # noqa: F821
+                         f"issue_age_min, {int(issue_age_min)}")     # noqa: F821
+    if horizon_mths() <= 0:
+        raise ValueError(f"point_id {point_id}: the issue age, {x}, is at or past "  # noqa: F821
+                         f"omega_age, {int(omega_age)}: the bond has no cover")  # noqa: F821
+    d = duration_mth_init()
+    if d >= horizon_mths():
+        raise ValueError(
+            f"point_id {point_id}: duration_mth {d} is at or past the end of cover, "  # noqa: F821
+            f"policy month {horizon_mths()}, the limiting age {int(omega_age)}")  # noqa: F821
+    for ref, value, low, rule in (
+            ("fund_return", fund_return, -1.0, "a number, -1 or more"),  # noqa: F821
+            ("inflation_rate", inflation_rate, -1.0, "a number, -1 or more"),  # noqa: F821
+            ("mort_be_factor", mort_be_factor, 0.0, "a number, zero or more"),  # noqa: F821
+            ("wd_allowance_rate", wd_allowance_rate, 0.0,            # noqa: F821
+             "a number, zero or more"),
+            ("allowance_years", allowance_years, 0.0, "a number, zero or more"),  # noqa: F821
+            ("depletion_threshold", depletion_threshold, 0.0,        # noqa: F821
+             "a number, zero or more")):
+        if not (value >= low and value < float("inf")):
+            raise ValueError(f"point_id {point_id}: {ref} must be {rule}, not "  # noqa: F821
+                             f"{float(value)}")
+    if av_pp_init() <= depletion_threshold:                          # noqa: F821
+        if d > 0:
+            raise ValueError(
+                f"point_id {point_id}: av_pp_init is {av_pp_init()}, at or below "  # noqa: F821
+                f"depletion_threshold, {float(depletion_threshold)}: a bond in force whose "  # noqa: F821
+                f"fund is exhausted at the valuation date has nothing to project")
+        raise ValueError(
+            f"point_id {point_id}: av_pp_init, the fund at outset, is {av_pp_init()}, "  # noqa: F821
+            f"at or below depletion_threshold, {float(depletion_threshold)}: the bond "  # noqa: F821
+            f"holds nothing to project from its issue month")
+    return min(horizon_mths(), fund_exhaust_mth()) - d
 
 
 def fund_return_mth():
@@ -457,7 +762,9 @@ def fund_return_mth():
     Deterministic in the base run.  The insurer's margin is proportional to the unit
     fund, so the liability model inherits full market beta on the margin stream: a 20%
     market fall cuts the margin base by about a fifth and, through
-    :func:`perf_factor`, raises surrender at the same time.
+    :func:`perf_factor`, raises surrender at the same time.  A flat Reference, the same on
+    the valuation clock as on the policy clock: :func:`proj_len` refuses a ``fund_return``
+    below -1, where this has no real value.
     """
     return (1.0 + fund_return) ** (1.0 / 12.0) - 1.0                 # noqa: F821
 
@@ -479,9 +786,24 @@ def mort_rate(t):
     population mortality being heavier than insured-lives experience.  Nearly irrelevant
     to this product unless the guaranteed minimum death benefit rider is enabled.
     Capped at 1, the bound second, ``min(q, 1.0)``, so that a missing input, a NaN, stays
-    NaN, where ``min(1.0, q)`` would read it as 1.
+    NaN, where ``min(1.0, q)`` would read it as 1: :mod:`~.ULB_UK_S`'s cap, and no
+    departure.  ``Data`` refuses a table rate that is not a number from 0 to 1, and
+    :func:`proj_len` a ``mort_be_factor`` that is not a number, zero or more, so that the
+    product is never below 0; above 1 the cap binds, and every policy in force at the
+    start of the month dies in it.
+
+    Zero outside cover, where ``age(t)`` is not an age the bond reaches.  Inside it, this
+    is the one cell that reads ``Data.mort_table``, at ``min(age(t), omega_age)`` as
+    :mod:`~.ULB_UK_S` reads it.  An age outside the table's, ``Data.mort_age_first`` to
+    ``Data.mort_age_last``, raises ``ValueError``, naming the point and the age, where
+    :mod:`~.ULB_UK_S`'s lookup raised ``KeyError``.
     """
+    if not is_active(t):
+        return 0.0
     x = min(age(t), omega_age)                                       # noqa: F821
+    if x < data.mort_age_first() or x > data.mort_age_last():        # noqa: F821
+        raise ValueError(f"point_id {point_id}: mort_table.csv has no rate at "  # noqa: F821
+                         f"attained age {x}")
     return min(float(data.mort_table().loc[                          # noqa: F821
         (sex(), x), "mort_rate"]) * mort_be_factor, 1.0)             # noqa: F821
 
@@ -494,11 +816,17 @@ def mort_rate_mth(t):
 def surr_rate_base(t):
     """w_base(y): the table annual full-surrender rate in month t **[std]**.
 
-    2 / 3 / 5 / 8 / 10 percent by band.  Policy years beyond the table take its last row.
+    2 / 3 / 5 / 8 / 10 percent by band, read at :func:`policy_year` ``(t)`` on the policy
+    clock.  Policy years beyond the table take its last row, ``Data.surr_last_year``, as
+    :mod:`~.ULB_UK_S`'s ``tbl.index.max()`` does.  Zero outside cover, where the month has
+    no policy year: before issue :func:`policy_year` is 0 or less, where
+    :mod:`~.ULB_UK_S`'s lookup raised ``KeyError``.
     """
-    tbl = data.surr_table()                                          # noqa: F821
+    if not is_active(t):
+        return 0.0
     y = policy_year(t)
-    return float(tbl.loc[min(y, int(tbl.index.max())), "surr_rate"])
+    return float(data.surr_table().loc[                              # noqa: F821
+        min(y, data.surr_last_year()), "surr_rate"])                 # noqa: F821
 
 
 def return_12m(t):
@@ -508,7 +836,8 @@ def return_12m(t):
     the trailing return equals the reference and the multiplier is 1.  Keeping the shock
     separate from ``fund_return`` is deliberate: it moves the *behavioural* driver
     without disturbing the fund path, which is what makes the multiplier testable in
-    isolation.  A stochastic or scenario projection would replace this with a path.
+    isolation.  A stochastic or scenario projection would replace this with a path.  Two
+    flat References, so the window reads no month before the valuation date.
     """
     return fund_return + return_shock                                # noqa: F821
 
@@ -528,21 +857,41 @@ def allow_factor(t):
     After twenty insurance years the cumulative 5% allowance is fully drawn under the
     anchor withdrawal pattern, and continued withdrawals then generate immediate
     excess-event gains - which pushes policyholders towards full surrender or
-    advice-driven restructuring.
+    advice-driven restructuring.  Read at the policy year on the policy clock, and 0
+    outside cover, where the month has no policy year and no surrender.
     """
+    if not is_active(t):
+        return 0.0
     return allow_step if policy_year(t) > allowance_years else 1.0   # noqa: F821
 
 
 def surr_rate(t):
     """w_ann: the annual full-surrender rate applied in month t.
 
-    ``min(cap, w_base x M_perf x M_allow)``.  A surrender costs the insurer nothing at
-    the point of exit - the surrender value is the bid value of units, cancelled, with no
-    penalty - but truncates the entire future charge stream, which is why persistency
-    rather than mortality dominates this product's value.
+    ``min(cap, w_base x M_perf x M_allow)``, in :mod:`~.ULB_UK_S`'s order: the bound on
+    surrender is no cap on mortality.  A surrender costs the insurer nothing at the point
+    of exit - the surrender value is the bid value of units, cancelled, with no penalty -
+    but truncates the entire future charge stream, which is why persistency rather than
+    mortality dominates this product's value.
+
+    The rate is a probability.  ``Data`` holds the table's rates to one, but the
+    multipliers and the cap are References, under which the product can leave 0 to 1:
+    past 1 the monthly rate, ``1 - (1 - w)^(1/12)``, has no real value, which
+    :mod:`~.ULB_UK_S` projects as a complex number, and below 0 the surrenders add
+    policies.  So a rate outside 0 to 1, or one that is not a number, raises
+    ``ValueError`` here, in the month it first leaves, naming the point, the month, the
+    rate and the References that make it.  0 outside cover.
     """
-    return min(surr_rate_cap,                                        # noqa: F821
-               surr_rate_base(t) * perf_factor(t) * allow_factor(t))
+    w = min(surr_rate_cap,                                           # noqa: F821
+            surr_rate_base(t) * perf_factor(t) * allow_factor(t))
+    if not (w >= 0.0 and w <= 1.0):
+        raise ValueError(
+            f"point_id {point_id}: the surrender rate surr_rate({t}) is {w}, outside 0 "  # noqa: F821
+            f"to 1, under surr_rate_cap {float(surr_rate_cap)}, perf_factor_cap "  # noqa: F821
+            f"{float(perf_factor_cap)}, perf_factor_slope {float(perf_factor_slope)}, "  # noqa: F821
+            f"return_shock {float(return_shock)} and allow_step "    # noqa: F821
+            f"{float(allow_step)}")                                  # noqa: F821
+    return w
 
 
 def surr_rate_mth(t):
@@ -551,21 +900,38 @@ def surr_rate_mth(t):
 
 
 def av_pp(t):
-    """UF(t): the unit fund per policy at time t, the **start** of policy month t.
+    """UF(t): the unit fund per policy at time t, the **start** of month t.
 
     The bid value of units, and the column the notes' worked-example table prints first.
-    ``av_init_pp()`` at ``t = 0`` (issue), then the end-of-month value of the previous
-    month, ``av_pp_at(t - 1, "AFT_WD")``.  Floored at zero: :func:`wd_pp` caps the
-    withdrawal at what the fund can pay, so the fund is drawn to nothing rather than
-    through it.
+    At :func:`t_entry` the fund the frame opens with, :func:`av_pp_init`: on a bond in
+    force the fund at the valuation instant, history; on one not yet in force the fund at
+    outset, its premium.  Then the end-of-month value of the previous month,
+    ``UF(t) = UF'(t - 1) - W(t - 1) - AC(t - 1) - GC(t - 1)``, floored at zero:
+    :func:`wd_pp` caps the withdrawal at what the fund can pay, so the fund is drawn to
+    nothing rather than through it.
+
+    Written here inline, the month before's growth, tax provision, charges and
+    cancellations in :func:`av_pp_at`'s order and its floats, so that the chain of calls
+    from month t back to :func:`t_entry` is one cell a month, the month before's fund read
+    first: :mod:`~.ULB_UK_S` reads ``av_pp_at(t - 1, "AFT_WD")``, which runs through three
+    timings to ``av_pp(t - 1)``, four cells a month.  ``av_pp_at(t, "AFT_WD")`` is this
+    at ``t + 1``, bit for bit, in cover.  0 outside cover: before issue, and from the
+    limiting age.
     """
-    if t == 0:
-        return av_init_pp()
-    return av_pp_at(t - 1, "AFT_WD")
+    if not is_active(t):
+        return 0.0
+    if t == t_entry():
+        return av_pp_init()
+    uf = av_pp(t - 1)
+    growth = fund_return_mth() * uf
+    grown = uf + growth - tax_provision_rate() * growth
+    charged = grown - amc_rate_mth() * grown - further_costs_rate_mth() * grown
+    return max(0.0, charged - wd_pp(t - 1) - adviser_charge_pp(t - 1)
+               - gmdb_charge_pp(t - 1))
 
 
 def av_pp_at(t, timing):
-    """The unit fund per policy at a point inside policy month t.
+    """The unit fund per policy at a point inside month t.
 
     ``"BEF_GROWTH"``
         UF(t), the start of the month; the same as :func:`av_pp`.
@@ -582,11 +948,14 @@ def av_pp_at(t, timing):
 
     ``"AFT_WD"``
         UF(t+1), after the end-of-month unit cancellations - withdrawal,
-        adviser charge and rider charge.  Equals ``av_pp(t + 1)``.
+        adviser charge and rider charge.  Equals ``av_pp(t + 1)`` in cover.
 
     All four points are exposed so that the charge ordering is inspectable rather than
     buried in one expression; charging on the wrong one moves the margin by about half a
     month's growth or withdrawal, which is small monthly and systematic over decades.
+    Each reads :func:`av_pp` of its own month, which carries the chain; ``"AFT_WD"`` is
+    computed here rather than read at ``t + 1``, so that the last month of cover, whose
+    ``t + 1`` is past it, closes on its own fund.  0 outside cover, at every timing.
     """
     if timing == "BEF_GROWTH":
         return av_pp(t)
@@ -605,13 +974,14 @@ def av_per_segment_pp(t):
 
     Reported only.  A policyholder's tax outcome depends on whether whole segments are
     cashed or a part-surrender is taken across all of them, but the insurer's cash flow
-    is identical either way - both cancel the same unit value.
+    is identical either way - both cancel the same unit value.  ``Data`` holds the
+    segments to a whole number, 1 or more.
     """
     return av_pp(t) / n_segments()
 
 
 def fund_growth_pp(t):
-    """G$(t) = g_m x UF(t): the gross fund return credited in month t."""
+    """G$(t) = g_m x UF(t): the gross fund return credited in month t; 0 outside cover."""
     return fund_return_mth() * av_pp(t)
 
 
@@ -647,8 +1017,12 @@ def wd_cap_pp(t):
 
     The **product** cap, and the only thing that actually limits what can be withdrawn -
     the 5% tax allowance does not.  Measured against the fund after charges and against
-    the premium, whichever is larger, and it includes the ongoing adviser charge.
+    the premium, whichever is larger, and it includes the ongoing adviser charge.  A
+    twelfth of it each month, so the window reads no withdrawal before the valuation
+    date.  0 outside cover, where nothing can be withdrawn.
     """
+    if not is_active(t):
+        return 0.0
     return wd_cap_rate * max(                                        # noqa: F821
         av_pp_at(t, "AFT_CHARGE"), premium())
 
@@ -660,8 +1034,11 @@ def wd_pp(t):
     - a twelfth of it each month, and **net of the ongoing adviser charge**, which counts
     against the same limit - and by what the fund can actually pay after the adviser and
     rider charges.  The second cap is what stops the fund going negative, and it is why
-    the projection can end with the fund at exactly zero rather than through it.
+    the fund can close a month at exactly zero rather than through it, or on a rounding of
+    either sign about it.  0 outside cover.
     """
+    if not is_active(t):
+        return 0.0
     scheduled = wd_rate() * premium() / 12.0
     ac = adviser_charge_pp(t)
     gc = gmdb_charge_pp(t)
@@ -675,6 +1052,7 @@ def adviser_charge_pp(t):
 
     ``oac_rate/12`` of the fund after charges.  A **pass-through**: it reduces the unit
     fund and consumes the policyholder's tax allowance, and it is not insurer income.
+    0 outside cover, where the fund is.
     """
     return oac_rate() / 12.0 * av_pp_at(t, "AFT_CHARGE")
 
@@ -684,19 +1062,21 @@ def gmdb_guarantee_pp(t):
 
     ``premium - cumulative withdrawals - adviser charges``: a return-of-premium
     guarantee that erodes as the policyholder draws the fund down.  Zero without the
-    rider.
+    rider, and outside cover.
 
-    Measured **before** the current month's cancellations, at ``wd_cum_pp(t - 1)`` -
-    nothing has been drawn when ``t = 0``.  That is the only reading that resolves: the
-    rider charge is itself a cancellation alongside the withdrawal, so a guarantee net of
-    the same month's withdrawal would make the charge depend on a withdrawal that depends
-    on the charge.  Taking the start-of-month guarantee breaks the loop and matches the
-    contractual sense, in which the amount guaranteed is what is on the record when the
-    month begins.
+    Measured **before** the current month's cancellations, at ``wd_cum_pp(t - 1)``:
+    at :func:`t_entry`, the withdrawals and adviser charges since issue,
+    :func:`wd_cum_pp_init`, history, so that a bond in force opens with what is left of
+    its guarantee, and one not yet in force with nothing drawn.  That is the only reading
+    that resolves: the rider charge is itself a cancellation alongside the withdrawal, so a
+    guarantee net of the same month's withdrawal would make the charge depend on a
+    withdrawal that depends on the charge.  Taking the start-of-month guarantee breaks the
+    loop and matches the contractual sense, in which the amount guaranteed is what is on
+    the record when the month begins.
     """
-    if not gmdb_flag():
+    if not gmdb_flag() or not is_active(t):
         return 0.0
-    drawn = wd_cum_pp(t - 1) if t > 0 else 0.0
+    drawn = wd_cum_pp(t - 1) if t > t_entry() else wd_cum_pp_init()
     return max(0.0, premium() - drawn)
 
 
@@ -705,9 +1085,10 @@ def gmdb_charge_pp(t):
 
     ``q_m x max(0, G(t) - u UF'(t))``, a cost-of-insurance form on the in-the-money part
     of the guarantee.  The real charge scale is unpublished, so this is a guess with the
-    right shape and no authority.  Insurer income, unlike the other cancellations.
+    right shape and no authority.  Insurer income, unlike the other cancellations.  0
+    without the rider, and outside cover, before any rate is read.
     """
-    if not gmdb_flag():
+    if not gmdb_flag() or not is_active(t):
         return 0.0
     naar = max(0.0, gmdb_guarantee_pp(t)
                - db_uplift() * av_pp_at(t, "AFT_CHARGE"))
@@ -721,6 +1102,7 @@ def death_strain_pp(t):
     after the cancellations.  The sum assured is ``u x UF``, of which ``UF`` is funded by
     cancelling the policyholder's own units, so the insurer's cost is only the uplift - a
     tenth of a percent of the fund on the composite - plus any in-the-money guarantee.
+    0 outside cover, where the fund and the guarantee are.
     """
     uf = av_pp_at(t, "AFT_WD")
     strain = (db_uplift() - 1.0) * uf
@@ -733,10 +1115,14 @@ def wd_cum_pp(t):
     """CumWD: cumulative withdrawals and adviser charges to the end of month t.
 
     The allowance-relevant total: ongoing and ad hoc adviser charges consume the same 5%
-    tax allowance as withdrawals do.  The first month's cancellations at ``t = 0``, then
-    the running sum.
+    tax allowance as withdrawals do.  At :func:`t_entry` the total entering month 0,
+    :func:`wd_cum_pp_init`, history, 0 on a bond not yet in force, and the month's
+    cancellations; then the running sum.  **Never restarted**: it counts from issue, as
+    the allowance it is measured against does.  0 outside cover.
     """
-    prior = wd_cum_pp(t - 1) if t > 0 else 0.0
+    if not is_active(t):
+        return 0.0
+    prior = wd_cum_pp(t - 1) if t > t_entry() else wd_cum_pp_init()
     return prior + wd_pp(t) + adviser_charge_pp(t)
 
 
@@ -745,8 +1131,12 @@ def allowance_cum_pp(t):
 
     **Policyholder tax machinery, not a product feature.**  It never caps what can be
     withdrawn - the product cap is :func:`wd_cap_pp` - and it generates no insurer cash
-    flow.  It is carried because it drives behaviour through :func:`allow_factor`.
+    flow.  It is carried because it drives behaviour through :func:`allow_factor`.  A
+    closed form on the policy year from issue, so a bond in force needs no column for it.
+    0 outside cover, where the policy year is 0 or less.
     """
+    if not is_active(t):
+        return 0.0
     y = policy_year(t)
     return premium() * min(y, allowance_years) * wd_allowance_rate    # noqa: F821
 
@@ -762,64 +1152,105 @@ def excess_gain_pp(t):
 
 
 def pols_if(t):
-    """l(t): the number of policies in force at time t, the **start** of policy month t.
+    """l(t): the number of policies in force at time t, the count that weights row t.
 
-    ``pols_if_init()`` at ``t = 0``, then the notes' recursion
-    ``l(t+1) = l(t)(1 - q_m(t))(1 - w_m(t))``, deaths before surrenders **[std]**, read
-    back one month: the count opening month ``t`` is the count closing month ``t - 1``,
-    ``pols_if_at(t - 1, "AFT_DECR")``.
+    ``pols_if_at(t, "BEF_DECR")``: the count carried in from month t - 1, plus month t's
+    new business, before month t's decrements. On a point issued at ``t = 0`` that is
+    exactly :mod:`~.ULB_UK_S`'s ``pols_if``, the notes' ``l(t)``, which follows the
+    recursion ``l(t+1) = l(t)(1 - q_m(t))(1 - w_m(t))``, deaths before surrenders
+    **[std]**.  It is ``basiclife.BasicTerm_SE``'s ``BEF_DECR`` count, not its ``pols_if``.
     Zero outside the frame, so ``pols_if(proj_len())`` is the count after the last
     projected month: nothing, because :func:`pols_maturity` takes the survivors.
     """
-    if t < 0 or t >= proj_len():
-        return 0.0
-    if t == 0:
-        return pols_if_init()
-    return pols_if_at(t - 1, "AFT_DECR")
+    return pols_if_at(t, "BEF_DECR")
 
 
 def pols_if_at(t, timing):
-    """The number of policies in force at a point inside policy month t.
+    """The number of policies in force at a point inside month t.
+
+    ``"BEF_NB"``
+        The count carried in from month t - 1, before month t's new business: the
+        survivors of month t - 1's deaths and surrenders, out of month t - 1's
+        ``"BEF_DECR"`` count. At :func:`t_entry`, the first month on the books, it is
+        :func:`pols_if_init`, the count in force at the valuation date (0 for a point
+        issued at or after it), and the recursion reads no earlier month. Zero outside
+        the frame, from ``t = proj_len()`` on, so the survivors of the frame's last month
+        leave as :func:`pols_maturity`.
 
     ``"BEF_DECR"``
-        the start of the month, before any decrement; :func:`pols_if`.
+        ``"BEF_NB"`` plus :func:`pols_new_biz`: l(t), the count that weights month t,
+        which :func:`pols_if` returns.
 
     ``"BEF_SURR"``
         after deaths, before surrenders - the processing order is **death
         before surrender** **[std]**.
 
     ``"AFT_DECR"``
-        the notes' ``l(t+1)``, the end-of-month count, and zero in the last
-        projected month ``t = proj_len() - 1``.
+        the notes' ``l(t+1)``, the end-of-month count, and zero in the frame's last
+        month ``t = proj_len() - 1``.  It is ``"BEF_NB"`` at t + 1 exactly, one product in
+        one order.
+
+    ``"BEF_NB"`` is the one timing running in force adds, as ``basiclife.BasicTerm_SE``
+    names it; the other three are :mod:`~.ULB_UK_S`'s, and any other raises.
+    ``"BEF_NB"`` forms month t - 1's ``"BEF_DECR"`` count itself, as ``"BEF_NB"`` plus
+    :func:`pols_new_biz` at t - 1, the same sum in the same order, rather than calling for
+    it. So the chain of calls from month t back to :func:`t_entry` is one cell a month,
+    where :mod:`~.ULB_UK_S`'s ``pols_if`` chain runs three. Each count is zero outside the
+    frame before it reads a rate.
     """
+    if timing == "BEF_NB":
+        if not is_active(t) or t >= proj_len():
+            return 0.0
+        if t == t_entry():
+            return pols_if_init()
+        return ((pols_if_at(t - 1, "BEF_NB") + pols_new_biz(t - 1))
+                * (1.0 - mort_rate_mth(t - 1)) * (1.0 - surr_rate_mth(t - 1)))
     if timing == "BEF_DECR":
-        return pols_if(t)
+        return pols_if_at(t, "BEF_NB") + pols_new_biz(t)
     if timing == "BEF_SURR":
+        if not is_active(t) or t >= proj_len():
+            return 0.0
         return pols_if(t) * (1.0 - mort_rate_mth(t))
     if timing == "AFT_DECR":
-        if t < 0 or t >= proj_len() - 1:
+        if not is_active(t) or t >= proj_len() - 1:
             return 0.0
         return pols_if_at(t, "BEF_SURR") * (1.0 - surr_rate_mth(t))
     raise ValueError("invalid timing")
 
 
+def pols_new_biz(t):
+    """The number of policies issued in month t: ``policy_count()`` in the issue month.
+
+    The issue month is the one with ``duration_mth(t) == 0``: ``t = 0`` for a point
+    issued at the valuation date, ``t = k`` for one issued ``k`` months later. A point
+    already in force at the valuation date has none.
+    """
+    return policy_count() if duration_mth(t) == 0 else 0.0
+
+
 def pols_death(t):
-    """Deaths in policy month t, against the start-of-month in-force."""
+    """Deaths in month t, against the start-of-month count; zero outside the frame,
+    before any rate is read."""
+    if not is_active(t) or t >= proj_len():
+        return 0.0
     return pols_if(t) * mort_rate_mth(t)
 
 
 def pols_surr(t):
-    """Full surrenders at the end of policy month t, from the survivors of mortality."""
+    """Full surrenders at the end of month t, from the survivors of mortality; zero
+    outside the frame, before any rate is read."""
+    if not is_active(t) or t >= proj_len():
+        return 0.0
     return pols_if_at(t, "BEF_SURR") * surr_rate_mth(t)
 
 
 def pols_maturity(t):
-    """Policies still in force when the projection ends; zero in every other month.
+    """Policies still in force when the frame ends; zero in every other month.
 
     A bond has no maturity date, so this is either the population left at the limiting
     age or - on the base run - the population still holding a bond whose fund has just
     been drawn to nothing.  It pays nothing, and it exists so the roll-forward closes in
-    the last projected month, ``t = proj_len() - 1``.
+    the frame's last month, ``t = proj_len() - 1``.
     """
     if t != proj_len() - 1:
         return 0.0
@@ -827,7 +1258,7 @@ def pols_maturity(t):
 
 
 def claims(t, kind=None):
-    """Gross benefit outgo in policy month t, by kind; the total when kind is omitted.
+    """Gross benefit outgo in month t, by kind; the total when kind is omitted.
 
     ``"DEATH"``
         ``u x UF(t+1)`` per death - the full sum assured on the end-of-month
@@ -908,24 +1339,31 @@ def death_strain(t):
 
 
 def inflation_factor(t):
-    """The expense inflation factor in month t: ``(1 + pi)^duration(t)`` **[std]**.
+    """The expense inflation factor in month t, ``(1 + pi)^(t // 12)`` **[std]**.
 
-    ``(1 + pi)^(y - 1)`` in the notes' policy-year terms: 1 throughout the first policy
-    year, ``t = 0..11``.
+    On the **valuation** clock: ``t`` counts months from the valuation date, so the
+    maintenance charge it inflates is in valuation-date pounds, whatever the bond's age,
+    and every point of a block inflates alike, stepping on each anniversary of the
+    valuation date.  :mod:`~.ULB_UK_S` inflates from issue, ``(1 + pi)^duration(t)``, the
+    notes' ``(1 + pi)^(y - 1)``; on a point issued at ``t = 0`` the two are the same.
+    Acquisition is not inflated (see :func:`expenses`).
     """
-    return (1.0 + inflation_rate) ** duration(t)                     # noqa: F821
+    return (1.0 + inflation_rate) ** (t // 12)                       # noqa: F821
 
 
 def expenses(t):
     """Acquisition and maintenance expense in month t **[std]**.
 
-    £300 per policy at issue - the first month, ``t = 0`` - then £60 per policy a year
-    inflating at 2.5%.  The margin is proportional to the fund while the expense
-    inflates, so a small-fund cell goes margin-negative late in life - which the anchor
-    cell does, as its fund is drawn down.
+    £300 per policy issued, ``expense_acq * pols_new_biz(t)``: in the issue month, never
+    for a bond already in force at the valuation date, and not inflated, as in
+    ``basiclife.BasicTerm_SE``.  :mod:`~.ULB_UK_S` charges it on the count at ``t = 0``,
+    which on a point issued then is the count issued.  Then £60 per policy a year - a
+    twelfth of it each month - inflating at 2.5% on the valuation clock.  The margin is
+    proportional to the fund while the expense inflates, so a small-fund cell goes
+    margin-negative late in life - which the anchor cell does, as its fund is drawn down.
     """
-    acq = expense_acq * pols_if(t) if t == 0 else 0.0                # noqa: F821
-    return acq + expense_maint / 12.0 * inflation_factor(t) * pols_if(t)  # noqa: F821
+    return (expense_acq * pols_new_biz(t)                            # noqa: F821
+            + expense_maint / 12.0 * inflation_factor(t) * pols_if(t))  # noqa: F821
 
 
 def net_cf(t):
@@ -952,7 +1390,8 @@ def check_av_roll_fwd_resid(t):
     This is the identity the charge ordering has to satisfy, and it is checked rather
     than assumed because the ordering is the model's most consequential convention.
     Skipped once the fund has been drawn to nothing, where the withdrawal cap breaks the
-    equality by design.
+    equality by design: :mod:`~.ULB_UK_S`'s test of 0, which is the floor's, not the
+    exhaustion's.
     """
     uf_end = av_pp_at(t, "AFT_WD")
     if uf_end <= 0.0:
@@ -976,15 +1415,21 @@ def check_av_roll_fwd():
 def check_pols_roll_fwd_resid(t):
     """The in-force roll-forward residual in month t; zero everywhere.
 
-    ``pols_if(t) - pols_if(t+1) - deaths - surrenders - the final-month residual``.
+    ``pols_if(t) - pols_if_at(t + 1, "BEF_NB") - deaths - surrenders - the frame's last
+    month's survivors``, where the count carried into the next month is taken before its
+    new business, which is no part of month t's movement.
     """
-    return (pols_if(t) - pols_if(t + 1)
+    return (pols_if(t) - pols_if_at(t + 1, "BEF_NB")
             - pols_death(t) - pols_surr(t) - pols_maturity(t))
 
 
 def check_pols_roll_fwd():
-    """True when the in-force roll-forward closes in every projected month."""
-    return all(abs(check_pols_roll_fwd_resid(t)) <= 1e-10 * max(pols_if_init(), 1.0)
+    """True when the in-force roll-forward closes in every month of the frame.
+
+    The tolerance scales with ``policy_count()``, since the residual accumulates rounding
+    on that many policies, in force at the valuation date or issued after it.
+    """
+    return all(abs(check_pols_roll_fwd_resid(t)) <= 1e-10 * max(policy_count(), 1.0)
                for t in range(proj_len()))
 
 
@@ -1006,14 +1451,17 @@ def check_unit_funding():
 
 
 def result_cf():
-    """Result table of cashflows, indexed by policy month t = 0, 1, ..., proj_len() - 1.
+    """Result table of cashflows, one row per month ``t = 0 .. proj_len() - 1``.
 
-    ``av_pp`` is the unit fund at the start of the month, and ``pols_if`` the in-force
-    count that weights every flow on the row.  ``net_cf`` is the **non-unit** stream -
-    what accrues to the insurer - while ``claims_death``, ``claims_surrender``,
+    Row 0 is the valuation month for every model point, so the frames of a block line up
+    and sum row by row.  A point issued after the valuation date has zeros until its issue
+    month.  ``av_pp`` is the unit fund at the start of the month, and ``pols_if`` the
+    in-force count that weights every flow on the row.  ``net_cf`` is the **non-unit**
+    stream - what accrues to the insurer - while ``claims_death``, ``claims_surrender``,
     ``withdrawals`` and ``unit_releases`` show the gross picture they net against.
     ``further_costs`` and ``tax_provisions`` are published precisely because they are
-    **not** in ``net_cf``: they leave the unit fund and are paid on.
+    **not** in ``net_cf``: they leave the unit fund and are paid on.  The columns are
+    :mod:`~.ULB_UK_S`'s.
     """
     ts = list(range(proj_len()))
     return pd.DataFrame(                                             # noqa: F821
@@ -1037,12 +1485,13 @@ def result_cf():
 
 
 def result_uf():
-    """Result table of the unit fund recursion, indexed by policy month t.
+    """Result table of the unit fund recursion, one row per month t of the frame.
 
-    One row per projected month, ``t = 0, 1, ..., proj_len() - 1``.
+    The same rows as :func:`result_cf`, ``t = 0 .. proj_len() - 1``, each per policy.
     The notes' worked-example table, column for column: the fund at the start of the
     month (``UF(t)``), the gross return, the tax provision, the charges, the withdrawal,
-    and the fund at the end (``UF(t+1)``, as ``av_pp_end``).
+    and the fund at the end (``UF(t+1)``, as ``av_pp_end``).  A point issued after the
+    valuation date has zeros until its issue month.
     """
     ts = list(range(proj_len()))
     return pd.DataFrame(                                             # noqa: F821
@@ -1064,6 +1513,30 @@ def result_uf():
     )
 
 
+def result_pols():
+    """Result table of policy counts, one row per month t of the frame.
+
+    The same rows as :func:`result_cf`, ``t = 0 .. proj_len() - 1``: the counts
+    :func:`result_cf` weights its rows by, and how they move, as
+    ``basiclife.BasicTerm_SE``'s ``result_pols`` sets them out: ``pols_if``, the count of
+    month t; ``pols_new_biz``, the part of it issued in month t; then month t's deaths
+    and surrenders in processing order, and the survivors of the frame's last month.  Row
+    by row, ``pols_if`` at ``t + 1`` is ``pols_if`` less the three outflows of month t,
+    plus the new business of month ``t + 1``.
+    """
+    ts = list(range(proj_len()))
+    return pd.DataFrame(                                             # noqa: F821
+        {
+            "pols_if": [pols_if(t) for t in ts],
+            "pols_new_biz": [pols_new_biz(t) for t in ts],
+            "pols_death": [pols_death(t) for t in ts],
+            "pols_surr": [pols_surr(t) for t in ts],
+            "pols_maturity": [pols_maturity(t) for t in ts],
+        },
+        index=pd.Index(ts, name="t"),                                # noqa: F821
+    )
+
+
 # ---------------------------------------------------------------------------
 # References
 
@@ -1071,7 +1544,11 @@ data = ("Interface", ("..", "Data"), "auto")
 
 point_id = 1
 
+issue_age_min = 18
+
 omega_age = 120
+
+depletion_threshold = 0.005
 
 mort_be_factor = 0.8
 

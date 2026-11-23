@@ -1284,6 +1284,28 @@ _CI_STATE = {
 }
 
 
+def _ulb_withdrawn(s, d):
+    """``ULB_UK_S``'s withdrawals and adviser charges entering month ``d``, per policy.
+
+    S's ``wd_cum_pp(d - 1)``, the running total to the end of the month before, which
+    ``wd_cum_pp(d)`` carries on and ``gmdb_guarantee_pp(d)`` reads: the total entering
+    month ``d``, before its cancellations.  0 at issue, where S's total starts.
+    """
+    return s.wd_cum_pp(d - 1) if d > 0 else 0.0
+
+
+# ULB_UK_SEC's opening state (D6; UKLIB-SEC-PLAN.md §6.6): what ULB_UK_S carries into month
+# d, each per policy, so that policy_count is the one weight.  The unit fund at the start of
+# month d, S's av_pp(d), the column S calls uf_init, renamed; and the withdrawals and adviser
+# charges since issue, S's wd_cum_pp(d - 1) (_ulb_withdrawn), which open the GMDB.  At a
+# twin's source_mth, 0 on every S point, these are what S itself assumes at issue: the fund
+# at outset, S's uf_init, and nothing withdrawn.
+_ULB_STATE = {
+    "av_pp_init": lambda s, d: s.av_pp(d),
+    "wd_cum_pp_init": _ulb_withdrawn,
+}
+
+
 SEC_SPECS: dict[str, SecSpec] = {
     # Term's state is seven columns (_TERM_STATE above) and the waiver pipeline, a long
     # companion, wop_pipeline_sec.csv, keyed (point_id, lag), lag the months before the
@@ -1381,6 +1403,49 @@ SEC_SPECS: dict[str, SecSpec] = {
         twin_state=_CI_STATE,
         exempt=frozenset({"result_pols"}),
         derived_refs={(3, 124): {"review_prem_shock": 0.10}},
+    ),
+    # ULB's state is two columns (_ULB_STATE above): the unit fund, S's uf_init renamed
+    # av_pp_init, and the withdrawals and adviser charges since issue, wd_cum_pp_init, which
+    # open the GMDB.  pols_if_init becomes policy_count (the default).  Every S point is new
+    # business.  The derived rows are the anchor cell at 30, mid-year in the 5% surrender
+    # band; the adviser-charge point at 66, mid-year in the 8% band, its excess gain already
+    # above 0, since its charges consume the allowance beside its withdrawals; the GMDB
+    # point at 240, the first month of policy year 21, where the allowance-exhaustion step
+    # applies and the guarantee has just run out; and the anchor cell at 352, the last month
+    # before its fund is exhausted, a one-row frame.  At S's References no committed row has
+    # the GMDB in the money: S point 4's is in it in its issue month alone, on the death
+    # strain, which the splice's variants reach.  The future row is the GMDB point issued 13
+    # months after the valuation date: more than a year on and off a valuation anniversary,
+    # so that the months before issue read policy years -1 and 0, where a missing guard
+    # would show.  T2's splice grid is built from this spec in a temporary table, not
+    # committed.
+    #
+    # T1 holds at any count: S charges acquisition on the count in force at t = 0, which on a
+    # point issued then is the count issued, as SEC charges it on pols_new_biz.  It skips one
+    # S cell besides the default three:
+    #   av_init_pp: S's accessor of uf_init, the fund at outset, which av_pp_init replaces,
+    #     reading the same column renamed, D6's name for the fund entering month 0.
+    # SEC ends a frame where the fund opens at or below depletion_threshold, half a pence,
+    # where S ends it where the fund opens on exactly 0 or less (UKLIB-SEC-PLAN.md §6.6, §9
+    # item 10).  On S point 3, whose adviser charge closes its fund on a rounding of 3.4e-15
+    # at the end of month 322, S projects month 323 and SEC does not; the conventions' T1
+    # compares that twin over the months the two frames run alike (TWIN_FRAME_ENDS there),
+    # and test_unit_linked_bond_uk_sec.py the rest.
+    #
+    # Phase 2 sizes its caches from the contract:
+    #   t 0..1,345: a bond issued at issue_age_min, 18, whose fund lasts to omega_age, 120,
+    #     a cover of 1,224 months, issued future_horizon_mth, 120 months, after the valuation
+    #     date, a frame of 1,344 months, its month after, and the roll-forward's t + 1 there.
+    # proj_len() refuses an issue age below issue_age_min, one at or past omega_age, and a
+    # bond in force whose fund is at or below depletion_threshold, each naming the point.
+    "ULB_UK_SEC": SecSpec(
+        twin="ULB_UK_S",
+        column_map={"uf_init": "av_pp_init"},
+        derived=((1, 30), (3, 66), (4, 240), (1, 352)),
+        future=((4, 13),),
+        state=_ULB_STATE,
+        twin_state=_ULB_STATE,
+        exempt=frozenset({"av_init_pp"}),
     ),
 }
 

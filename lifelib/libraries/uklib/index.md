@@ -120,7 +120,7 @@ close, and whose guarantee is an order of magnitude too large a decade later.
 | Product | Model | Grid | Representative design |
 |---|---|---|---|
 | [With-profits](products/with_profits/index.md) | `WP_UK_S` | monthly | 90:10 proprietary fund on retrospective asset shares: 80–120% payout target range, smoothing caps, MVR bounded by the asset-share shortfall; unitised WP as the primary cell and conventional WP endowment as the legacy one |
-| [Unit-linked investment bond](products/unit_linked_bond/index.md) | `ULB_UK_S` | monthly | Modern clean-charge onshore single-premium bond: 100.1% death uplift, segmented mini-policies, AMC-based charges, the 5% p.a. tax-deferred withdrawal machinery; modeled through the classic UK **unit / non-unit** cash flow decomposition |
+| [Unit-linked investment bond](products/unit_linked_bond/index.md) | `ULB_UK_S`, `ULB_UK_SEC` | monthly | Modern clean-charge onshore single-premium bond: 100.1% death uplift, segmented mini-policies, AMC-based charges, the 5% p.a. tax-deferred withdrawal machinery; modeled through the classic UK **unit / non-unit** cash flow decomposition |
 
 **Annuity**
 

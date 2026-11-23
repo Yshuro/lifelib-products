@@ -1,0 +1,12 @@
+point_id,policy_id,age_at_entry,sex,lives,premium,n_segments,db_uplift,amc_rate,further_costs_rate,tax_provision_rate,wd_pattern,wd_rate_custom,oac_rate,gmdb_flag,av_pp_init,policy_count,duration_mth,wd_cum_pp_init,row_kind,source_policy_id,source_mth
+1,ULB-000001,65,M,single,100000.0,100,1.001,0.01,0.001,0.2,allowance_5pct,0.0,0.0,False,100000.0,1.0,0,0.0,twin,ULB-000001,0
+2,ULB-000002,65,M,single,100000.0,100,1.001,0.01,0.001,0.2,none,0.0,0.0,False,100000.0,1.0,0,0.0,twin,ULB-000002,0
+3,ULB-000003,65,M,single,100000.0,100,1.001,0.01,0.001,0.2,allowance_5pct,0.0,0.005,False,100000.0,1.0,0,0.0,twin,ULB-000003,0
+4,ULB-000004,65,M,single,100000.0,100,1.001,0.01,0.001,0.2,allowance_5pct,0.0,0.0,True,100000.0,1.0,0,0.0,twin,ULB-000004,0
+5,ULB-000005,65,M,single,100000.0,100,1.01,0.01,0.001,0.2,allowance_5pct,0.0,0.0,False,100000.0,1.0,0,0.0,twin,ULB-000005,0
+6,ULB-000006,55,F,single,250000.0,100,1.001,0.01,0.001,0.2,custom,0.03,0.0,False,250000.0,1.0,0,0.0,twin,ULB-000006,0
+7,ULB-000001-M30,65,M,single,100000.0,100,1.001,0.01,0.001,0.2,allowance_5pct,0.0,0.0,False,94328.8643597054,0.9017656115900125,30,12499.999999999996,derived,ULB-000001,30
+8,ULB-000003-M66,65,M,single,100000.0,100,1.001,0.01,0.001,0.2,allowance_5pct,0.0,0.005,False,84220.69334213095,0.7297983027773833,66,30046.847108129573,derived,ULB-000003,66
+9,ULB-000004-M240,65,M,single,100000.0,100,1.001,0.01,0.001,0.2,allowance_5pct,0.0,0.0,True,41262.727529206815,1.0798572023705956e-01,240,100000.00000000025,derived,ULB-000004,240
+10,ULB-000001-M352,65,M,single,100000.0,100,1.001,0.01,0.001,0.2,allowance_5pct,0.0,0.0,False,326.6776355940961,9.5516562687541378e-03,352,146666.66666666692,derived,ULB-000001,352
+11,ULB-000004-F13,65,M,single,100000.0,100,1.001,0.01,0.001,0.2,allowance_5pct,0.0,0.0,True,100000.0,1.0,-13,0.0,future,ULB-000004,-13
