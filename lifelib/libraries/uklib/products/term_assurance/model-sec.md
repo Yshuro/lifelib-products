@@ -469,16 +469,17 @@ is `proj_len()`'s, beside the pipeline's length, which reads it too.
 
 ## The compiled model
 
-The model compiles under modelx-cython into C-typed code, as `basiclife/BasicTerm_SC` does,
-and modelx reads and runs the same formulas as before. Compiling changed how each cell
-reads its inputs and spells its codes, and no number: what the model computed on each
+The model compiles under modelx-cython into C-typed code, as `basiclife/BasicTerm_SC`
+does, and modelx reads and runs the same formulas as before. Compiling changed how each
+cell reads its inputs and spells its codes, and no number: what the model computed on each
 committed point was frozen before the change, and it still computes it, to the last bit
-(*Tests*, below). Cell by cell, at every argument a full modelx sweep evaluates, the
-compiled model computes what modelx computes, bit for bit, on the committed points, on
-the points of the splice grid, which take the branches they do not, at the contract's
-longest covers, on points where the cap on mortality binds and at a commutation discount
-of 0, of 1e-17 and of 1.1e-16. The compile tests hold it so on x86-64, and to 1e-12
-relative elsewhere, where no run has shown it yet.
+(*Tests*, below), refrozen once since for the waiver's incidence on the active lives, a
+change of numbers on the four waiver points alone. Cell by cell, at every argument a full
+modelx sweep evaluates, the compiled model computes what modelx computes, bit for bit, on
+the committed points, on the points of the splice grid, which take the branches they do
+not, at the contract's longest covers, on points where the cap on mortality binds and at a
+commutation discount of 0, of 1e-17 and of 1.1e-16. The compile tests hold it so on
+x86-64, and to 1e-12 relative elsewhere, where no run has shown it yet.
 
 ### Building it
 
@@ -914,7 +915,9 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   single life's second issue age among them, is refused.
 - **C2, the fingerprint**: every committed point computes what the model computed when
   its E step ended, every cell at every argument, frozen at the end of the module by
-  `tools/gen_sec_fingerprint.py` before the C step changed anything.
+  `tools/gen_sec_fingerprint.py` before the C step changed anything, and refrozen once
+  since, alone, when both models' waiver came to take its incidence from the active lives,
+  which moved the waiver points 7, 11, 12 and 14 and no other number.
 - **Compiled**, the tests marked `cython`, which compile the model once a session into a
   temporary directory and run it in child processes: in
   `tests/test_compiled_conventions_uk.py`, C3, the typing guard, on the declarations, the
