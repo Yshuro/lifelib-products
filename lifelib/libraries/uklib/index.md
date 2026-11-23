@@ -93,6 +93,8 @@ force, and compiles. `CI_UK_SEC` runs in force, and compiles too. `ULB_UK_SEC` r
 force and compiles too, its fund, its withdrawals and its count blocked by policy year, so
 that a cold call at its longest cover, 1,236 months, more than a century, runs on a small
 C stack.
+`WOL_UK_SEC` runs in force on two strands, full cover and paid-up, and compiles too, its
+two counts, its paid-up cover and its premiums paid blocked by policy year in the same way.
 
 Assumption tables stay in the units they are quoted in: a mortality rate by attained age
 and a lapse rate by policy year are annual, and each model converts them month by month
