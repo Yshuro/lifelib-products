@@ -6,12 +6,17 @@ workflow's run 43 (§3, *Record — M0*), and so is Term's in-force step, M1, by
 (§6.1, *Record — M1*). Term's compile step, M2, is done too, 2026-11-23, by run 46 (§6.1,
 *Record — M2*), critical illness's in-force step, M3, by run 47 (§6.2, *Record — M3*), and
 the unit-linked bond's, M9, by run 48 (§6.6, *Record — M9*). The owner's fix to Term's
-waiver incidence is done, by run 49 (§6.1, *Record — the waiver's incidence base*). The
-compile steps of critical illness and the unit-linked bond, M4 and M10, and the in-force
-steps of whole of life and the pension annuity, M5 and M11, are under way, two in each
-stream (§7). Like USLIB-SEC-PLAN.md, this document is both the specification and the
-record: each milestone records what it actually did, including where the implementation
-departed from the plan.
+waiver incidence is done, by run 49 (§6.1, *Record — the waiver's incidence base*), and
+critical illness's compile step, M4, by run 51 (§6.2, *Record — M4*). The unit-linked
+bond's, M10, has landed, its run under way. The in-force steps of whole of life and the
+pension annuity, M5 and M11, are in rework after their reviews. On 2026-11-23 the owner
+decided that an anniversary or a review falling at the valuation date is the projection's
+first event, made at today's References, each opening column holding the state before it
+(D6). The unit-linked bond and the pension annuity already follow it, and whole of life is
+being built to it. Term and critical illness are being reworked to it, superseding the rule
+*Record — M3* states, that such an event counts as made. Like USLIB-SEC-PLAN.md, this
+document is both the specification and the record: each milestone records what it actually
+did, including where the implementation departed from the plan.
 
 Every number in it was measured in this repository, under modelx 0.33.0 and pandas 3.0.5
 as USLIB-SEC-PLAN.md's were, or is quoted from USLIB-SEC-PLAN.md, and each is given with
@@ -1571,6 +1576,150 @@ meant to catch it.
     S with it on: on new business the two clocks coincide.
   - Some `MALFORMED` cases run on a relabelled table.
   - A test replaces each residual's formula with NaN, and the check must fail.
+
+#### Record — M4, done 2026-11-23
+
+Built in two commits on the waiver fix's landing: the C step (`2a60ac4`), and its docs with
+C6 (`ee80931`). Two more followed from the review (`e98b2e6`, `2f4c51e`), with one line of
+Term's page put right at landing (`40029f9`). It ran beside ULB's compile step, M10, and
+the in-force steps of WOL and PA, M5 and M11, two in each stream (§7).
+- One agent built it, injecting 14 faults, one for each kind the C step guards against, all
+  caught.
+- A second agent reviewed it against this note, the plan and USLIB-SEC-PLAN.md, injecting
+  21 faults of its own.
+  - It confirmed that no number had moved: 184,704 values on the committed points,
+    1,763,839 on the full splice grid, and 184,704 again with the trend, the review change
+    and RPI on, 0 apart.
+  - It checked the written-out total against CPython's `sum` on 1.1 million cases.
+  - It found:
+    - `Data` refusing, with an error that names nothing, a pivot table S and stage E
+      project. A table whose extrapolation overflows at an age no point reaches stopped
+      every point;
+    - the total's final-correction finiteness check held by no test;
+    - its `abs(f) < abs(x)` branch reached by no compiled test;
+    - C2 described in both CI's and Term's pages as freezing every cell, where it freezes
+      each report's columns;
+    - two smaller doc errors, and the table's file named literally.
+- The builder fixed all of them, with 5 faults more caught.
+- The reviewer verified the fixes with 7 faults of its own, all caught.
+
+**What exists now.**
+- *`CI_UK_SEC` at stage EC*, compiled under modelx-cython and checked against modelx.
+  - `Projection` has 80 cells, keyed by `idx`, 70 of them C-typed. A compiled ItemSpace is
+    645,072 bytes.
+  - `pivot_interp` is gone. `Data` builds its two arrays, the incidence and the death rate,
+    `[group, age]` over ages 18 to 74, element by element with S's formula, NaN below 18.
+  - Codes:
+    - the timings, as Term's;
+    - `benefit_pp`'s `MAIN`, `AP` and `CHILD`;
+    - `claims`' `MAIN`, `AP`, `CHILD` and `LAPSE`, and `ALL` for the total;
+    - one inner width of 5, the per-life caches widened to match.
+  - The caches: `t` 722, 12 × 50 + 120 + 2.
+  - M22's guards on the five powers: inflation, the trend, the two index factors and the
+    review factor.
+  - References printed as compiled, the `2**53` bounds, and the `idx` edges compared across
+    the engines.
+- *Beside the model:*
+  - `sample_sec.py`, which traces the standalone variant, the joint life, a review window,
+    the latched row and children's cover;
+  - `spec_sec.py`;
+  - `run_sec.py --cython`;
+  - `model-sec.md`'s *The compiled model*;
+  - the `cython_uk` job's `critical_illness` shard.
+- *Tests.* By default 521 pass and 101 skip; on the full grid 622 pass; the shard runs 14
+  compile tests.
+
+**Departures and precisions.**
+- *The pivot arrays cover the contract's ages alone.*
+  - Two `Data` References, `rate_age_min` and `rate_age_max`, which a test holds to
+    `issue_age_min` and `expiry_age_max − 1`, bound them. An attained age outside them is
+    refused by name, where S extrapolated. Only moving the contract's bounds reaches it.
+  - T1 exempts `pivot_interp`. Every element is held to S by `float.hex`, on the shipped
+    table and on one with uneven pivots: 456 of them, equal.
+- *A table that extrapolates past the floats is refused,* by name: the file, the column, the
+  group, the first such age, and the two pivots it came from. S fails only when a point
+  reaches that age, or caps an infinite rate as a certain claim. This is a departure,
+  recorded on the page.
+- *The claims total is the compensated sum, written out.*
+  - Three kinds are non-zero together, and a left-to-right sum differs from S's in 415 of
+    2,040 twin months. The test asserts both.
+  - Its other forms are held too: an infinite main claim, compared by `repr`, and the
+    additional payment, then the children's claim, outweighing the main claim.
+- *The labels.* `premium_mode()` now validates its column and compiles to `str`. `sex(2)`
+  and `smoker(2)` return a single life's blank column as read, as Term's do.
+- *`Data`'s own pivot power* compiles to Python's power, so it matches modelx bit for bit
+  and needs no M22 guard. Its overflow is the table's refusal above.
+- *The compiled refusal child* sets `Data`'s References as well as `Projection`'s.
+- *No chain cell holds a formatted `raise`.* Only `pols_if_at` recurses, and its raises are
+  constant strings, as the waiver fix's rule asks.
+
+**Measured for K6.** On the shared 4-CPU Linux machine, under a load of 1.4 to 2.2:
+- A build takes 58 s.
+- The compiled cold call at each shape's longest cover ran on 160 KiB and not on 144: the
+  reviewable, standalone and joint shapes, at the shipped References and with the review
+  change and the trend on. It needs a recursion limit of 26 compiled, 1,242 in the export.
+- C6, the median of three runs:
+
+  | Engine | `net_cf`, a point | `result_cf`, a point |
+  |---|---|---|
+  | compiled | 0.207 ms | 0.607 ms |
+  | export | 2.74 ms | 3.21 ms |
+  | modelx | 85.2 ms | 90.7 ms |
+
+  - The compiled model runs 13.2 times its export and 411 times modelx on `net_cf`, and
+    5.4 and 150 times on `result_cf`.
+  - Its peak is 86 to 87 MB, flat over the block.
+- At landing, `40029f9` ran its gate here in three jobs, with the builder's whole suite
+  standing for the fourth (2,012 passed on the same tree less the plan's record):
+  - the full grid: 622 passed;
+  - the conventions, harness and S suites: 590 passed;
+  - the `critical_illness`, `term_assurance` and `toolchain` shards;
+  - the generators' checks for CI, Term and ULB;
+  - the harness check;
+  - doccheck at 0 warnings;
+  - the scaffolding at 0 files.
+
+In CI, the Tests workflow's run 51 on `40029f9` ran 89 jobs. 87 passed on its first
+attempt, the last 1 h 53 min from dispatch. The other two, uslib's `sec` legs for universal
+life and the variable annuity on macOS, were never given a runner: each was cancelled after
+97 minutes in the queue, with no log. Both passed when the run's failed jobs were rerun
+(attempt 2: universal life's in 6.4 min and the variable annuity's in 13.7, the last at
+2 h 17 min from dispatch). M4's legs:
+- the `cython_uk` `critical_illness` legs, the first to compile `CI_UK_SEC`, 14 tests each,
+  in 156 s on Ubuntu and 150 s on Windows;
+- `sec_uk`'s three CI legs: the full grid on Ubuntu in 4.9 min, and the core on Windows in
+  4.2 and on macOS in 2.1;
+- the `test` job on Python 3.14 and Ubuntu, 7,054 passed and 108 skipped in 44 min 57 s,
+  its harness step agreeing.
+
+The compiled cold call's stack, as its test records it, ran on 384 KiB and not on 256 on
+Ubuntu, and on 224 and not on 192 on Windows, against 160 and not 144 here. Both runners
+are within the 1 MiB thread the test asserts. Ubuntu's bracket is Term's since the waiver
+fix, and Windows' one step below Term's (*Record — the waiver's incidence base*).
+
+**Faults.** Each was injected into a copy of its own.
+- The builder: 14, then 5 on the rework, all caught.
+- The review: 21.
+  - Two were missed: the finiteness check dropped and, but for two domain edges, the `else`
+    branch miswritten. Both are caught since `e98b2e6`.
+  - Two changed no number: the kinds added in another order, and the trend's floor taken
+    on a float.
+- The verification: 7, all caught.
+
+**Carried into M6 and after.**
+- *An S cell that interpolates or looks up at call time* becomes a `Data` array over the
+  contract's ages.
+  - `Data` holds the ages in References of its own, tested equal to `Projection`'s bounds,
+    and the readers refuse an age outside them on either side.
+  - An element that leaves the floats is refused when the table is read, naming the file,
+    the group and the age.
+- *An S cell that T1 exempts* has its replacement held to S by `float.hex`, on the shipped
+  table and on a reshaped one.
+- *A total of three or more kinds* is the compensated sum written out. Its test asserts
+  bit-equality with S and the number of months a left-to-right sum would differ, and holds
+  each of its branches, the finiteness check included.
+- *A refusal child* sets every space's References that have a domain.
+- *The compiled recursion limit* is measured with the limit set after the import.
 
 ### 6.3 Income protection — `IP_UK_SEC` (E: L, C: L)
 
