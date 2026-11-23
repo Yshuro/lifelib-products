@@ -129,12 +129,14 @@ def model_point_table():
        force, 0 for one issued at the valuation date, negative for one issued later;
     5. no policy is issued more than ``future_horizon_mth`` months after the valuation
        date, so ``duration_mth`` is ``-future_horizon_mth`` or more. At 0 the model takes
-       no future new business, and the message says so; a negative horizon is itself
-       refused;
+       no future new business, and the message says so; a horizon that is not a whole
+       number of months, 0 or more, is itself refused, since a NaN one fails every
+       comparison and so would admit every policy, and an infinite one bounds nothing;
     6. the opening state is a number in its range: the two indexation factors 1 or more,
        the RPI increase being floored at 0; ``review_prem_factor_init``, a factor on a
        premium, 0 or more; ``ci_sel_latched_init``, the latch, 0 or 1;
-       ``ci_sel_factor_init``, a multiple of a diagnosis rate, above 0; and
+       ``ci_sel_factor_init``, a multiple of a diagnosis rate, 0 or more, the factor of a
+       latch closed at a loading of -1 being 0; and
        ``review_prem_shock_init``, a premium change, -1 or more, since no review takes a
        premium below 0;
     7. a policy not yet in force, ``duration_mth`` 0 or less, holds the issue values: 1
@@ -184,8 +186,9 @@ def model_point_table():
         raise ValueError(f"{name}: duration_mth must be below 2**53 months; it is not at "
                          f"point_id {bad}")
     horizon = future_horizon_mth                                     # noqa: F821
-    if horizon < 0:
-        raise ValueError(f"future_horizon_mth must be 0 months or more, not {horizon}")
+    if not (horizon >= 0 and horizon % 1 == 0):
+        raise ValueError(f"future_horizon_mth must be a whole number of months, 0 or more, "
+                         f"not {horizon}")
     bad = table.index[months < -horizon].tolist()
     if bad and horizon == 0:
         raise ValueError(f"{name}: duration_mth must be 0 or more: this model takes no "
@@ -200,7 +203,7 @@ def model_point_table():
             ("idx_prem_factor_init", lambda v: v >= 1.0, "a number, 1 or more"),
             ("review_prem_factor_init", lambda v: v >= 0.0, "a number, zero or more"),
             ("ci_sel_latched_init", lambda v: (v == 0) | (v == 1), "0 or 1"),
-            ("ci_sel_factor_init", lambda v: v > 0.0, "a number above 0"),
+            ("ci_sel_factor_init", lambda v: v >= 0.0, "a number, zero or more"),
             ("review_prem_shock_init", lambda v: v >= -1.0, "a number, -1 or more")):
         v = pd.to_numeric(table[column], errors="coerce")            # noqa: F821
         bad = table.index[~(holds(v) & (v < float("inf")))].tolist()

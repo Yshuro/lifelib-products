@@ -133,7 +133,7 @@ anniversary already made (UKLIB-SEC-PLAN.md K14, §9 item 5):
 | `idx_prem_factor_init` | a factor, 1 or more | as `idx_factor_init` | the RPI premium increases already given, on the premium at issue |
 | `review_prem_factor_init` | a factor, 0 or more | the review period under way at the valuation date; on a review month, the one it opens | the premium changes the reviews already made have given, on the premium at issue |
 | `ci_sel_latched_init` | 0 or 1 | the start of month 0 | the select latch: 1 once a review at or before the valuation date has raised premiums past the shock threshold of its day, and 0 before |
-| `ci_sel_factor_init` | a multiple of the diagnosis rate, above 0 | the start of month 0 | the factor the latch closed at, `1 + η` at the loading of its day, read only while the latch is closed: 1 on an open latch, and 1 or below 1 on one closed at a loading of 0 or less |
+| `ci_sel_factor_init` | a multiple of the diagnosis rate, 0 or more | the start of month 0 | the factor the latch closed at, `1 + η` at the loading of its day, read only while the latch is closed: 1 on an open latch, and 1 or below 1 on one closed at a loading of 0 or less |
 | `review_prem_shock_init` | a premium change, −1 or more | the review that opened the review period under way, at or before the valuation date | the change that review made, which sets the shock lapse of its twelve-month window; read only while that window is still running, and 0 before the first review |
 
 `CI_UK_S` holds none of them. It recomputes the premium at month `t` as
@@ -201,7 +201,7 @@ fails it: the eight in-force columns are present; no `point_id` appears twice;
 below `2**53`, and −120 or more, future new business being written over a horizon,
 `Data.future_horizon_mth`, 120 months as shipped, which set to 0 refuses future new
 business altogether; each state column is a number in its range, the latch 0 or 1 and its
-factor above 0; a point not yet in force holds the issue values, 1 for the factors and 0
+factor 0 or more; a point not yet in force holds the issue values, 1 for the factors and 0
 for the latch and the change; a point in force fewer than 12 months, before its first
 anniversary, holds index factors of 1; an open latch holds a factor of 1; each flag is
 True or False;
@@ -373,32 +373,45 @@ test shows. The additional-payment and children's benefits take their caps the s
 `min(0.30, w + 2.0 max(0, ρ − 0.05))`: they are no cap on a claim rate.
 
 **Domains `CI_UK_S` leaves unchecked.** `CI_UK_S` raises a Reference to a power, divides
-by it, bounds a rate with it or reads it as a share, a loading or a frequency, and checks
-none. Off its domain it projects a negative premium, rate or claim with every check
-passing, as a trend of −3, an overlap of 3 or a review change of −150% would, or a
-complex lapse rate; and a NaN fails every comparison it meets, so that a NaN threshold
-closes the latch at a review that changed nothing, and a NaN slope reads as the cap through
-the lapse rate's `min`. Here `proj_len()` refuses each Reference off its domain, naming the
-point, the Reference, the domain and the value, on every point that reads it:
+by it, bounds a rate or a benefit with it, or reads it as a share, a loading, a frequency or
+an amount, and checks none. Off its domain it projects a negative premium, rate, benefit or
+expense with every check passing, as a trend of −3, an overlap of 3, a review change of
+−150% or a cover cap of −2 would, or a complex lapse rate. And a NaN fails every
+comparison it meets: a NaN threshold closes the latch at a review that changed nothing; a
+NaN slope reads as the cap through the lapse rate's `min`; a NaN cap is lost through the
+`min` it bounds, written with the bound second, so that the additional payment on point 6
+is 37,500 and not its cap of 25,000; and a NaN bound of the contract refuses nothing. An
+RPI of +∞ reads as the 10% cap, and one of −∞ as no increase.
+Here `proj_len()` refuses each Reference off its domain, naming the point, the Reference,
+the domain and the value, on every point that reads it:
 
 | Reference | Read on | Domain | Off it |
 |---|---|---|---|
+| `policy_term_min`, `policy_term_max`, `issue_age_min`, `issue_age_max`, `expiry_age_max` | every point | a whole number, 0 or more | a NaN bound refuses nothing and an infinite one bounds nothing, where the compiled caches will be sized from them |
 | `ci_trend` (τ), `inflation_rate` | every point | a finite number, −1 or more | the factors `(1 + τ)^n` and `(1 + i)^n` are negative, and so the diagnosis rate or the expense they multiply |
 | `sel_lapse_ci_loading` (η) | every point | a finite number, −1 or more | a closed latch's factor, `1 + η`, is negative, and so the diagnosis rate |
 | `overlap_k` (k), `survival_slip` (δ) | every point | a number from 0 to 1 | the shares of the deaths and of the diagnoses that do not pay make a negative claim, paid or exit rate |
 | `ap_freq_factor`, `child_freq` | every point | a number from 0 to 12 | a month's additional payments, `ap_freq_factor × i_ci / 12` with `i_ci` capped at 1, or children's claims, `child_freq / 12`, number more than one per policy in force, or fewer than none |
+| `rpi_rate` | every point | a finite number | an infinity reads as the cap or as no increase, through the floor at 0 and the cap |
+| `idx_cover_cap`, `idx_prem_cap`, `idx_prem_mult` | every point | a finite number, 0 or more | an increase is a cut: at a cover cap of −2 the cover is −100,000 and the premium −440; a NaN cap is lost through `min` |
+| `ap_share`, `child_share` | every point | a number from 0 to 1 | a share of the indexed cover makes a negative benefit, or one past the cover |
+| `ap_cap`, `child_cap` | every point | a finite number, 0 or more | a negative cap is a negative benefit; a NaN one is lost through `min(share × SA(t), cap)`, as the children's benefit of 75,000 shows |
+| `expense_acq`, `expense_maint`, `expense_claim` | every point | a finite number, 0 or more | an expense is income |
+| `claim_split_tol` | every point | a finite number, 0 or more | at an infinity `check_claim_split` passes anything, and below 0 fails everything |
 | `review_period_mths` | a reviewable point | a whole number of months, 1 or more | the reviews divide the policy months by it: at 0 by zero, below it counting reviews backward, off a whole number in parts |
 | `review_lapse_cap` | a reviewable point | a number from 0 to 1 | the shock lapse is at most the cap: past 1 its monthly rate, `1 − (1 − w)^(1/12)`, has no real value, which `CI_UK_S` projects as a complex number, and below 0 the window lapses a negative share |
 | `review_prem_shock` (ρ) | a reviewable point | a finite number, −1 or more | a review takes the premium below 0 |
 | `review_lapse_threshold` | a reviewable point | a finite number | the latch and the window compare a change with it, and a NaN closes the latch at every review |
 | `review_lapse_slope` | a reviewable point | a finite number, 0 or more | the window lapses fewer the more the premium rises; at NaN, at the cap |
 
-Each domain is a comparison no NaN passes, and a finite number one of which `x − x == 0`
-holds, which an infinity fails too. A guaranteed point reads no review Reference, and
-projects whatever they are. The pivot rates, whose ratio the interpolation raises to a
-power, are the table's, which `Data` holds above 0 and at most 1. `rpi_rate` reaches the
-index factors only through the floor at 0 and the 10% cap, and the indexation's caps and
-multiplier, which the contract fixes, are read as `CI_UK_S` reads them.
+Each domain is a comparison no NaN passes, a finite number one of which `x − x == 0`
+holds, which an infinity fails too, and a whole number one of which `x % 1 == 0` holds,
+which an infinity fails as well. A guaranteed point reads no review Reference, and
+projects whatever they are. A whole review period written as a float, `60.0`, is read as
+the int it is, so that it counts reviews as 60 does. The pivot rates, whose ratio the
+interpolation raises to a power, are the table's, which `Data` holds above 0 and at most
+1, and `Data.future_horizon_mth` is held to a whole number of months, 0 or more, by `Data`
+itself, as it reads the table.
 
 **The exit rate past 1, refused in its cell.** `check_claim_split_resid` converts the
 notes' annual exit rate, `q_exit = q_d (1 − k) + i_ci δ`, independently, to bound the
@@ -462,23 +475,24 @@ earlier, where the check returns False, as `CI_UK_S`'s does.
   multiplies every flow and counted cell and moves no per-policy value, bit for bit, the
   factors, the reviews and the latch among them; and the roll-forward, its tolerance scaled
   by the count, closes on a million policies.
-- **Validation and regeneration**: each malformed row of the table, 74 cases, is refused
-  naming its point, and naming its label on an extract labelled otherwise than by
-  position; the horizon is a Reference; a point past its cover or outside the
-  contract's bounds, 14 cases, is refused by `proj_len()`, each bound just inside it and
-  each moved past a committed point, and `run_sec.py --block` refuses such a point before
-  printing anything; so is a review history before the first review, 4 cases, a review
-  factor between the first review and the second that is not 1 plus that review's
-  change, 4 cases, accepted at two reviews, and each of twelve References off its
-  domain, the value next outside each edge, NaN and both infinities, on every point that
-  reads it, where at the edges the twin that reads it is S's in every cell; an exit rate
-  past 1 is refused in the month it passes, where S's residual is complex; each
-  assumption table a reader cannot read, 22 cases, is refused naming its lines; keys
-  written as floats read as `CI_UK_S` reads them; the edges of the interface and of each
-  bound are accepted, a review that cut the premium, to 0 at the edge, and the first
-  anniversary among them; every state `CI_UK_S` reaches, as shipped, under the splice's
-  review change and where the cap binds, is accepted in force; and the committed table
-  is what `CI_UK_S` generates.
+- **Validation and regeneration**: each malformed row of the table, 73 cases, is refused
+  naming its point, and naming its label on an extract labelled otherwise than by position;
+  the horizon is a Reference; a point past its cover or outside the contract's bounds, 14
+  cases, is refused by `proj_len()`, each bound just inside it and each moved past a
+  committed point, and `run_sec.py --block` refuses such a point before printing anything;
+  so is a review history before the first review, 4 cases, a review factor between the first
+  review and the second that is not 1 plus that review's change, 6 cases, the rule's
+  tolerance and the last month of its window among them, accepted at two reviews and within
+  its tolerance, and each of 29 References off its domain, the value next outside each edge,
+  NaN and both infinities, on every point that reads it, where at the edges the twin that
+  reads it is S's in every cell; a whole review period written `60.0` projects as 60 does,
+  cell for cell and type for type; an exit rate past 1 is refused in the month it passes,
+  where S's residual is complex; each assumption table a reader cannot read, 22 cases, is
+  refused naming its lines; keys written as floats read as `CI_UK_S` reads them; the edges
+  of the interface and of each bound are accepted, a review that cut the premium, to 0 at
+  the edge, the first anniversary, and a latch closed at a factor of 0 among them; every
+  state `CI_UK_S` reaches, as shipped, under the splice's review change and where the cap
+  binds, is accepted in force; and the committed table is what `CI_UK_S` generates.
 - **The product's own facts**: the two clocks on the shipped points; the committed rows, in
   force and issued later, continuing their S points at the shipped assumptions but for
   inflation, and the row read under a review change of 10% continuing `CI_UK_S` under it to
@@ -497,20 +511,20 @@ earlier, where the check returns False, as `CI_UK_S`'s does.
   parameter defaulted but the `claims` total's; the docstrings, read through docutils as the
   docs build reads them where docutils is installed; and the shared input tables.
 - **The caps**: on the reviewable point, the anchor cell and the joint point, its second
-  life a male non-smoker issued at 42, with the male non-smoker's diagnosis pivots at 60
-  and 65 raised to 0.98 and 1.0, in a copy of the table, under the splice's References:
-  on the reviewable point the latch's loading takes the diagnosis rate past 1 from
-  attained age 60, policy month 240, and with it the claim rates; on the anchor cell the
-  claim rate alone passes 1, from attained age 64, policy month 288; and on the joint
-  point the second life's claim rate, from its attained age 64, policy month 264. In both
-  models the capped rates and the monthly decrement are the float 1.0 there; every policy
-  in force at the start of that month claims in it, and none is in force after it; the
-  reports hold finite floats; and every cell the two models share agrees, issued now and 12
-  months on, and restated in force the month before the cap, to 1e-9 relative with no
-  absolute floor. And a NaN sent to a cap, through the overlap, the trend, the latch's
-  loading or the survival slippage, or to the RPI's floor and caps or the ancillary
-  benefits' caps, stays NaN in the cell, and no check passes a residual that is NaN: the
-  frame refuses the Reference first.
+  life a male non-smoker issued at 42, with the male non-smoker's diagnosis pivots at 60 and
+  65 raised to 0.98 and 1.0, in a copy of the table, under the splice's References: on the
+  reviewable point the latch's loading takes the diagnosis rate past 1 from attained age 60,
+  policy month 240, and with it the claim rates; on the anchor cell the claim rate alone
+  passes 1, from attained age 64, policy month 288; and on the joint point the second life's
+  claim rate, from its attained age 64, policy month 264. In both models the capped rates
+  and the monthly decrement are the float 1.0 there; every policy in force at the start of
+  that month claims in it, and none is in force after it; the reports hold finite floats;
+  and every cell the two models share agrees, issued now and 12 months on, and restated in
+  force the month before the cap, to 1e-9 relative with no absolute floor. And a NaN sent to
+  a cap, through the overlap, the trend, the latch's loading or the survival slippage, or to
+  the RPI's floor and caps or the ancillary benefits' caps, stays NaN in the cell, where the
+  frame refuses the Reference; and each check is False where its residual's formula is
+  replaced by one returning NaN, the only way left to give it one.
 
 ```bash
 python -m pytest tests/test_critical_illness_uk_sec.py -q

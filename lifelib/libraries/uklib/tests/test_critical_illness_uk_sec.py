@@ -65,9 +65,10 @@ module holds the rest of the plan's tests (its §5) and the product's own facts:
   back over no review already made (UKLIB-SEC-PLAN.md K14); expense inflation and the
   morbidity trend on the valuation clock; the initial expense on new business; the reviews
   and their window on the policy clock; the caps on the claim rates, a second life's among
-  them, a NaN that reaches a bound and a check whose residual is NaN; the values outside
-  cover; the block; an in-force extract; the runner; the cells' defaulted parameters; the
-  docstrings; the shared input tables; and what the default grid reaches.
+  them, a NaN that reaches a bound and a check whose residual is NaN; a whole review period
+  written as a float; the values outside cover; the block; an in-force extract; the runner;
+  the cells' defaulted parameters; the docstrings; the shared input tables; and what the
+  default grid reaches.
 * C2, the fingerprint: every committed point computes what the model computed when its E
   step ended, frozen at the end of this module before its C step changed anything
   (USLIB-SEC-PLAN.md §5.4).
@@ -1375,13 +1376,14 @@ MALFORMED = [
      "{file}: review_prem_factor_init must be a number, zero or more; it is not at "
      "point_id [11]"),
     ("a negative select factor", _set("ci_sel_factor_init", [10], -1.0),
-     "{file}: ci_sel_factor_init must be a number above 0; it is not at point_id [10]"),
+     "{file}: ci_sel_factor_init must be a number, zero or more; it is not at point_id "
+     "[10]"),
     ("a blank select factor", _set("ci_sel_factor_init", [9], float("nan")),
-     "{file}: ci_sel_factor_init must be a number above 0; it is not at point_id [9]"),
-    ("a select factor of 0", _set("ci_sel_factor_init", [11], 0.0),
-     "{file}: ci_sel_factor_init must be a number above 0; it is not at point_id [11]"),
+     "{file}: ci_sel_factor_init must be a number, zero or more; it is not at point_id "
+     "[9]"),
     ("an infinite select factor", _set("ci_sel_factor_init", [9], float("inf")),
-     "{file}: ci_sel_factor_init must be a number above 0; it is not at point_id [9]"),
+     "{file}: ci_sel_factor_init must be a number, zero or more; it is not at point_id "
+     "[9]"),
     ("a latch of 2", _set("ci_sel_latched_init", [10], 2),
      "{file}: ci_sel_latched_init must be 0 or 1; it is not at point_id [10]"),
     ("a latch of a half", _set("ci_sel_latched_init", [8], 0.5),
@@ -1576,7 +1578,9 @@ def test_the_future_horizon_is_a_reference_that_bounds_future_business(tmp_path)
     The committed table's one future point is issued 13 months on.  It reads at the shipped
     120 months and at 13, the shortest horizon that admits it, and is refused at 12, by
     name.  At 0 the model takes no future new business, D4's fallback for a product that
-    cannot support it, and the message says so.  A negative horizon is itself refused.
+    cannot support it, and the message says so.  A horizon that is not a whole number of
+    months, 0 or more, is itself refused, a NaN and an infinity among them: either would
+    admit every policy.
     Setting the Reference clears the table, so each value is read afresh.
     """
     future = _label(_committed(), "future", 4, -13)
@@ -1587,8 +1591,10 @@ def test_the_future_horizon_is_a_reference_that_bounds_future_business(tmp_path)
     model = mx.read_model(_sec_inputs(tmp_path, _committed()), name=_name("horizon"))
     try:
         assert model.Data.future_horizon_mth == 120
-        negative = "future_horizon_mth must be 0 months or more, not -1"
-        for horizon, refusal in ((13, None), (12, later), (0, no_future), (-1, negative),
+        off = "future_horizon_mth must be a whole number of months, 0 or more, not {}"
+        for horizon, refusal in ((13, None), (12, later), (0, no_future),
+                                 *((h, off.format(h)) for h in (
+                                     -1, 12.5, math.nan, math.inf, -math.inf)),
                                  (120, None)):
             model.Data.future_horizon_mth = horizon
             if refusal is None:
@@ -1724,11 +1730,15 @@ def test_a_point_the_contract_does_not_issue_is_refused_by_proj_len(tmp_path, ca
             shipped.close()
 
 
-# Each Reference this model raises to a power, divides by, bounds a rate with or reads as a
-# share, a loading or a frequency, as (the domain proj_len() names, the S point whose twin
-# reads it, the values at its edges it accepts, the values it refuses: next outside each
-# edge, NaN and the infinities).  The five review References are read on a reviewable point
-# alone, and refused there; the others on every point.
+# Each Reference this model raises to a power, divides by, bounds a rate or a benefit with,
+# or reads as a share, a loading, a frequency or an amount, as (the domain proj_len() names,
+# the S point whose twin reads it, the values at its edges it accepts, the values it
+# refuses: next outside each edge, NaN and the infinities).  The five review References are
+# read on a reviewable point alone, and refused there; the others on every point.
+#   - the contract's bounds, policy_term_min and _max, issue_age_min and _max and
+#     expiry_age_max: a NaN bound fails every comparison and so refuses nothing, and an
+#     infinite one bounds nothing.  At 0, the edge, a lower bound admits the twin and an
+#     upper one refuses it by its own rule, which names the bound;
 #   - ci_trend, inflation_rate and sel_lapse_ci_loading: below -1 the factors they make,
 #     1 + tau, 1 + i and 1 + eta, are negative, and so are the diagnosis rate and the
 #     expenses they multiply;
@@ -1737,6 +1747,12 @@ def test_a_point_the_contract_does_not_issue_is_refused_by_proj_len(tmp_path, ca
 #   - ap_freq_factor and child_freq: past 12 a month's additional payments or children's
 #     claims number more than one per policy in force, below 0 fewer than none (the bound
 #     derived in ap_rate's and child_rate_mth's docstrings);
+#   - rpi_rate: an infinity reads as the cap or as no increase, through the floor and the
+#     cap; idx_cover_cap, idx_prem_cap and idx_prem_mult: below 0 an increase is a cut, and
+#     a NaN cap is lost through the min it bounds, its bound second;
+#   - ap_share and child_share: shares of the indexed cover; ap_cap and child_cap: below 0
+#     a negative benefit, and a NaN one lost through min; the three expenses: below 0 an
+#     income; and claim_split_tol: at an infinity the claim split's check passes anything;
 #   - review_period_mths: the reviews divide the policy months by it, which at 0 divides by
 #     zero, below it counts reviews backward, and off a whole number counts them in parts;
 #   - review_lapse_cap: the shock lapse is at most the cap, past 1 its monthly rate,
@@ -1747,13 +1763,20 @@ def test_a_point_the_contract_does_not_issue_is_refused_by_proj_len(tmp_path, ca
 #     fails both comparisons, which closes the latch at every review;
 #   - review_lapse_slope: below 0 the window lapses fewer the more the premium rises, and a
 #     NaN reads as the cap through the lapse rate's min, its bound first.
-# The largest finite float is an edge of the threshold's domain, and of the slope's above;
-# and the floats next outside each edge.
+# The largest finite float is an edge of each domain that is unbounded above; and the
+# floats next outside each edge.
 _BIG = sys.float_info.max
 _OFF_EDGES = (math.nan, math.inf, -math.inf)
 _BELOW_M1, _BELOW_0 = math.nextafter(-1.0, -2.0), math.nextafter(0.0, -1.0)
 _ABOVE_1, _ABOVE_12 = math.nextafter(1.0, 2.0), math.nextafter(12.0, 13.0)
+_WHOLE = ("a whole number, 0 or more", 1, (0,), (-1, 0.5, *_OFF_EDGES))
+_AMOUNT = ("a finite number, 0 or more", 1, (0.0, _BIG), (_BELOW_0, *_OFF_EDGES))
+_INDEX = ("a finite number, 0 or more", 4, (0.0, _BIG), (_BELOW_0, *_OFF_EDGES))
+_SHARE = ("a number from 0 to 1", 1, (0.0, 1.0), (_BELOW_0, _ABOVE_1, *_OFF_EDGES))
+BOUNDS = ("policy_term_min", "policy_term_max", "issue_age_min", "issue_age_max",
+          "expiry_age_max")
 DOMAINS = {
+    **{bound: _WHOLE for bound in BOUNDS},
     "ci_trend": ("a finite number, -1 or more", 1, (-1.0,), (_BELOW_M1, *_OFF_EDGES)),
     "inflation_rate": ("a finite number, -1 or more", 1, (-1.0,), (_BELOW_M1, *_OFF_EDGES)),
     "sel_lapse_ci_loading": ("a finite number, -1 or more", 3, (-1.0,),
@@ -1765,6 +1788,19 @@ DOMAINS = {
                        (_BELOW_0, _ABOVE_12, *_OFF_EDGES)),
     "child_freq": ("a number from 0 to 12", 1, (0.0, 12.0),
                    (_BELOW_0, _ABOVE_12, *_OFF_EDGES)),
+    "rpi_rate": ("a finite number", 4, (-_BIG, _BIG), _OFF_EDGES),
+    "idx_cover_cap": _INDEX,
+    "idx_prem_mult": _INDEX,
+    "idx_prem_cap": _INDEX,
+    "ap_share": _SHARE,
+    "ap_cap": _AMOUNT,
+    "child_share": _SHARE,
+    "child_cap": _AMOUNT,
+    "expense_acq": _AMOUNT,
+    "expense_maint": _AMOUNT,
+    "expense_claim": _AMOUNT,
+    "claim_split_tol": ("a finite number, 0 or more", 2, (0.0, _BIG),
+                        (_BELOW_0, *_OFF_EDGES)),
     "review_period_mths": ("a whole number of months, 1 or more", 3, (1, 61),
                            (0, -60, 60.5, *_OFF_EDGES)),
     "review_lapse_cap": ("a number from 0 to 1", 3, (0.0, 1.0),
@@ -1793,18 +1829,22 @@ def test_a_reference_outside_its_domain_is_refused(ref, value, refused):
     """A Reference off its domain is refused on every point that reads it (T5).
 
     ``CI_UK_S`` raises each of :data:`DOMAINS`' References to a power, divides by it,
-    bounds a rate with it or reads it as a share, a loading or a frequency, and checks none:
-    off its domain it projects a negative premium, rate or claim with every check passing,
-    as a trend of -3, an overlap of 3 or a review change of -150% would, or a complex lapse
-    rate; and a NaN fails every comparison it meets, so that a NaN threshold closes the
-    latch at every review, adding 5.3% to the reviewable point's main claims, and a NaN
-    slope reads as the cap.  This model keeps S's formulas, and its frame refuses such a
-    Reference, naming the point, the Reference, its domain and its value: the value next
-    outside each edge, NaN and both infinities, on every point that reads it, a review
-    Reference on every reviewable point, where a guaranteed one, which reads none, projects
-    whatever it is.  At its edges the twin of the S point that reads it projects, and is
-    S's in every cell.  The review change is :data:`REVIEW_SHOCK`, past the threshold, but
-    where it is the Reference the case sets; where the cap passes 1, S reviews at
+    bounds a rate or a benefit with it, or reads it as a share, a loading, a frequency or
+    an amount, and checks none: off its domain it projects a negative premium, rate, benefit
+    or expense with every check passing, as a trend of -3, an overlap of 3, a review change
+    of -150% or a cover cap of -2 would, or a complex lapse rate; and a NaN fails every
+    comparison it meets, so that a NaN threshold closes the latch at every review, adding
+    5.3% to the reviewable point's main claims, a NaN slope reads as the cap, a NaN cap is
+    lost through its ``min``, and a NaN bound refuses nothing.  This model keeps S's
+    formulas, and its frame refuses such a Reference, naming the point, the Reference, its
+    domain and its value: the value next outside each edge, NaN and both infinities, on
+    every point that reads it, a review Reference on every reviewable point, where a
+    guaranteed one, which reads none, projects whatever it is.  At its edges the twin of the
+    S point that reads it projects, and is S's in every cell; but a bound of the contract,
+    which ``CI_UK_S`` has none of, at 0 admits the twin as a lower bound, and as an upper
+    one refuses it by its own rule, naming the bound, and not as off its domain.  The
+    review change is :data:`REVIEW_SHOCK`, past the threshold, but where it is the
+    Reference the case sets; where the cap passes 1, S reviews at
     :data:`REVIEW_SHOCK_PAST_1`, so that its shock lapse passes 1 and is not capped, and its
     monthly rate is complex in the first review's window.  Each is set in both models as
     each is read, before either computes anything, the form that runs compiled unchanged
@@ -1826,6 +1866,12 @@ def test_a_reference_outside_its_domain_is_refused(ref, value, refused):
             for label in readers:
                 _refused(_point(sec, label).result_cf,
                          f"point_id {label}: {ref} must be {what}, not {value}")
+        elif ref in BOUNDS:
+            p = _point(sec, s_point)
+            if ref.endswith("_min"):
+                assert len(p.result_cf()) == p.proj_len() == 300
+            else:
+                _refused(p.result_cf, f" {ref}, {value}")
         else:
             s = mx.read_model(model_path(TWIN), name=_name("domain_s"))
             try:
@@ -1925,8 +1971,13 @@ def _reviewed(points, factor, change):
 # review, point 10 inside its window and point 11 after it, each holding a factor and a
 # change that disagree, are refused.  Two reviews give a factor any two changes make, so
 # point 11's pair, refused at the shipped period, is accepted once the period is shortened
-# to 39 months, when its 78 months hold two.  The latch is not asked: one left open after a
-# change past today's threshold is a history the threshold of its day may have given.
+# to 39 months, when its 78 months hold two.  The rule's edges are pinned: a factor 2e-12
+# of itself off 1.1 is refused and one 0.5e-12 off is accepted, the rule reading to 1e-12
+# as an extract may spell the two; and a mismatch in month 119, the last before the second
+# review, is refused, and one in month 120, the second review's, accepted.  The latch is
+# not asked: one left open after a change past today's threshold is a history the
+# threshold of its day may have given.
+ONE_OFF, ONE_NEAR = 1.1 * (1.0 + 2e-12), 1.1 * (1.0 + 0.5e-12)
 ONE_REVIEW_MADE = [
     ("a factor the first review's change did not give",
      _reviewed([9], 1.3, 0.2), {}, 9, _one_review(9, 60, 1.3, 0.2)),
@@ -1938,6 +1989,14 @@ ONE_REVIEW_MADE = [
      _one_review(11, 78, 1.21, 0.1)),
     ("two changes' factor at two reviews", _reviewed([11], 1.21, 0.1),
      {"review_period_mths": 39}, 11, None),
+    ("a factor 2e-12 of itself off", _reviewed([11], ONE_OFF, 0.1), {}, 11,
+     _one_review(11, 78, ONE_OFF, 0.1)),
+    ("a factor 0.5e-12 of itself off", _reviewed([11], ONE_NEAR, 0.1), {}, 11, None),
+    ("a mismatch in the month before the second review",
+     _then(_set("duration_mth", [11], 119), _reviewed([11], 1.3, 0.0)), {}, 11,
+     _one_review(11, 119, 1.3, 0.0)),
+    ("a mismatch on the second review",
+     _then(_set("duration_mth", [11], 120), _reviewed([11], 1.3, 0.0)), {}, 11, None),
 ]
 
 
@@ -1951,7 +2010,8 @@ def test_a_review_factor_one_review_cannot_give_is_refused(tmp_path, case, edit,
     ``review_prem_shock_init``, so its review factor is ``1 + review_prem_shock_init``: any
     other is a history no policy has, which the frame refuses, naming the point, the factor
     and the change (:data:`ONE_REVIEW_MADE`).  At two reviews or more no such rule holds,
-    and the row projects.  Every Reference is set on a model just read (K7).
+    and the row projects; nor does it at a factor that departs by less than 1e-12 of
+    itself.  Every Reference is set on a model just read (K7).
     """
     model = _read_edited(tmp_path, edit)
     try:
@@ -1960,7 +2020,7 @@ def test_a_review_factor_one_review_cannot_give_is_refused(tmp_path, case, edit,
         model.Data.model_point_table()
         p = _point(model, point)
         if message is None:
-            assert p.reviews_passed(0) == 2 and len(p.result_cf()) == p.proj_len()
+            assert len(p.result_cf()) == p.proj_len()
         else:
             _refused(p.result_cf, message)
     finally:
@@ -2037,10 +2097,12 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
     first review holds a change of -25% and a factor of 0.75, and one at the edge, a change
     of -100%, a factor of 0, and pays no premium from then on.  The indexed point valued in
     its first policy year, at 11 months, holds no increase, and on its first anniversary,
-    12, the first.  And each bound of the contract at its edge projects: a 50-year term
-    from issue at 18, a 5-year term at 64, issue at 18 and 64 of each life of a joint
-    point, and cover to 75, of each life.  The extra rows are copies of committed rows under
-    labels of their own, 21 to 24.
+    12, the first.  A latch closed at a loading of -1, the edge ``proj_len()`` admits, has
+    a factor of 0, the state ``CI_UK_S`` reaches at that loading under a review change of
+    10% at month 72, and the diagnosis rate is 0 from then on.  And each bound of the
+    contract at its edge projects: a 50-year term from issue at 18, a 5-year term at 64,
+    issue at 18 and 64 of each life of a joint point, and cover to 75, of each life.  The
+    extra rows are copies of committed rows under labels of their own, 21 to 25.
     """
     committed = _committed()
     last = _label(committed, "derived", 1, 299)
@@ -2056,7 +2118,10 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
               23: (indexed, {"duration_mth": 11, "idx_factor_init": 1.0,
                              "idx_prem_factor_init": 1.0}),
               24: (indexed, {"duration_mth": 12, "idx_factor_init": 1.03,
-                             "idx_prem_factor_init": 1.045})}
+                             "idx_prem_factor_init": 1.045}),
+              25: (window, {"duration_mth": 72, "review_prem_factor_init": 1.1,
+                            "review_prem_shock_init": 0.1, "ci_sel_latched_init": 1,
+                            "ci_sel_factor_init": 0.0})}
 
     def edit(table):
         extra = []
@@ -2113,6 +2178,10 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
         assert len(anniversary.result_cf()) == anniversary.proj_len() == 288
         assert young.idx_factor(0) == 1.0 and young.idx_factor(1) == pytest.approx(1.03)
         assert anniversary.idx_factor(0) == 1.03 and anniversary.idx_prem_factor(0) == 1.045
+        zero = _point(model, 25)
+        assert len(zero.result_cf()) == zero.proj_len() == 228
+        assert {zero.ci_sel_factor(t) for t in range(228)} == {0.0}
+        assert {zero.ci_rate(t, 1) for t in range(228)} == {0.0}
         for point, months in ((1, 600), (6, 60), (2, 300), (7, 132), (5, 600)):
             assert len(_point(model, point).result_cf()) == months, point
             assert _point(model, point).check_pols_roll_fwd(), point
@@ -3229,11 +3298,10 @@ def test_a_nan_that_reaches_a_bound_stays_nan(bound, ref, s_point, calls, refs):
     with its bound second, as ``CI_UK_S`` writes it (:data:`NAN_BOUNDS`): the Reference
     that feeds it is set to NaN on a model read for the test, and every call must give the
     float NaN.  The cells are called on their own, without the frame: ``proj_len()`` refuses
-    four of these References at NaN, the overlap, the trend, the latch's loading and the
-    slippage, before a report reaches a bound (the domain test).  The lapse rate's bounds
-    keep ``CI_UK_S``'s order, the bound first, and are no cap on a claim rate
-    (USLIB-SEC-PLAN.md §5.1, step 6); ``proj_len()`` holds their References to domains no
-    NaN is in.
+    each of these References at NaN before a report reaches a bound (the domain test).
+    The lapse rate's bounds keep ``CI_UK_S``'s order, the bound first, and are no cap on a
+    claim rate (USLIB-SEC-PLAN.md §5.1, step 6); ``proj_len()`` holds their References to
+    domains no NaN is in.
     """
     model = mx.read_model(model_path(SEC), name=_name("nan"))
     try:
@@ -3275,6 +3343,74 @@ def test_no_check_passes_a_residual_that_is_not_a_number():
                 _refused(p.check_pols_roll_fwd, refusal)
                 _refused(p.check_claim_split, refusal)
         finally:
+            model.close()
+
+
+@pytest.mark.parametrize("check, resid", [
+    ("check_pols_roll_fwd", "check_pols_roll_fwd_resid"),
+    ("check_claim_split", "check_claim_split_resid")])
+def test_a_check_fails_a_residual_that_is_not_a_number(sec_model, check, resid):
+    """Each check returns False where its residual is NaN (§7.1, item 11).
+
+    A check is ``abs(resid) <= tolerance`` over the frame, which no NaN passes, as
+    ``CI_UK_S``'s is; but no input the frame accepts gives a NaN residual any more, so the
+    residual's formula is replaced, on a model read for the test, by one that returns NaN in
+    every month.  Then the check is the bool False on every committed point, where with its
+    own formula it is True.  A check that asked whether any residual was past its tolerance
+    would pass NaN.
+    """
+    model = mx.read_model(model_path(SEC), name=_name("nan_resid"))
+    try:
+        model.Projection.cells[resid].formula = lambda t: float("nan")
+        for key in point_keys(model):
+            p, shipped = projection(model, key), projection(sec_model, key)
+            assert math.isnan(p.cells[resid](0)), key
+            assert shipped.cells[check]() is True and p.cells[check]() is False, key
+    finally:
+        model.close()
+
+
+def test_a_whole_review_period_written_as_a_float_is_read_as_the_int():
+    """``review_period_mths`` written ``60.0`` projects as 60 does, cell for cell (F3).
+
+    The reviews divide the policy months by the period, and a float period would make
+    ``reviews_passed`` a float in cover, ``1.0``, where it is the int 0 outside it, and the
+    C step types a cell by the values it returns.  The period is read as the int it is, once
+    ``proj_len()`` has held it to a whole number, so on every reviewable point, with the
+    review change on so that the reviews move premiums and open windows, every value each
+    cell holds after the reports, the checks and every monthly cell at every month is the
+    same value, of the same type, under 60.0 as under 60.
+    """
+    models = []
+    try:
+        for period in (60, 60.0):
+            model = mx.read_model(model_path(SEC), name=_name("period"))
+            model.Projection.review_period_mths = period
+            model.Projection.review_prem_shock = REVIEW_SHOCK
+            models.append(model)
+        table = models[0].Data.model_point_table()
+        found = []
+        for label in table.index[table["premium_guarantee"] == "reviewable"]:
+            a, b = _point(models[0], label), _point(models[1], label)
+            for p in (a, b):
+                sweep(p)
+                assert full_sweep(p) == {}, label
+            for name, cells in a.cells.items():
+                for args in _cached_args(cells):
+                    want, have = cells(*args), b.cells[name](*args)
+                    if isinstance(want, pd.DataFrame):
+                        same = want.equals(have) and list(want.dtypes) == list(have.dtypes)
+                    elif isinstance(want, pd.Series):
+                        same = want.equals(have) and want.dtype == have.dtype
+                    else:
+                        same = type(want) is type(have) and want == have
+                    if not same:
+                        found.append(f"point {label}: {name}{args}: {want!r}, {have!r}")
+            last = b.reviews_passed(b.proj_len() - 1)
+            assert type(last) is int and last >= 1, label
+        assert not found, found[:10]
+    finally:
+        for model in models:
             model.close()
 
 

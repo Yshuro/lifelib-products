@@ -350,11 +350,12 @@ two responses.
 adds is the contract's own bounds (``product-spec.md``), which :func:`proj_len` holds a
 point to: a term of ``policy_term_min``, 5 years, to ``policy_term_max``, 50; an issue age
 of each life from ``issue_age_min``, 18, to ``issue_age_max``, 64; and cover ending by the
-75th birthday, ``expiry_age_max``: the issue age plus the term.  It holds the assumptions
-to their domains too, which :mod:`~.CI_UK_S` checks nowhere: each Reference it raises to a
-power, divides by, bounds a rate with or reads as a share, a loading or a frequency, on
-every point that reads it, so that no projection runs on a negative rate, a complex lapse
-or a NaN that a comparison reads as a bound.
+75th birthday, ``expiry_age_max``: the issue age plus the term.  It holds the bounds and
+the assumptions to their domains too, which :mod:`~.CI_UK_S` checks nowhere: each
+Reference it raises to a power, divides by, bounds a rate or a benefit with, or reads as
+a share, a loading, a frequency or an amount, on every point that reads it, so that no
+projection runs on a negative rate, benefit or expense, a complex lapse or a NaN that a
+comparison loses.
 
 .. rubric:: What this product does not have
 
@@ -647,10 +648,11 @@ def ci_sel_factor_init():
     :func:`ci_sel_factor`'s value in month 0 on a point whose latch had closed by the
     valuation date, :func:`ci_sel_latched_init` 1: ``1 + eta``, at the loading of its day,
     which :func:`ci_sel_factor` carries unchanged, whatever it is, 1 among them.  History,
-    read from the model point, as the latch is.  A number above 0, and 1 on an open latch,
-    which ``Data`` requires: on a point not yet in force, on a guaranteed point, and on a
-    reviewable point in force before its first review.  While the latch is open a review
-    after the valuation date closes it at ``1 + sel_lapse_ci_loading``.
+    read from the model point, as the latch is.  A number, 0 or more, as ``Data`` requires:
+    0 for a latch closed at a loading of -1, which :func:`proj_len` admits; and 1 on an
+    open latch, on a point not yet in force, on a guaranteed point, and on a reviewable
+    point in force before its first review.  While the latch is open a review after the
+    valuation date closes it at ``1 + sel_lapse_ci_loading``.
     """
     return float(model_point()["ci_sel_factor_init"])
 
@@ -684,6 +686,10 @@ def proj_len():
 
     * a point whose cover ended at or before the valuation date, which an in-force extract
       should not carry;
+    * any point while a bound of the contract, ``policy_term_min``, ``policy_term_max``,
+      ``issue_age_min``, ``issue_age_max`` or ``expiry_age_max``, is not a whole number, 0
+      or more: a NaN bound fails every comparison, and so refuses nothing, and an infinite
+      one bounds nothing;
     * one whose term is below ``policy_term_min``, 5 years, or above ``policy_term_max``,
       50;
     * one with a life issued below ``issue_age_min``, 18, or above ``issue_age_max``, 64;
@@ -694,10 +700,19 @@ def proj_len():
       -1 or more, since the factors they make, ``1 + tau`` and the rest, below 0 make a
       negative diagnosis rate or expense; ``overlap_k`` and ``survival_slip`` a number from
       0 to 1, the shares of the deaths and of the diagnoses that do not pay, which off it
-      make a negative claim, paid or exit rate; and ``ap_freq_factor`` and ``child_freq`` a
+      make a negative claim, paid or exit rate; ``ap_freq_factor`` and ``child_freq`` a
       number from 0 to 12, so that no month's additional payments or children's claims
       number more than one per policy in force, at any rate the model accepts, or fewer
       than none (:func:`ap_rate` and :func:`child_rate_mth` derive the bound);
+      ``rpi_rate`` a finite number, since the floor at 0 and the cap read an infinity as
+      no increase or as the cap; ``idx_cover_cap``, ``idx_prem_cap`` and ``idx_prem_mult``
+      a finite number, 0 or more, below which an increase is a cut, and ``ap_cap`` and
+      ``child_cap`` too, below which a benefit is negative; each cap is a bound written
+      second, so a NaN one would be lost, ``min`` keeping its first argument; ``ap_share``
+      and ``child_share`` a number from 0 to 1, a share of the indexed cover; the expenses
+      ``expense_acq``, ``expense_maint`` and ``expense_claim`` a finite number, 0 or more;
+      and ``claim_split_tol`` a finite number, 0 or more, since at an infinity
+      :func:`check_claim_split` passes anything;
     * a reviewable point while a review Reference is off its domain: ``review_period_mths``
       a whole number of months, 1 or more, which the reviews divide the policy months by;
       ``review_lapse_cap`` a number from 0 to 1, since the shock lapse is at most the cap,
@@ -721,10 +736,11 @@ def proj_len():
     threshold having been higher then; and two reviews or more give a factor any changes
     can make.
 
-    A domain is a comparison no NaN passes, and a finite number one that ``x - x == 0.0``
-    holds of, which an infinity fails too, an infinity less itself being NaN.  All but the
-    first four read this Space's References, which ``Data`` cannot see, so they are checked
-    here.  The bounds are the product's limits (``product-spec.md``), the contract a
+    A domain is a comparison no NaN passes, a finite number one that ``x - x == 0.0`` holds
+    of, which an infinity fails too, an infinity less itself being NaN, and a whole number
+    one that ``x % 1 == 0`` holds of, which an infinity fails, its remainder being NaN.
+    All but the first read this Space's References, which ``Data`` cannot see, so they are
+    checked here.  The bounds are the product's limits (``product-spec.md``), the contract a
     compiled model's caches will be sized from: a frame of at most 50 years and the future
     horizon, and attained ages from 18 to 74 on the pivot table.  Every report reads this
     cell first, so no point outside them is projected.  A guaranteed point reads no review
@@ -735,6 +751,26 @@ def proj_len():
         raise ValueError(
             f"point_id {point_id}: duration_mth {duration_mth_init()} "  # noqa: F821
             f"is at or past the end of cover, policy month {expiry_mth()}")
+    if not (policy_term_min >= 0 and policy_term_min % 1 == 0):      # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: policy_term_min must be a whole number, 0 "  # noqa: F821
+            f"or more, not {policy_term_min}")                       # noqa: F821
+    if not (policy_term_max >= 0 and policy_term_max % 1 == 0):      # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: policy_term_max must be a whole number, 0 "  # noqa: F821
+            f"or more, not {policy_term_max}")                       # noqa: F821
+    if not (issue_age_min >= 0 and issue_age_min % 1 == 0):          # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: issue_age_min must be a whole number, "  # noqa: F821
+            f"0 or more, not {issue_age_min}")                       # noqa: F821
+    if not (issue_age_max >= 0 and issue_age_max % 1 == 0):          # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: issue_age_max must be a whole number, "  # noqa: F821
+            f"0 or more, not {issue_age_max}")                       # noqa: F821
+    if not (expiry_age_max >= 0 and expiry_age_max % 1 == 0):        # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: expiry_age_max must be a whole number, 0 "  # noqa: F821
+            f"or more, not {expiry_age_max}")                        # noqa: F821
     if policy_term() < policy_term_min:                              # noqa: F821
         raise ValueError(
             f"point_id {point_id}: the term, {policy_term()} years, is below "  # noqa: F821
@@ -788,6 +824,55 @@ def proj_len():
         raise ValueError(
             f"point_id {point_id}: child_freq must be a number from 0 to 12, "  # noqa: F821
             f"not {child_freq}")                                     # noqa: F821
+    if not rpi_rate - rpi_rate == 0.0:                               # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: rpi_rate must be a finite number, not "  # noqa: F821
+            f"{rpi_rate}")                                           # noqa: F821
+    if not (idx_cover_cap >= 0.0 and idx_cover_cap - idx_cover_cap == 0.0):  # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: idx_cover_cap must be a finite number, 0 "  # noqa: F821
+            f"or more, not {idx_cover_cap}")                         # noqa: F821
+    if not (idx_prem_mult >= 0.0 and idx_prem_mult - idx_prem_mult == 0.0):  # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: idx_prem_mult must be a finite number, 0 "  # noqa: F821
+            f"or more, not {idx_prem_mult}")                         # noqa: F821
+    if not (idx_prem_cap >= 0.0 and idx_prem_cap - idx_prem_cap == 0.0):  # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: idx_prem_cap must be a finite number, "  # noqa: F821
+            f"0 or more, not {idx_prem_cap}")                        # noqa: F821
+    if not (ap_share >= 0.0 and ap_share <= 1.0):                    # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: ap_share must be a number from 0 to 1, "  # noqa: F821
+            f"not {ap_share}")                                       # noqa: F821
+    if not (ap_cap >= 0.0 and ap_cap - ap_cap == 0.0):               # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: ap_cap must be a finite number, 0 or "  # noqa: F821
+            f"more, not {ap_cap}")                                   # noqa: F821
+    if not (child_share >= 0.0 and child_share <= 1.0):              # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: child_share must be a number from 0 to 1, "  # noqa: F821
+            f"not {child_share}")                                    # noqa: F821
+    if not (child_cap >= 0.0 and child_cap - child_cap == 0.0):      # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: child_cap must be a finite number, 0 or "  # noqa: F821
+            f"more, not {child_cap}")                                # noqa: F821
+    if not (expense_acq >= 0.0 and expense_acq - expense_acq == 0.0):  # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: expense_acq must be a finite number, 0 or "  # noqa: F821
+            f"more, not {expense_acq}")                              # noqa: F821
+    if not (expense_maint >= 0.0 and expense_maint - expense_maint == 0.0):  # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: expense_maint must be a finite number, 0 "  # noqa: F821
+            f"or more, not {expense_maint}")                         # noqa: F821
+    if not (expense_claim >= 0.0 and expense_claim - expense_claim == 0.0):  # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: expense_claim must be a finite number, 0 "  # noqa: F821
+            f"or more, not {expense_claim}")                         # noqa: F821
+    if not (claim_split_tol >= 0.0                                   # noqa: F821
+            and claim_split_tol - claim_split_tol == 0.0):           # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: claim_split_tol must be a finite "  # noqa: F821
+            f"number, 0 or more, not {claim_split_tol}")             # noqa: F821
     if premium_guarantee() == "reviewable":
         if not (review_period_mths >= 1 and review_period_mths % 1 == 0):  # noqa: F821
             raise ValueError(
@@ -1166,13 +1251,15 @@ def reviews_passed(t):
     valuation date, and their premium changes are history; the later ones apply
     ``review_prem_shock``.  :mod:`~.CI_UK_S` divides ``t``, the same month only on a point
     issued at ``t = 0``.  Always zero on guaranteed-premium business, where the premium
-    cannot be changed at all, and outside cover.
+    cannot be changed at all, and outside cover.  An int in every month: the period is
+    read as the int it is, :func:`proj_len` having held it to a whole number, so that a
+    period written ``60.0`` counts reviews as 60 does, and not as floats.
     """
     if not is_active(t):
         return 0
     if premium_guarantee() != "reviewable":
         return 0
-    return duration_mth(t) // review_period_mths                     # noqa: F821
+    return duration_mth(t) // int(review_period_mths)                # noqa: F821
 
 
 def review_prem_change(t):
@@ -1202,11 +1289,11 @@ def review_shock_active(t):
     premiums by less than the threshold produces no shock at all.  The window is asked
     first, so a change is read inside a window alone; and the change is compared as
     :mod:`~.CI_UK_S` compares it, so a NaN change is read as a shock there too.  False
-    outside cover.
+    outside cover.  The period is read as an int, as :func:`reviews_passed` reads it.
     """
     if not is_active(t) or reviews_passed(t) < 1:
         return False
-    if duration_mth(t) % review_period_mths >= 12:                   # noqa: F821
+    if duration_mth(t) % int(review_period_mths) >= 12:              # noqa: F821
         return False
     if review_prem_change(t) <= review_lapse_threshold:              # noqa: F821
         return False
