@@ -445,8 +445,9 @@ premium, so there is no premium obligation to stop.
 What running in force adds is the contract's own bounds, which :func:`proj_len` holds a
 point to: an issue age of ``issue_age_min``, 18, or more, the youngest the mortality table
 rates, though the product admits issue from 3 months; cover from issue below
-``omega_age``, which is at most ``omega_age_max``, 120, the limiting age the compiled
-model's caches are sized for (``spec_sec.py``); and a bond still inside it at the
+``omega_age``, which is at most ``omega_age_max``, 121, the shipped mortality table's
+last age plus one and the limiting age the compiled model's caches are sized for
+(``spec_sec.py``); and a bond still inside it at the
 valuation date. ``Data`` bounds future new business by ``future_horizon_mth``, 120
 months. And :func:`proj_len` holds every
 Reference a formula reads through a bound, a power or a product to its domain, NaN and
@@ -896,8 +897,9 @@ def proj_len():
       no whole number;
     * ``omega_age_max`` that is not a whole number below ``2**53``, and ``omega_age``
       above it: the largest limiting age the compiled model's caches are sized for
-      (``spec_sec.py``), 120, the shipped ``omega_age``, where the table would let it be a
-      year past its last age, so that the table's length bounds no frame;
+      (``spec_sec.py``), 121, the shipped table's last age plus one, so that every
+      limiting age the shipped table admits projects, and a longer table, which would
+      admit a later one, bounds no frame;
     * one issued at or past ``omega_age``, which has no cover from issue;
     * one whose cover had ended by the valuation date, at or past the limiting age, which
       an in-force extract should not carry;
@@ -937,7 +939,7 @@ def proj_len():
     The rules read this Space's References, which ``Data`` cannot see, so they are
     checked here.  They are the contract the compiled model's caches are sized from
     (``spec_sec.py``): a frame of at most ``omega_age_max - issue_age_min`` years and the
-    future horizon, ``Data.future_horizon_mth``, so 1,344 months, and ages from 18 to
+    future horizon, ``Data.future_horizon_mth``, so 1,356 months, and ages from 18 to
     ``omega_age`` on the mortality table.  Every report reads this cell first, and so does
     every count, so no point outside them is projected, in modelx as compiled.  Raising
     ``omega_age_max`` or the horizon, or lowering ``issue_age_min``, needs the spec's sizes
@@ -1234,7 +1236,7 @@ def av_pp(t):
     opening, :func:`av_pp_py`, which is ``av_pp_at(t - 1, AFT_WD)``, bit for bit: the
     recursion blocked by policy year (UKLIB-SEC-PLAN.md K12), so that a cold read runs one
     cell a month back to its year's first month and two cells a year from there, where one
-    cell a month back to :func:`t_entry` would run the contract's longest cover, 1,224
+    cell a month back to :func:`t_entry` would run the contract's longest cover, 1,236
     months, on the compiled model's C stack.
     """
     if not is_active(t):
@@ -1266,8 +1268,8 @@ def av_pp_py(y):
 
     :func:`av_pp` reads it in the first month of policy year ``y``, in cover and after
     :func:`t_entry`, so ``y`` runs from 2 to the policy year of the limiting age's last
-    month, 102 at the contract's longest cover, issue at ``issue_age_min``, 18, to
-    ``omega_age_max``, 120 (``spec_sec.py``); no other cell reads it.
+    month, 103 at the contract's longest cover, issue at ``issue_age_min``, 18, to
+    ``omega_age_max``, 121 (``spec_sec.py``); no other cell reads it.
     """
     d = duration_mth_init()
     first = max(t_entry(), 12 * (y - 2) - d)
@@ -1539,7 +1541,7 @@ def wd_cum_pp_py(y):
     :func:`wd_cum_pp` of each, so that each finds the month before cached, and returns
     the year's last month's, :func:`wd_cum_pp`'s own value.  :func:`wd_cum_pp` reads it in
     the first month of policy year ``y``, in cover and after :func:`t_entry`, so ``y``
-    runs from 2 to 102 at the contract's longest cover, as :func:`av_pp_py`'s does; no
+    runs from 2 to 103 at the contract's longest cover, as :func:`av_pp_py`'s does; no
     other cell reads it.
     """
     d = duration_mth_init()
@@ -1678,7 +1680,7 @@ def pols_if_py(y):
     returns the year's last month's end-of-month count, ``pols_if_at(last, AFT_DECR)``,
     which is ``BEF_NB`` of the next month, the same product in the same order, bit for
     bit.  ``pols_if_at(t, BEF_NB)`` reads it in the first month of policy year ``y``, in
-    the frame and after :func:`t_entry`, so ``y`` runs from 2 to 102 at the contract's
+    the frame and after :func:`t_entry`, so ``y`` runs from 2 to 103 at the contract's
     longest cover, as :func:`av_pp_py`'s does; no other cell reads it.
     """
     d = duration_mth_init()
@@ -2076,7 +2078,7 @@ issue_age_min = 18
 
 omega_age = 120
 
-omega_age_max = 120
+omega_age_max = 121
 
 depletion_threshold = 0.005
 

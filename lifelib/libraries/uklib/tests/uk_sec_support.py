@@ -1527,11 +1527,11 @@ SEC_SPECS: dict[str, SecSpec] = {
     # column of its own name.
     #
     # Phase 2 sizes its caches from the contract (spec_sec.py holds each derivation):
-    #   t 0..1,345: a bond issued at issue_age_min, 18, whose fund lasts to omega_age_max,
-    #     120, a cover of 1,224 months, issued future_horizon_mth, 120 months, after the
-    #     valuation date, a frame of 1,344 months, its month after, and the roll-forward's
-    #     t + 1 there;
-    #   y 2..102, the policy years whose openings the fund, the withdrawals since issue and
+    #   t 0..1,357: a bond issued at issue_age_min, 18, whose fund lasts to omega_age_max,
+    #     121, the shipped table's last age plus one, a cover of 1,236 months, issued
+    #     future_horizon_mth, 120 months, after the valuation date, a frame of 1,356 months,
+    #     its month after, and the roll-forward's t + 1 there;
+    #   y 2..103, the policy years whose openings the fund, the withdrawals since issue and
     #     the count are blocked by, to the policy year of the longest cover's last month.
     # proj_len() refuses an issue age below issue_age_min, an omega_age above
     # omega_age_max, one at or past omega_age, and a bond in force whose fund is at or below

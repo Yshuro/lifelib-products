@@ -8,19 +8,19 @@
 # size by a cell's parameter names, so every cell taking t alone shares one.  The contract
 # is three References and one of Data's.  Projection.proj_len refuses a bond issued below
 # issue_age_min, 18, the youngest age the mortality table rates; and an omega_age, the
-# limiting age every frame ends at, above omega_age_max, 120, where the table alone would
-# admit one a year past its last age; and Data refuses a bond issued more than
+# limiting age every frame ends at, above omega_age_max, 121, the shipped table's last age
+# plus one, the most the table admits; and Data refuses a bond issued more than
 # future_horizon_mth, 120 months, after the valuation date.  So no point a report projects
 # outruns these sizes, and a change to omega_age_max, issue_age_min or the horizon needs
 # them recomputed here and the model rebuilt.  The fund's exhaustion only shortens a frame.
 # The ages bound no cache: an age indexes Data's mortality table, not a cache.
 #
 # t, months from the valuation date.  The longest frame is the longest cover, a bond issued
-# at issue_age_min, 18, whose fund lasts to omega_age_max, 120: 12 * (120 - 18) = 1,224
+# at issue_age_min, 18, whose fund lasts to omega_age_max, 121: 12 * (121 - 18) = 1,236
 # months from issue, issued future_horizon_mth, 120 months, after the valuation date:
-# 1,344 months, t = 0 .. 1,343, and 1,344 in the month after it; and the roll-forward's
-# residual there, check_pols_roll_fwd_resid(1344), reads the count carried into 1,345,
-# pols_if_at(1345, BEF_NB): 1,346, which is 12 * (omega_age_max - issue_age_min) +
+# 1,356 months, t = 0 .. 1,355, and 1,356 in the month after it; and the roll-forward's
+# residual there, check_pols_roll_fwd_resid(1356), reads the count carried into 1,357,
+# pols_if_at(1357, BEF_NB): 1,358, which is 12 * (omega_age_max - issue_age_min) +
 # future_horizon_mth + 2.  A longer future_horizon_mth, a higher omega_age_max or a lower
 # issue_age_min needs t raised to 12 * (omega_age_max - issue_age_min) + the horizon + 2.
 # timing, beside t in pols_if_at and av_pp_at: BEF_NB = 0 to AFT_WD = 7, one numbering for
@@ -34,9 +34,9 @@
 # y, a policy year, alone in av_pp_py, wd_cum_pp_py and pols_if_py, the openings of the
 # year the fund, the withdrawals since issue and the count are blocked by: read in the
 # first month of policy year y, in cover and after t_entry(), so y runs from 2 to the
-# policy year of the last month of the longest cover, 12 * (120 - 18) - 1 = 1,223, policy
-# year 1223 // 12 + 1 = 102: 103, which is omega_age_max - issue_age_min + 1.  A higher
+# policy year of the last month of the longest cover, 12 * (121 - 18) - 1 = 1,235, policy
+# year 1235 // 12 + 1 = 103: 104, which is omega_age_max - issue_age_min + 1.  A higher
 # omega_age_max or a lower issue_age_min needs y raised to omega_age_max - issue_age_min
 # + 1; the horizon moves no policy year.
 {"spaces": {"Projection": {"cells_param_size": {
-    "t": 1346, ("t", "timing"): (1346, 8), ("t", "kind"): (1346, 8), "y": 103}}}}
+    "t": 1358, ("t", "timing"): (1358, 8), ("t", "kind"): (1358, 8), "y": 104}}}}

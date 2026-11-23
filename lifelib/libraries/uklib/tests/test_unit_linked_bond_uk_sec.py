@@ -1284,16 +1284,23 @@ def test_the_policy_clock_is_a_closed_form_and_no_recursion_runs_backward(sec_re
 # Data's first reads of its tables.  Each chain head called cold alone, before anything
 # else on a read of its own, runs at most 16 cells beyond its chain, the unit-funding
 # residual on the GMDB's shape, the rider's cover to the limiting age, the deepest call a
-# projection makes, 229 cells on 213 (measured at M10; at M9, one cell a month, 12 beyond
-# 1,224).  Term's 16, as for uslib's Term (USLIB-SEC-PLAN.md D5).  A chain left one cell a
-# month runs some 1,000 levels beyond at the longest cover, and one of two cells a month a
-# frame's length; ULB_UK_S's fund runs four, about 5,400 levels (UKLIB-SEC-PLAN.md §6.6).
+# projection makes, 231 cells on 215 at omega_age 121 and 229 on 213 at the shipped 120
+# (measured at M10; at M9, one cell a month, 12 beyond 1,224).  Term's 16, as for uslib's
+# Term (USLIB-SEC-PLAN.md D5), and met exactly: the year walk's own steps at the chain's
+# foot take the 12 beyond of one cell a month to 16, so a product copying the walk
+# measures its own overhead rather than copy this one.  A chain left one cell a month runs
+# some 1,000 levels beyond at the longest cover, and one of two cells a month a frame's
+# length; ULB_UK_S's fund runs four, about 5,400 levels (UKLIB-SEC-PLAN.md §6.6).
 CHAIN_OVERHEAD = 16
 
 # The contract's longest cover (product-spec.md, held by proj_len()): a bond issued at
 # issue_age_min, 18, the youngest the mortality table rates, whose fund lasts to the
-# limiting age, omega_age 120: 1,224 months from issue.
+# largest limiting age the contract allows, omega_age_max, 121, the shipped table's last
+# age plus one: 1,236 months from issue.  LONGEST_REFS sets omega_age there, beside the
+# switches that ship off, for each test of the longest cover.
 YOUNGEST = 18
+OMEGA_MAX = 121
+LONGEST_REFS = {**SWITCHED_ON, "omega_age": OMEGA_MAX}
 
 # Each shape and the chains it runs, called cold in the last month of the frame at its own
 # longest cover, each on a read of its own: (the S point whose twin it is, its frame from
@@ -1301,7 +1308,7 @@ YOUNGEST = 18
 # accumulation cell, no withdrawals, runs to the limiting age; the custom 3% withdraws to
 # policy month 1,176, where its fund runs out at that age; the GMDB point withdraws 5% to
 # month 353, its guarantee reading the withdrawals' chain; the adviser charge to 323; and
-# the GMDB point with no withdrawals keeps the rider to the limiting age, 1,224 months, its
+# the GMDB point with no withdrawals keeps the rider to the limiting age, 1,236 months, its
 # death strain and its claims reading the guarantee's chain every month.  Each is issued now
 # and future_horizon_mth, 120 months, on; the last entry is the columns a shape changes in
 # its S point's twin.
@@ -1310,10 +1317,10 @@ CHAIN_HEADS = (("net_cf", None), ("av_pp", None), ("av_pp_at", "AFT_WD"),
                ("check_pols_roll_fwd_resid", None))
 GMDB_HEADS = (("net_cf", None), ("check_unit_funding_resid", None), ("death_strain", None),
               ("gmdb_guarantee_pp", None), ("claims", "DEATH"), ("gmdb_charges", None))
-SHAPES = ((2, 1224, CHAIN_HEADS, {}), (6, 1176, CHAIN_HEADS, {}),
+SHAPES = ((2, 1236, CHAIN_HEADS, {}), (6, 1176, CHAIN_HEADS, {}),
           (4, 353, CHAIN_HEADS + (("gmdb_guarantee_pp", None), ("claims", "DEATH")), {}),
           (3, 323, CHAIN_HEADS, {}),
-          (4, 1224, GMDB_HEADS, {"wd_pattern": "none"}))
+          (4, 1236, GMDB_HEADS, {"wd_pattern": "none"}))
 
 
 def _chain(p, t):
@@ -1344,7 +1351,8 @@ def _cold_depth(proj, cell, args):
 def _longest_cover(tmp_path):
     """A copy whose table holds each of :data:`SHAPES` at its longest cover: the twin of
     its S point issued at :data:`YOUNGEST`, now and 120 months on, the shipped
-    ``future_horizon_mth``.  ``(folder, [(label, frame, t_entry, heads)])``."""
+    ``future_horizon_mth``, each frame as it runs under :data:`LONGEST_REFS`.
+    ``(folder, [(label, frame, t_entry, heads)])``."""
     committed = _committed()
     rows, frames = [], []
     top = committed.index.max()
@@ -1370,18 +1378,19 @@ def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path):
     a chain of two cells a month, which gives the same numbers, needs twice the stack on
     every platform (F7); ``ULB_UK_S``'s fund chain runs four cells a month, through
     ``av_pp_at`` at three timings, and its count three.  One cell a month, this model's ran
-    1,236 cells at the contract's longest cover, and compiled the count's needed 288 KiB of
-    C stack, the fund's 252, past what the C step allows (UKLIB-SEC-PLAN.md §6.6, *Record --
-    M10*).  So the fund, the withdrawals since issue and the count are blocked by policy
+    1,236 cells at the longest cover at the shipped limiting age, 1,224 months, and compiled
+    the count's needed 288 KiB of C stack, the fund's 252, past what the C step allows
+    (UKLIB-SEC-PLAN.md §6.6, *Record -- M10*).  So the fund, the withdrawals since issue and the count are blocked by policy
     year, each year's opening a cell that walks the year before in ascending order
     (``av_pp_py``, ``wd_cum_pp_py``, ``pols_if_py``).  On a model just read, nothing is
     cached, so modelx's stack trace counts how deep a call runs, against that chain
     (:func:`_chain`) and :data:`CHAIN_OVERHEAD` more, with modelx's recursion limit where the
     module leaves it: each chain head of each of :data:`SHAPES`, in the last month of the
     frame, each on a read of its own and called first, since ``proj_len()`` searches the
-    fund in ascending ``t`` and would leave it cached, with :data:`SWITCHED_ON` set.  At each
-    shape's longest cover, issued at 18, the youngest the table rates, now and 120 months on
-    (:func:`_longest_cover`); each row's frame is asserted after.  A chain left one cell a
+    fund in ascending ``t`` and would leave it cached, with :data:`LONGEST_REFS` set.  At
+    each shape's longest cover, issued at 18, the youngest the table rates, now and 120
+    months on, the limiting age at the contract's largest, 121 (:func:`_longest_cover`);
+    each row's frame is asserted after.  A chain left one cell a
     month runs about a thousand cells past the bound, and one walked descending the same.
     """
     folder, frames = _longest_cover(tmp_path)
@@ -1390,7 +1399,7 @@ def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path):
         for cell, timing in heads:
             fresh = mx.read_model(folder, name=_name("cold"))
             try:
-                for ref, value in SWITCHED_ON.items():
+                for ref, value in LONGEST_REFS.items():
                     setattr(fresh.Projection, ref, value)
                 p = _point(fresh, label)
                 last = months - 1
@@ -1459,23 +1468,72 @@ def test_the_fund_chain_is_written_inline_and_av_pp_at_reads_it(sec_model):
     assert openings > 100, openings
 
 
-def _formats_a_refusal(cells):
-    """The lines of ``cells``' formula holding a ``raise`` whose exception is built from
-    text formatted at the raise: an f-string, a ``%`` on text, or a ``.format`` call."""
-    lines = []
-    for node in ast.walk(ast.parse(cells.formula.source)):
-        if isinstance(node, ast.Raise) and node.exc is not None:
-            for part in ast.walk(node.exc):
-                if (isinstance(part, ast.JoinedStr)
-                        or (isinstance(part, ast.BinOp) and isinstance(part.op, ast.Mod)
-                            and isinstance(part.left, ast.Constant)
-                            and isinstance(part.left.value, str))
-                        or (isinstance(part, ast.Call)
-                            and isinstance(part.func, ast.Attribute)
-                            and part.func.attr == "format")):
-                    lines.append(node.lineno)
-                    break
-    return lines
+# The builtins that make text of what they are given, and the methods that make text of
+# what they are called on, or join or format it (_text_faults).
+TEXT_CALLS = frozenset({"str", "repr", "ascii", "format", "chr", "hex", "oct", "bin"})
+TEXT_METHODS = frozenset({"format", "format_map", "join", "hex", "__str__", "__repr__",
+                          "__format__", "__mod__", "__add__"})
+
+
+def _is_text(node):
+    """Whether ``node`` is text by its form: a string constant, an f-string, a call of
+    :data:`TEXT_CALLS` or :data:`TEXT_METHODS`, or a ``+`` or ``%`` with text either side."""
+    if isinstance(node, ast.Constant):
+        return isinstance(node.value, str)
+    if isinstance(node, ast.JoinedStr):
+        return True
+    if isinstance(node, ast.Call):
+        func = node.func
+        return ((isinstance(func, ast.Name) and func.id in TEXT_CALLS)
+                or (isinstance(func, ast.Attribute) and func.attr in TEXT_METHODS))
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod)):
+        return _is_text(node.left) or _is_text(node.right)
+    return False
+
+
+def _text_faults(cells):
+    """Each place ``cells``' formula builds text, or raises other than a constant, as
+    ``(line, what)``.
+
+    Every ``raise`` must call one exception on one string constant, ``raise
+    ValueError("invalid timing")``, nothing else: a message built anywhere, at the raise
+    or into a local before it, is code in the cell's frame.  And nothing else in the
+    formula may build text, the docstring and those constants apart: no f-string, no other
+    string constant, no call of :data:`TEXT_CALLS` or :data:`TEXT_METHODS` and no name of
+    the first, and no ``+`` or ``%`` with text either side (:func:`_is_text`).  A ``%``
+    or ``+`` on numbers, ``duration_mth(t) % 12``, builds none.
+    """
+    func = ast.parse(cells.formula.source).body[0]
+    body = func.body
+    doc = (body[0].value if body and isinstance(body[0], ast.Expr)
+           and isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str)
+           else None)
+    raised, faults = set(), []
+    for node in ast.walk(func):
+        if isinstance(node, ast.Raise):
+            exc = node.exc
+            if (isinstance(exc, ast.Call) and not exc.keywords and len(exc.args) == 1
+                    and isinstance(exc.args[0], ast.Constant)
+                    and isinstance(exc.args[0].value, str)):
+                raised.add(exc.args[0])
+            else:
+                faults.append((node.lineno, "raises other than one string constant"))
+    for node in ast.walk(func):
+        if node is doc or node in raised:
+            continue
+        if isinstance(node, ast.JoinedStr):
+            faults.append((node.lineno, "an f-string"))
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            faults.append((node.lineno, f"the text {node.value!r}"))
+        elif isinstance(node, ast.Name) and node.id in TEXT_CALLS:
+            faults.append((node.lineno, f"{node.id}, which makes text"))
+        elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr in TEXT_METHODS):
+            faults.append((node.lineno, f".{node.func.attr}(), which makes text"))
+        elif (isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod))
+                and (_is_text(node.left) or _is_text(node.right))):
+            faults.append((node.lineno, "a + or % on text"))
+    return sorted(set(faults))
 
 
 def _deepest_stack(proj, cell, args):
@@ -1502,7 +1560,7 @@ def _deepest_stack(proj, cell, args):
 # modelx warns as its stack trace starts and stops, which is all the test does with it.
 @pytest.mark.filterwarnings("ignore:call stack trace:UserWarning")
 def test_no_cell_a_chain_recurses_through_formats_a_refusal(tmp_path):
-    """No cell a cold call's deepest path holds more than once formats a message (M10).
+    """No cell a cold call's deepest path holds more than once builds text (M10).
 
     A compiled cell's C frame holds the code that formats each of its messages, whether a
     run reaches it or not, and a chain holds a frame of each cell it recurses through at
@@ -1513,24 +1571,27 @@ def test_no_cell_a_chain_recurses_through_formats_a_refusal(tmp_path):
     fund's chain, calls ``av_pp_grown_refusal`` on its error path alone.  On a model just
     read, at the longest cover of the accumulation cell and of the GMDB point with no
     withdrawals, issued now, each chain head of :data:`SHAPES` is called cold in the last
-    month, under modelx's stack trace, with :data:`SWITCHED_ON` set, and the cells on the
+    month, under modelx's stack trace, with :data:`LONGEST_REFS` set, and the cells on the
     stack at its deepest point are counted.  A cell held there twice or more is one the
     chain recurses through, at every month or every year, or at both of its ends, as
-    ``av_pp_at`` is, three timings at each; none of them may hold a ``raise`` whose
-    message is formatted (:func:`_formats_a_refusal`).  A cell held once costs its frame
-    once, as ``mort_rate``, whose refusal names an age outside the table, does at the
-    chain's foot.  ``av_pp``, ``av_pp_py`` and ``av_pp_at`` must be among the cells
-    checked, or the test would check nothing.
+    ``av_pp_at`` is, three timings at each.  None of them may build text anywhere in its
+    formula, at a raise, in an error branch or into a local, nor raise other than one
+    exception on one string constant (:func:`_text_faults`): the frame holds a message's
+    code whether or not its branch runs.  A cell held once costs its frame once, as
+    ``mort_rate``, whose refusal names an age outside the table, does at the chain's
+    foot.  ``av_pp``, ``av_pp_py``, ``av_pp_at``, ``pols_if_at``, ``pols_if_py``,
+    ``wd_cum_pp`` and ``wd_cum_pp_py`` must be among the cells checked, every cell the
+    three blocked chains recurse through, or the test would check less than it says.
     """
     folder, frames = _longest_cover(tmp_path)
     found, checked = [], set()
     for label, months, entry, heads in frames:
-        if entry != 0 or months != 1224:
+        if entry != 0 or months != 12 * (OMEGA_MAX - YOUNGEST):
             continue
         for cell, timing in heads:
             fresh = mx.read_model(folder, name=_name("deepest"))
             try:
-                for ref, value in SWITCHED_ON.items():
+                for ref, value in LONGEST_REFS.items():
                     setattr(fresh.Projection, ref, value)
                 p = _point(fresh, label)
                 last = months - 1
@@ -1540,14 +1601,15 @@ def test_no_cell_a_chain_recurses_through_formats_a_refusal(tmp_path):
                 held = {name for name in stack if stack.count(name) > 1}
                 checked |= held
                 for name in sorted(held):
-                    lines = _formats_a_refusal(p.cells[name])
-                    if lines:
+                    faults = _text_faults(p.cells[name])
+                    if faults:
                         found.append(f"point {label}: {cell}{args}: {name}, held "
                                      f"{stack.count(name)} times on the deepest path, "
-                                     f"formats a refusal at line {lines}")
+                                     f"builds text: {faults}")
             finally:
                 fresh.close()
-    assert {"av_pp", "av_pp_py", "av_pp_at"} <= checked, sorted(checked)
+    assert {"av_pp", "av_pp_py", "av_pp_at", "pols_if_at", "pols_if_py", "wd_cum_pp",
+            "wd_cum_pp_py"} <= checked, sorted(checked)
     assert not found, found
 
 
@@ -2128,10 +2190,10 @@ def test_a_point_the_contract_does_not_issue_is_refused_by_proj_len(tmp_path, ca
 # int() once whole: each is refused at a fraction and at exactly 2**53, and its largest
 # whole number is accepted, or refused by a later rule.  return_shock is held with
 # fund_return: their sum, the trailing year's return, must be above -1.  omega_age_max, the
-# largest limiting age the compiled model's caches are sized for (spec_sec.py), is a whole
-# number too, and omega_age above it is refused: a limiting age of 121, a year past the
-# table's last age, which the table alone admits, projects once omega_age_max is raised
-# with it (C1's precision for the contract's bound, as uslib's VA set its References).
+# largest limiting age the compiled model's caches are sized for (spec_sec.py), 121, the
+# shipped table's last age plus one, is a whole number too, and omega_age above it is
+# refused, so that a longer table bounds no frame: every limiting age the shipped table
+# admits projects, as at stage E, and lowered to 120 the bound refuses 121.
 BIG = 1.7976931348623157e308
 WHOLE = 2.0 ** 53
 BELOW_0 = math.nextafter(0.0, -1.0)
@@ -2201,12 +2263,10 @@ DOMAINS = [
     *_whole_domain("issue_age_min", (0,)),
     ("issue_age_min=2**53-1", {"issue_age_min": WHOLE - 1},
      f"point_id 1: the issue age, 65, is below issue_age_min, {int(WHOLE - 1)}"),
-    *_whole_domain("omega_age", (120,), below=False),
-    ("omega_age=121", {"omega_age": 121},
-     "point_id 1: omega_age, 121, is above omega_age_max, 120"),
-    ("omega_age=121 with omega_age_max 121", {"omega_age": 121, "omega_age_max": 121},
-     None),
+    *_whole_domain("omega_age", (120, 121), below=False),
     *_whole_domain("omega_age_max", (120, 121, WHOLE - 1), below=False),
+    ("omega_age=121 with omega_age_max 120", {"omega_age": 121, "omega_age_max": 120},
+     "point_id 1: omega_age, 121, is above omega_age_max, 120"),
     ("omega_age_max=119", {"omega_age_max": 119},
      "point_id 1: omega_age, 120, is above omega_age_max, 119"),
     ("omega_age=122", {"omega_age": 122}, OMEGA.format(122)),
@@ -2767,9 +2827,7 @@ def test_a_read_beyond_the_mortality_table_is_refused_naming_its_point(tmp_path)
     20 to 100 refuses every point, naming the limiting age and the bound, and so does a
     limiting age raised to 122, two years past the shipped table's 120.  At 121, a year
     past it, cover reads ages to 120, all in the table, and the accumulation cell projects
-    what ``ULB_UK_S`` projects at that limiting age, 672 months, in every column, under an
-    ``omega_age_max`` raised to 121 with it, the compiled model's caches' bound (C1's
-    precision for the bound).  Below it, the mortality rate's read at an attained age the
+    what ``ULB_UK_S`` projects at that limiting age, 672 months, in every column.  Below it, the mortality rate's read at an attained age the
     table does not rate raises ``ValueError`` naming the point and the age: the anchor
     cell issued at 18, the youngest the contract issues, under a table that starts at 20.
     The surrender table takes its last year for every later one, as ``ULB_UK_S`` does, so
@@ -2804,7 +2862,6 @@ def test_a_read_beyond_the_mortality_table_is_refused_naming_its_point(tmp_path)
     try:
         for each in (s, sec):
             each.Projection.omega_age = 121
-        sec.Projection.omega_age_max = 121
         sp, p = _point(s, 2), _row(sec, "twin", 2, 0)
         assert sp.proj_len() == p.proj_len() == 12 * (121 - 65)
         assert frame_mismatches(sp.result_cf(), p.result_cf(), rtol=0.0, atol=0.0) == []
@@ -3956,7 +4013,7 @@ def test_the_sec_model_reads_the_s_tables_in_place(sec_model, s_model):
     sec_refs = {r: v for r, v in sec_model.Projection.refs.items()
                 if isinstance(v, plain) and r != "idx" and r not in codes(sec_model.Projection)}
     assert sec_refs == {**s_refs, "depletion_threshold": THRESHOLD, "issue_age_min": 18,
-                        "omega_age_max": 120}
+                        "omega_age_max": 121}
 
 
 def test_the_core_grid_reaches_every_branch(spliced, splice_records):
@@ -4383,7 +4440,7 @@ def test_the_spec_sizes_each_cache_as_its_comment_derives():
     assert sizes == {"t": t, ("t", "timing"): (t, width), ("t", "kind"): (t, width),
                      "y": span + 1}, sizes
     assert len({size[1] for size in sizes.values() if isinstance(size, tuple)}) == 1
-    assert (t, width, span + 1) == (1346, 8, 103)
+    assert (t, width, span + 1) == (1358, 8, 104)
 
 
 def test_the_sample_raises_the_recursion_limit_its_comment_derives():
@@ -5259,7 +5316,7 @@ def _mismatch_lines(found):
 
 # How many rows of a grid C4 compares at once.  compiled_mismatches sweeps every row of its
 # case in one modelx read and keeps every value of every row, in the parent and in the
-# child, until it compares them.  A ULB row runs at most 1,344 months, so twenty rows hold
+# child, until it compares them.  A ULB row runs at most 1,356 months, so twenty rows hold
 # about what uslib's MYGA's chunks of twenty did (USLIB-SEC-PLAN.md §7.10, *Record --
 # M20*).
 C4_CHUNK = 20
@@ -5300,8 +5357,9 @@ def test_the_compiled_model_computes_what_modelx_computes_on_the_splice_grid(spl
 
 # The contract's extremes (product-spec.md, held by proj_len()): each shape at its longest
 # cover from the youngest issue age, as (the S point it changes, its changes): the
-# accumulation cell, no withdrawals, its fund lasting to the limiting age, 1,224 months from
-# 18; the custom 3%, female, whose fund runs out at 1,176; the GMDB point with no
+# accumulation cell, no withdrawals, its fund lasting to the contract's largest limiting
+# age, 121, 1,236 months from 18; the custom 3%, female, whose fund runs out at 1,176; the
+# GMDB point with no
 # withdrawals, the rider charged to the limiting age; the adviser charge, its fund closing
 # on a rounding; and the GMDB point on the anchor's pattern, its guarantee drawn down.
 EXTREMES = {
@@ -5316,12 +5374,13 @@ EXTREMES = {
 def _contract_extremes(tmp_path):
     """The rows at the contract's extremes, built by the generator.
 
-    Each of :data:`EXTREMES` in a copy of S's table, read with :data:`SWITCHED_ON` set, its
-    twin issued at the valuation date, the same issued ``future_horizon_mth``, 120 months,
-    after it, a frame of up to 1,344 months, and the same restated in force in the last
-    month of its SEC frame, opened with S's state there; so ``t`` reaches 1,345, the policy
-    year 102 and each code its last, the furthest ``spec_sec.py`` sizes for.  S's tables
-    serve: the mortality table runs from 18 to 120.  Returns the rows.
+    Each of :data:`EXTREMES` in a copy of S's table, read with :data:`LONGEST_REFS` set,
+    the limiting age at 121, its twin issued at the valuation date, the same issued
+    ``future_horizon_mth``, 120 months, after it, a frame of up to 1,356 months, and the
+    same restated in force in the last month of its SEC frame, opened with S's state there;
+    so ``t`` reaches 1,357, the policy year 103 and each code its last, the furthest
+    ``spec_sec.py`` sizes for.  S's tables serve: the mortality table runs from 18 to 120.
+    Returns the rows.
     """
     s_table = _s_table()
     rows = []
@@ -5332,7 +5391,7 @@ def _contract_extremes(tmp_path):
     s = mx.read_model(temp_inputs(tmp_path, model_path(TWIN), model_points=pd.concat(rows)),
                       name=_name("extremes_s"))
     try:
-        for ref, value in SWITCHED_ON.items():
+        for ref, value in LONGEST_REFS.items():
             setattr(s.Projection, ref, value)
         last = {}
         for point_id in EXTREMES:
@@ -5356,20 +5415,20 @@ def test_the_compiled_model_computes_what_modelx_computes_at_the_contract_extrem
 
     The rows of :func:`_contract_extremes`, each shape at its longest cover from the
     youngest issue age, issued now and 120 months on and in force in its last month, with
-    every switch that ships off on (:data:`SWITCHED_ON`), read every cache as far as
-    ``spec_sec.py`` sizes it for: ``t`` to 1,345, the roll-forward's month after the month
-    after the 1,344-month frame; ``y`` to 102, the opening of the longest cover's last
-    policy year; and every timing and kind.  modelx sweeps every row fully, and the
+    every switch that ships off on and the limiting age at 121 (:data:`LONGEST_REFS`),
+    read every cache as far as ``spec_sec.py`` sizes it for: ``t`` to 1,357, the
+    roll-forward's month after the month after the 1,356-month frame; ``y`` to 103, the
+    opening of the longest cover's last policy year; and every timing and kind.  modelx sweeps every row fully, and the
     compiled model must agree everywhere.  A cache one too small for the contract raises
     ``IndexError`` compiled where modelx reads on, and fails here, though the spec check
     passes it, which holds the caches to the spec and not the spec to the contract.
     """
     build = sec_build(SEC)
     rows = _contract_extremes(tmp_path / "s")
-    covers = 12 * (120 - rows["age_at_entry"]) - rows["duration_mth"]
-    assert covers.max() == 1344
+    covers = 12 * (OMEGA_MAX - rows["age_at_entry"]) - rows["duration_mth"]
+    assert covers.max() == 1356
     folder = compiled_case(build, tmp_path / "extremes", model_points=rows)
-    found = compiled_mismatches(build, folder, refs=SWITCHED_ON)
+    found = compiled_mismatches(build, folder, refs=LONGEST_REFS)
     assert not found, _mismatch_lines(found)
 
 
@@ -5639,16 +5698,20 @@ IDX_EDGES = [(12, "point_id", ()), (12, "result_cf", ()), (-1, "point_id", ()),
              (11, "proj_len", ()), (11, "net_cf", (0,))]
 
 # Calls past the caches spec_sec.py sizes, which raise IndexError in the compiled model
-# alone, as (call, arguments, what modelx does): a month either side of the t cache; a
-# timing and a kind past their codes, inside the one inner width modelx refuses; and a
-# policy year past the y cache, whose opening modelx computes outside cover as 0.0.
+# alone, as (call, arguments, what modelx does), on the extract's first row, point 1, the
+# anchor cell issued at 65: a month either side of the t cache, which modelx answers with
+# 0.0, the month outside cover; a timing and a kind past the one inner width, which modelx
+# refuses as codes it does not take; and a policy year past the y cache, whose opening
+# modelx computes as it computes any year's opening, the closing value of the year before:
+# 0.0 here, that year long past the point's cover, and the fund that year closes on for a
+# bond whose cover reaches it, one issued at 18 under a limiting age of 121.
 COMPILED_ONLY = [
-    ("net_cf", (1346,), ("ok", 0.0)), ("net_cf", (-1,), ("ok", 0.0)),
+    ("net_cf", (1358,), ("ok", 0.0)), ("net_cf", (-1,), ("ok", 0.0)),
     ("pols_if_at", (0, 8), ("raised", "ValueError: invalid timing")),
     ("av_pp_at", (0, 8), ("raised", "ValueError: invalid timing")),
     ("claims", (0, 8), ("raised", "ValueError: invalid kind")),
-    ("av_pp_py", (103,), ("ok", 0.0)), ("wd_cum_pp_py", (103,), ("ok", 0.0)),
-    ("pols_if_py", (103,), ("ok", 0.0)),
+    ("av_pp_py", (104,), ("ok", 0.0)), ("wd_cum_pp_py", (104,), ("ok", 0.0)),
+    ("pols_if_py", (104,), ("ok", 0.0)),
 ]
 
 
@@ -5862,6 +5925,12 @@ def _did(call):
 # others bracket what the call needs, and the test reports the smallest that ran.
 STACK_KIB = (48, 64, 96, 128, 192, 256, 384, 512, 1024, 2048)
 
+# The chain heads the stack test calls cold, each in an ItemSpace of its own: net_cf, and
+# the unit-funding residual, the deepest call a projection makes.  The runner makes one
+# ItemSpace for each key of a job and deletes it after the key's calls, so a key with two
+# calls would run the second warm, on the first's caches.
+STACK_HEADS = ("net_cf", "check_unit_funding_resid")
+
 # How long the stack test waits for each child, in seconds: one runs in a few seconds, more
 # under load.  A bracketing size may kill its child on a stack overflow by design, and
 # where the overflow hangs instead, as Windows Error Reporting could, the wait ends sooner
@@ -5874,17 +5943,20 @@ def test_the_longest_cover_runs_cold_on_a_one_megabyte_stack(sec_build, tmp_path
     """The deepest call the contract allows runs compiled on a 1 MiB stack (F7).
 
     On the rows of :func:`_longest_cover`, each shape of :data:`SHAPES` at its longest
-    cover, issued at 18 now and 120 months on: the accumulation cell, 1,224 months; the
-    custom 3%, 1,176; the GMDB point withdrawing, 353, and the adviser charge, 323; and the
-    GMDB point with no withdrawals, the rider charged to the limiting age, 1,224.  A cold
-    ``net_cf`` and a cold unit-funding residual in the last month run the chains back to
+    cover, issued at 18 now and 120 months on, the limiting age at the contract's largest,
+    121: the accumulation cell, 1,236 months; the custom 3%, 1,176; the GMDB point
+    withdrawing, 353, and the adviser charge, 323; and the GMDB point with no withdrawals,
+    the rider charged to the limiting age, 1,236.  Each of :data:`STACK_HEADS`, a cold
+    ``net_cf`` and a cold unit-funding residual in the last month, runs the chains back to
     ``t_entry()``, one cell a month within the policy year and two a year before it, the
-    fund, the withdrawals since issue and the count being blocked by policy year: 229 cells
+    fund, the withdrawals since issue and the count being blocked by policy year: 231 cells
     deep in modelx at the longest cover, on a model just read
     (:func:`test_every_chain_runs_one_cell_a_month_from_a_cold_start`), with every switch
-    that ships off on (:data:`SWITCHED_ON`).  Compiled they run on the C stack, which the
+    that ships off on (:data:`LONGEST_REFS`).  Each runs in an ItemSpace of its own, on a
+    copy of its row, so that each is cold: in one ItemSpace the second would run on the
+    first's caches, a few cells deep.  Compiled they run on the C stack, which the
     interpreter's recursion limit does not count, and one cell a month they needed 288 KiB
-    of it here (UKLIB-SEC-PLAN.md §6.6, *Record -- M10*).  1 MiB is the stack MSVC gives an
+    of it here at the shipped limiting age (UKLIB-SEC-PLAN.md §6.6, *Record -- M10*).  1 MiB is the stack MSVC gives an
     executable's main thread unless the executable asks for more: a host that embeds
     Python, where python.exe itself asks for 2,000,000 bytes.  A thread whose stack is
     reserved at 1 MiB stands in for it on every platform (``uk_sec_support.run_compiled``),
@@ -5906,24 +5978,26 @@ def test_the_longest_cover_runs_cold_on_a_one_megabyte_stack(sec_build, tmp_path
     """
     build = sec_build(SEC)
     folder, frames = _longest_cover(tmp_path / "rows")
-    case = compiled_case(build, tmp_path / "longest",
-                         model_points=pd.read_csv(folder.parent / TABLE,
-                                                  index_col="point_id"))
+    rows = pd.read_csv(folder.parent / TABLE, index_col="point_id")
+    copies = [rows.set_axis(rows.index + 1000 * i, axis=0) for i in range(len(STACK_HEADS))]
+    case = compiled_case(build, tmp_path / "longest", model_points=pd.concat(copies))
     model = mx.read_model(case, name=_name("longest"))
     try:
-        for ref, value in SWITCHED_ON.items():
+        for ref, value in LONGEST_REFS.items():
             setattr(model.Projection, ref, value)
         calls, want = {}, {}
         for label, months, entry, _ in frames:
-            key = _key(model, label)
-            proj = projection(model, key)
-            assert (proj.proj_len(), proj.t_entry()) == (months, entry), label
-            calls[key] = [("net_cf", (months - 1,)),
-                          ("check_unit_funding_resid", (months - 1,))]
-            want[key] = [proj.net_cf(months - 1), proj.check_unit_funding_resid(months - 1)]
+            for i, head in enumerate(STACK_HEADS):
+                key = _key(model, label + 1000 * i)
+                proj = projection(model, key)
+                assert (proj.proj_len(), proj.t_entry()) == (months, entry), label
+                calls[key] = [(head, (months - 1,))]
+                want[key] = [proj.cells[head](months - 1)]
     finally:
         model.close()
-    job = {"refs": SWITCHED_ON, "calls": calls}
+    assert len(calls) == len(frames) * len(STACK_HEADS), "a head shares an ItemSpace"
+    assert all(len(each) == 1 for each in calls.values()), "a head runs after another, warm"
+    job = {"refs": LONGEST_REFS, "calls": calls}
 
     def child(timeout, **where):
         try:
@@ -5939,8 +6013,9 @@ def test_the_longest_cover_runs_cold_on_a_one_megabyte_stack(sec_build, tmp_path
     ran = [kib for kib in STACK_KIB if runs[f"a {kib} KiB thread"]["exit"] == 0]
     late = [kib for kib in STACK_KIB
             if str(runs[f"a {kib} KiB thread"]["exit"]).startswith("none")]
-    record = (f"the compiled cold net_cf and unit-funding residual at the longest cover ran "
-              f"on a thread of {ran or 'no size'} KiB and not of "
+    record = (f"the compiled cold net_cf and unit-funding residual at the longest cover, "
+              f"each in an ItemSpace of its own, ran on a thread of {ran or 'no size'} KiB "
+              f"and not of "
               f"{[kib for kib in STACK_KIB if kib not in ran]} KiB"
               f"{f', timed out at {late} KiB' if late else ''}; on the main thread "
               f"{'it ran' if runs['the main thread']['exit'] == 0 else 'it failed'}")

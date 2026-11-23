@@ -41,12 +41,13 @@ import sys
 # The export does not raise the recursion limit as modelx does (F7).  The deepest call the
 # contract allows, a cold check_unit_funding_resid in the last month of the longest cover,
 # the GMDB point with no withdrawals, issued at 18 and its rider charged to the limiting
-# age, 120, now or 120 months on, needs a limit of 473 in the export, its net_cf 469, and
-# the reports and checks below, which run in ascending t, need 128 from a script's top
-# level (measured at M10).  The chains are blocked by policy year, so a cold call runs one
-# cell a month within its year and two cells a year before it.  So the build itself needs
-# 128, and the rest is margin for an edit that calls a cell cold.  The limit is four times
-# the first, rounded up to the thousand, 2,000, which a test holds to this comment.
+# age at the contract's largest, omega_age_max, 121, now or 120 months on, needs a limit of
+# 477 in the export, its net_cf 473, and the reports and checks below, which run in
+# ascending t, need 128 from a script's top level (measured at M10).  The chains are
+# blocked by policy year, so a cold call runs one cell a month within its year and two
+# cells a year before it.  So the build itself needs 128, and the rest is margin for an
+# edit that calls a cell cold.  The limit is four times the first, rounded up to the
+# thousand, 2,000, which a test holds to this comment.
 sys.setrecursionlimit(2_000)
 
 from ULB_UK_SEC_nomx import mx_model  # noqa: E402
