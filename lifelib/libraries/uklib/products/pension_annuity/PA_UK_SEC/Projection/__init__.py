@@ -5,24 +5,49 @@
 
 """The by-contract projection of the :mod:`~.PA_UK_SEC` model.
 
-The Space is parameterized by ``point_id``, so ``Projection[1]`` is an ItemSpace
-projecting model point 1, the twin of :mod:`~.PA_UK_S`'s worked-example scenario,
-commencing at the valuation date::
+The Space is parameterized by ``idx``, the position of a model point in the table and in
+every :mod:`~.PA_UK_SEC.Data` vector, as ``basiclife.BasicTerm_SC`` is: ``Projection[10]``
+is an ItemSpace projecting the table's eleventh row, model point 11, the worked example in
+payment 17 months at the valuation date, its annuitant dead since policy month 16, and
+:func:`point_id` is its label::
 
-    >>> Projection[1].result_cf()          # one row per month from the valuation date
-    >>> Projection[1].result_pols()        # the counts and survival behind it
-    >>> Projection.point_id = 2            # or switch the default
+    >>> Projection[10].result_cf()         # one row per month from the valuation date
+    >>> Projection[10].result_pols()       # the counts and survival behind it
+    >>> Projection[10].point_id()          # 11, the row's point_id
+    >>> Projection.idx = 1                 # or switch the default, before it computes
 
-Switch the default, or set any Reference, before the model computes anything.
+Switch the default, or set any Reference, before the model computes anything. Compiled, no
+cache is ever cleared: set ``idx``, like every Reference, on a model just imported, before
+anything is computed, or project through ``Projection[i]``. modelx recomputes what a
+Reference reaches when it is set; a compiled ItemSpace takes the References when it is
+made and keeps every value it has computed until it is deleted, and the base
+``Projection`` and ``Data`` keep theirs for good. And it holds each Reference as a C
+variable of its shipped value's type: a float set on an int Reference, ``omega_age``,
+``issue_age_min``, ``mort_table_year``, ``improve_flat_age`` or ``improve_taper_age``,
+truncates toward zero, and an int set on a float Reference reads as a float
+(``products/pension_annuity/model-sec.md``).
+
+Any ``idx`` makes an ItemSpace, and none is refused here. ``Projection[-1]`` reads every
+vector at its last element, as numpy and a compiled memoryview both do, so it is the
+table's last point, under that point's own :func:`point_id`; an ``idx`` past the last
+row raises ``IndexError`` at its first read of a vector, which modelx reports inside its
+``FormulaError``.
 
 This is :mod:`~.PA_UK_S` taught to run in force at a valuation date, as lifelib's
 ``basiclife.BasicTerm_SE`` extends ``basiclife.BasicTerm_S``, on the payout chassis of
-``SPIA_US_SEC``. A formula of :mod:`~.PA_UK_S` is rewritten where it depends on where the
-projection starts, where it must answer for a month outside the frame, where it passed a
-policy month as ``t`` or read history that a Reference cannot give, or where it branched
-on text; every other formula is :mod:`~.PA_UK_S`'s own, the cap on mortality,
+``SPIA_US_SEC``, and then made to compile, as ``basiclife.BasicTerm_SC`` is made from
+``basiclife.BasicTerm_S``. A formula of :mod:`~.PA_UK_S` is rewritten where it depends on
+where the projection starts, where it must answer for a month outside the frame, where it
+passed a policy month as ``t`` or read history that a Reference cannot give, or where it
+branched on text; every other formula is :mod:`~.PA_UK_S`'s own, the cap on mortality,
 ``min(q, 1.0)``, among them. ``products/pension_annuity/model-sec.md`` lists the rewritten
-cells with the reason for each.
+cells with the reason for each. Making it compile changed how each cell reads its inputs
+and spells its codes, and how three chains reach back in time, and no number: every model
+point attribute a projection cell uses is read as a number from a ``Data`` vector, each
+text column it branches on as ``Data``'s decoded flags, the mortality table as an array by
+sex and age, every timing and kind as an int code (*Codes*, below), :mod:`~.PA_UK_S`'s
+``claims(t, kind=None)`` total as ``claims(t, ALL)``, and survival and the two payments to
+date blocked by policy year (*Chains blocked by policy year*, below).
 
 .. rubric:: Input data
 
@@ -76,7 +101,7 @@ year, and through them the payment months, the escalation anniversaries, the gua
 period, the overlap gate and the mortality table. A cell keyed directly by this clock
 takes ``k``, never ``t``: :func:`is_payment_pm` and :func:`annuity_pp_pm` are keyed by the
 policy month ``k``, and the annuitant's payments to date, ``cum_annuity_pp(k,
-"ANNUITANT")``, by the time point ``k`` months after the start date, so that the notes'
+ANNUITANT)``, by the time point ``k`` months after the start date, so that the notes'
 ``G(16) = 6,790.50`` reads unchanged. The policy year is keyed ``y`` and an escalation
 anniversary ``a``, as in :mod:`~.PA_UK_S`, both counted from the start date.
 
@@ -114,10 +139,10 @@ The count on the books is the number of contracts the point stands for,
 life's survival, :func:`lives_if`, never the count: the two lives are independent, so their
 two probabilities are the whole survival state, and every cash flow is the count times a
 per-contract amount weighted by survival, as :mod:`~.PA_UK_S` weights every flow by its
-constant ``pols_if_init``. So ``pols_if_at(t, "BEF_NB")`` is :func:`pols_if_init`, the count
+constant ``pols_if_init``. So ``pols_if_at(t, BEF_NB)`` is :func:`pols_if_init`, the count
 already in payment, at :func:`t_entry`, the first month on the books, the whole count after
-it, and 0 outside the frame; and ``pols_if_at(t, "BEF_DECR")`` adds :func:`pols_new_biz`,
-the annuities starting in month ``t``. The ``"BEF_DECR"`` count weights every cash flow of
+it, and 0 outside the frame; and ``pols_if_at(t, BEF_DECR)`` adds :func:`pols_new_biz`,
+the annuities starting in month ``t``. The ``BEF_DECR`` count weights every cash flow of
 row ``t``. A contract in payment at the valuation date opens with its ``policy_count``; one
 starting at or after it opens with none, and takes its ``policy_count`` as new business in
 the month of its start date, ``duration_mth(t) = 0``. New business brings no premium and
@@ -176,16 +201,18 @@ wherever those models have an analogue, and follow ``SPIA_US_SEC`` — the libra
 payout chassis — wherever the two products share machinery, so that the same concept has
 the same name on both sides of the Atlantic. What running in force adds is named as
 ``basiclife.BasicTerm_SE`` names it: ``duration_mth`` read from the model point,
-``policy_count``, ``pols_new_biz``, ``pols_if_at`` with its ``"BEF_NB"`` and
-``"BEF_DECR"`` timings, ``is_active`` and ``result_pols``. ``duration_mth_init``, the
+``policy_count``, ``pols_new_biz``, ``pols_if_at`` with its ``BEF_NB`` and
+``BEF_DECR`` timings, ``is_active`` and ``result_pols``. ``duration_mth_init``, the
 policy months completed at the valuation date, takes ``UL_US_S``'s name, and each
 opening-state column is ``<cell>_init``, the cell it opens with ``_init`` added.
 ``t_entry`` and ``stop_mth`` are the SEC family's own. A cell keyed by policy month carries
-``_pm``, and a table reader keyed by attained age ``_at``. The ``is_*`` decodes turn the
-model point's text columns into the flags the projection branches on, each reading and
-validating its column as :mod:`~.PA_UK_S`'s label accessor does, so that no other
-projection cell compares text and none calls a label accessor (``payment_timing``,
-``escalation_type``, ``vp_basis``, ``mort_basis``, ``sex``), which is left to reporting.
+``_pm``, a table reader keyed by attained age ``_at``, a chain's opening of a policy year
+``_py``, as ``ULB_UK_SEC``'s, and a refusal moved off a chain ``_refusal``. The ``is_*``
+decodes turn the model point's text columns into the flags the projection branches on,
+each reading and validating its column as :mod:`~.PA_UK_S`'s label accessor does, so that
+no other projection cell compares text and none calls a label accessor
+(``payment_timing``, ``escalation_type``, ``vp_basis``, ``mort_basis``, ``sex``), which is
+left to reporting.
 The technical notes use compact actuarial symbols instead. The mapping is:
 
 =========================  ==============================  ==========================
@@ -206,6 +233,7 @@ P                          purchase_price()                Purchase price
 x_a, x_d                   age_at_entry(life)              Entry ages (ALB), life 1 or 2
 (none)                     age(t, life)                    Attained age (ALB)
 (none)                     sex(life)                       Sex of each covered life
+(none)                     mort_schedule(life)             Its row of the table, by sex
 theta_a, theta_d           rating_factor(life)             Enhanced/impaired multiplier
 delta                      dependant_pct()                 Dependant's percentage
 (dependant_present)        is_joint()                      Contract covers a dependant
@@ -213,6 +241,7 @@ overlap                    overlap()                       Dependant runs during
 A(1)                       annual_income_first()           Starting annualized income
 A(y0)                      annual_income_init()            Income of the year under way
 A(y)                       annual_income(y)                Annualized income in year y
+(none)                     annual_income_refusal(y)        Its refusal past the floats
 g                          escalation_rate()               Fixed escalation rate
 escalation_type            escalation_type()               level / fixed / rpi_catchup / lpi5
 (none)                     is_level()                      escalation_type decoded: level
@@ -233,6 +262,7 @@ inst(t)                    annuity_pp(t)                   Scheduled instalment
 n                          guarantee_mths()                Guarantee period in months
 C(t)                       certain_floor(t)                Floor 1{duration_mth(t) < n}
 l_a(t), l_d(t)             lives_if(t, life)               Survival probability to time t
+(l at a year's start)      lives_if_py(y, life)            Survival opening policy year y
 (l at t_entry)             lives_if_init(life)             Survival at t = 0, or 1 later
 d_a(t), d_d(t)             lives_death(t, life)            Death density of month t
 d_last(t)                  lives_death_last(t)             Last-death density of month t
@@ -242,8 +272,11 @@ max(C, l_a)                payment_factor(t)               Annuitant payment fac
 w(t)                       overlap_gate(t)                 Dependant-stream availability
 delta(1-l_a)l_d w          dependant_factor(t)             Dependant payment factor
 G(k)                       cum_annuity_pp(k, kind)         Instalments to policy time k
+(G at a year's start)      cum_annuity_pp_py(y)            G opening policy year y
 (G at t = 0)               cum_annuity_pp_init()           Annuitant's paid at t = 0
+(G, kind ALL)              cum_annuity_pp_all(k)           G_all read at policy time k
 G_all(t)                   cum_annuity_all(t)              Paid on every stream to time t
+(G_all at a year's start)  cum_annuity_all_py(y)           G_all opening policy year y
 (G_all at t = 0)           cum_annuity_all_init()          The same at t = 0
 v                          vp_pct()                        Value-protection percentage
 vp_basis                   vp_basis()                      first_death or last_survivor
@@ -270,15 +303,19 @@ omega                      omega_age                       Limiting age, 115
 (none)                     calendar_year(t)                Calendar year containing month t
 IF(t)                      pols_if(t)                      Any payment obligation open
 (none)                     policy_count()                  Contracts the point stands for
+(none)                     point_id()                      The point's label, idx's row
 (none)                     pols_if_init()                  Contracts in payment at t = 0
 (none)                     pols_if_at(t, timing)           Contracts on the books at time t
 (none)                     pols_new_biz(t)                 Annuities starting in month t
 E[ANN(t)]                  annuity_payments(t)             Expected annuity outgo
-E[VP(t)]                   claims(t, "VP")                 Value-protection lump sum
-E[PROP(t)]                 claims(t, "PROP")               Proportionate final payment
+E[VP(t)]                   claims(t, VP)                   Value-protection lump sum
+E[PROP(t)]                 claims(t, PROP)                 Proportionate final payment
+(none)                     claims(t, ALL)                  The two kinds' total
 E[EXP(t)]                  expenses(t)                     Maintenance expense
 c_e, pi                    expense_maint, inflation_rate   Expense level and inflation
 (none)                     inflation_factor(t)             Expense inflation, valuation clock
+(none)                     cum_annuity_all_refusal(t)      G_all's refusal past the floats
+(none)                     cum_annuity_pp_refusal(k)       G's refusal past the floats
 CF(t)                      liability_cf(t)                 Total gross liability outgo
 (none)                     net_cf(t)                       -liability_cf(t), insurer sign
 =========================  ==============================  ==========================
@@ -291,11 +328,11 @@ example's G column prints, while the value-protection section says it accumulate
 instalments "while the annuitant is alive" on the first-death basis and "the dependant's
 instalments too" on the last-survivor one. Those are different objects whenever the
 dependant's stream is running, and here they run on different clocks:
-:func:`cum_annuity_pp` with ``kind = "ANNUITANT"`` is the deterministic as-if-alive
+:func:`cum_annuity_pp` with ``kind = ANNUITANT`` is the deterministic as-if-alive
 annuitant schedule, keyed by the policy time point ``k`` as the contract fixes it, and
 :func:`cum_annuity_all` is the expected payments on every stream, keyed by the time point
 ``t`` on the valuation clock, as the survival that weights it is; ``cum_annuity_pp(k,
-"ALL")`` reads it at the policy time point ``k``, so that the notes' printed column keeps
+ALL)`` reads it at the policy time point ``k``, so that the notes' printed column keeps
 its name.
 
 ``l`` and ``L`` differ in the notes only by case, as in ``SPIA_US_S``: survival
@@ -416,6 +453,80 @@ model in the library. There is no premium income in the projection at all: the p
 price is a pricing input paid at outset, before the first projected month, not a projected
 cash flow.
 
+.. rubric:: Chains blocked by policy year
+
+Three cells recurse month by month: survival, :func:`lives_if`, on the table basis; the
+payments to date on every stream, :func:`cum_annuity_all`; and the annuitant's,
+``cum_annuity_pp(k, ANNUITANT)``. Called cold in the last month of the longest cover, one
+cell a month ran 1,380 cells back to :func:`t_entry` or the valuation date's key, and a
+compiled model runs such a chain on the C stack, which the interpreter's recursion limit
+does not count: it needed 244 to 276 KiB of it, compiled with gcc, past the 256 KiB the C
+step allows itself (UKLIB-SEC-PLAN.md K12). So each is blocked by policy year, in
+``ULB_UK_SEC``'s form: within a policy year it runs one cell a month, as before, and at
+the time point or key that opens a year it reads the year's opening, :func:`lives_if_py`,
+:func:`cum_annuity_all_py` or :func:`cum_annuity_pp_py`, which walks the year before in
+ascending order, asking the monthly cell of each of its months, so that each finds the
+month before cached, and returns the year's last month's step, the cell's own float, so no
+number moves. A cold read then runs one cell a month back to its year's first time point
+and two cells a year before that: 239 cells and at most 12 more, and 52 to 76 KiB of C
+stack. And no cell such a chain recurses through formats a message: a compiled cell's C
+frame holds the code of every message it formats, whether its branch runs or not, so a
+refusal that names values sits in a cell of its own, which the chain's cell calls on its
+error path alone, :func:`annual_income_refusal`, :func:`cum_annuity_all_refusal` and
+:func:`cum_annuity_pp_refusal`, and ``cum_annuity_pp(k, ALL)``'s refusal of a key before
+the valuation date's sits in :func:`cum_annuity_pp_all`.
+
+.. rubric:: Codes
+
+What :mod:`~.PA_UK_S` spells as text, a timing or a kind, is here an int Reference named as
+the text it replaces, so that every cell takes and returns C numbers. A call site reads as
+it did, less the quotes: ``pols_if_at(t, BEF_DECR)``, ``claims(t, VP)``,
+``cum_annuity_pp(k, ANNUITANT)``.
+
+=============  =====  ===============================================================
+Reference      Value  Meaning
+=============  =====  ===============================================================
+BEF_NB         0      :func:`pols_if_at`: the count carried in from month t - 1
+BEF_DECR       1      :func:`pols_if_at`: that count plus month t's new business
+VP             0      :func:`claims`: the value-protection lump sum
+PROP           1      :func:`claims`: the proportionate final payment
+ANNUITANT      2      :func:`cum_annuity_pp`: the annuitant's as-if-alive instalments
+ALL            3      :func:`claims`: the two kinds' total; :func:`cum_annuity_pp`: the
+                      payments on every stream
+=============  =====  ===============================================================
+
+The timings are numbered by instant, ``BEF_NB`` 0 and ``BEF_DECR`` 1, as in every SEC
+model. The kinds of the two cells that take one are numbered as one family, the claims'
+two and the annuitant's stream, so that a kind of one cell is refused by the other's, as
+``ULB_UK_SEC`` numbers its two families of timing; ``ALL``, the total, comes last, and
+names the total of either cell, which :mod:`~.PA_UK_S` spells ``claims(t)`` and
+``cum_annuity_pp(k, "ALL")``. A code a cell takes indexes that cell's cache, a C array four
+codes wide, since every 2-D cache of the model has one inner width (``spec_sec.py``), so
+codes are numbered densely from 0, and any other code a cell is given raises, as
+:mod:`~.PA_UK_S`'s text does. They are References, not cells, so the symbol map does not
+list them. Every other Reference is named in lower case, ``issue_age_min`` and
+``omega_age`` among them, the contract's bounds that :func:`proj_len` checks and that the
+compiled model's caches are sized from, with ``Data.future_horizon_mth``.
+
+.. rubric:: Reporting cells
+
+:func:`model_point`, the label accessors :func:`payment_timing`, :func:`escalation_type`,
+:func:`vp_basis`, :func:`mort_basis` and :func:`sex`, the reports :func:`result_cf` and
+:func:`result_pols`, and the four checks are written for a reader and for the comparison
+with :mod:`~.PA_UK_S`, which has every one of them: a table row, text, DataFrames and four
+verdicts. No other cell calls them: each reads the number ``Data`` decoded from the same
+column instead, the decodes' flags and the schedules the sexes select. So the row, the
+text and the frames stay Python when the model compiles. Each label returns its point's
+column: ``escalation_type``, ``vp_basis`` and ``mort_basis`` the column of their own name,
+``payment_timing`` the ``timing`` column and ``sex(life)`` the ``annuitant_sex`` or
+``dependant_sex`` column by life, as the registry declares them. The first four validate
+their column, as :mod:`~.PA_UK_S`'s do, so each returns text or raises; ``sex`` returns
+its column as read, text or not, a single-life contract's blank second life as NaN, where
+:mod:`~.PA_UK_S` refuses the second life of a single life, and the compiled accessor
+returns the same. Every other cell returns a C ``bint``, ``long long`` or ``double``, and so
+do the four checks, which may stay Python but compile to a ``bint``, their verdict, as
+their per-month residuals, ``*_resid``, compile to a ``double``.
+
 .. rubric:: The contract's bounds
 
 What running in force adds is the contract's own bounds, which :func:`proj_len` holds a
@@ -425,12 +536,17 @@ months, the longest frame from the start date; a contract still owing a payment 
 valuation date, short of the stop rule. ``Data`` bounds future new business by
 ``future_horizon_mth``, 120 months. And :func:`proj_len` holds every Reference a formula
 reads through a bound or a power to its domain, NaN and the infinities outside each, its
-docstring naming each domain and its reason.
+docstring naming each domain and its reason. Those bounds, with the limiting age, 115, are
+the contract the compiled model's caches are sized from (``spec_sec.py``): a frame of at
+most 1,380 months from the start date, starting at most 120 months after the valuation
+date. A limiting age above 115, an ``issue_age_min`` below 0 or a longer horizon needs the
+caches resized and the model rebuilt, and a report past them is a bare ``IndexError`` in
+the compiled model alone, where modelx projects.
 """
 
 from modelx.serialize.jsonvalues import *
 
-_formula = lambda point_id: None
+_formula = lambda idx: None
 
 _bases = []
 
@@ -444,10 +560,20 @@ _spaces = []
 def model_point():
     """The selected model point, its row of ``model_point_table_sec.csv``, as a Series.
 
-    A row of this model's own table, which carries the in-force interface beside
-    :mod:`~.PA_UK_S`'s columns. Each attribute a formula reads has an accessor below.
+    Row ``idx`` of the table, for a reader who wants every column at once: a reporting
+    cell (the Space docstring's *Reporting cells*), which only the label accessors read.
+    Every projection cell reads its own ``Data`` vector instead.
     """
-    return data.model_point_table().loc[point_id]                    # noqa: F821
+    return data.model_point_table().iloc[idx]                        # noqa: F821
+
+
+def point_id():
+    """The label of the selected model point, its ``point_id``, from ``Data.point_id``.
+
+    ``Projection`` is indexed by position, ``idx``, as ``basiclife.BasicTerm_SC`` is; the
+    label is what a reader finds in the table, so every refusal names it.
+    """
+    return int(data.point_id()[idx])                                 # noqa: F821
 
 
 def purchase_price():
@@ -457,8 +583,19 @@ def purchase_price():
     cash flow: the projection carries no premium income, for a contract starting after the
     valuation date as for one already in payment.  It enters the projection only through
     value protection, where the guarantee is measured against it.
+
+    Read from ``Data.purchase_price``.  Refused here, naming the point, where it is not a
+    number, which :mod:`~.PA_UK_S`'s ``float()`` refuses, and where value protection is
+    elected, the one reader, where it is not a finite number, 0 or more, which the
+    balance's ``max(0, v P - G)`` would read as a number (``Data``'s
+    ``purchase_price_ok``).  A contract without value protection never reads it, and a
+    blank there is NaN, as in :mod:`~.PA_UK_S`.
     """
-    return float(model_point()["purchase_price"])
+    if data.purchase_price_ok()[idx] == 0:                           # noqa: F821
+        raise ValueError(f"point_id {point_id()}: purchase_price must be a number, and a "
+                         f"finite one, 0 or more, where value protection is elected, which "
+                         f"reads it; it is not")
+    return float(data.purchase_price()[idx])                         # noqa: F821
 
 
 def age_at_entry(life):
@@ -466,22 +603,58 @@ def age_at_entry(life):
 
     **Age last birthday**, chosen to index the shipped single-year-of-age proxy table
     **[std]**.  The age at the start date, not at the valuation date: ``age(0, life)`` is
-    the attained age there.  ``Data`` holds it to a whole number, which ``int`` reads
-    exactly.
+    the attained age there.  Read from ``Data.annuitant_age`` and ``Data.dependant_age``,
+    which ``Data`` holds to whole numbers below ``2**53``, the dependant's on a contract
+    with a dependant, the one that reads it.
     """
     if life == 1:
-        return int(model_point()["annuitant_age"])
+        return int(data.annuitant_age()[idx])                        # noqa: F821
     if life == 2 and is_joint():
-        return int(model_point()["dependant_age"])
+        return int(data.dependant_age()[idx])                        # noqa: F821
     raise ValueError("invalid life")
 
 
 def sex(life):
-    """The sex (M / F) of the annuitant or dependant; a label, for reporting."""
+    """The sex (M / F) of the annuitant (life = 1) or dependant (life = 2); a label.
+
+    A label accessor, which no projection cell calls: it returns the ``annuitant_sex`` or
+    ``dependant_sex`` column as read, a single-life contract's blank second life as NaN,
+    where :mod:`~.PA_UK_S` refuses the second life of a single-life contract, as
+    ``Term_UK_SEC``'s and ``SPIA_US_SEC``'s labels do.  The mortality table's reader joins
+    on the sex through :func:`mort_schedule` instead.
+    """
     if life == 1:
         return model_point()["annuitant_sex"]
-    if life == 2 and is_joint():
+    if life == 2:
         return model_point()["dependant_sex"]
+    raise ValueError("invalid life")
+
+
+def mort_schedule(life):
+    """The number of ``life``'s sex in the mortality table: its row of
+    ``Data.mort_table_array``.
+
+    ``Data.mort_schedule_1`` for the annuitant (life = 1) and ``Data.mort_schedule_2`` for
+    the dependant (life = 2) of a contract with one; any other life raises, as
+    :func:`age_at_entry` does.  The table basis alone reads it, through
+    :func:`mort_rate_base_at` and :func:`proj_len`, and a sex the table lacks, schedule 0,
+    a blank among them, is refused here, naming the point and the column, where
+    :mod:`~.PA_UK_S`'s lookup raised ``KeyError``: on the scenario basis, which reads no
+    mortality, the same sex projects (``Data``, *refused by point*).  A cell of its own, so
+    that the reader indexes the table by a cell's value, never by a ``Data`` array's.
+    """
+    if life == 1:
+        if data.mort_schedule_1()[idx] == 0:                         # noqa: F821
+            raise ValueError(f"point_id {point_id()}: annuitant_sex must be M or F, a sex "
+                             f"mort_table.csv rates, on the table basis, which reads it; "
+                             f"it is not")
+        return int(data.mort_schedule_1()[idx])                      # noqa: F821
+    if life == 2 and is_joint():
+        if data.mort_schedule_2()[idx] == 0:                         # noqa: F821
+            raise ValueError(f"point_id {point_id()}: dependant_sex must be M or F, a sex "
+                             f"mort_table.csv rates, on the table basis, which reads it; "
+                             f"it is not")
+        return int(data.mort_schedule_2()[idx])                      # noqa: F821
     raise ValueError("invalid life")
 
 
@@ -493,23 +666,37 @@ def rating_factor(life):
     and condition-specific factors - are not public, and a rated-age offset is the
     equivalent form.  Whole-market enhanced quoting is mandated at the point of sale, so
     lives remaining on standard terms are healthier on average; the model carries that
-    through this multiplier rather than through any behavioural dynamic.  ``Data`` holds
-    it to a finite number, 1 or more, the notes' ``theta >= 1``.
+    through this multiplier rather than through any behavioural dynamic.
+
+    Read from ``Data.rating_multiplier`` and ``Data.dependant_rating``.  Refused here,
+    naming the point, where it is not a number, and on the table basis, the one reader,
+    where it is not a finite number, 1 or more, the notes' ``theta >= 1``: the cap puts
+    its bound second, so a missing rating would stay missing, and an infinite one read as
+    certain death (``Data``'s ``rating_multiplier_ok`` and ``dependant_rating_ok``).  The
+    scenario basis never reads it.
     """
     if life == 1:
-        return float(model_point()["rating_multiplier"])
+        if data.rating_multiplier_ok()[idx] == 0:                    # noqa: F821
+            raise ValueError(f"point_id {point_id()}: rating_multiplier must be a number, "
+                             f"and a finite one, 1 or more, on the table basis, which "
+                             f"reads it; it is not")
+        return float(data.rating_multiplier()[idx])                  # noqa: F821
     if life == 2 and is_joint():
-        return float(model_point()["dependant_rating"])
+        if data.dependant_rating_ok()[idx] == 0:                     # noqa: F821
+            raise ValueError(f"point_id {point_id()}: dependant_rating must be a number, "
+                             f"and a finite one, 1 or more, on the table basis, which "
+                             f"reads it; it is not")
+        return float(data.dependant_rating()[idx])                   # noqa: F821
     raise ValueError("invalid life")
 
 
 def is_joint():
-    """True when the contract carries a dependant's income.
+    """True when the contract carries a dependant's income: ``Data.is_joint``.
 
     ``Data`` holds ``dependant_present`` to True or False, where :mod:`~.PA_UK_S` reads a
     blank as True through ``bool(nan)``.
     """
-    return bool(model_point()["dependant_present"])
+    return bool(data.is_joint()[idx])                                # noqa: F821
 
 
 def dependant_pct():
@@ -521,16 +708,21 @@ def dependant_pct():
     """
     if not is_joint():
         return 0.0
-    return float(model_point()["dependant_pct"])
+    return float(data.dependant_pct()[idx])                          # noqa: F821
 
 
 def overlap():
     """Whether the dependant's stream runs *during* the remaining guarantee period.
 
     ``False`` is the representative default and means the stream starts at the end of
-    the guarantee, not at the annuitant's death.  See :func:`overlap_gate`.
+    the guarantee, not at the annuitant's death.  See :func:`overlap_gate`.  Read from
+    ``Data.overlap``, and refused here, naming the point, where it is not True or False on
+    a contract with a dependant, the one reader (``Data``'s ``overlap_ok``).
     """
-    return bool(model_point()["overlap"])
+    if data.overlap_ok()[idx] == 0:                                  # noqa: F821
+        raise ValueError(f"point_id {point_id()}: overlap must be True or False on a "
+                         f"contract with a dependant, which reads it; it is not")
+    return bool(data.overlap()[idx])                                 # noqa: F821
 
 
 def annual_income_first():
@@ -540,9 +732,9 @@ def annual_income_first():
     income of the year under way at the valuation date, :func:`annual_income_init`.  A
     pricing input taken from a quote: no insurer publishes an annuity rate card, so the
     model does not derive income from the purchase price and nothing in the projection
-    consumes ``P`` except value protection.
+    consumes ``P`` except value protection.  Read from ``Data.annual_income``.
     """
-    return float(model_point()["annual_income"])
+    return float(data.annual_income()[idx])                          # noqa: F821
 
 
 def policy_year_init():
@@ -571,12 +763,12 @@ def annual_income_init():
     annuitant's scale, the dependant being paid ``delta`` times it.  The year is
     :func:`policy_year_init`, before any month-0 anniversary.  By basis:
 
-    * RPI-linked, ``lpi5`` or ``rpi_catchup``: the ``annual_income_init`` column, history.
-      The increases given before the valuation date are facts of the contract, which no
-      flat ``rpi_rate`` re-derives: an RPI past the LPI cap, or a fall the ratchet froze
-      income through, is in it.  At the start date, and so on every point not yet in
-      payment, and in the first policy year, it is the first year's income,
-      :func:`annual_income_first`, as ``Data`` checks.
+    * RPI-linked, ``lpi5`` or ``rpi_catchup``: the ``annual_income_init`` column, history,
+      from ``Data.annual_income_init``.  The increases given before the valuation date are
+      facts of the contract, which no flat ``rpi_rate`` re-derives: an RPI past the LPI
+      cap, or a fall the ratchet froze income through, is in it.  At the start date, and
+      so on every point not yet in payment, and in the first policy year, it is the first
+      year's income, :func:`annual_income_first`, as ``Data`` checks.
     * ``fixed``: the contract's schedule, ``A(1) (1 + g)^(y0 - 1)``, compounded year by
       year in one loop in :mod:`~.PA_UK_S`'s order, bit for bit with its recursion.  An
       income that leaves the floats on the way is refused in the year it first does, as
@@ -587,14 +779,14 @@ def annual_income_init():
     :mod:`~.PA_UK_S`'s ``annual_income_init()``.
     """
     if is_lpi5() or is_rpi_catchup():
-        return float(model_point()["annual_income_init"])
+        return float(data.annual_income_init()[idx])                 # noqa: F821
     income = annual_income_first()
     if is_fixed():
         for y in range(2, policy_year_init() + 1):
             income *= 1.0 + escalation_rate()
             if not income <= 1.7976931348623157e308:
                 raise ValueError(
-                    f"point_id {point_id}: the income annual_income({y}) is {income}, "  # noqa: F821
+                    f"point_id {point_id()}: the income annual_income({y}) is {income}, "
                     f"not a finite number, under escalation_rate {escalation_rate()}")
     return income
 
@@ -602,14 +794,16 @@ def annual_income_init():
 def payment_freq():
     """m: payments per year, in {12, 4, 2, 1}.
 
-    ``Data`` holds the column to a whole number, read by its value, which :mod:`~.PA_UK_S`
-    truncates with ``int``.  The four values are compared one by one, where
-    :mod:`~.PA_UK_S` builds a tuple of them, which a compiled cell cannot hold.
+    Read from ``Data.frequency``, which ``Data`` holds to a whole number, read by its value,
+    which :mod:`~.PA_UK_S` truncates with ``int``.  The four values are compared one by
+    one, where :mod:`~.PA_UK_S` builds a tuple of them, which a compiled cell cannot hold,
+    and the element is compared, never held in a local, so the compiled cell keeps no
+    Python object.
     """
-    v = int(model_point()["frequency"])
-    if v != 12 and v != 4 and v != 2 and v != 1:
-        raise ValueError("invalid frequency")
-    return v
+    if (data.frequency()[idx] == 12 or data.frequency()[idx] == 4    # noqa: F821
+            or data.frequency()[idx] == 2 or data.frequency()[idx] == 1):  # noqa: F821
+        return int(data.frequency()[idx])                            # noqa: F821
+    raise ValueError("invalid frequency")
 
 
 def payment_timing():
@@ -618,7 +812,9 @@ def payment_timing():
     Arrears instalments require survival at the end of the payment month; advance
     instalments at the start of it.  Using end-of-period survival for advance payments
     understates the liability by roughly one period's mortality per payment, which is
-    material at high ages.  The projection branches on :func:`is_arrears`.
+    material at high ages.  A label accessor, which no projection cell calls: it returns
+    the ``timing`` column, compared exactly, or raises.  The projection branches on
+    :func:`is_arrears`.
     """
     v = model_point()["timing"]
     if v not in ("arrears", "advance"):
@@ -629,27 +825,24 @@ def payment_timing():
 def is_arrears():
     """Whether instalments fall in arrears, at the end of the month, rather than in advance.
 
-    A decode of the model point's ``timing`` column, read and validated as
-    :func:`payment_timing` reads and validates it, so that the payment months, the survival
-    point, the value-protection balance and the proportion rule branch on a flag and no
-    projection cell calls the label accessor, which is left to reporting.
+    A decode of the model point's ``timing`` column, ``Data.is_arrears``, validated by
+    ``Data.has_timing`` as :func:`payment_timing` validates it, so that the payment months,
+    the survival point, the value-protection balance and the proportion rule branch on a
+    flag and no projection cell calls the label accessor, which is left to reporting.
     """
-    v = model_point()["timing"]
-    if v == "arrears":
-        return True
-    if v == "advance":
-        return False
-    raise ValueError("invalid timing")
+    if data.has_timing()[idx] == 0:                                  # noqa: F821
+        raise ValueError("invalid timing")
+    return bool(data.is_arrears()[idx])                              # noqa: F821
 
 
 def proportion():
     """Whether a proportionate final payment is made for the accrued part-period.
 
     Arrears only.  Without it - the representative default - nothing is paid for the
-    final partial period, which is the more common contractual design.  ``Data`` holds the
-    column to True or False.
+    final partial period, which is the more common contractual design.  Read from
+    ``Data.proportion``, which ``Data`` holds to True or False.
     """
-    v = bool(model_point()["proportion"])
+    v = bool(data.proportion()[idx])                                 # noqa: F821
     if v and not is_arrears():
         raise ValueError("proportion applies to arrears payments only")
     return v
@@ -659,8 +852,9 @@ def escalation_type():
     """``level``, ``fixed``, ``rpi_catchup`` or ``lpi5``; a label, for reporting.
 
     ``lpi5`` is RPI floored at zero and capped at 5%; ``rpi_catchup`` is a ratchet on
-    the running peak of the RPI reference index.  See the Space docstring.  The projection
-    branches on the four decodes below.
+    the running peak of the RPI reference index.  See the Space docstring.  A label
+    accessor, which no projection cell calls: it returns the column, compared exactly, or
+    raises.  The projection branches on the four decodes below.
     """
     v = model_point()["escalation_type"]
     if v not in ("level", "fixed", "rpi_catchup", "lpi5"):
@@ -673,15 +867,15 @@ def is_level():
 
     One of four decodes of the model point's ``escalation_type`` column, as are the three
     below it, so that no projection cell compares text or calls :func:`escalation_type`,
-    the label accessor, which is left to reporting.  Each reads the column as
-    :func:`escalation_type` does and validates it as :func:`escalation_type` does, so an
+    the label accessor, which is left to reporting.  Each reads ``Data``'s flag for its
+    value, and ``Data.has_escalation_type``, which says whether the column holds one of the
+    four values :func:`escalation_type` accepts, compared as it compares them, so an
     invalid basis raises ``ValueError("invalid escalation_type")`` wherever the projection
     first meets it.
     """
-    v = model_point()["escalation_type"]
-    if v not in ("level", "fixed", "rpi_catchup", "lpi5"):
+    if data.has_escalation_type()[idx] == 0:                         # noqa: F821
         raise ValueError("invalid escalation_type")
-    return bool(v == "level")
+    return bool(data.is_level()[idx])                                # noqa: F821
 
 
 def is_fixed():
@@ -690,10 +884,9 @@ def is_fixed():
     A decode of the ``escalation_type`` column, validated as :func:`escalation_type`
     validates it.
     """
-    v = model_point()["escalation_type"]
-    if v not in ("level", "fixed", "rpi_catchup", "lpi5"):
+    if data.has_escalation_type()[idx] == 0:                         # noqa: F821
         raise ValueError("invalid escalation_type")
-    return bool(v == "fixed")
+    return bool(data.is_fixed()[idx])                                # noqa: F821
 
 
 def is_lpi5():
@@ -702,10 +895,9 @@ def is_lpi5():
     A decode of the ``escalation_type`` column, validated as :func:`escalation_type`
     validates it.
     """
-    v = model_point()["escalation_type"]
-    if v not in ("level", "fixed", "rpi_catchup", "lpi5"):
+    if data.has_escalation_type()[idx] == 0:                         # noqa: F821
         raise ValueError("invalid escalation_type")
-    return bool(v == "lpi5")
+    return bool(data.is_lpi5()[idx])                                 # noqa: F821
 
 
 def is_rpi_catchup():
@@ -714,19 +906,23 @@ def is_rpi_catchup():
     A decode of the ``escalation_type`` column, validated as :func:`escalation_type`
     validates it.
     """
-    v = model_point()["escalation_type"]
-    if v not in ("level", "fixed", "rpi_catchup", "lpi5"):
+    if data.has_escalation_type()[idx] == 0:                         # noqa: F821
         raise ValueError("invalid escalation_type")
-    return bool(v == "rpi_catchup")
+    return bool(data.is_rpi_catchup()[idx])                          # noqa: F821
 
 
 def escalation_rate():
     """g: the fixed escalation rate, at most ``esc_fixed_cap``; read on ``fixed`` only.
 
-    ``Data`` holds the column to a finite number, 0 or more, on a ``fixed`` point: the
-    notes' menu is non-decreasing, which the dependant's base relies on.
+    Read from ``Data.escalation_rate``, which ``Data`` holds to a finite number, 0 or
+    more, on a ``fixed`` point: the notes' menu is non-decreasing, which the dependant's
+    base relies on.  Text is refused here, naming the point, which :mod:`~.PA_UK_S`'s
+    ``float()`` refuses, and elsewhere a blank is NaN (``Data``'s ``escalation_rate_ok``).
     """
-    v = float(model_point()["escalation_rate"])
+    if data.escalation_rate_ok()[idx] == 0:                          # noqa: F821
+        raise ValueError(f"point_id {point_id()}: escalation_rate must be a number; it "
+                         f"is not")
+    v = float(data.escalation_rate()[idx])                           # noqa: F821
     if v > esc_fixed_cap:                                            # noqa: F821
         raise ValueError("fixed escalation exceeds the contractual cap")
     return v
@@ -737,18 +933,20 @@ def guarantee_mths():
 
     Instalments are certain for policy months ``0 .. n - 1``, escalating as if the
     annuitant were alive.  Mutually exclusive with value protection in the representative
-    design.  ``Data`` holds it to a whole number of months, 0 or more, which
-    :mod:`~.PA_UK_S` truncates with ``int``, and :func:`proj_len` to the longest frame.
+    design.  Read from ``Data.guarantee_months``, which ``Data`` holds to a whole number of
+    months, 0 or more, which :mod:`~.PA_UK_S` truncates with ``int``, and :func:`proj_len`
+    to the longest frame.
     """
-    return int(model_point()["guarantee_months"])
+    return int(data.guarantee_months()[idx])                         # noqa: F821
 
 
 def vp_pct():
     """v: the value-protection percentage of the purchase price; 0 if not elected.
 
-    ``Data`` holds it to a number from 0 to 1, where :mod:`~.PA_UK_S` reads any.
+    Read from ``Data.vp_pct``, which ``Data`` holds to a number from 0 to 1, where
+    :mod:`~.PA_UK_S` reads any.
     """
-    return float(model_point()["vp_pct"])
+    return float(data.vp_pct()[idx])                                 # noqa: F821
 
 
 def vp_basis():
@@ -757,7 +955,7 @@ def vp_basis():
     A label, for reporting; the projection branches on :func:`is_first_death`.  On the
     first-death basis the trigger is the annuitant's death and the balance nets the
     annuitant's instalments; on the last-survivor basis it is the last death, and the
-    balance nets both streams.
+    balance nets both streams.  It returns the column, compared exactly, or raises.
     """
     v = model_point()["vp_basis"]
     if v not in ("first_death", "last_survivor"):
@@ -768,15 +966,13 @@ def vp_basis():
 def is_first_death():
     """Whether value protection pays on the annuitant's death, not on the last death.
 
-    A decode of the model point's ``vp_basis`` column, read and validated as
-    :func:`vp_basis` reads and validates it.  Read only where value protection is elected.
+    A decode of the model point's ``vp_basis`` column, ``Data.is_first_death``, validated
+    by ``Data.has_vp_basis`` as :func:`vp_basis` validates it.  Read only where value
+    protection is elected.
     """
-    v = model_point()["vp_basis"]
-    if v == "first_death":
-        return True
-    if v == "last_survivor":
-        return False
-    raise ValueError("invalid vp_basis")
+    if data.has_vp_basis()[idx] == 0:                                # noqa: F821
+        raise ValueError("invalid vp_basis")
+    return bool(data.is_first_death()[idx])                          # noqa: F821
 
 
 def mort_basis():
@@ -785,7 +981,7 @@ def mort_basis():
     A label, for reporting; the projection branches on :func:`is_scenario`.  *table* runs
     the generational recursion off the shipped table and improvement scale; *scenario*
     **[std]** replaces it with the step function ``1{duration_mth(t) <= death_mth(life)}``.
-    See the Space docstring.
+    See the Space docstring.  It returns the column, compared exactly, or raises.
     """
     v = model_point()["mort_basis"]
     if v not in ("table", "scenario"):
@@ -796,16 +992,13 @@ def mort_basis():
 def is_scenario():
     """Whether the run is the deterministic scenario, not the probability-weighted table.
 
-    A decode of the model point's ``mort_basis`` column, read and validated as
-    :func:`mort_basis` reads and validates it, so that :func:`lives_if` and its check
-    branch on a flag.
+    A decode of the model point's ``mort_basis`` column, ``Data.is_scenario``, validated
+    by ``Data.has_mort_basis`` as :func:`mort_basis` validates it, so that :func:`lives_if`
+    and its check branch on a flag.
     """
-    v = model_point()["mort_basis"]
-    if v == "scenario":
-        return True
-    if v == "table":
-        return False
-    raise ValueError("invalid mort_basis")
+    if data.has_mort_basis()[idx] == 0:                              # noqa: F821
+        raise ValueError("invalid mort_basis")
+    return bool(data.is_scenario()[idx])                             # noqa: F821
 
 
 def death_mth(life):
@@ -816,13 +1009,24 @@ def death_mth(life):
     month of death like any other.  The month counts from the start date, on the clock
     :func:`duration_mth` counts, whatever the valuation date: a death "in month 16" is
     decremented at the end of policy month 16, so ``lives_if(t, life)`` is 1 while
-    ``duration_mth(t) <= 16`` and 0 from the next time point on.  ``Data`` holds each month
-    to blank or a whole number, 0 or more, where :mod:`~.PA_UK_S` truncates a fraction and
-    reads a negative month as a life that never dies, and returns the column as the numbers
-    it checked.
+    ``duration_mth(t) <= 16`` and 0 from the next time point on.  Read from
+    ``Data.death_mth_1`` and ``Data.death_mth_2``, which hold the blank as -1 already, and
+    which ``Data`` holds on the scenario basis to blank or a whole number, 0 or more, where
+    :mod:`~.PA_UK_S` truncates a fraction and reads a negative month as a life that never
+    dies; a month of ``2**53`` or more in size is refused here, naming the point.  Any
+    other life raises, where stage ``E`` read the dependant's column for any life but 1.
     """
-    v = model_point()["death_mth_1" if life == 1 else "death_mth_2"]
-    return -1 if pd.isna(v) else int(v)                              # noqa: F821
+    if life == 1:
+        if data.death_mth_1_ok()[idx] == 0:                          # noqa: F821
+            raise ValueError(f"point_id {point_id()}: death_mth_1 must be blank or below "
+                             f"2**53 months in size; it is not")
+        return int(data.death_mth_1()[idx])                          # noqa: F821
+    if life == 2:
+        if data.death_mth_2_ok()[idx] == 0:                          # noqa: F821
+            raise ValueError(f"point_id {point_id()}: death_mth_2 must be blank or below "
+                             f"2**53 months in size; it is not")
+        return int(data.death_mth_2()[idx])                          # noqa: F821
+    raise ValueError("invalid life")
 
 
 def start_year():
@@ -833,10 +1037,16 @@ def start_year():
     at the valuation date it is the year the annuity started, before that date; for one
     starting after it, the year it will start.  The model carries no calendar valuation
     date: each point's calendar years follow from its own start year, which is why
-    improvement needs nothing re-based on the valuation clock.  ``Data`` holds it to a
-    whole number.
+    improvement needs nothing re-based on the valuation clock.  Read from
+    ``Data.start_year``, and refused here, naming the point, where ``int()`` cannot read it
+    below ``2**53`` in size, and on the table basis, the one reader, where it is not a
+    whole number, which :mod:`~.PA_UK_S` truncates (``Data``'s ``start_year_ok``).
     """
-    return int(model_point()["start_year"])
+    if data.start_year_ok()[idx] == 0:                               # noqa: F821
+        raise ValueError(f"point_id {point_id()}: start_year must be a number int() "
+                         f"reads, below 2**53 in size, and a whole one on the table basis, "
+                         f"which reads it; it is not")
+    return int(data.start_year()[idx])                               # noqa: F821
 
 
 def policy_count():
@@ -848,8 +1058,9 @@ def policy_count():
     :func:`pols_new_biz` in the month the annuity starts for the second.  It is
     :mod:`~.PA_UK_S`'s ``pols_if_init`` column, renamed, and like it a constant on the
     books: mortality decrements each life's survival, :func:`lives_if`, never the count.
+    Read from ``Data.policy_count``.
     """
-    return float(model_point()["policy_count"])
+    return float(data.policy_count()[idx])                           # noqa: F821
 
 
 def pols_if_init():
@@ -860,7 +1071,7 @@ def pols_if_init():
     enter through :func:`pols_new_biz` in the month the annuity starts instead, as in
     ``basiclife.BasicTerm_SE``.  So on a point starting at ``t = 0`` this is 0, where
     :mod:`~.PA_UK_S`'s is the count itself; on either model the count that weights row 0 is
-    the same, here ``pols_if_at(0, "BEF_DECR")``.
+    the same, here ``pols_if_at(0, BEF_DECR)``.
     """
     return policy_count() if duration_mth_init() > 0 else 0.0
 
@@ -872,9 +1083,9 @@ def duration_mth_init():
     before the valuation date, 0 for one starting at it, and -13 for one to start 13 months
     after it, which ``Data`` admits up to ``future_horizon_mth`` months ahead.  It is read
     as ``basiclife.BasicTerm_SE`` reads it, by value, and is the one fact the policy clock
-    takes from the model point.
+    takes from the model point, from ``Data.duration_mth``.
     """
-    return int(model_point()["duration_mth"])
+    return int(data.duration_mth()[idx])                             # noqa: F821
 
 
 def lives_if_init(life):
@@ -889,12 +1100,12 @@ def lives_if_init(life):
     probabilities are the whole survival state.  A contract not yet in payment carries its
     values at the start date, 1 for each covered life, and ``lives_if_init_2`` is 0 on a
     single-life contract; ``Data`` checks both, and on the scenario basis that each status
-    is its death month's.
+    is its death month's.  Read from ``Data.lives_if_init_1`` and ``Data.lives_if_init_2``.
     """
     if life == 1:
-        return float(model_point()["lives_if_init_1"])
+        return float(data.lives_if_init_1()[idx])                    # noqa: F821
     if life == 2:
-        return float(model_point()["lives_if_init_2"])
+        return float(data.lives_if_init_2()[idx])                    # noqa: F821
     raise ValueError("invalid life")
 
 
@@ -907,9 +1118,10 @@ def cum_annuity_all_init():
     restated from :mod:`~.PA_UK_S` at its month ``d``, its expectation,
     ``cum_annuity_pp(d, "ALL")`` there.  Path-dependent, so no schedule re-derives it.
     Last-survivor value protection nets against it, and :func:`result_pols` publishes it.
-    0 on a contract not yet in payment, which ``Data`` requires.
+    0 on a contract not yet in payment, which ``Data`` requires.  Read from
+    ``Data.cum_annuity_all_init``.
     """
-    return float(model_point()["cum_annuity_all_init"])
+    return float(data.cum_annuity_all_init()[idx])                   # noqa: F821
 
 
 def rpi_peak_init():
@@ -922,9 +1134,13 @@ def rpi_peak_init():
     ratchet froze income through.  History, which :mod:`~.PA_UK_S` rebuilds from today's
     flat ``rpi_rate``, under which a monotone index never leaves the ratio at anything but
     1.  1 at the start date, and so on a point not yet in payment, and in the first policy
-    year, as ``Data`` checks.
+    year, as ``Data`` checks.  Read from ``Data.rpi_peak_init``; text is refused here,
+    naming the point, and elsewhere than on ``rpi_catchup`` a blank is NaN.
     """
-    return float(model_point()["rpi_peak_init"])
+    if data.rpi_peak_init_ok()[idx] == 0:                            # noqa: F821
+        raise ValueError(f"point_id {point_id()}: rpi_peak_init must be a number; it is "
+                         f"not")
+    return float(data.rpi_peak_init()[idx])                          # noqa: F821
 
 
 def cum_annuity_pp_init():
@@ -936,9 +1152,13 @@ def cum_annuity_pp_init():
     balance nets against.  On RPI-linked escalation the instalments followed the RPI of
     their day, which no flat ``rpi_rate`` re-derives; on level and fixed escalation
     :func:`cum_annuity_pp` sums the schedule instead.  0 on a contract not yet in payment,
-    which ``Data`` requires.
+    which ``Data`` requires.  Read from ``Data.cum_annuity_pp_init``; text is refused here,
+    naming the point, and elsewhere than where it is read a blank is NaN.
     """
-    return float(model_point()["cum_annuity_pp_init"])
+    if data.cum_annuity_pp_init_ok()[idx] == 0:                      # noqa: F821
+        raise ValueError(f"point_id {point_id()}: cum_annuity_pp_init must be a number; "
+                         f"it is not")
+    return float(data.cum_annuity_pp_init()[idx])                    # noqa: F821
 
 
 def duration(t):
@@ -1036,16 +1256,16 @@ def horizon_mths():
     younger dependant's tail.  Counted from the start date, so the last month it admits is
     policy month ``horizon_mths() - 1``.  The notes' other stop test, ``IF(t) < 1e-6``, is
     not implemented, because a stopping rule that depends on the projection it bounds is
-    harder to reason about than one that does not.  The two-element list is
-    :mod:`~.PA_UK_S`'s, which the C step makes one comparison.  ``omega_age`` is read
-    through ``int()``, which :func:`proj_len` has held to a whole number, so that a whole
-    float, ``115.0``, gives the int frame every report counts its months in, as
-    ``Term_UK_SEC`` reads one.
+    harder to reason about than one that does not.  The younger of the two ages is found by
+    one comparison, where :mod:`~.PA_UK_S` takes the ``min`` of a list, which a compiled
+    cell cannot hold.  ``omega_age`` is read through ``int()``, which :func:`proj_len` has
+    held to a whole number, so that a whole float, ``115.0``, gives the int frame every
+    report counts its months in, as ``Term_UK_SEC`` reads one.
     """
-    ages = [age_at_entry(1)]
-    if is_joint():
-        ages.append(age_at_entry(2))
-    return 12 * (int(omega_age) - min(ages))                         # noqa: F821
+    youngest = age_at_entry(1)
+    if is_joint() and age_at_entry(2) < youngest:
+        youngest = age_at_entry(2)
+    return 12 * (int(omega_age) - youngest)                          # noqa: F821
 
 
 def proj_len():
@@ -1069,9 +1289,10 @@ def proj_len():
     * ``omega_age`` that is not a whole number below ``2**53``, or not above
       ``issue_age_min``: the limiting age sizes every frame, and a NaN, an infinity or a
       fraction of a year would leave the frame's months no whole number;
-    * on the table basis, ``omega_age`` more than a year past the mortality table's last
-      age, ``Data.mort_age_last() + 1``, since the table is read at attained ages to
-      ``omega_age - 1``;
+    * on the table basis, a covered life of a sex the mortality table lacks
+      (:func:`mort_schedule`), and ``omega_age`` more than a year past the last age the
+      table rates that sex at, ``Data.mort_age_last`` of its schedule, plus 1, since the
+      table is read at attained ages to ``omega_age - 1``;
     * a guarantee longer than ``12 x (omega_age - issue_age_min)`` months, the longest
       frame from the start date that the youngest life allows, which the compiled
       model's caches are sized from;
@@ -1118,110 +1339,117 @@ def proj_len():
 
     The rules read this Space's References, which ``Data`` cannot see, so they are checked
     here.  They are the contract a compiled model's caches are sized from: a frame of at
-    most ``omega_age - issue_age_min`` years and the future horizon.  Every report reads
-    this cell first, so no point outside them is projected.  Each check is a comparison
-    written out, a finite bound the largest float, 1.7976931348623157e308, and a whole one
-    ``2**53``, so that a compiled cell runs it in C, and each Reference is printed as the
-    compiled model will type it: ``issue_age_min``, ``omega_age`` and ``mort_table_year``
-    through ``int()`` once they are whole numbers, and every other through ``float()``.  A
-    value a formula computes past the floats, from References and columns each in its
-    domain, is refused in the cell where it first is: the income, in :func:`annual_income`
-    and :func:`annual_income_init`; the payments to date, in :func:`cum_annuity_pp` and
-    :func:`cum_annuity_all`; the three powers, :func:`inflation_factor`, :func:`rpi_index`
-    and :func:`improve_factor`; and the maintenance, in :func:`expenses`.
+    most ``omega_age - issue_age_min`` years and the future horizon (``spec_sec.py``).
+    Every report reads this cell first, so no point outside them is projected.  Each check
+    is a comparison written out, a finite bound the largest float, 1.7976931348623157e308,
+    and a whole one ``2**53``, so that a compiled cell runs it in C, and each Reference is
+    printed as the compiled model types it: ``issue_age_min``, ``omega_age`` and
+    ``mort_table_year`` through ``int()`` once they are whole numbers, and every other
+    through ``float()``.  A value a formula computes past the floats, from References and
+    columns each in its domain, is refused in the cell where it first is: the income, in
+    :func:`annual_income` and :func:`annual_income_init`; the payments to date, in
+    :func:`cum_annuity_pp` and :func:`cum_annuity_all`; the three powers,
+    :func:`inflation_factor`, :func:`rpi_index` and :func:`improve_factor`; and the
+    maintenance, in :func:`expenses`.  ``omega_age`` above 115, an ``issue_age_min`` below
+    0 and ``Data.future_horizon_mth`` above 120 are not refused: each needs the caches
+    resized and the model rebuilt, and a report past them is a bare ``IndexError`` in the
+    compiled model alone, where modelx projects.
     """
     if not (issue_age_min > -9007199254740992.0                       # noqa: F821
             and issue_age_min < 9007199254740992.0                    # noqa: F821
             and issue_age_min == issue_age_min // 1):                 # noqa: F821
-        raise ValueError(f"point_id {point_id}: issue_age_min must be a whole number "  # noqa: F821
+        raise ValueError(f"point_id {point_id()}: issue_age_min must be a whole number "
                          f"below 2**53, not {float(issue_age_min)}")  # noqa: F821
     if issue_age_min < 0:                                            # noqa: F821
-        raise ValueError(f"point_id {point_id}: issue_age_min must be 0 or more, "  # noqa: F821
+        raise ValueError(f"point_id {point_id()}: issue_age_min must be 0 or more, "
                          f"not {int(issue_age_min)}")                # noqa: F821
     for life in range(1, 3 if is_joint() else 2):
         if age_at_entry(life) < issue_age_min:                       # noqa: F821
             raise ValueError(
-                f"point_id {point_id}: life {life}'s issue age, {age_at_entry(life)}, "  # noqa: F821
+                f"point_id {point_id()}: life {life}'s issue age, {age_at_entry(life)}, "
                 f"is below issue_age_min, {int(issue_age_min)}")     # noqa: F821
     if not (omega_age > -9007199254740992.0                           # noqa: F821
             and omega_age < 9007199254740992.0                        # noqa: F821
             and omega_age == omega_age // 1):                         # noqa: F821
-        raise ValueError(f"point_id {point_id}: omega_age must be a whole number "  # noqa: F821
+        raise ValueError(f"point_id {point_id()}: omega_age must be a whole number "
                          f"below 2**53, not {float(omega_age)}")     # noqa: F821
     if not omega_age > issue_age_min:                                # noqa: F821
-        raise ValueError(f"point_id {point_id}: omega_age must be above issue_age_min, "  # noqa: F821
+        raise ValueError(f"point_id {point_id()}: omega_age must be above issue_age_min, "
                          f"{int(issue_age_min)}, not {int(omega_age)}")  # noqa: F821
-    if not is_scenario() and omega_age > data.mort_age_last() + 1:   # noqa: F821
-        raise ValueError(
-            f"point_id {point_id}: omega_age must be at most {data.mort_age_last() + 1}, "  # noqa: F821
-            f"a year past mort_table.csv's last age, on the table basis, not "
-            f"{int(omega_age)}")                                     # noqa: F821
+    if not is_scenario():
+        for life in range(1, 3 if is_joint() else 2):
+            last = data.mort_age_last()[mort_schedule(life)]         # noqa: F821
+            if omega_age > last + 1:                                 # noqa: F821
+                raise ValueError(
+                    f"point_id {point_id()}: omega_age must be at most {int(last) + 1}, a "
+                    f"year past mort_table.csv's last age, on the table basis, not "
+                    f"{int(omega_age)}")                             # noqa: F821
     longest = 12 * (omega_age - issue_age_min)                       # noqa: F821
     if guarantee_mths() > longest:
         raise ValueError(
-            f"point_id {point_id}: the guarantee, {guarantee_mths()} months, is longer "  # noqa: F821
+            f"point_id {point_id()}: the guarantee, {guarantee_mths()} months, is longer "
             f"than {int(longest)} months, 12 x (omega_age - issue_age_min), the longest "
             f"frame from the start date")
     d = duration_mth_init()
     n = stop_mth() - d
     if n <= 0:
         raise ValueError(
-            f"point_id {point_id}: duration_mth {d} is at or past the end of the "  # noqa: F821
+            f"point_id {point_id()}: duration_mth {d} is at or past the end of the "
             f"projection, policy month {stop_mth()}")
-    alive = lives_if_init(1) > 0.0 or (is_joint() and lives_if_init(2) > 0.0)
-    if d > 0 and d >= guarantee_mths() and not alive:
+    if (d > 0 and d >= guarantee_mths() and not lives_if_init(1) > 0.0
+            and not (is_joint() and lives_if_init(2) > 0.0)):
         if guarantee_mths() > 0:
             raise ValueError(
-                f"point_id {point_id}: duration_mth {d}: no payment is owed after the "  # noqa: F821
+                f"point_id {point_id()}: duration_mth {d}: no payment is owed after the "
                 f"valuation date: every covered life has died, and the guarantee ended "
                 f"at policy month {guarantee_mths()}")
         raise ValueError(
-            f"point_id {point_id}: duration_mth {d}: no payment is owed after the "  # noqa: F821
+            f"point_id {point_id()}: duration_mth {d}: no payment is owed after the "
             f"valuation date: every covered life has died, and the contract has no "
             f"guarantee")
     if not (expense_maint >= 0.0                                     # noqa: F821
             and expense_maint <= 1.7976931348623157e308):             # noqa: F821
-        raise ValueError(f"point_id {point_id}: expense_maint must be a finite number, "  # noqa: F821
+        raise ValueError(f"point_id {point_id()}: expense_maint must be a finite number, "
                          f"0 or more, not {float(expense_maint)}")   # noqa: F821
     if not (inflation_rate >= -1.0                                   # noqa: F821
             and inflation_rate <= 1.7976931348623157e308):            # noqa: F821
-        raise ValueError(f"point_id {point_id}: inflation_rate must be a finite number, "  # noqa: F821
+        raise ValueError(f"point_id {point_id()}: inflation_rate must be a finite number, "
                          f"-1 or more, not {float(inflation_rate)}")  # noqa: F821
     if not is_scenario():
         if not (annuitant_adj >= 0.0                                 # noqa: F821
                 and annuitant_adj <= 1.7976931348623157e308):         # noqa: F821
-            raise ValueError(f"point_id {point_id}: annuitant_adj must be a finite "  # noqa: F821
+            raise ValueError(f"point_id {point_id()}: annuitant_adj must be a finite "
                              f"number, 0 or more, not {float(annuitant_adj)}")  # noqa: F821
         if not (improve_rate_base >= -1.7976931348623157e308          # noqa: F821
                 and improve_rate_base < 1.0):                         # noqa: F821
-            raise ValueError(f"point_id {point_id}: improve_rate_base must be a finite "  # noqa: F821
+            raise ValueError(f"point_id {point_id()}: improve_rate_base must be a finite "
                              f"number below 1, not {float(improve_rate_base)}")  # noqa: F821
         if not (improve_flat_age >= -1.7976931348623157e308           # noqa: F821
                 and improve_flat_age <= 1.7976931348623157e308):      # noqa: F821
-            raise ValueError(f"point_id {point_id}: improve_flat_age must be a finite "  # noqa: F821
+            raise ValueError(f"point_id {point_id()}: improve_flat_age must be a finite "
                              f"number, not {float(improve_flat_age)}")  # noqa: F821
         if not (improve_taper_age >= -1.7976931348623157e308          # noqa: F821
                 and improve_taper_age <= 1.7976931348623157e308):     # noqa: F821
-            raise ValueError(f"point_id {point_id}: improve_taper_age must be a finite "  # noqa: F821
+            raise ValueError(f"point_id {point_id()}: improve_taper_age must be a finite "
                              f"number, not {float(improve_taper_age)}")  # noqa: F821
         if not (mort_table_year > -9007199254740992.0                 # noqa: F821
                 and mort_table_year < 9007199254740992.0              # noqa: F821
                 and mort_table_year == mort_table_year // 1):         # noqa: F821
-            raise ValueError(f"point_id {point_id}: mort_table_year must be a whole "  # noqa: F821
+            raise ValueError(f"point_id {point_id()}: mort_table_year must be a whole "
                              f"number below 2**53, not {float(mort_table_year)}")  # noqa: F821
     if is_fixed():
         if not (esc_fixed_cap >= 0.0                                 # noqa: F821
                 and esc_fixed_cap <= 1.7976931348623157e308):         # noqa: F821
-            raise ValueError(f"point_id {point_id}: esc_fixed_cap must be a finite "  # noqa: F821
+            raise ValueError(f"point_id {point_id()}: esc_fixed_cap must be a finite "
                              f"number, 0 or more, not {float(esc_fixed_cap)}")  # noqa: F821
     if is_lpi5() or is_rpi_catchup():
         if not (rpi_rate > -1.0 and rpi_rate <= 1.7976931348623157e308):  # noqa: F821
-            raise ValueError(f"point_id {point_id}: rpi_rate must be a finite number "  # noqa: F821
+            raise ValueError(f"point_id {point_id()}: rpi_rate must be a finite number "
                              f"above -1, not {float(rpi_rate)}")     # noqa: F821
     if is_lpi5():
         if not (esc_lpi_cap >= 0.0                                   # noqa: F821
                 and esc_lpi_cap <= 1.7976931348623157e308):           # noqa: F821
-            raise ValueError(f"point_id {point_id}: esc_lpi_cap must be a finite "  # noqa: F821
+            raise ValueError(f"point_id {point_id()}: esc_lpi_cap must be a finite "
                              f"number, 0 or more, not {float(esc_lpi_cap)}")  # noqa: F821
     return n
 
@@ -1283,21 +1511,26 @@ def rpi_index(a):
     the zero floor, the catch-up ratchet or the LPI cap - all of them inflation options -
     and values them at intrinsic only; a market-consistent value needs stochastic
     inflation.  :func:`proj_len` holds ``rpi_rate`` above -1, where the level stays above 0.
+
     A level past the largest float, which only an ``rpi_rate`` past every rate of inflation
-    makes, is refused at the anniversary it first is, naming the point and the Reference,
-    where Python's power raises ``OverflowError``, naming neither, and C's gives an
-    infinity.
+    makes, is refused at the anniversary it first is, naming the point and the Reference.
+    Python's float power raises ``OverflowError`` there, naming neither, where C's ``pow``
+    gives an infinity; so where the power is infinite from a finite base the cell calls
+    Python's own, uslib's M22 form (USLIB-SEC-PLAN.md, *Record -- M22*), which raises the
+    same ``OverflowError`` in the compiled model as in modelx, and the one ``except``
+    around both turns it into the refusal, in either engine.  modelx never reaches the
+    call, its own power raising first.
     """
+    base = 1.0 + rpi_rate                                            # noqa: F821
+    n = a - (policy_year_init() - 1)
     try:
-        index = (1.0 + rpi_rate) ** (a - (policy_year_init() - 1))   # noqa: F821
+        index = base ** n
+        if index - index != 0.0 and base - base == 0.0:
+            raise float.__pow__(base, n)
     except OverflowError:
         raise ValueError(
-            f"point_id {point_id}: the index rpi_index({a}) is past the largest float, "  # noqa: F821
+            f"point_id {point_id()}: the index rpi_index({a}) is past the largest float, "
             f"under rpi_rate {float(rpi_rate)}") from None            # noqa: F821
-    if not index <= 1.7976931348623157e308:
-        raise ValueError(
-            f"point_id {point_id}: the index rpi_index({a}) is past the largest float, "  # noqa: F821
-            f"under rpi_rate {float(rpi_rate)}")                      # noqa: F821
     return index
 
 
@@ -1339,7 +1572,43 @@ def annual_income(y):
     year before ``y0`` is history, which no cell reads.  An income that is not a finite
     number, which only a rate or a peak past every amount of money makes, is refused in
     the year it first is, naming the References, where the payments to date would carry it
-    on.
+    on: by :func:`annual_income_refusal`, since the cell recurses by the year, and a
+    compiled chain holds a C frame of each cell it recurses through, with the code of every
+    message it formats, whether its branch runs or not.
+    """
+    if y <= 1:
+        return annual_income_first()
+    if is_level():
+        return annual_income_first()
+    if y == policy_year_init():
+        return annual_income_init()
+    if is_fixed():
+        income = annual_income(y - 1) * (1.0 + escalation_rate())
+    elif is_lpi5():
+        step = min(esc_lpi_cap, max(0.0, rpi_rate))                  # noqa: F821
+        income = annual_income(y - 1) * (1.0 + step)
+    else:
+        income = annual_income_init() * rpi_peak(y - 1) / rpi_peak_init()
+    if not income <= 1.7976931348623157e308:
+        return annual_income_refusal(y)
+    return income
+
+
+def annual_income_refusal(y):
+    """The refusal of an income past the floats in policy year y, :func:`annual_income`'s,
+    in a cell of its own.
+
+    :func:`annual_income` recurses by the year, and a compiled chain holds a frame of each
+    cell it recurses through at each level, with the code of every message the cell
+    formats, so it calls this cell only where the income it computes is not a finite
+    number, and the message is formatted in this cell's frame, which no chain holds on a
+    run that does not raise.  It takes the year alone, as the cell does: it computes the
+    income as :func:`annual_income` does, from the same cells, the same float, and refuses
+    it where it is not a finite number, naming the References of its basis, in
+    :func:`annual_income`'s words at stage ``E``.  Where it is finite, it returns it, as
+    the sample asks for it in every year, to type the cell; so it answers a year
+    :func:`annual_income` answers without computing, the first, a level income's and
+    ``y0``'s, as :func:`annual_income` does.
     """
     if y <= 1:
         return annual_income_first()
@@ -1351,7 +1620,7 @@ def annual_income(y):
         income = annual_income(y - 1) * (1.0 + escalation_rate())
         if not income <= 1.7976931348623157e308:
             raise ValueError(
-                f"point_id {point_id}: the income annual_income({y}) is {income}, not "  # noqa: F821
+                f"point_id {point_id()}: the income annual_income({y}) is {income}, not "
                 f"a finite number, under escalation_rate {escalation_rate()}")
         return income
     if is_lpi5():
@@ -1359,15 +1628,15 @@ def annual_income(y):
         income = annual_income(y - 1) * (1.0 + step)
         if not income <= 1.7976931348623157e308:
             raise ValueError(
-                f"point_id {point_id}: the income annual_income({y}) is {income}, not "  # noqa: F821
-                f"a finite number, under rpi_rate {float(rpi_rate)} and esc_lpi_cap "  # noqa: F821
+                f"point_id {point_id()}: the income annual_income({y}) is {income}, not "
+                f"a finite number, under rpi_rate {float(rpi_rate)} and esc_lpi_cap "  # noqa
                 f"{float(esc_lpi_cap)}")                              # noqa: F821
         return income
     income = annual_income_init() * rpi_peak(y - 1) / rpi_peak_init()
     if not income <= 1.7976931348623157e308:
         raise ValueError(
-            f"point_id {point_id}: the income annual_income({y}) is {income}, not a "  # noqa: F821
-            f"finite number, under rpi_rate {float(rpi_rate)}, annual_income_init "  # noqa: F821
+            f"point_id {point_id()}: the income annual_income({y}) is {income}, not a "
+            f"finite number, under rpi_rate {float(rpi_rate)}, annual_income_init "  # noqa
             f"{annual_income_init()} and rpi_peak_init {rpi_peak_init()}")
     return income
 
@@ -1450,24 +1719,22 @@ def mort_rate_base_at(x, life):
     """The base-table annual mortality rate at attained age ``x``, for ``life``'s sex.
 
     The one cell that reads ``mort_table.csv``, keyed by age and life, so that the monthly
-    cells call it rather than join the table themselves.  The sex is the join key, read
-    from the model point's ``annuitant_sex`` or ``dependant_sex`` column as :func:`sex`
-    reads it, and the label accessor itself is left to reporting.  Called only below the
-    limiting age, where :func:`mort_rate_base` returns 1 without calling here.  An age
-    outside the table's, ``Data.mort_age_first`` to ``Data.mort_age_last``, raises
-    ``ValueError``, naming the point and the age, where :mod:`~.PA_UK_S`'s lookup raised
-    ``KeyError``: an annuitant issued younger than the table rates, on the table basis.
+    cells call it rather than join the table themselves.  The sex is the join key:
+    :func:`mort_schedule` gives ``life``'s row of ``Data.mort_table_array``, refusing a sex
+    the table lacks, and the age is its column, and the label accessor itself is left to
+    reporting.  Called only below the limiting age, where :func:`mort_rate_base` returns 1
+    without calling here, and only inside the frame, which :func:`mort_rate_base` asks
+    first.  The age is checked against the schedule's first and last ages,
+    ``Data.mort_age_first`` and ``Data.mort_age_last``, the sex's own, before the array is
+    read, so an age outside them raises ``ValueError``, naming the point and the age, where
+    :mod:`~.PA_UK_S`'s lookup raised ``KeyError``: an annuitant issued younger than the table
+    rates, on the table basis.  The padding is never read.
     """
-    if life == 1:
-        key = model_point()["annuitant_sex"]
-    elif life == 2 and is_joint():
-        key = model_point()["dependant_sex"]
-    else:
-        raise ValueError("invalid life")
-    if x < data.mort_age_first() or x > data.mort_age_last():        # noqa: F821
-        raise ValueError(f"point_id {point_id}: mort_table.csv has no rate at "  # noqa: F821
+    s = mort_schedule(life)
+    if x < data.mort_age_first()[s] or x > data.mort_age_last()[s]:  # noqa: F821
+        raise ValueError(f"point_id {point_id()}: mort_table.csv has no rate at "
                          f"attained age {x}")
-    return float(data.mort_table().loc[(key, x), "mort_rate"])      # noqa: F821
+    return float(data.mort_table_array()[s, x])                      # noqa: F821
 
 
 def mort_rate_base(t, life):
@@ -1476,8 +1743,9 @@ def mort_rate_base(t, life):
     Population mortality, times the **[std]** annuitant adjustment that stands in for
     the difference between a population table and the licensed annuitant tables.  Rates
     at and above the limiting age are 1, and the table is read below it, at the attained
-    age :func:`age` gives, through :func:`mort_rate_base_at`.  Zero outside the frame,
-    where the contract has no attained age to look up.
+    age :func:`age` gives, through :func:`mort_rate_base_at`, the one reader of the table,
+    which this cell asks only inside the frame.  Zero outside the frame, where the contract
+    has no attained age to look up.
     """
     if not is_active(t):
         return 0.0
@@ -1516,30 +1784,31 @@ def improve_factor(t, life):
     (:func:`calendar_year`), and ``c0`` the base table's data mid-year, so the basis is
     **generational**: each attained age in each future calendar year carries its own
     improved rate, and a contract in payment reads the calendar years it reaches, whatever
-    the valuation date.  Zero outside the frame, before the calendar year is read.  A
-    factor past the largest float, which a negative rate far below any improvement makes,
+    the valuation date.  Zero outside the frame, before the calendar year is read.
+
+    A factor past the largest float, which a negative rate far below any improvement makes,
     or a rate near 1 with ``mort_table_year`` years after the contract's, is refused in the
-    month it first is, naming the point and the References, where Python's power raises
-    ``OverflowError``, naming neither, and C's gives an infinity.
+    month it first is, naming the point and the References.  Python's float power raises
+    ``OverflowError`` there, naming neither, where C's ``pow`` gives an infinity; so where
+    the power is infinite from a finite base the cell calls Python's own, uslib's M22 form,
+    and the one ``except`` around both turns it into the refusal, in either engine, as
+    :func:`rpi_index` does.
     """
     if not is_active(t):
         return 0.0
     k = calendar_year(t) - mort_table_year                           # noqa: F821
     rate = improve_rate(t, life)
+    base = 1.0 - rate
     try:
-        factor = (1.0 - rate) ** k
+        factor = base ** k
+        if factor - factor != 0.0 and base - base == 0.0:
+            raise float.__pow__(base, k)
     except OverflowError:
         raise ValueError(
-            f"point_id {point_id}: the improvement factor improve_factor({t}, {life}) is "  # noqa: F821
+            f"point_id {point_id()}: the improvement factor improve_factor({t}, {life}) is "
             f"past the largest float, (1 - {rate}) to the power {int(k)}, under "
             f"improve_rate_base {float(improve_rate_base)} and mort_table_year "  # noqa: F821
             f"{int(mort_table_year)}") from None                      # noqa: F821
-    if not factor <= 1.7976931348623157e308:
-        raise ValueError(
-            f"point_id {point_id}: the improvement factor improve_factor({t}, {life}) is "  # noqa: F821
-            f"past the largest float, (1 - {rate}) to the power {int(k)}, under "
-            f"improve_rate_base {float(improve_rate_base)} and mort_table_year "  # noqa: F821
-            f"{int(mort_table_year)}")                                # noqa: F821
     return factor
 
 
@@ -1558,7 +1827,8 @@ def mort_rate(t, life):
     life-contingent stream with no offsetting decrements, so the level of this rate is
     the single largest lever on it.  The cap puts its float bound second,
     ``min(q, 1.0)``, as :mod:`~.PA_UK_S` does, so that a missing input, a NaN, stays NaN,
-    where ``min(1.0, q)`` would read it as 1.  Zero outside the frame.
+    where ``min(1.0, q)`` would read it as 1.  Compiled, the cap is a comparison of two
+    doubles that keeps the product unless the bound is smaller.  Zero outside the frame.
     """
     if not is_active(t):
         return 0.0
@@ -1592,6 +1862,14 @@ def lives_if(t, life):
     month 16 reads ``lives_if(17, 1) = 0`` on a point starting at the valuation date, as in
     the notes, and ``lives_if(0, 1) = 0`` on a point in payment 17 months.  Returns 0 for
     life = 2 on a single-life contract.
+
+    On the table basis, at a time point that opens a policy year after :func:`t_entry`,
+    survival is the year's opening, :func:`lives_if_py`, which is ``l(t-1)(1 - q_m(t-1))``,
+    the same product in the same order, bit for bit: the recursion blocked by policy year
+    (UKLIB-SEC-PLAN.md K12), so that a cold read runs one cell a month back to its year's
+    first time point and two cells a year from there, where one cell a month back to
+    :func:`t_entry` would run the contract's longest cover, 1,380 months, on the compiled
+    model's C stack.
     """
     if life == 2 and not is_joint():
         return 0.0
@@ -1602,7 +1880,36 @@ def lives_if(t, life):
     if is_scenario():
         d = death_mth(life)
         return 0.0 if (d >= 0 and duration_mth(t) > d) else 1.0
+    if duration_mth(t) % 12 == 0:
+        return lives_if_py(policy_year(t), life)
     return lives_if(t - 1, life) * (1.0 - mort_rate_mth(t - 1, life))
+
+
+def lives_if_py(y, life):
+    """l at the start of policy year y: the survival policy year y - 1 closes on.
+
+    The survival recursion blocked by policy year, as K12 of UKLIB-SEC-PLAN.md blocks a
+    long chain whose margin on the stack is gone, in ``ULB_UK_SEC``'s form: it walks the
+    time points of policy year ``y - 1`` on the books in ascending order, from the later of
+    :func:`t_entry` and the year's first, asking :func:`lives_if` of each, so that each
+    finds the time point before cached and none runs a chain, and returns survival across
+    the year's last month, ``l(last)(1 - q_m(last))``, the inline step of :func:`lives_if`,
+    bit for bit.  So the values are :func:`lives_if`'s own, and the chain of a cold read is
+    one cell a month within its year and two cells a year before it: :func:`lives_if` of
+    the year's first time point on the books, and the opening of the year before that.
+
+    :func:`lives_if` reads it on the table basis at a time point that opens policy year
+    ``y``, after :func:`t_entry` and up to the frame's closing time point, ``t =
+    proj_len()``, so ``y`` runs from 2 to the policy year of that point, 116 at the
+    contract's longest cover, 1,380 months from issue at ``issue_age_min``, 0, to the
+    limiting age, 115 (``spec_sec.py``); no other cell reads it.
+    """
+    d = duration_mth_init()
+    first = max(t_entry(), 12 * (y - 2) - d)
+    last = 12 * (y - 1) - 1 - d
+    for s in range(first, last):
+        lives_if(s, life)
+    return lives_if(last, life) * (1.0 - mort_rate_mth(last, life))
 
 
 def lives_death(t, life):
@@ -1722,17 +2029,66 @@ def cum_annuity_all(t):
     recursion in its order, one cell a month.  0 before the contract is on the books.
     This is the column the notes' worked-example table prints, and the balance the
     last-survivor basis nets against.  A total past the floats, which only an income near
-    the largest float makes, is refused where it first is, naming the month.
+    the largest float makes, is refused where it first is, naming the month, by
+    :func:`cum_annuity_all_refusal`, since a compiled chain holds a frame of each cell it
+    recurses through, with the code of every message it formats.
     """
     if t < t_entry():
         return 0.0
     if t == t_entry():
         return cum_annuity_all_init()
+    if duration_mth(t) % 12 == 0:
+        total = cum_annuity_all_py(policy_year(t))
+    else:
+        paid = annuity_pp(t - 1) * (payment_factor(t - 1) + dependant_factor(t - 1))
+        total = cum_annuity_all(t - 1) + paid
+    if not total <= 1.7976931348623157e308:
+        return cum_annuity_all_refusal(t)
+    return total
+
+
+def cum_annuity_all_py(y):
+    """G_all at the start of policy year y: the payments to date policy year y - 1 closes
+    on.
+
+    The payments to date blocked by policy year, as :func:`lives_if_py` blocks survival:
+    it walks the time points of policy year ``y - 1`` on the books in ascending order,
+    asking :func:`cum_annuity_all` of each, so that each finds the time point before
+    cached, and returns the total across the year's last month, ``G_all(last) +
+    inst(last) [max(C, l_a) + delta (1 - l_a) l_d w](last)``, the inline step of
+    :func:`cum_annuity_all`, bit for bit; :func:`cum_annuity_all` refuses it where it is not
+    a finite number.  :func:`cum_annuity_all` reads it at a time point that opens policy
+    year ``y`` after :func:`t_entry`, so ``y`` runs from 2 to 116 at the contract's longest
+    cover, as :func:`lives_if_py`'s does; no other cell reads it.
+    """
+    d = duration_mth_init()
+    first = max(t_entry(), 12 * (y - 2) - d)
+    last = 12 * (y - 1) - 1 - d
+    for s in range(first, last):
+        cum_annuity_all(s)
+    paid = annuity_pp(last) * (payment_factor(last) + dependant_factor(last))
+    return cum_annuity_all(last) + paid
+
+
+def cum_annuity_all_refusal(t):
+    """The refusal of the payments to date on every stream past the floats at time t,
+    :func:`cum_annuity_all`'s, in a cell of its own.
+
+    :func:`cum_annuity_all` recurses month by month, so it formats no message itself: it
+    calls this cell only where the total it computes is not a finite number, and the
+    message is formatted in this cell's frame, which no chain holds on a run that does not
+    raise.  It takes the time point alone, computes the total as :func:`cum_annuity_all`
+    does, from the same cells, the same float, and refuses it, naming the point and the
+    time, in :func:`cum_annuity_all`'s words at stage ``E``.  Where it is finite, it
+    returns it, as the sample asks for it at every time point, to type the cell.
+    """
+    if t <= t_entry():
+        return cum_annuity_all(t)
     paid = annuity_pp(t - 1) * (payment_factor(t - 1) + dependant_factor(t - 1))
     total = cum_annuity_all(t - 1) + paid
     if not total <= 1.7976931348623157e308:
         raise ValueError(
-            f"point_id {point_id}: the payments to date cum_annuity_all({t}) are "  # noqa: F821
+            f"point_id {point_id()}: the payments to date cum_annuity_all({t}) are "
             f"{total}, not a finite number")
     return total
 
@@ -1745,9 +2101,9 @@ def cum_annuity_pp(k, kind):
     so the instalment of policy month ``m`` enters at ``G(m + 1)`` whether it falls at the
     month's start or at its end.  That index does not move with the valuation date, which
     is why the notes' ``G(16) = 6,790.50`` reads unchanged on a point in payment 17
-    months as on its twin.
+    months as on its twin.  ``kind`` is an int code (the Space docstring's *Codes*):
 
-    ``"ANNUITANT"``
+    ``ANNUITANT``
         the **deterministic as-if-alive** annuitant schedule, which the first-death
         value-protection balance nets against.  ``G(k) = G(k-1) + inst(k-1)``,
         :mod:`~.PA_UK_S`'s recursion, based where the valuation date falls, at the policy
@@ -1758,41 +2114,109 @@ def cum_annuity_pp(k, kind):
         which no flat rate re-derives, so the base is the opening state,
         :func:`cum_annuity_pp_init`.  Later keys recurse back to the base, and a contract
         valued late in life reads its balance without recursing back to the start date.
+        A total past the floats, which only an income near the largest float makes, is
+        refused where it first is, by :func:`cum_annuity_pp_refusal`, since the cell
+        recurses month by month and a compiled chain holds a frame of each cell it recurses
+        through, with the code of every message it formats.
 
-    ``"ALL"``
+    ``ALL``
         the same plus the expected dependant instalments and the guaranteed ones, weighted
-        by survival: :func:`cum_annuity_all`, which runs on the valuation clock, read at
-        the time point ``k - duration_mth_init()`` there.  The payments before the
-        valuation date are the opening state's, held as one total, so a key before the
-        valuation date's, which no cell asks, raises.
+        by survival: :func:`cum_annuity_pp_all`, which reads :func:`cum_annuity_all`, on
+        the valuation clock, at the time point ``k - duration_mth_init()`` there, and
+        refuses a key before the valuation date's.
 
-    A total past the floats, which only an income near the largest float makes, is
-    refused where it first is.
+    Any other kind raises, as :mod:`~.PA_UK_S`'s does.
     """
     if k <= 0:
         return 0.0
-    if kind == "ANNUITANT":
+    if kind == ANNUITANT:                                            # noqa: F821
         if k == max(duration_mth_init(), 0):
             if is_lpi5() or is_rpi_catchup():
                 return cum_annuity_pp_init()
             total = 0.0
             for j in range(k):
                 total += annuity_pp_pm(j)
+        elif k % 12 == 0:
+            total = cum_annuity_pp_py(k // 12 + 1)
         else:
             total = cum_annuity_pp(k - 1, kind) + annuity_pp_pm(k - 1)
         if not total <= 1.7976931348623157e308:
-            raise ValueError(
-                f"point_id {point_id}: the payments to date cum_annuity_pp({k}, "  # noqa: F821
-                f"'ANNUITANT') are {total}, not a finite number")
+            return cum_annuity_pp_refusal(k)
         return total
-    if kind == "ALL":
-        if k < duration_mth_init():
-            raise ValueError(
-                f"point_id {point_id}: cum_annuity_pp({k}, 'ALL') is before the "  # noqa: F821
-                f"valuation date, policy time {duration_mth_init()}, where the payments "
-                f"to date are cum_annuity_all_init, one total")
-        return cum_annuity_all(k - duration_mth_init())
+    if kind == ALL:                                                  # noqa: F821
+        return cum_annuity_pp_all(k)
     raise ValueError("invalid kind")
+
+
+def cum_annuity_pp_py(y):
+    """G at policy time ``12 (y - 1)``, the start of policy year y: the annuitant's
+    as-if-alive instalments policy year y - 1 closes on.
+
+    ``cum_annuity_pp(k, ANNUITANT)`` blocked by policy year, as :func:`lives_if_py` blocks
+    survival: it walks the keys of policy year ``y - 1`` in ascending order, asking
+    :func:`cum_annuity_pp` of each, so that each finds the key before cached, and returns
+    the total across the year's last policy month, ``G(last) + inst(last)``, the inline
+    step of :func:`cum_annuity_pp`, bit for bit; :func:`cum_annuity_pp` refuses it where it
+    is not a finite number.  The walk starts at the year's first key, or where the
+    valuation date's key, the static base ``max(duration_mth_init(), 0)``, falls inside
+    the year, at the base, below which the payments to date are the loop's or the opening
+    state's.  :func:`cum_annuity_pp` reads it at a key that opens a policy year, other than
+    the base, so ``y`` runs from 2 to 116, the policy year of the stop rule's key, 1,380 at
+    the contract's longest cover; no other cell reads it.
+    """
+    base = max(duration_mth_init(), 0)
+    first = 12 * (y - 2)
+    if first < base < 12 * (y - 1):
+        first = base
+    last = 12 * (y - 1) - 1
+    for j in range(first, last):
+        cum_annuity_pp(j, ANNUITANT)                                 # noqa: F821
+    return cum_annuity_pp(last, ANNUITANT) + annuity_pp_pm(last)     # noqa: F821
+
+
+def cum_annuity_pp_refusal(k):
+    """The refusal of the annuitant's payments to date past the floats at policy time k,
+    ``cum_annuity_pp(k, ANNUITANT)``'s, in a cell of its own.
+
+    As :func:`cum_annuity_all_refusal` is :func:`cum_annuity_all`'s: it computes the total
+    as :func:`cum_annuity_pp` does at ``ANNUITANT``, from the same cells, the same float,
+    and refuses it where it is not a finite number, naming the point and the key, in
+    :func:`cum_annuity_pp`'s words at stage ``E``; where it is finite, it returns it, as the
+    sample asks for it at every key, to type the cell.
+    """
+    if k <= 0:
+        return 0.0
+    if k == max(duration_mth_init(), 0):
+        if is_lpi5() or is_rpi_catchup():
+            return cum_annuity_pp_init()
+        total = 0.0
+        for j in range(k):
+            total += annuity_pp_pm(j)
+    else:
+        total = cum_annuity_pp(k - 1, ANNUITANT) + annuity_pp_pm(k - 1)  # noqa: F821
+    if not total <= 1.7976931348623157e308:
+        raise ValueError(
+            f"point_id {point_id()}: the payments to date cum_annuity_pp({k}, "
+            f"'ANNUITANT') are {total}, not a finite number")
+    return total
+
+
+def cum_annuity_pp_all(k):
+    """``cum_annuity_pp(k, ALL)``: the expected payments on every stream by policy time k.
+
+    :func:`cum_annuity_all`, which runs on the valuation clock, read at the time point
+    ``k - duration_mth_init()`` there, so that the notes' printed column keeps its name on
+    the policy clock.  The payments before the valuation date are the opening state's,
+    held as one total, so a key before the valuation date's, which no cell asks, raises,
+    naming the point and the key.  A cell of its own, apart from :func:`cum_annuity_pp`,
+    which recurses month by month and so formats no message.
+    """
+    if k < duration_mth_init():
+        raise ValueError(
+            f"point_id {point_id()}: cum_annuity_pp({k}, 'ALL') is before the "
+            f"valuation date, policy time {duration_mth_init()}, where the payments "
+            f"to date are cum_annuity_all_init, one total")
+    return cum_annuity_all(k - duration_mth_init())
 
 
 def vp_balance(t):
@@ -1800,7 +2224,7 @@ def vp_balance(t):
 
     Indexed by a **time point** on the valuation clock.  Nets the payments the elected
     basis applies to: on ``first_death`` the annuitant's as-if-alive schedule,
-    ``cum_annuity_pp(duration_mth(t), "ANNUITANT")``, read at the policy time point of time
+    ``cum_annuity_pp(duration_mth(t), ANNUITANT)``, read at the policy time point of time
     ``t``; on ``last_survivor`` the expected payments on both streams,
     :func:`cum_annuity_all` at ``t``.  Zero when value protection is not elected, and
     before the contract is on the books.
@@ -1808,7 +2232,7 @@ def vp_balance(t):
     if vp_pct() <= 0.0 or t < t_entry():
         return 0.0
     if is_first_death():
-        paid = cum_annuity_pp(duration_mth(t), "ANNUITANT")
+        paid = cum_annuity_pp(duration_mth(t), ANNUITANT)            # noqa: F821
     else:
         paid = cum_annuity_all(t)
     return max(0.0, vp_pct() * purchase_price() - paid)
@@ -1818,17 +2242,17 @@ def annuity_payments(t):
     """E[ANN(t)]: expected annuity outgo in month t.
 
     ``inst(t) x [max(C(t), l_a) + delta (1 - l_a) l_d w(t)]``, on the contracts on the
-    books, ``pols_if_at(t, "BEF_DECR")``: the annuitant stream with its guarantee floor,
+    books, ``pols_if_at(t, BEF_DECR)``: the annuitant stream with its guarantee floor,
     plus the dependant's stream.
     """
-    return (pols_if_at(t, "BEF_DECR") * annuity_pp(t)
+    return (pols_if_at(t, BEF_DECR) * annuity_pp(t)                  # noqa: F821
             * (payment_factor(t) + dependant_factor(t)))
 
 
-def claims(t, kind=None):
-    """Expected lump-sum outgo in month t, by kind; the total when kind is omitted.
+def claims(t, kind):
+    """Expected lump-sum outgo in month t, by ``kind``, an int code; ``ALL`` the total.
 
-    ``"VP"``
+    ``VP``
         the value-protection lump sum, ``d(t) x VPbal``.  The trigger is the
         annuitant's death on the ``first_death`` basis and the last death on
         ``last_survivor``.  The balance is measured at time ``t`` - the start of
@@ -1838,7 +2262,7 @@ def claims(t, kind=None):
         the death month has been paid and netting it is what keeps the lump sum
         from being overstated by one instalment.
 
-    ``"PROP"``
+    ``PROP``
         the proportionate final payment on an arrears contract that elects it:
         ``d_a(t) x (h(t) + 0.5)/(12/m) x inst(next(t))``, a **[std]** half-month
         accrual for the part-period between the last payment date and the death.
@@ -1848,32 +2272,41 @@ def claims(t, kind=None):
         payment falls past the stop rule.  Zero on the representative default,
         where nothing is paid for the final partial period.
 
-    Each on the contracts on the books, ``pols_if_at(t, "BEF_DECR")``, and zero outside
-    the frame.
+    ``ALL``
+        the total, which :mod:`~.PA_UK_S` spells ``claims(t)``, its ``kind`` defaulted
+        to ``None``, with Python's ``sum``: here ``0.0 + claims(t, VP) + claims(t,
+        PROP)``, written left to right, which is ``sum``'s float wherever at most two
+        kinds are non-zero in a month, and there are only two (USLIB-SEC-PLAN.md R12).
+        The twin identity reaches :mod:`~.PA_UK_S`'s ``(t, None)`` through the spec's
+        ``twin_arg_map``.
+
+    Each on the contracts on the books, ``pols_if_at(t, BEF_DECR)``, and zero outside
+    the frame.  Any other kind raises, as :mod:`~.PA_UK_S`'s does.
     """
-    if kind is None:
-        return sum(claims(t, k) for k in ("VP", "PROP"))
-    if kind == "VP":
+    if kind == ALL:                                                  # noqa: F821
+        return 0.0 + claims(t, VP) + claims(t, PROP)                 # noqa: F821
+    if kind == VP:                                                   # noqa: F821
         if not is_active(t) or vp_pct() <= 0.0:
             return 0.0
         density = lives_death(t, 1) if is_first_death() else lives_death_last(t)
         measured_at = t + 1 if (not is_arrears() and is_payment_mth(t)) else t
-        return pols_if_at(t, "BEF_DECR") * density * vp_balance(measured_at)
-    if kind == "PROP":
+        return pols_if_at(t, BEF_DECR) * density * vp_balance(measured_at)  # noqa: F821
+    if kind == PROP:                                                 # noqa: F821
         if not is_active(t) or not proportion():
             return 0.0
         if next_payment_mth(t) < 0:
             return 0.0
         accrual = (mths_since_payment(t) + 0.5) / (12.0 / payment_freq())
         instalment = annual_income(policy_year(t)) / payment_freq()
-        return pols_if_at(t, "BEF_DECR") * lives_death(t, 1) * accrual * instalment
+        return (pols_if_at(t, BEF_DECR) * lives_death(t, 1) * accrual  # noqa: F821
+                * instalment)
     raise ValueError("invalid kind")
 
 
 def pols_if(t):
     """IF(t): contracts with a payment obligation still open in month t.
 
-    ``pols_if_at(t, "BEF_DECR") x min(1, max(C(t), l_a(t+1)) + 1{delta>0}(1 - l_a(t+1))
+    ``pols_if_at(t, BEF_DECR) x min(1, max(C(t), l_a(t+1)) + 1{delta>0}(1 - l_a(t+1))
     l_d(t+1))`` **[std]** - guarantee certain, annuitant alive, or dependant stream in
     payment, survival taken at the *end* of month t (time ``t + 1``), on the contracts on
     the books.  This is the weight the maintenance expense is carried on, which is why it
@@ -1890,40 +2323,41 @@ def pols_if(t):
     obligation = max(certain_floor(t), la)
     if dependant_pct() > 0.0:
         obligation += (1.0 - la) * lives_if(t + 1, 2)
-    return pols_if_at(t, "BEF_DECR") * min(1.0, obligation)
+    return pols_if_at(t, BEF_DECR) * min(1.0, obligation)            # noqa: F821
 
 
 def pols_if_at(t, timing):
     """Contracts on the books at time t, at the instant ``timing`` names.
 
-    ``"BEF_NB"``
+    ``BEF_NB``
         The contracts carried in from month t - 1, before month t's annuities start: at
         :func:`t_entry`, the first month on the books, :func:`pols_if_init`, the count in
         payment at the valuation date (0 for a point starting at or after it), and the
         whole ``policy_count()`` after it.  Zero outside the frame, so the contracts leave
         the books at the stop rule, at the end of the last projected month.
-    ``"BEF_DECR"``
-        ``"BEF_NB"`` plus :func:`pols_new_biz`: the count that weights every cash flow
+    ``BEF_DECR``
+        ``BEF_NB`` plus :func:`pols_new_biz`: the count that weights every cash flow
         of month t.
 
-    These are ``basiclife.BasicTerm_SE``'s names, and any other timing raises.  The count
-    is not decremented: mortality decrements each life's survival, :func:`lives_if`, and
-    every cash flow is this count times a per-contract amount weighted by survival, as
-    :mod:`~.PA_UK_S` weights its flows by the constant ``pols_if_init``.  A count weighted
-    by survival could not carry the two lives' independent probabilities.  So ``"BEF_NB"``
-    is a closed form, the same float that the recursion ``BEF_NB(t-1) +
-    pols_new_biz(t-1)`` gives, with no chain of calls back to :func:`t_entry`.
-    :func:`pols_if` is not ``"BEF_DECR"``: it is the notes' closing obligation measure on
-    this count.
+    These are ``basiclife.BasicTerm_SE``'s names, int codes (the Space docstring's
+    *Codes*), compared by ``==`` alone, and any other timing raises, a string among them in
+    modelx.  The count is not decremented: mortality decrements each life's survival,
+    :func:`lives_if`, and every cash flow is this count times a per-contract amount
+    weighted by survival, as :mod:`~.PA_UK_S` weights its flows by the constant
+    ``pols_if_init``.  A count weighted by survival could not carry the two lives'
+    independent probabilities.  So ``BEF_NB`` is a closed form, the same float that the
+    recursion ``BEF_NB(t-1) + pols_new_biz(t-1)`` gives, with no chain of calls back to
+    :func:`t_entry`.  :func:`pols_if` is not ``BEF_DECR``: it is the notes' closing
+    obligation measure on this count.
     """
-    if timing == "BEF_NB":
+    if timing == BEF_NB:                                             # noqa: F821
         if not is_active(t):
             return 0.0
         if t == t_entry():
             return pols_if_init()
         return policy_count()
-    elif timing == "BEF_DECR":
-        return pols_if_at(t, "BEF_NB") + pols_new_biz(t)
+    elif timing == BEF_DECR:                                         # noqa: F821
+        return pols_if_at(t, BEF_NB) + pols_new_biz(t)               # noqa: F821
     else:
         raise ValueError("invalid timing")
 
@@ -1947,21 +2381,27 @@ def inflation_factor(t):
     moved onto ``t``, so that the maintenance charge it inflates is in valuation-date
     pounds, whatever the contract's age, and every point of a block inflates alike,
     stepping on each anniversary of the valuation date.  On a point starting at ``t = 0``
-    the two are the same.  A factor past the largest float, which only an
-    ``inflation_rate`` past every rate of inflation makes, is refused in the month it first
-    is, naming the point and the Reference: Python's power raises ``OverflowError``
-    there, naming neither, and C's gives an infinity.
+    the two are the same.
+
+    The exponent is a whole number of years, 0 or more, so the power is real whatever the
+    base, and :func:`proj_len` holds the base to 0 or more.  A factor past the largest
+    float, which only an ``inflation_rate`` past every rate of inflation makes, is refused
+    in the month it first is, naming the point and the Reference.  Python's float power
+    raises ``OverflowError`` there, naming neither, where C's ``pow`` gives an infinity; so
+    where the power is infinite from a finite base the cell calls Python's own, uslib's M22
+    form, and the one ``except`` around both turns it into the refusal, in either engine,
+    as :func:`rpi_index` does.
     """
+    base = 1.0 + inflation_rate                                      # noqa: F821
+    n = t // 12
     try:
-        factor = (1.0 + inflation_rate) ** (t // 12)                 # noqa: F821
+        factor = base ** n
+        if factor - factor != 0.0 and base - base == 0.0:
+            raise float.__pow__(base, n)
     except OverflowError:
         raise ValueError(
-            f"point_id {point_id}: the inflation factor inflation_factor({t}) is past the "  # noqa: F821
-            f"largest float, under inflation_rate {float(inflation_rate)}") from None  # noqa: F821
-    if not factor <= 1.7976931348623157e308:
-        raise ValueError(
-            f"point_id {point_id}: the inflation factor inflation_factor({t}) is past the "  # noqa: F821
-            f"largest float, under inflation_rate {float(inflation_rate)}")  # noqa: F821
+            f"point_id {point_id()}: the inflation factor inflation_factor({t}) is past the "
+            f"largest float, under inflation_rate {float(inflation_rate)}") from None  # noqa
     return factor
 
 
@@ -1982,8 +2422,8 @@ def expenses(t):
     cost = expense_maint / 12.0 * inflation_factor(t) * pols_if(t)   # noqa: F821
     if not cost <= 1.7976931348623157e308:
         raise ValueError(
-            f"point_id {point_id}: the expense expenses({t}) is {cost}, not a finite "  # noqa: F821
-            f"number, under expense_maint {float(expense_maint)} and inflation_rate "  # noqa: F821
+            f"point_id {point_id()}: the expense expenses({t}) is {cost}, not a finite "
+            f"number, under expense_maint {float(expense_maint)} and inflation_rate "  # noqa
             f"{float(inflation_rate)}")                               # noqa: F821
     return cost
 
@@ -1996,7 +2436,7 @@ def liability_cf(t):
     paid at outset, before the first projected month - and no surrender outgo, because
     the contract has no surrender value at any time.
     """
-    return annuity_payments(t) + claims(t) + expenses(t)
+    return annuity_payments(t) + claims(t, ALL) + expenses(t)        # noqa: F821
 
 
 def net_cf(t):
@@ -2116,8 +2556,8 @@ def result_cf():
         {
             "pols_if": [pols_if(t) for t in ts],
             "annuity_payments": [annuity_payments(t) for t in ts],
-            "claims_vp": [claims(t, "VP") for t in ts],
-            "claims_prop": [claims(t, "PROP") for t in ts],
+            "claims_vp": [claims(t, VP) for t in ts],                # noqa: F821
+            "claims_prop": [claims(t, PROP) for t in ts],            # noqa: F821
             "expenses": [expenses(t) for t in ts],
             "liability_cf": [liability_cf(t) for t in ts],
             "net_cf": [net_cf(t) for t in ts],
@@ -2164,7 +2604,19 @@ def result_pols():
 
 data = ("Interface", ("..", "Data"), "auto")
 
-point_id = 1
+idx = 0
+
+BEF_NB = 0
+
+BEF_DECR = 1
+
+VP = 0
+
+PROP = 1
+
+ANNUITANT = 2
+
+ALL = 3
 
 issue_age_min = 0
 

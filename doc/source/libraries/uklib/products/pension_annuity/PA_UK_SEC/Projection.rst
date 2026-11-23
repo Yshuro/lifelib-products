@@ -8,11 +8,15 @@ Cells Descriptions
 
 .. autofunction:: model_point
 
+.. autofunction:: point_id
+
 .. autofunction:: purchase_price
 
 .. autofunction:: age_at_entry
 
 .. autofunction:: sex
+
+.. autofunction:: mort_schedule
 
 .. autofunction:: rating_factor
 
@@ -110,6 +114,8 @@ Cells Descriptions
 
 .. autofunction:: annual_income
 
+.. autofunction:: annual_income_refusal
+
 .. autofunction:: annuity_pp_pm
 
 .. autofunction:: annuity_pp
@@ -132,6 +138,8 @@ Cells Descriptions
 
 .. autofunction:: lives_if
 
+.. autofunction:: lives_if_py
+
 .. autofunction:: lives_death
 
 .. autofunction:: lives_if_last
@@ -150,7 +158,17 @@ Cells Descriptions
 
 .. autofunction:: cum_annuity_all
 
+.. autofunction:: cum_annuity_all_py
+
+.. autofunction:: cum_annuity_all_refusal
+
 .. autofunction:: cum_annuity_pp
+
+.. autofunction:: cum_annuity_pp_py
+
+.. autofunction:: cum_annuity_pp_refusal
+
+.. autofunction:: cum_annuity_pp_all
 
 .. autofunction:: vp_balance
 

@@ -1599,6 +1599,22 @@ _PA_STATE = {
 }
 
 
+def _pa_claims_total(name, args):
+    """``PA_UK_S``'s ``claims`` keys as ``PA_UK_SEC`` takes them at stage ``"EC"`` (R9,
+    R12).
+
+    S's ``claims(t, kind=None)`` is cached under ``(t, None)`` where S asks for the total,
+    which its ``liability_cf`` does: SEC's code ``ALL``, so ``None`` is mapped to
+    ``"ALL"``, which :func:`codes` then turns into the int, as it turns S's kinds and
+    timings, ``cum_annuity_pp``'s ``"ANNUITANT"`` and ``"ALL"`` among them.  Every other
+    key, and every other cell's arguments, pass as they are, SEC's own codes among them,
+    where a comparison of two SEC models passes it SEC's keys.
+    """
+    if name == "claims" and len(args) == 2 and args[1] is None:
+        return (args[0], "ALL")
+    return args
+
+
 def _ip_twin_years(point_id, status, z0, escalation):
     """n: the whole policy years the twin of ``IP_UK_S``'s point has run at the valuation
     date.
@@ -2116,14 +2132,28 @@ SEC_SPECS: dict[str, SecSpec] = {
     # annual_income_init is the income of the year under way at the valuation date, which on
     # a point starting at the valuation date is the first year's, so T1 compares the two.
     #
-    # Phase 2 sizes its caches from the contract, as UKLIB-SEC-PLAN.md §6.7's C list
-    # derives them (t 1,502, k 1,382, y and a 117, x 116): issue_age_min, 0, the youngest
-    # issue age of every life, since S projects any age on the scenario basis; the limiting
-    # age omega_age, 115; and future_horizon_mth, 120, so that the longest frame is
-    # 12 x (115 - 0) + 120 months, and lives_if and cum_annuity_all read the closing time
-    # point t = proj_len().  proj_len() refuses an issue age of any life below
-    # issue_age_min, and a guarantee above 12 x (omega_age - issue_age_min) months, the
-    # longest frame from the start date, each naming the point.
+    # At stage EC (M12), S's timings and kinds are SEC's int codes, BEF_NB and BEF_DECR, VP,
+    # PROP, ANNUITANT and ALL, which codes maps, and S's claims(t, None) keys, the kind=None
+    # total its liability_cf caches, are SEC's code ALL: the spec's twin_arg_map,
+    # _pa_claims_total, maps None to "ALL", and codes maps it and the rest.  S's label
+    # accessors stay S's, called by reporting and T1 alone; payment_timing() returns the
+    # timing column and sex(life) the annuitant's or the dependant's, which uk_registry's
+    # "reporting_columns" names.
+    #
+    # Phase 2 sizes its caches from the contract (spec_sec.py holds each derivation):
+    #   t 0..1,501: a life issued at issue_age_min, 0, the youngest issue age of every
+    #     life, since S projects any age on the scenario basis, to the age stop at the
+    #     limiting age omega_age, 115, or a guarantee of as many months on the table basis,
+    #     12 x (115 - 0) = 1,380, starting future_horizon_mth, 120 months, after the
+    #     valuation date, a frame of 1,500 months, its closing time point t = proj_len(),
+    #     which lives_if and cum_annuity_all read, and one of headroom;
+    #   k 0..1,381, the policy time points to the stop rule's, 1,380; y 0..116, whose
+    #     openings survival and the payments to date are blocked by, to the policy year of
+    #     the closing time point; a 0..115 and x 0..115, the anniversaries and the ages read;
+    #     and every 2-D cache 4 wide, the kinds' VP, PROP, ANNUITANT and ALL.
+    # proj_len() refuses an issue age of any life below issue_age_min, and a guarantee above
+    # 12 x (omega_age - issue_age_min) months, the longest frame from the start date, each
+    # naming the point.
     "PA_UK_SEC": SecSpec(
         twin="PA_UK_S",
         derived=((1, 17), (9, 16), (3, 120), (7, 24), (6, 30), (2, 101), (10, 170),
@@ -2134,6 +2164,7 @@ SEC_SPECS: dict[str, SecSpec] = {
         exempt=frozenset({"result_pols"}),
         derived_refs={(6, 60): {"rpi_rate": -0.02}, (7, 42): {"rpi_rate": 0.08},
                       (7, 54): {"rpi_rate": -0.02}},
+        twin_arg_map=_pa_claims_total,
     ),
     # IP's state is three columns (_IP_STATE above), the healthy share of the count and the
     # benefit and premium entering month 0, and the claim cohorts, a sparse companion,
