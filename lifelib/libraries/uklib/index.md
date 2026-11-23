@@ -95,6 +95,9 @@ that a cold call at its longest cover, 1,236 months, more than a century, runs o
 C stack.
 `WOL_UK_SEC` runs in force on two strands, full cover and paid-up, and compiles too, its
 two counts, its paid-up cover and its premiums paid blocked by policy year in the same way.
+`PA_UK_SEC` runs in force and compiles too, each life's survival and its payments to date
+blocked by policy year, so that a cold call at its longest cover, 1,380 months, a
+guarantee from the table's first age, runs on a small C stack.
 
 Assumption tables stay in the units they are quoted in: a mortality rate by attained age
 and a lapse rate by policy year are annual, and each model converts them month by month

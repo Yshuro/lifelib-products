@@ -7,9 +7,10 @@ years after it, as lifelib's `basiclife/BasicTerm_SE` extends `basiclife/BasicTe
 stands on the payout chassis of uslib's `SPIA_US_SEC`. The product is the one
 [`product-spec.md`](product-spec.md) specifies and
 [`technical-notes.md`](technical-notes.md) models; this page says what running in force
-changes. The suffix adds lifelib's letters to `S`: `E` for in force, as in
-`BasicTerm_SE`, and `C` for the compiled form, as in `basiclife/BasicTerm_SC`, which the
-model's next step adds (UKLIB-SEC-PLAN.md U2). Until then it runs in modelx alone.
+changes, and how the model compiles. The suffix adds lifelib's letters to `S`: `E` for in
+force, as in `BasicTerm_SE`, and `C` for the compiled form, as in
+`basiclife/BasicTerm_SC`: the same formulas compile under modelx-cython, from
+`sample_sec.py` and `spec_sec.py` beside the model (UKLIB-SEC-PLAN.md U2).
 
 > **This is a mechanics demonstration, not a pricing or reserving result.** The model is
 > `PA_UK_S` on another time axis, and it reads `PA_UK_S`'s mortality table in place, every
@@ -25,7 +26,14 @@ model's next step adds (UKLIB-SEC-PLAN.md U2). Until then it runs in modelx alon
 python products/pension_annuity/run_sec.py            # point 1: the worked example, starting at t = 0
 python products/pension_annuity/run_sec.py 11         # point 11: the worked example in payment 17 months
 python products/pension_annuity/run_sec.py --block    # every model point, summed row by row
+python products/pension_annuity/run_sec.py 11 --cython # point 11 on the compiled model
 ```
+
+`--cython` runs the compiled model and prints the same lines. The runner builds it beside
+the model with the repository's `tools/build_sec_cy.py` the first time, in about a minute
+and a half, and again whenever the model, `sample_sec.py`, `spec_sec.py` or the tool is
+newer than the build, and says so on stderr. Nothing the build leaves there is committed,
+and `.gitignore` covers it.
 
 The first prints the worked example's first twelve rows of cash flows, with the counts and
 survival behind them. Three lines to the same thing for point 11:
@@ -33,12 +41,12 @@ survival behind them. Three lines to the same thing for point 11:
 ```python
 import modelx as mx
 model = mx.read_model("products/pension_annuity/PA_UK_SEC")
-model.Projection[11].result_cf()
+model.Projection[10].result_cf()     # point 11, the table's eleventh row
 ```
 
-`Projection` takes a `point_id`, as `PA_UK_S`'s does; it will take `idx`, a point's
-position in the table, once the model compiles, and the runner takes its key from the
-model either way. `result_cf()` has `PA_UK_S`'s columns — `pols_if`, `annuity_payments`,
+`Projection` takes `idx`, the position of a point in the table, as `basiclife/BasicTerm_SC`
+does, where `PA_UK_S`'s takes a `point_id`: `Projection[10]` is point 11, and its
+`point_id()` says so. `result_cf()` has `PA_UK_S`'s columns — `pols_if`, `annuity_payments`,
 `claims_vp`, `claims_prop`, `expenses`, `liability_cf` and `net_cf` — with one row per
 month from the valuation date, `t = 0 … proj_len() − 1`. `result_pols()` sets out the
 counts first, `pols_if`, the closing obligation measure, and `pols_new_biz`, the annuities
@@ -47,21 +55,17 @@ the guarantee's floor, the two payment factors, the instalment, the payments to 
 the value-protection balance.
 
 `--block` projects every point and releases its ItemSpace once its frame is read, so the
-run holds the cells of one point at a time. Deleting it, `del model.Projection[11]`, is
+run holds the cells of one point at a time. Deleting it, `del model.Projection[10]`, is
 not enough: an ItemSpace sits in reference cycles, which only Python's cyclic collector
 frees, so the runner collects after each release. It freezes everything alive
 (`gc.freeze()`) once the model and its table are read, and again once it has asked every
 point for its frame, so that each collection scans only what the block has made since. It
 keeps the block's sum as it goes, compensated as pandas sums a `groupby`, so that the block
 is, bit for bit, the frames concatenated and summed by `t`. Every column is summed: each is
-a flow of the month or `pols_if`, the contracts with an obligation open at its end.
-
-The runner is uslib Term's, so it already takes `--cython`, which runs the compiled model
-in place of modelx, building it first with the repository's `tools/build_sec_cy.py`, and
-`--build DIR`, which runs a build made elsewhere. The model compiles from its next step
-on, which brings the build's `sample_sec.py` and `spec_sec.py`; until then a build stops,
-saying why. A `lifelib.create()` copy carries no `tools/`, and there `--cython` stops
-before building, saying so.
+a flow of the month or `pols_if`, the contracts with an obligation open at its end. The
+runner is uslib Term's, and `--build DIR` runs a build made elsewhere (*The compiled
+model*). A `lifelib.create()` copy carries no `tools/`, and there `--cython` stops before
+building, saying so.
 
 ## Two clocks
 
@@ -106,7 +110,8 @@ row by row, which is what `run_sec.py --block` prints:
 
 ```python
 import pandas as pd
-frames = [model.Projection[p].result_cf() for p in model.Data.model_point_table().index]
+points = range(len(model.Data.model_point_table()))
+frames = [model.Projection[i].result_cf() for i in points]
 block = pd.concat(frames).groupby(level="t").sum()
 ```
 
@@ -195,11 +200,11 @@ fails it: the eight in-force columns are present; no `point_id` appears twice;
 `policy_count` is a number, zero or more; `duration_mth` is a whole number of months,
 below `2**53`, and −120 or more, future new business being written over a horizon,
 `Data.future_horizon_mth`, 120 months as shipped, which set to 0 refuses future new
-business altogether; the three flags are True or False; the ages and the start year whole
-numbers below `2**53`, each sex M or F, each rating a finite number 1 or more, the price
-and the income finite and 0 or more, the frequency 12, 4, 2 or 1, the guarantee a whole
-number of months, 0 or more, the value protection and the dependant's share from 0 to 1,
-the fixed escalation finite and 0 or more; on the scenario basis each month of death blank
+business altogether; the two flags every point reads, `dependant_present` and
+`proportion`, are True or False; the ages whole numbers below `2**53`, the income finite
+and 0 or more, the frequency 12, 4, 2 or 1, the guarantee a whole number of months, 0 or
+more, the value protection and the dependant's share from 0 to 1, the fixed escalation
+finite and 0 or more; on the scenario basis each month of death blank
 or a whole number, 0 or more; each survival a probability, the second 0 on a single life;
 each state column in its domain where it is read; the start date's values on a point not
 yet in payment, and the first year's in the first policy year; and on the scenario basis
@@ -212,11 +217,21 @@ it fall: half a cent, so that an extract may carry it to the cent (USLIB-SEC-PLA
 reads a blank flag as True, `int()` truncates an age, a frequency, a guarantee, a start
 year and a month of death, and a negative month of death reads as a life that never dies
 (UKLIB-SEC-PLAN.md §6.7, *S defects found*). Each window a rule reads, the start date's to
-120 months on and the first policy year's, is held at both its ends. A column some points
-never read, such as a scenario point's rating or start year, is still held on every
-point, as `PA_UK_S`'s reader holds it; refusing it only where it is read is carried into
-M12, the C step, as SPIA's C step reworked its refusals by point (USLIB-SEC-PLAN.md §7.9,
-*Record — M23*, *Refusal by point*).
+120 months on and the first policy year's, is held at both its ends.
+
+Seven columns are read by a projection on some points and never on others, and each is
+held on the points that read it alone, by the projection that reads it, as SPIA's C step
+reworked its refusals (USLIB-SEC-PLAN.md §7.9, *Record — M23*, *Refusal by point*): each
+sex, each rating and the start year, which the table basis reads and the scenario basis
+never does, a sex M or F and one the mortality table rates, a rating a finite number 1 or
+more, the dependant's on a contract with a dependant, and the start year a whole number
+below `2**53`; the purchase price, finite and 0 or more, where value protection is
+elected; and the overlap, True or False, on a contract with a dependant. The table reads,
+and the point whose projection reads the value refuses it, naming itself, where no other
+is refused for it: a scenario point whose rating is blank projects, as `PA_UK_S` projects
+it, and a table point whose rating is blank is refused by its own projection (*The
+compiled model*, *What it refuses*). The in-force step held each on every point as the
+table was read.
 
 A contract at or past its stop rule, `duration_mth ≥ stop_mth()`, reads, but `proj_len()`
 refuses it, naming the point: the stop is the product's rule, not the table's. So does a
@@ -238,7 +253,7 @@ that read it:
 | Reference | Read on | Domain | Outside it |
 |---|---|---|---|
 | `issue_age_min` | every point | a whole number of years below `2**53`, 0 or more | a NaN switches the bound off, every comparison with it failing; past `2**53` the compiled model's `long long` cannot hold it |
-| `omega_age` | every point | a whole number of years below `2**53`, above `issue_age_min`; on the table basis at most a year past the table's last age, `Data.mort_age_last() + 1`, 116 | it sizes every frame; the table is read at attained ages to `omega_age − 1` |
+| `omega_age` | every point | a whole number of years below `2**53`, above `issue_age_min`; on the table basis at most a year past the last age the table rates each covered life's sex at, `Data.mort_age_last()` at its schedule, plus 1, 116 | it sizes every frame; the table is read at attained ages to `omega_age − 1` |
 | `expense_maint` | every point | finite, 0 or more | an expense |
 | `inflation_rate` | every point | finite, −1 or more | the inflation factor changes sign each year |
 | `annuitant_adj` | the table basis | finite, 0 or more | a mortality rate is negative; an infinity reads through the cap as certain death |
@@ -268,10 +283,10 @@ over the block meets a refused row only when
 it reaches it, after projecting the points before it, so `run_sec.py --block` asks every
 point for its frame before it projects any, and stops before it prints anything.
 
-The mortality table is checked before a value of it is read, in the cell the projection
-takes its extent from, `Data.mort_age_first`, and through it `mort_age_last`: each age a
-whole number, each sex M or F, each sex running over the table's ages, 50 to 115, one row
-an age, without a gap or a repeat, and each rate a number from 0 to 1. A key is read by its
+The mortality table is checked before a value of it is read, in `Data.mort_sexes`, which
+every array, extent and schedule of it asks first: each age a whole number, each sex M or
+F, each sex running over the table's ages, 50 to 115, one row an age, without a gap or a
+repeat, and each rate a number from 0 to 1. A key is read by its
 value, so an age written `65.0` is 65. Each refusal names the file, the column and the lines
 at fault: the check reads the file as it stands, one read that `PA_UK_S`'s reader then
 sorts. A read below the table's first age, a life issued younger than 50 on the table
@@ -332,42 +347,53 @@ count on the books is never decremented. `pols_if_init()` is the count in paymen
 valuation date: `policy_count` for a point already in payment, 0 for any other.
 `pols_new_biz(t)` is `policy_count` in the start month, the month with
 `duration_mth(t) = 0`, and 0 in every other. `pols_if_at(t, timing)` takes
-`basiclife/BasicTerm_SE`'s two timings:
+`basiclife/BasicTerm_SE`'s two timings, each an int code named as `BasicTerm_SE`'s text
+(*The compiled model*):
 
-- `"BEF_NB"`, the contracts carried in from month `t − 1`: `pols_if_init()` at
+- `BEF_NB`, 0, the contracts carried in from month `t − 1`: `pols_if_init()` at
   `t_entry()`, the first month on the books, `policy_count()` after it, and 0 outside the
   frame, a closed form with no chain of calls back to `t_entry()`;
-- `"BEF_DECR"`, that count plus `pols_new_biz(t)`, the count that weights every cash flow
+- `BEF_DECR`, 1, that count plus `pols_new_biz(t)`, the count that weights every cash flow
   of month `t`.
 
 Any other timing raises. `pols_if(t)` is not the count: it is `PA_UK_S`'s closing
-obligation measure on it, `pols_if_at(t, "BEF_DECR") × min(1, max(C(t), l_a(t + 1)) +
+obligation measure on it, `pols_if_at(t, BEF_DECR) × min(1, max(C(t), l_a(t + 1)) +
 1{δ > 0} (1 − l_a(t + 1)) l_d(t + 1))`, the guarantee certain, the annuitant alive, or the
 dependant's pension in payment at the end of the month, the weight the maintenance expense
 is carried on. It is 0.99999965 at `t = 0` on the twins of S's points 2, 6 and 7, against a
 count of 1, so the registry marks the model `closing_pols_if`, as uslib's does
 `SPIA_US_SEC`, and its conventions test reads the measure rather than the count there.
 
-Each life's survival opens at `t_entry()` from the opening state and runs forward one cell
-a month, `l(t) = l(t − 1)(1 − q_m(t − 1))` on the table basis and the step function on the
-policy clock on the scenario basis; the expected payments to date on every stream,
-`cum_annuity_all(t)`, open from `cum_annuity_all_init()` and run forward one cell a month;
-and the annuitant's as-if-alive schedule, `cum_annuity_pp(k, "ANNUITANT")`, keyed by the
-policy time point, opens at the valuation date's key, `max(duration_mth_init(), 0)`, and
-runs forward one cell a month from there. So a contract valued late in life reads its
-balance without recursing back to its start date, where `PA_UK_S`'s `G(k)` recurses from
-0. On a model just read, a cold call in the frame's last month runs at most 12 cells deeper
-than one a month back to `t_entry()`, at each shape's longest cover, 1,380 months from the
-start, now, and as deep 120 months on, which the full grid runs: on the scenario basis
-every life issued at 0, where `net_cf` runs 1,387 cells deep through the payments to date;
-on the table basis every life issued at 50, the table's first age, whose age stop at 780
-months a guarantee of 1,380 months, which `proj_len()` accepts, carries to the longest
-frame. There `net_cf(1379)` runs 1,391 cells deep through survival, on the worked
-example's table twin, the RPI points and the rated life alike: the deepest call a
-projection makes, which the C step measures its stack on. Issued later, a chain runs the
-same cells over the same policy months, later on the valuation clock: improvement, the
-income and the schedules are dated on the policy clock, and inflation, the one cell the
-valuation clock dates, is a closed form outside every chain.
+Each life's survival opens at `t_entry()` from the opening state and runs forward,
+`l(t) = l(t − 1)(1 − q_m(t − 1))` on the table basis and the step function on the policy
+clock on the scenario basis; the expected payments to date on every stream,
+`cum_annuity_all(t)`, open from `cum_annuity_all_init()` and run forward; and the
+annuitant's as-if-alive schedule, `cum_annuity_pp(k, ANNUITANT)`, keyed by the policy time
+point, opens at the valuation date's key, `max(duration_mth_init(), 0)`, and runs forward
+from there. So a contract valued late in life reads its balance without recursing back to
+its start date, where `PA_UK_S`'s `G(k)` recurses from 0. Each of the three runs one cell
+a month within a policy year, and in a year's first month after its opening reads the
+year's opening, `lives_if_py(y, life)`, `cum_annuity_all_py(y)` or `cum_annuity_pp_py(y)`,
+which walks the year before in ascending order, a cell a month, and returns its last
+month's step, the same float, so that a compiled run's chains fit its stack (*The
+compiled model*). On a model just read, a cold call in the frame's last month runs one
+cell a month back to its policy year's first month, two cells a year before that, back to
+`t_entry()`'s year, and at most 12 cells more, at each shape's longest cover, 1,380 months
+from the start, now, and as deep 120 months on, which the full grid runs: on the scenario
+basis every life issued at 0; on the table basis every life issued at 50, the table's
+first age, whose age stop at 780 months a guarantee of 1,380 months, which `proj_len()`
+accepts, carries to the longest frame. There the chain back to `t_entry()` is 239 cells,
+11 within the last policy year and two in each of the 114 before it, and the deepest call
+a projection makes, a cold `cum_annuity_all(1379)` or claims total on the table basis,
+runs 251 cells deep, on the worked example's table twin, the RPI points and the rated
+life alike, and 247 and 248 on the scenario basis's two shapes. One cell a month, as the
+in-force step left the chains, `net_cf(1379)` ran 1,391 cells deep through survival there.
+The bound of 12 is the measure, every monthly cell called cold at every code, met with
+nothing to spare, as `ULB_UK_SEC`'s 16 is: the walk's first month reads the year before's
+opening and the table's first rate, as one cell a month did, and adds nothing. Issued
+later, a chain runs the same cells over the same policy months, later on the valuation
+clock: improvement, the income and the schedules are dated on the policy clock, and
+inflation, the one cell the valuation clock dates, is a closed form outside every chain.
 
 Cover is `is_active(t)`, `0 ≤ duration_mth(t) < stop_mth()`, started and short of the stop
 rule, and outside it, before the start and from the stop rule on, every count is zero, and
@@ -425,7 +451,12 @@ Each formula that tested `t` against a contractual event now tests the policy cl
 read at a month passed as `t` is a read at the policy month or year, and each recursion
 opens at `t_entry()`, or at the valuation date's policy key, from the opening state. Where
 `PA_UK_S`'s test would have stayed correct on the valuation clock, it moved anyway, so that
-cover has one definition. Twenty-four cells are new, and none of `PA_UK_S`'s is gone.
+cover has one definition. Twenty-four cells are new with running in force, and nine more
+with compiling, `point_id`, `mort_schedule`, the three chains' openings of a policy year,
+`lives_if_py`, `cum_annuity_all_py` and `cum_annuity_pp_py`, the three refusals moved off
+the chains, `annual_income_refusal`, `cum_annuity_all_refusal` and
+`cum_annuity_pp_refusal`, and `cum_annuity_pp_all`, the payments on every stream by policy
+time (*The compiled model*); none of `PA_UK_S`'s is gone.
 
 | Cells | `PA_UK_S` | `PA_UK_SEC` | Why |
 |---|---|---|---|
@@ -434,20 +465,23 @@ cover has one definition. Twenty-four cells are new, and none of `PA_UK_S`'s is 
 | `proj_len` | `max(horizon_mths(), guarantee_mths())`, from the start | `stop_mth() − duration_mth_init()`, from the valuation date; raises at or past the stop, owing nothing, outside the contract's bounds and under any of twelve References outside its domain | The frame starts at the valuation date |
 | `is_payment_mth`, `is_payment_pm`, `annuity_pp`, `annuity_pp_pm` | `(t + 1) % step` and `t % step` on `t` | the schedule keyed by the policy month, read at `duration_mth(t)` | A contract in payment 17 months pays at policy months 17, 20, …, whatever `t` they fall at |
 | `mths_since_payment`, `next_payment_mth` | on `t`; a scan month by month to the frame's end | on the policy month; a closed form, returning the policy month or −1 | The proportion rule's one far read, R2's look-ahead, gone |
-| `claims(t, "PROP")` | `inst(next(t))` | `A(policy_year(t)) / m` | On arrears the next payment falls in the policy year of month `t` |
+| `claims(t, PROP)` | `inst(next(t))` | `A(policy_year(t)) / m` | On arrears the next payment falls in the policy year of month `t` |
+| `claims`'s total | `claims(t)`, `kind` defaulted to `None`, Python's `sum` of the two kinds | `claims(t, ALL)`, `0.0 + claims(t, VP) + claims(t, PROP)`, left to right, the same float | A default compiles as a keyword the typing guard refuses, and `None` is no C integer (*The compiled model*) |
 | `certain_floor`, `overlap_gate` | `t < n`, `t ≥ n` | `duration_mth(t) < n`, `duration_mth(t) ≥ n` | The guarantee counts from the start date |
-| `lives_if`, `check_lives_roll_fwd_resid` | 1 at `k ≤ 0`; the scenario step on `k`; the product from 0 | `lives_if_init(life)` at `t_entry()`, 0 before it; the step on `duration_mth(t)`; the product from `t_entry()` | Survival is history; the scenario's death months are policy months |
-| `cum_annuity_pp`, `cum_annuity_all`, new | one recursion from `G(0) = 0` for both kinds | `"ANNUITANT"` on the policy clock, based at `max(duration_mth_init(), 0)` by one loop, or on RPI-linked escalation by `cum_annuity_pp_init()`; `"ALL"` the new `cum_annuity_all(t)`, on the valuation clock from `cum_annuity_all_init()`, raising before the valuation date; each refused past the floats | Both parted by clock; the payments to date are history |
-| `vp_balance` | keyed by S's time point | keyed by `t`: first death nets `cum_annuity_pp(duration_mth(t), "ANNUITANT")`, last survivor `cum_annuity_all(t)`; 0 before `t_entry()` | The balance on the valuation clock |
+| `lives_if`, `check_lives_roll_fwd_resid`; `lives_if_py`, new | 1 at `k ≤ 0`; the scenario step on `k`; the product from 0, one cell a month | `lives_if_init(life)` at `t_entry()`, 0 before it; the step on `duration_mth(t)`; the product from `t_entry()`, one cell a month within a policy year, and in a year's first month after it the year's opening, `lives_if_py(y, life)`, which walks the year before and returns its last month's step | Survival is history; the scenario's death months are policy months; blocked by policy year, so that the compiled chain fits its stack (*What a compiled run needs*) |
+| `cum_annuity_pp`, `cum_annuity_all`, new; `cum_annuity_pp_py`, `cum_annuity_all_py`, `cum_annuity_pp_all`, `cum_annuity_pp_refusal`, `cum_annuity_all_refusal`, new | one recursion from `G(0) = 0` for both kinds, `"ANNUITANT"` and `"ALL"` | `ANNUITANT` on the policy clock, based at `max(duration_mth_init(), 0)` by one loop, or on RPI-linked escalation by `cum_annuity_pp_init()`; `ALL`, through `cum_annuity_pp_all(k)`, the new `cum_annuity_all(t)`, on the valuation clock from `cum_annuity_all_init()`, raising before the valuation date's key; each blocked by policy year through its `_py(y)` opening, and refused past the floats by its `_refusal` cell | Both parted by clock; the payments to date are history; codes for the kinds, and no message formatted on a chain (*The compiled model*) |
+| `vp_balance` | keyed by S's time point | keyed by `t`: first death nets `cum_annuity_pp(duration_mth(t), ANNUITANT)`, last survivor `cum_annuity_all(t)`; 0 before `t_entry()` | The balance on the valuation clock |
 | `annual_income_init`, `annual_income_first`, `policy_year_init`, new | `annual_income_init()`, the first year's income | `annual_income_first()`, the first year's; `annual_income_init()`, the year under way's, `policy_year_init()` | D6's name for the opening income |
-| `annual_income` | from `A(1)` at `y ≤ 1` | from `annual_income_init()` at `y₀`; refused past the floats | The income's history is the contract's |
+| `annual_income`; `annual_income_refusal`, new | from `A(1)` at `y ≤ 1` | from `annual_income_init()` at `y₀`; refused past the floats, by `annual_income_refusal(y)` | The income's history is the contract's; no message formatted on a chain |
 | `rpi_index`, `rpi_peak` | `(1 + r)^a`; the peak from `I(0)` | `(1 + r)^(a − a₀)`; the peak from `rpi_peak_init()` at `a₀`; the index refused past the floats | Relative to the latest index, the peak carried in |
 | `inflation_factor`, `expenses` | `1.03^(policy_year(t) − 1)`, from the start | `1.03^(t // 12)`, from the valuation date; each refused past the floats | Unit costs in valuation-date pounds (D7) |
-| `horizon_mths`, `payment_freq` | `12 × (omega_age − min x)`; a tuple of the four frequencies | `omega_age` read through `int()`; the four compared one by one | A whole float gives the int frame; no Python object in a computed cell |
-| `mort_rate_base_at`, new; `mort_rate_base`, `improve_rate`, `improve_factor`, `mort_rate`, `lives_death`, the floors and factors | unguarded: no `PA_UK_S` frame has a month outside cover | zero outside cover, before any table or rate is read; the table read in one cell, its extents from `Data`, an age outside it refused by name; the improvement factor refused past the floats | Before the start S's lookup raises `KeyError` |
-| `pols_if`, `pols_if_at`, `pols_new_biz`, `pols_if_init` | `pols_if_init() × min(1, …)` | `pols_if_at(t, "BEF_DECR") × min(1, …)`, 0 outside the frame | The count enters once, in payment or in its start month |
+| `horizon_mths`, `payment_freq` | `12 × (omega_age − min x)`, `min` of a list; a tuple of the four frequencies | `omega_age` read through `int()`, the youngest life by one comparison; the four compared one by one | A whole float gives the int frame; no Python object in a computed cell |
+| `mort_rate_base_at`, `mort_schedule`, new; `mort_rate_base`, `improve_rate`, `improve_factor`, `mort_rate`, `lives_death`, the floors and factors | unguarded: no `PA_UK_S` frame has a month outside cover | zero outside cover, before any table or rate is read; the table read in one cell, by the life's schedule and the age, its extents by schedule from `Data`, an age outside them refused by name; the improvement factor refused past the floats | Before the start S's lookup raises `KeyError` |
+| `pols_if`, `pols_if_at`, `pols_new_biz`, `pols_if_init` | `pols_if_init() × min(1, …)` | `pols_if_at(t, BEF_DECR) × min(1, …)`, 0 outside the frame | The count enters once, in payment or in its start month |
 | `result_pols` | `PA_UK_S`'s columns, `pols_if` last | `pols_if`, `pols_new_biz`, then `PA_UK_S`'s others in its order, 0 before the start | After `basiclife/BasicTerm_SE`'s `result_pols()` |
-| `is_arrears`, `is_scenario`, `is_first_death`, `is_level`, `is_fixed`, `is_lpi5`, `is_rpi_catchup`, new | the label accessors, compared as text | decodes of `timing`, `mort_basis`, `vp_basis` and `escalation_type`, each read and validated as its accessor is, raising its message | No projection cell compares text (UKLIB-SEC-PLAN.md §6.7, *C*) |
+| `is_arrears`, `is_scenario`, `is_first_death`, `is_level`, `is_fixed`, `is_lpi5`, `is_rpi_catchup`, new | the label accessors, compared as text | `Data`'s decodes of `timing`, `mort_basis`, `vp_basis` and `escalation_type`, each read as its accessor reads the column, raising its message where the value is none it names | No projection cell compares text (UKLIB-SEC-PLAN.md §6.7, *C*) |
+| `point_id`, new | the parameter | the label at position `idx`, read from `Data` | `Projection` takes the position (*The compiled model*) |
+| `death_mth`; `sex` | the dependant's month of death read for any life but 1; `sex(2)` refused on a single life | life 1 or 2, any other refused, `invalid life`, as every cell of a life is; `sex(2)` the column as read, NaN on a single life | A life is a code of a 4-wide cache, and a cell refuses the codes it does not take; a label returns its column as read, as `SPIA_US_SEC`'s does (*The compiled model*) |
 | `dependant_pct` | reads the column, then discards it on a single life | asks first whether the contract is joint | A single life's share is never read |
 | `policy_count`, `duration_mth_init`, `lives_if_init`, `cum_annuity_all_init`, `rpi_peak_init`, `cum_annuity_pp_init`, new | — | the interface's columns | *The in-force interface* |
 
@@ -466,6 +500,425 @@ end of its frame, where the rate is the float 1.0 in both models and every life 
 the start of the month dies in it; so S's point 8 owes nothing after policy month 576, and
 `proj_len()` refuses it restated later.
 
+## The compiled model
+
+The model compiles under modelx-cython into C-typed code, as `basiclife/BasicTerm_SC`
+does, and modelx reads and runs the same formulas as before. Compiling changed how each
+cell reads its inputs and spells its codes, and how three of its chains reach back in
+time, and no number: what the model computed on each committed point was frozen before
+the change, and it still computes it, to the last bit (*Tests*, below). Cell by cell, at
+every argument a full modelx sweep evaluates, the compiled model computes what modelx
+computes, bit for bit, on the committed points, on the points of the splice grid, which
+take the branches they do not, under each of the splice's RPIs, on the variants no
+committed row holds, at the contract's longest covers, the 1,380-month guarantee among
+them, where the cap on mortality binds, on every value a decoded column holds, on keys
+written as floats, and on the LPI rows under the RPI they were read from. The compile
+tests hold it so on x86-64, and to 1e-12 relative elsewhere, where no run has shown it
+yet.
+
+### Building it
+
+In the source repository:
+
+```bash
+python tools/build_sec_cy.py pension_annuity                  # in place, beside the model
+python tools/build_sec_cy.py pension_annuity --out /tmp/pa     # elsewhere, with the CSVs
+```
+
+The tool exports the model to `PA_UK_SEC_nomx/`, the Python package modelx's `export`
+writes, which runs without modelx. It copies the CSVs beside the export when it builds
+anywhere but here, because the package reads the CSVs of the directory that holds it. It
+then runs mx2cy, modelx-cython's compiler, on the export, with `sample_sec.py` and
+`spec_sec.py` (below). The result is `PA_UK_SEC_nomx_cy/`, whose spaces are C extension
+types, and it is imported as the export is:
+
+```python
+import sys
+sys.path.insert(0, "products/pension_annuity")     # the directory holding the build
+from PA_UK_SEC_nomx_cy import mx_model as model
+model.Projection[10].result_cf()                    # point 11, compiled
+```
+
+Compiled, no cache is ever cleared. An ItemSpace takes the References when it is made,
+and keeps the values it computes until it is deleted; the base `Projection` and `Data`
+keep theirs for good. So a Reference set on `Projection` after it has computed,
+`rpi_rate` say, leaves every value computed before as it was, in the base `Projection`
+and in every ItemSpace made before, and only an ItemSpace made afterwards computes with
+it. Set every Reference on a model just imported, before anything is computed, where
+modelx would recompute; a test holds the compiled model to this, and the compile tests
+project the LPI rows under their own RPI so.
+
+A build takes about a minute and a half with gcc, 83 s here, and needs a C compiler,
+which is why `requirements.txt` leaves modelx-cython out: `pip install -r
+requirements-cython.txt`. `run_sec.py --cython` builds in place when it finds no build, or
+one older than the model, the sample, the spec or the tool, and `--build DIR` runs a build
+made with `--out DIR`. Nothing a build writes is committed. All of it derives from
+committed files, and an extension module is built for one operating system, processor and
+Python (`_mx_classes.cpython-313-x86_64-linux-gnu.so` here); in place, `.gitignore` covers
+all of it. A `lifelib.create()` copy of the library carries no `tools/`, so it cannot
+build, and `run_sec.py --cython` says so.
+
+### What compiling changed, and why
+
+A compiled cell is fast when its body is C, and types alone do not make it so: a cell
+whose body still looks a value up in a DataFrame or compares text runs Python under its C
+declaration. So each input now reaches a cell as a number, as uslib's `Term_US_SEC` was
+taught first (USLIB-SEC-PLAN.md R1 to R17), and as `SPIA_US_SEC`, this model's chassis,
+was at uslib's M23:
+
+- **`idx`.** `Projection` is parameterized by the position of a point in the table, from
+  0, as `BasicTerm_SC` is: `Projection[10]` is point 11, and `point_id()` returns the
+  label, which every refusal names. The position is what indexes the vectors below.
+- **`Data`'s vectors.** Each model point attribute a formula uses is a `Data` vector of
+  int64 or float64, one element a point, and a cell reads its point's element:
+  `annual_income_first()` is `float(data.annual_income()[idx])`. Compiled, the vector is a
+  typed memoryview, and the read is a load from memory. The six columns of opening state
+  are vectors too, and the three flags, `dependant_present`, `overlap` and `proportion`,
+  are int64 vectors of 0 and 1, where a vector of bools would compile to a Python object.
+- **A value, a flag and a sentinel.** A column a point may leave blank is read as
+  `PA_UK_S` reads it, and where a vector cannot hold what a projection would read, a flag
+  beside it says so (USLIB-SEC-PLAN.md R8). A single life's dependant age is 0, which no
+  formula reads. A month of death left blank, the life surviving the projection, is −1,
+  the sentinel `PA_UK_S`'s `death_mth` returns for it. And where a point's value is one
+  its projection cannot use, its flag, `<column>_ok`, is 0, and the accessor that reads
+  the value refuses it, naming the point (*What it refuses*).
+- **Text, decoded once.** A C cell holds no text, so `Data` decodes each text column into
+  the numbers it selects, for every point at once: `timing`, `escalation_type`,
+  `vp_basis` and `mort_basis` into a 0/1 flag of each value a formula branches on,
+  `is_arrears`, `is_level`, `is_fixed`, `is_lpi5`, `is_rpi_catchup`, `is_first_death` and
+  `is_scenario`, beside a `has_*` flag that the value is one `PA_UK_S` names, which the
+  decode reads first, raising `PA_UK_S`'s message where it is not; and each life's sex
+  into the schedule of the mortality table it selects, `mort_schedule_1` and
+  `mort_schedule_2`, the table's sexes numbered from 1 in sorted order, F 1 and M 2, and 0
+  for a sex the table lacks, a blank among them, which `mort_schedule(life)` refuses
+  where the table basis first reads it. Each decodes as `PA_UK_S` reads the column, which
+  a test holds on every value a column can hold.
+- **The mortality table indexed by integers.** It is `mort_table_array`, by schedule and
+  attained age, padded from age 0 so that the index is the age, beside each schedule's own
+  first and last ages, `mort_age_first` and `mort_age_last`, 50 and 115 for both sexes as
+  shipped. The padding holds NaN, and nothing reads it: the one cell that reads the table,
+  `mort_rate_base_at(x, life)`, checks the age against its life's schedule's ages first,
+  and is read in cover alone. Each sex has its own extents, so that a table whose sexes
+  ran over different ages would read neither's padding, which a test holds on such a
+  table; `Data` holds every sex to the table's ages, as the in-force step did.
+- **Codes.** A timing or a kind, which `PA_UK_S` spells as text, is an int Reference
+  named as the text. The count's two timings are `BEF_NB = 0` and `BEF_DECR = 1`; the
+  kinds are numbered as one family, `claims`' first, `VP = 0` and `PROP = 1`, then
+  `cum_annuity_pp`'s `ANNUITANT = 2`, and `ALL = 3`, either cell's total, so that a kind
+  of one cell is refused by the other's: `claims(t, ANNUITANT)` raises `invalid kind`, as
+  `cum_annuity_pp(k, VP)` does. A call reads as before, less the quotes:
+  `pols_if_at(t, BEF_DECR)`. A string argument would give the cell a dictionary for a
+  cache, where a code indexes a C array, so codes are numbered from 0 without a gap.
+- **The claims total, a code of its own.** `PA_UK_S` totals the two kinds as
+  `claims(t)`, its `kind` defaulted to `None`, with Python's `sum`. A default compiles as
+  a keyword parameter the typing guard refuses, and `None` is no C integer, so the total
+  is `claims(t, ALL)`, which `liability_cf` reads. It is written out,
+  `0.0 + claims(t, VP) + claims(t, PROP)`, left to right, which is `sum`'s float wherever
+  at most two kinds are non-zero, and there are only two: `sum` compensates since Python
+  3.12, and the error of a single addition, added back, rounds to the sum it came from. A
+  test holds the total to `PA_UK_S`'s by its bits.
+- **The payments to date by code.** `cum_annuity_pp(k, kind)` keeps `PA_UK_S`'s key, the
+  policy time point. `ANNUITANT` is the annuitant's as-if-alive schedule on the policy
+  clock, from its static base at the valuation date's key. `ALL` is
+  `cum_annuity_pp_all(k)`, a cell of its own, which reads `cum_annuity_all` on the
+  valuation clock and refuses a key before the valuation date's, where the payments to
+  date are one total; no cell reads it, the last death's balance reading
+  `cum_annuity_all(t)` itself.
+- **One comparison where a list was.** `horizon_mths()` finds the youngest covered life by
+  one comparison, the dependant's issue age against the annuitant's on a joint contract,
+  where `PA_UK_S` takes the `min` of a list; and `payment_freq()` compares the frequency
+  with each of the four, where `PA_UK_S` asks whether it is in a tuple.
+- **Three chains blocked by policy year.** Survival on the table basis, `lives_if(t,
+  life)`, the expected payments to date on every stream, `cum_annuity_all(t)`, and the
+  annuitant's as-if-alive schedule, `cum_annuity_pp(k, ANNUITANT)`, each run one cell a
+  month within a policy year, as at the in-force step, and in a year's first month read
+  the year's opening, `lives_if_py(y, life)`, `cum_annuity_all_py(y)` and
+  `cum_annuity_pp_py(y)`. Each opening walks the year before in ascending order, asking
+  the monthly cell of each of its months, so that each finds the month before cached, and
+  returns the step across the year's last month, `l(t − 1)(1 − q_m(t − 1))`,
+  `G_all(t − 1)` plus that month's expected instalments, and `G(k − 1) + inst(k − 1)`,
+  the monthly cell's own floats in its own order, so no number moves. A cold read then
+  runs one cell a month back to its year's first month and two cells a year before that,
+  where one cell a month ran the whole cover on the C stack (*What a compiled run needs*,
+  below). The income and the ratchet's peak recurse by the year already, and survival on
+  the scenario basis is a step function, which recurses not at all.
+- **No refusal formatted on a chain.** A compiled cell's C frame holds the code that
+  formats each of its messages, whether a run reaches it or not, and a chain holds a frame
+  of each cell it recurses through at each level (UKLIB-SEC-PLAN.md K12). So the cells the
+  chains recurse through format nothing. Where the payments to date or the income have
+  left the floats, `cum_annuity_all(t)` calls `cum_annuity_all_refusal(t)`,
+  `cum_annuity_pp(k, ANNUITANT)` calls `cum_annuity_pp_refusal(k)`, and
+  `annual_income(y)` calls `annual_income_refusal(y)`, each of which computes the value
+  again from the same cells, the same float, and raises the in-force step's message,
+  naming the month, the key or the year. Each takes the key alone, since a float
+  parameter would give it a dictionary for a cache, and returns the value where it is
+  finite, which the sample asks for to type it. A test holds every cell that a cold call's
+  deepest path holds more than once to building no text and raising only a constant. The
+  powers' refusals stay in `inflation_factor`, `rpi_index` and `improve_factor`, and the
+  mortality table's in its reader: no chain recurses through them, each read once, at a
+  path's foot or off it.
+- **Reporting cells stay Python.** `model_point()`, the label accessors `sex(life)`,
+  `payment_timing()`, `escalation_type()`, `vp_basis()` and `mort_basis()`, and the two
+  reports return a table row, text and DataFrames, for a reader, for `run_sec.py` and for
+  the comparison with `PA_UK_S`. No other cell calls them, so they cost the projection
+  nothing. The four that validate their column, as `PA_UK_S`'s do, return text or raise,
+  and compile to `str`. `sex(life)` returns its column as read, as `SPIA_US_SEC`'s does,
+  NaN on a single life's blank dependant, where `PA_UK_S`'s refuses a single life's second
+  life, and compiles to a Python object. The registry names the column each label returns
+  where it is not its own, `payment_timing` `timing` and `sex` the annuitant's or the
+  dependant's by its argument, so that the compile tests compare each label with its
+  column.
+
+The `Data` docstring lists its 49 vectors by point, its mortality array and the two
+extents by schedule, and its one check, `mort_sexes`, an int, each with the column or
+file it comes from. The four readers stay Python, returning DataFrames and a path, and no
+`Projection` cell but `model_point()` reads them. Every other cell of `Projection`, 92 of
+its 100, returns a C `bint`, `long long` or `double`, 17, 21 and 54 of them, and caches a
+single value, or a C array the spec sizes from the contract:
+
+| Compiled to | Cells |
+|---|---|
+| a C array of 1,502 by `t`, of `double`, `long long` or `bint` | the 29 cells of `t` alone: every count, factor and cash flow, the payments to date on every stream and their refusal, the balance, the policy clock, its years, the calendar year and the payment months, the checks' residuals, and the flag `is_active` |
+| a C array of 1,502 by 4 | the eight cells of `t` and a life, each life's rates, survival, deaths and attained age; `pols_if_at(t, timing)`; and `claims(t, kind)` |
+| a C array of 1,382 by policy time, or 1,382 by 4 | the schedule, `is_payment_pm(k)` and `annuity_pp_pm(k)`; the annuitant's payments to date and their refusal; `cum_annuity_pp_all(k)`; and `cum_annuity_pp(k, kind)` |
+| a C array of 117 by policy year, or 117 by 4 | the income and its refusal, and the three chains' openings |
+| a C array of 116 by anniversary | `rpi_index(a)` and `rpi_peak(a)` |
+| a C array of 116 by 4, by attained age and life | `mort_rate_base_at(x, life)` |
+| a C array of 4 by life | `age_at_entry`, `mort_schedule`, `rating_factor`, `death_mth` and `lives_if_init` |
+| one `bint`, `long long` or `double` | the 35 other cells without a parameter: the point's numbers, decodes and flags, its opening state, the ends of its frame, the frequency and the guarantee, and the four checks |
+| a Python object, or `str` | the eight reporting cells |
+
+The declarations the build generates, `_mx_classes.pxd` in the compiled package, are the
+record of it, and none of `Projection`'s caches there is a dictionary.
+
+### The sample and the spec
+
+mx2cy types each cell from the values the sample run passes it and gets back, and a cell
+the run never calls compiles as a Python object. So `sample_sec.py` runs the two reports
+and the four checks on every committed point, and then the cells no report reaches:
+`model_point()` and the five label accessors, which only a reader asks for; `point_id()`,
+which only a refusal names; the dependant's `lives_death`, which the last-death density
+replaces in every flow; `is_payment_mth`, which value protection asks in advance alone,
+and no committed point with value protection pays in advance; `next_payment_mth` and
+`mths_since_payment`, which only the proportionate payment reads; `cum_annuity_pp` at
+`ALL`, which no cell reads; and the three refusals moved off the chains, which only their
+cells' error paths call, where a value has left the floats, and which return the value
+elsewhere, so that the sample's calls of them type them: the monthly one in every month of
+the frame and the month after it, the payments' at every key a projection reads, and the
+income's in every year from the one under way at the valuation date to the frame's last.
+It runs the committed points alone: the export reads the CSVs of the directory the build
+is made in, which in place is the product directory. The committed points leave branches
+untaken: semi-annual and annual payments, a dependant older than the annuitant, value
+protection paid in advance, the LPI's cap and floor binding, a ratchet whose peak the
+index passes, and a power, an income or a total past the largest float. That still types
+every cell, because every branch of a cell returns the one type its others return, a
+probability or an amount a float in every branch, `0.0` or `False` outside the frame, and
+on points that take those branches the compiled model computes modelx's numbers (above).
+The labels are typed from the committed points too, the three single lives among them, so
+that `sex(2)` returns NaN beside the text of every other call, and `sex` is typed as the
+reporting cell it is. The sample also raises the recursion limit, which modelx raises and
+its export does not (*What a compiled run needs*, below).
+
+`spec_sec.py` sizes each C-array cache, by the names of the cells' parameters, and a
+compiled cache raises `IndexError` for an argument outside it. So each size covers the
+largest argument a cell is called with on a point the contract allows, in its frame and
+at its closing time point, `t = proj_len()`, which survival and the payments to date read
+and the compile tests' full sweep evaluates every monthly cell at; plus one because the
+index starts at 0; and one of headroom where that leaves room, as `SPIA_US_SEC`'s spec
+sizes its own, which a test holds to the spec's own derivation:
+
+| Parameters | Size | The largest argument |
+|---|---|---|
+| `t` | 1,502 | 1,500. The longest frame is the longest cover, a life issued at 0, `issue_age_min`, to the age stop at the limiting age, 115, or a guarantee of as many months on the table basis, which `proj_len()` admits, starting 120 months after the valuation date, the furthest ahead `Data.future_horizon_mth` admits as shipped: 12 × (115 − 0) + 120 = 1,500 months, `t = 0 … 1,499`, and its closing time point, 1,500. Nothing reads `t + 1` there |
+| `t`, `life`; `t`, `timing`; `t`, `kind` | 1,502 by 4 | `t` as above, by the two lives, the two timings, and the two kinds and the total. Every 2-D cache of a model shares one inner width, the widest, the kinds' four: Cython's unpickle code converts them with one function, and two widths are refused by gcc 14, as uslib's `WholeLife_US_SEC` found (USLIB-SEC-PLAN.md §7.2) |
+| `k`; `k`, `kind` | 1,382; 1,382 by 4 | 1,380, the stop rule's policy month on the longest frame, 12 × (115 − 0), the payments to date's closing key; the schedule is read to 1,379 |
+| `y`; `y`, `life` | 117; 117 by 4 | 116, the policy year of the longest frame's closing time point, 1,380 months from the start, whose opening the three chains read; the income is read to 115. No headroom: 116 is the largest a frame reaches |
+| `a` | 116 | 114, the anniversary of the income's last policy year, read by the index and the peak |
+| `x`, `life` | 116 by 4 | 114, the last attained age below the limiting age, read by the mortality table's one reader from an issue age of 0, below which the reader refuses the age by name |
+| `life` | 4 | the two lives, widened to the inner width, so that a life of 0 or 3 is refused by the formula in both engines |
+
+**The limiting age the caches hold.** The sizes are derived from three References, the
+contract: `issue_age_min`, 0, below which `proj_len()` refuses a covered life's issue age;
+`omega_age`, the limiting age, 115; and `Data.future_horizon_mth`, 120, past which `Data`
+refuses an annuity to start. `proj_len()` also refuses a guarantee longer than
+`12 × (omega_age − issue_age_min)` months, 1,380, so that no frame outruns the age stop
+of the youngest life the contract issues. `omega_age` itself is not bounded, as
+`SPIA_US_SEC`'s is not: on the scenario basis, which reads no mortality, the in-force step
+projects any limiting age above `issue_age_min`, and on the table basis a year past the
+table's last age, 116, so a bound at the table's last age plus one, `ULB_UK_SEC`'s
+`omega_age_max`, would refuse frames the in-force step projects. So an `omega_age` above
+115, an `issue_age_min` below 0 or a longer horizon lets a report run past the caches in
+the compiled model alone: `t`, `k` or `y` past its size raises `IndexError`, naming
+nothing, where modelx projects. At 116 every frame fits but one that a guarantee, or on
+the scenario basis the age stop, carries past 1,380 months. Each change needs the sizes
+derived again, as `spec_sec.py` derives them, and a rebuild: `t` raised to
+12 × (`omega_age` − `issue_age_min`) + the horizon + 2, `k` to 12 × (`omega_age` −
+`issue_age_min`) + 2, `y` to `omega_age` − `issue_age_min` + 2, `a` to `omega_age` −
+`issue_age_min` + 1, and `x` to `omega_age` + 1.
+
+### Two compiler directives
+
+`tools/build_sec_cy.py` puts `# cython: infer_types=True, cpow=True` at the top of the
+module mx2cy translates, before it compiles it, and on Linux and macOS compiles with
+`-ffp-contract=off` and `-Werror=incompatible-pointer-types`. Without `infer_types` an
+integer local, such as the year walks' month counter or the schedule's loop, stays a
+Python object, though the cell is typed `double`; without `cpow`, `1 − (1 − q)^(1/12)`,
+the monthly rate of each life's mortality, and the three powers, the inflation factor,
+the RPI's index and the improvement factor, are complex powers, which gcc computes with
+`cpow` rather than `pow`, and whose last bits can differ from Python's; and gcc fuses a
+multiply and an add where the target has the instruction, one rounding where Python
+rounds twice. The tool's docstring has the detail, and uslib's
+[`term_life/model-sec.md`](../../../uslib/products/term_life/model-sec.md) the
+measurements that put each there. With all four, every compiled value here agrees with
+modelx bit for bit. The compile tests hold each directive in the module's first line, and
+a static test holds the tool's line to the two and no other.
+
+### What a compiled run needs
+
+**Memory, and the release.** A compiled `Projection` ItemSpace is a C struct of
+1,379,464 bytes, the type's basic size, which holds every cell's cache, and deleting it,
+`del model.Projection[idx]`, frees nothing by itself: an ItemSpace sits in reference
+cycles, and only Python's cyclic collector frees it. That is why `run_sec.py --block`
+collects after each release, in its frame pass and in its projections (*Run it*, above),
+and a test runs the compiled runner on a block of the committed points repeated and finds
+no ItemSpace but the base alive after each collection.
+
+**Stack, not recursion limit.** A compiled chain of cells calls C to C, on the C stack,
+which the interpreter's recursion limit does not count, so the compiled model needs no
+limit raised: the deepest call the contract allows runs under a limit of 26. What it needs
+is stack. That call is a cold one in the last month of the longest cover, 1,380 months
+from the start, now or 120 months on: on the scenario basis every life issued at 0, and on
+the table basis every life issued at 50, under a guarantee of 1,380 months. One cell a
+month, as the in-force step left survival and the payments to date, the call ran 1,391
+cells deep in modelx, and compiled with gcc each chain head, cold in an ItemSpace of its
+own, needed 244 to 276 KiB of C stack, measured to 4 KiB: `net_cf` 256 to 276, the
+payments to date on every stream, the claims and the balance up to 276, and 33 of the 43
+heads above the 256 KiB the C step allows itself, so that the 1 MiB thread holds on every
+runner, where `Term_UK_SEC`'s cold call needed two to four times as much on CI's Ubuntu
+runner as here (UKLIB-SEC-PLAN.md §6.1, *Record — M2*), and where `SPIA_US_SEC`, this
+model's chassis, kept a margin of 1.33 to 1.6 times under 1 MiB on gcc (USLIB-SEC-PLAN.md
+§7.9, *Record — M23*). So the three chains are blocked by policy year (*What compiling
+changed*, above), and no cell they recurse through builds text. Blocked, the call runs
+251 cells deep in modelx, on a chain of 239, one cell a month within its year and two
+cells a year before it, and 12 more, which a test holds. Compiled, every head runs on 52
+to 76 KiB and not on 4 KiB less, issued now and 120 months on alike: on the table basis,
+survival, the payments to date on every stream and the claims on 76, `net_cf` and the
+obligation measure on 72, the balance on 64 and the survival check's residual on 56; on
+the scenario basis, every head on 52 to 64. A test runs each shape at its longest cover
+in a thread of 1 MiB, the stack Windows gives a program's main thread unless the program
+is linked for more, and again on the main thread, which is where `run_sec.py --cython`
+runs, and records the smallest of its sizes each ran on: 96 KiB here, and not 64. MSVC's
+frames may be larger than gcc's, and the `cython_uk` CI job, which runs the test on
+Windows too, is the check on them. The export recurses in Python instead: the same call
+needs a recursion limit of 517 there, its `net_cf` 496 to 507, and the reports and checks,
+which run in ascending `t`, need 128, so `sample_sec.py` sets 3,000, four times the first
+rounded up to the thousand.
+
+### What it refuses
+
+The compiled model refuses what modelx refuses, with the same message. modelx raises its
+`FormulaError`, which quotes the error; compiled, the `ValueError` itself propagates. A
+test holds the in-force suite's refusals to modelx's, compiled, message for message: each
+malformed row of the table, each value refused by the point that reads it, each mortality
+table a reader cannot read, each text value no decode knows, each point the frame refuses,
+a point owing nothing among them, each Reference outside its domain that the compiled
+model can hold, the income, the payments to date, the three powers and the maintenance
+past the floats, a key read below the mortality table, and what the vectors cannot hold,
+in a cell typed `long long` or `double` as in a Python one.
+
+A message prints each Reference as the compiled model holds it: a rate as a float, and an
+age or a year as an int. So a rate written as an int, 2, gives one message in both
+engines. An int Reference, `issue_age_min`, `omega_age`, `mort_table_year`,
+`improve_flat_age` or `improve_taper_age`, is a C `long long` compiled, and a float set on
+it is truncated as it is set, 115.5 to 115, where modelx refuses 115.5 as not a whole
+number, and a NaN or an infinity cannot be set on it at all; so set each as a whole
+number.
+
+- What `Data` cannot decode or hold, when the vector is first read, naming every point or
+  line at fault: a `point_id` that is not a whole number, or is `2**53` or more in size; an
+  age `2**53` or more in size, which an int64 vector cannot hold whole and numpy would cast
+  without a word; a mortality age as large, before the table is cast; and, as since the
+  in-force step, each malformed value of a column every point reads. A key written as a
+  float, an age `65.0`, is read by its value, as `PA_UK_S`'s lookups match it.
+- A value only some points read, by the point that reads it, naming that point, as it
+  first reads the value (*The in-force interface*): `point_id 8: rating_multiplier must be
+  a number, and a finite one, 1 or more, on the table basis, which reads it; it is not`,
+  on the rated single life written at 0.9. A start year or a month of death that `int()`
+  cannot read below `2**53` in size is refused the same way, by its accessor, on a point
+  that reads it.
+- A key beyond the mortality table, by the one cell that reads it, where `PA_UK_S`'s
+  lookup raised `KeyError`: `point_id 2: mort_table.csv has no rate at attained age 49`,
+  on the worked example's table twin issued at 49, a year younger than the table. No
+  frame reads past the last age, which `proj_len()` holds `omega_age` to.
+- A power past the largest float, which Python's float power refuses with
+  `OverflowError` where C's `pow` gives an infinity: the inflation factor, the RPI's
+  index and the improvement factor each call Python's own power where their own is
+  infinite from a finite base, so that the compiled model raises the same `OverflowError`
+  as modelx does (uslib's *Record — M22* form), and the one `except` around both turns it
+  into the in-force step's message, naming the point and the Reference, in either engine.
+  Only a rate past every rate of inflation reaches them: a test does, under an
+  `inflation_rate` and an `rpi_rate` of 1e200 and an `improve_rate_base` of −1e200.
+- A timing, a kind or a life no cell takes, by the cell, as `PA_UK_S`'s are: `invalid
+  timing`, `invalid kind` and `invalid life`. Each 2-D cache is 4 wide, so a code inside it
+  that its cell does not take, a timing past `BEF_DECR`, a kind of the other cell or a
+  life of 0 or 3, reaches the formula, which refuses it in both engines, as a test holds.
+
+An argument outside a cache raises `IndexError` in the compiled model alone: `net_cf(1502)`
+or `net_cf(-1)`, which modelx answers with 0, the month being outside the frame;
+`pols_if_at(t, 4)`, `claims(t, 4)`, `cum_annuity_pp(k, 4)` and `lives_if(t, 4)`, which
+modelx refuses as codes it does not take; and a key, a policy year, an anniversary or an
+attained age past its cache, `cum_annuity_pp(1382, ANNUITANT)`, `annual_income(117)`,
+`lives_if_py(117, 1)`, `rpi_peak(116)` or `mort_rate_base_at(116, 1)`, which modelx computes
+or refuses as at any other. No frame the contract allows reads any of them. An `idx` past
+the last row is refused in both, with an `IndexError` at the first read of a vector, and
+`Projection[-1]` reads every vector at its last element in both, so it is the table's last
+point, under that point's own `point_id()`; the compiled refusal test holds both against
+modelx.
+
+An annual mortality above 1 is not refused but capped, in both: `mort_rate` caps the
+product at 1, as `PA_UK_S` does, and a compile test holds the two equal on S's point 8,
+rated 1.35, where the cap binds from policy month 576 to 599, as a twin and restated in
+payment the month before and the month of it. A NaN product would stay NaN through the
+cap, in both, which the compiled model computes as a comparison that keeps the value
+unless the bound is smaller.
+
+### Speed
+
+`python tools/bench_sec_cy.py pension_annuity` builds the model into a temporary directory
+and times one block run on three engines: modelx, the export and the compiled model. Each
+engine runs the committed table repeated, in a process of its own, as `run_sec.py
+--block` runs a block, each point projected and then released. `net_cf` is `net_cf(t)`
+summed over the frame, the projection alone, as `basiclife/BasicTerm_SC` is timed on its
+`pv_net_cf()`; `result_cf` is the report `run_sec.py` prints, which builds a DataFrame for
+each point. Each run of the tool takes the fastest of three runs of each engine and loop.
+The tool was run three times, and each time below is the median of its three, with the
+range of the three beside it:
+
+| Engine | Points | `net_cf`, a point | `result_cf`, a point | Peak memory |
+|---|---|---|---|---|
+| compiled | 6,003 | 0.393 ms (0.385–0.403) | 0.907 ms (0.864–0.930) | 87–88 MB |
+| export | 621 | 5.92 ms (5.60–5.95) | 6.28 ms (5.95–6.32) | 87–88 MB |
+| modelx | 138 | 192 ms (183–192) | 192 ms (188–200) | 119–122 MB |
+
+On `net_cf` the compiled model runs 15.1 times its export (13.9 to 15.5 over the three),
+and on `result_cf`, where building the DataFrame takes more than half its time, 6.8 times
+(6.6 to 7.3); it runs 489 times modelx on `net_cf` (454 to 498) and 212 on `result_cf`
+(202 to 231). The ranges are the noise of a machine other builds were using, its 1-minute
+load between 1.5 and 4.0 as the runs started. A point here costs more on every engine
+than in uklib's other compiled models, its frame being longer: 552 months on average over
+the committed points, against `ULB_UK_SEC`'s 340 and `Term_UK_SEC`'s 244. The release
+keeps a block flat: the compiled model's peak and the export's grew by less than 0.1 MB
+over their 6,003 and 621 points in every run, where modelx's rose by 31 to 35 MB in its
+loop. Reading the two files and building every `Data` vector and array for the compiled
+block took 0.04 to 0.06 s, and asking every point for its frame, the runner's first pass,
+0.16 to 0.28 s. Every engine, loop and run summed `net_cf` over a copy of the table to the same
+−5,946,586.352, to 1e-9 relative.
+
+Measured on 2026-11-23 on a machine shared with other work: 4 CPUs (an Intel Xeon at
+2.30 GHz), a 1-minute load average between 1.45 and 3.99 as the runs started; Linux,
+Python 3.13.18 and gcc 13.3.0, with modelx 0.33.0, modelx-cython 0.1.0, Cython 3.3.1,
+numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
+
 ## Tests
 
 - **The twin identity**, in `tests/test_model_conventions_uk.py`: on points 1 to 10, every
@@ -475,10 +928,12 @@ the start of the month dies in it; so S's point 8 owes nothing after policy mont
   `annual_income_init` is compared, and is the first year's income on a twin. A cell this
   model lacked would fail it. So `PA_UK_S`'s worked example, which
   `tests/test_pension_annuity_uk.py` asserts to the penny, holds here with no number
-  restated. The same suite holds the model to the conventions every `_SEC` model meets:
-  every frame starts at `t = 0`, `pols_if` is the closing measure on the `"BEF_DECR"`
-  count, new business enters once at its `policy_count`, nothing happens before the
-  start, and the in-force columns are present.
+  restated. The kinds and timings are compared as the codes of the same names, and
+  `PA_UK_S`'s claims total, `claims(t)`, with `claims(t, ALL)`. The same suite holds the
+  model to the conventions every `_SEC` model meets: every frame starts at `t = 0`,
+  `pols_if` is the closing measure on the `BEF_DECR` count, new business enters once at
+  its `policy_count`, nothing happens before the start, and the in-force columns are
+  present.
 - **The splice**, in `tests/test_pension_annuity_uk_sec.py`: each `PA_UK_S` point
   restated in payment at months 1, 2 and 3, about the first quarterly payment in arrears,
   11 to 13 and 23 to 25, about the first two anniversaries, 15 to 17, about the scenario
@@ -516,19 +971,26 @@ the start of the month dies in it; so S's point 8 owes nothing after policy mont
   `duration_mth(500)` evaluates `duration_mth` once, the policy clock being a closed form,
   and every point's reports and checks run under modelx's recursion limit lowered to 40,
   which a recursion backward over the frame would exceed. Each chain, called cold in the
-  last month at each shape's longest cover, runs one cell a month back to `t_entry()` and
-  at most 16 more, each shape's deepest as measured, 1,391 on the table basis's; the
-  schedules at the valuation date's key are S's, bit for bit, and a contract valued in
-  its last month runs its reports within 8 cells; and no computed cell outside §6.7's C
-  list holds a Python object.
-- **Counts**: the count is never decremented, `"BEF_NB"` a closed form, and `pols_if` the
+  last month at each shape's longest cover, runs one cell a month back to its policy
+  year's first month, two cells a year back to `t_entry()`'s, and at most 12 more, each
+  shape's deepest as measured, 251 on the table basis's; each year's opening, of survival
+  and of the payments to date on either clock, is the step of the year's last month, by
+  its bits; the schedules at the valuation date's key are S's, bit for bit, and a
+  contract valued in its last month runs its reports within 10 cells; no computed cell
+  but the reporting ones holds a Python object; and no cell that a cold call's deepest
+  path holds more than once builds text anywhere in its formula, at a raise, in an error
+  branch or into a local, or raises other than one exception on one string constant.
+- **Counts**: the count is never decremented, `BEF_NB` a closed form, and `pols_if` the
   closing measure on it; `result_pols()` is S's report with `pols_new_biz` beside it;
   multiplying `policy_count` by 2.5 multiplies every flow and counted cell and moves no
   per-contract value, every flow nonzero on some point; and each point in payment, restated
   a month on with the state it carries there, continues its own flows.
-- **Validation and regeneration**: each malformed row of the table, 82 cases, is refused
-  naming its point, on the committed labels and on an extract's; each text value no
-  decode knows raises `PA_UK_S`'s message; the horizon is a Reference; a point at its
+- **Validation and regeneration**: each malformed row of the table, 70 cases, is refused
+  naming its point, on the committed labels and on an extract's; each value no projection
+  can use in a column only some points read, 15 cases, is refused by a point that reads
+  it, naming it, on an extract's labels, where a point that never reads it projects as on
+  the committed table, in both reports, exactly; each text value no decode knows raises
+  `PA_UK_S`'s message; the horizon is a Reference; a point at its
   stop, one owing nothing and one the contract does not issue are refused by
   `proj_len()`, each bound just past it and each moved past a committed point, and
   `run_sec.py --block` refuses such a point before printing anything; each of twelve
@@ -555,9 +1017,9 @@ the start of the month dies in it; so S's point 8 owes nothing after policy mont
   policy clock; no premium and no acquisition; every guarded cell's value outside cover;
   the block; an extract without the generator's three columns, labelled otherwise,
   projecting the same numbers; `run_sec.py`'s numbers, for a point and for the block, and
-  its sum, and its `--cython` stopping where no repository is above it; no cell's parameter
-  defaulted but the `claims` total's, and `cum_annuity_pp`'s total refused before the
-  valuation date; the
+  its sum, and its `--cython` stopping where no repository is above it; no cell's
+  parameter defaulted, and `cum_annuity_pp`'s total refused before the valuation date's
+  key; the
   docstrings, read through docutils as the docs build reads them where docutils is
   installed; and the shared input table.
 - **The cap**: on S's point 8 the rated rate passes 1 from policy month 576 to 599; in
@@ -566,6 +1028,38 @@ the start of the month dies in it; so S's point 8 owes nothing after policy mont
   finite floats, on the twin and restated in payment the month before. A NaN sent to the
   cap, through `annuitant_adj`, stays NaN; and each check fails a residual that is not a
   number.
+- **The C step's representation**, in modelx, in seconds: `claims(t, ALL)` is the sum of
+  its two kinds by its bits on every committed point's month, and `PA_UK_S`'s total by its
+  bits on every twin's; every value each text column can hold decodes as `PA_UK_S` reads
+  it, 23 cases, each sex of each life and a sex the table lacks among them; the padded
+  mortality array holds NaN where no file does and nothing else, each sex has its own
+  extents, on a table whose sexes start at different ages, and the one reader refuses an
+  age below its sex's; each `Data` vector is the int64 or float64 the `Data` docstring's
+  table states, and each parameterless cell returns a Python number; each label returns
+  its column as read or refuses what is not its codes; `spec_sec.py`'s sizes and
+  `sample_sec.py`'s recursion limit are what their comments derive, and the sample traces
+  `sex` on a blank; `run_sec.py --cython` rebuilds exactly when a source is newer; and a
+  value the vectors cannot hold, a timing, a kind or a life no cell takes, a kind of each
+  cell in the other's among them, is refused.
+- **C2, the fingerprint**: every committed point computes what the model computed when
+  its E step ended, every cell at every argument, frozen at the end of the module by
+  `tools/gen_sec_fingerprint.py` before the C step changed anything.
+- **Compiled**, the tests marked `cython`, which compile the model once a session into a
+  temporary directory and run it in child processes: in
+  `tests/test_compiled_conventions_uk.py`, C3, the typing guard, on the declarations, the
+  spec and the generated C; C4 on the committed points; and the release. In this model's
+  module, C4 on the splice grid under each of its sets of References, the RPI rows and the
+  fixed point 2 under each RPI among them; on the variants no committed row holds, which
+  C2 cannot freeze; at the contract's longest covers, issued now and 120 months on and in
+  payment in their last month, the 1,380-month guarantee among them; where the cap binds,
+  on S's point 8 from policy month 576 to 599; on every value a decoded column holds; and
+  on keys written as floats; the LPI rows under their own RPI, each ItemSpace made after
+  its References are set; the labels; the refusals, message for message, the income, the
+  payments to date and the three powers past the floats among them, each code no cell
+  takes inside the caches, the `IndexError`s past the caches and an `idx` past the table
+  and of −1; each shape's deepest cold call on a 1 MiB thread and on the main thread; a
+  Reference set late, which clears no cache; and `run_sec.py --cython`, which prints what
+  modelx prints.
 
 Memory is the module's other cost. A swept point holds its cached values and modelx's
 record of what each read, and `PA_UK_S`'s survival check, which rebuilds survival as a
@@ -573,22 +1067,34 @@ product over every month before each time point, holds about 110 MB of that reco
 point on the table basis. So the module's sweeps evaluate the check's residual at every
 25th time point and the frame's close, the whole check running on each splice row as it
 is scanned, released once read; the splice keeps two S points swept at a time. The
-default run peaks at 2.9 GB of memory, inside the 7 GB of the smallest CI runner, macOS's,
-and takes 284 s on the shared 4-CPU machine, inside the five minutes UKLIB-SEC-PLAN.md U6
-budgets (measured at M11). It took 295 s to 330 s, as the machine's load varied, until
-the depth test's shapes issued 120 months on, which run as deep as those issued now,
-moved to the full grid. The largest part is the core's 44 splice cases, about 110 s, each
-scanned whole, and none is cut: the core-reach test's predicates are coarser than the
-faults the cases are there for, and the review found that cutting by them would lose
-`rpi_high-point2-d24` and `rpi_low-point7-d25`, which catch a fixed escalation
-compounded at the RPI and the LPI's floor dropped. Then the 105 domain cases, about 25 s,
-each on a model just read, every accepted edge projected, and the cold-depth test, about
-18 s, which reads the model afresh for each of its 37 cold calls.
+default run, as CI's `sec_uk` job runs it, without the compile tests, 425 tests, peaks at
+2.7 GB of memory, inside the 7 GB of the smallest CI runner, macOS's, and takes 319 s on
+the shared 4-CPU machine under a 1-minute load of 2 to 4, other builds running beside it,
+near the five minutes UKLIB-SEC-PLAN.md U6 budgets (measured at M12; at M11, 410 tests in
+284 s at 2.9 GB). It took 295 s to 330 s at M11, as the machine's load varied, until the
+depth test's shapes issued 120 months on, which run as deep as those issued now, moved to
+the full grid. The largest part is the core's 44 splice cases, about 110 s, each scanned
+whole, and none is cut: the core-reach test's predicates are coarser than the faults the
+cases are there for, and the review found that cutting by them would lose
+`rpi_high-point2-d24` and `rpi_low-point7-d25`, which catch a fixed escalation compounded
+at the RPI and the LPI's floor dropped. Then the 105 domain cases, about 25 s, each on a
+model just read, every accepted edge projected, and the cold calls, about 20 s, a read of
+the model afresh for each of 39, which the depth test and the chain-text test share
+rather than make twice.
+
+The compile tests run where modelx-cython and a C compiler are installed, in a bare
+`pytest` too, and in the `cython_uk` job's `pension_annuity` shard. On the full grid they
+took 989 s here, 604 s of it C4 on the full splice grid, at a peak of 3.1 GB. C4
+sweeps ten rows at a time, and the contract's extremes one at a time, since a sweep's
+record grows as the square of the frame: all eighteen in one read took the module past
+6 GB, and the kernel ended it. The whole module on the full grid, its compile tests
+among them, ran 812 tests in 2,102 s here, at a peak of 4.5 GB.
 
 ```bash
 python -m pytest tests/test_pension_annuity_uk_sec.py -q
 UKLIB_SEC_FULL=1 python -m pytest tests/test_pension_annuity_uk_sec.py -q   # the full grid
 python -m pytest tests/test_model_conventions_uk.py -q -k PA_UK_SEC
+UKLIB_CYTHON_SHARD=pension_annuity python -m pytest -m cython tests -q      # compiled
 ```
 
 <!-- BEGIN generated citation links -- regenerate with tools/gen_citation_links.py -->
