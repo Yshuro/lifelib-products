@@ -6,17 +6,17 @@ workflow's run 43 (§3, *Record — M0*), and so is Term's in-force step, M1, by
 (§6.1, *Record — M1*). Term's compile step, M2, is done too, 2026-11-23, by run 46 (§6.1,
 *Record — M2*), critical illness's in-force step, M3, by run 47 (§6.2, *Record — M3*), and
 the unit-linked bond's, M9, by run 48 (§6.6, *Record — M9*). The owner's fix to Term's
-waiver incidence is done, by run 49 (§6.1, *Record — the waiver's incidence base*), and
-critical illness's compile step, M4, by run 51 (§6.2, *Record — M4*). The unit-linked
-bond's, M10, has landed, its run under way. The in-force steps of whole of life and the
-pension annuity, M5 and M11, are in rework after their reviews. On 2026-11-23 the owner
-decided that an anniversary or a review falling at the valuation date is the projection's
-first event, made at today's References, each opening column holding the state before it
-(D6). The unit-linked bond and the pension annuity already follow it, and whole of life is
-being built to it. Term and critical illness are being reworked to it, superseding the rule
-*Record — M3* states, that such an event counts as made. Like USLIB-SEC-PLAN.md, this
-document is both the specification and the record: each milestone records what it actually
-did, including where the implementation departed from the plan.
+waiver incidence is done, by run 49 (§6.1, *Record — the waiver's incidence base*). So are
+critical illness's compile step, M4, by run 51 (§6.2, *Record — M4*), the unit-linked
+bond's, M10, by run 52 (§6.6, *Record — M10*), and whole of life's in-force step, M5, by
+run 53 (§6.4, *Record — M5*). The pension annuity's in-force step, M11, has landed, and so
+has the rework of Term and critical illness to the owner's decision below, their run under
+way. On 2026-11-23 the owner decided that an anniversary or a review falling at the
+valuation date is the projection's first event, made at today's References, each opening
+column holding the state before it (D6). Every SEC model built so far now follows it,
+superseding the rule *Record — M3* states, that such an event counts as made. Like
+USLIB-SEC-PLAN.md, this document is both the specification and the record: each milestone
+records what it actually did, including where the implementation departed from the plan.
 
 Every number in it was measured in this repository, under modelx 0.33.0 and pandas 3.0.5
 as USLIB-SEC-PLAN.md's were, or is quoted from USLIB-SEC-PLAN.md, and each is given with
@@ -1918,6 +1918,182 @@ unknown `cell` or `escalation` text, the paid-up variant without a cessation dat
 `test_whole_of_life_uk.py` writes `mort_table_light.csv` into the product directory while
 its CSV-set test may run.
 
+#### Record — M5, done 2026-11-23
+
+Built in three commits, as U1 and §7 ask: `WOL_UK_S` copied with only `_name` changed
+(`24310c3`), the enhancement (`ad0612a`), and the Phase 1 fingerprint frozen alone
+(`e068b7a`). The review's fixes followed in seven commits more (`49bf970` to
+`4d6bc88`). Among them were the owner's D6 decision applied (`7fe6926`) and a refreeze
+of the fingerprint, alone (`46c15fd`). It ran beside PA's in-force step, M11, and
+the compile steps of CI and ULB, M4 and M10, two in each stream (§7).
+- One agent built it, injecting 20 faults, all caught.
+- A second agent reviewed it against this note, the plan and USLIB-SEC-PLAN.md, injecting
+  26 faults of its own, of which 20 were caught.
+  - It found the two count strands, the clocks and the counts sound, and seven defects:
+    - *On an anniversary, the cover and premium columns held the year the anniversary
+      opens.* Month 0's increase was taken as history, at the old References. Point 12,
+      at a take-up of 0.5 set at the valuation date, projected cover of £157,500 and a
+      premium of £111.38. The instant M9's template states gives £153,750 and £106.31.
+      Term and CI had chosen the same convention, so the records disagreed. The owner
+      settled it the same day (D6, the status above).
+    - *`crossover_mth` carried the columns back at today's increases.* It reported a
+      wrong month whenever the history had run at other References: S point 4 at RPI 0%
+      crosses at 166, and restated at 186, SEC reported 150.
+    - *`Data` accepted histories the contract cannot give.* Premiums paid of £1,000,000 on
+      a £5,000 level policy paid a moratorium refund of £1,000,030, every check passing.
+    - *`omega_age` 120.0* passed the domain check and broke every report.
+    - *Only the cover, the premium and the premiums paid were refused past the largest
+      float.* Expenses and `net_cf` could reach ±inf with both checks passing.
+    - *`omega_age` 121 was accepted*, past the `t` cache the spec's comment gave.
+    - *`crossover_mth` never asked `proj_len()`*, and so escaped the domains.
+  - It also found six weak tests:
+    - no core row escalating after cessation;
+    - T4 unable to see a swapped weight;
+    - the first-year rule never tried at month 1;
+    - the truncation check's paid-up term unheld;
+    - two docstrings wrong;
+    - the every-state test missing two input sets.
+  - It found one plausible risk: S's test writing `mort_table_light.csv` into the product
+    folder.
+- The builder fixed all of them, with 18 faults more caught.
+- The reviewer verified the rework with 20 faults of its own, of which 18 were caught.
+  `4d6bc88` pins the two it missed, a `Data` bound each at one edge, and makes the
+  core-reach test name an increase at `t = 0`.
+
+**What exists now.**
+- *`WOL_UK_SEC` at stage E.* `Projection` keeps all 61 of `WOL_UK_S`'s cells and adds 13:
+  - `policy_count`, `duration_mth_init`, `t_entry`, `is_active` and `pols_new_biz`;
+  - `limit_mth`, the policy month of the limiting age, which keys the frame on the policy
+    clock;
+  - `duration_init`, the policy years the cover and premium columns cover;
+  - the opening state's six cells.
+- *The paid-up strand*, the first two-strand count in either library:
+  - `pols_pu` and the paid-up cover are one-cell-a-month chains from `t_entry()`;
+  - `pols_all = pols_if + pols_pu` weights maintenance and the roll-forward;
+  - a point may be paid-up entirely: point 17 has `policy_count` 0, read from S under a
+    lapse stress of 100;
+  - `Data` refuses either paid-up column on a point without the variant, or before policy
+    month ⌈T/2⌉, the earliest a conversion can have happened;
+  - both checks scale their tolerance by `policy_count() + pols_pu_init()`;
+  - `result_pols` publishes `pols_pu`, `pols_death_pu`, `pols_convert` and
+    `pols_maturity`.
+- *The opening state* (D6), six columns, each documented in `model-sec.md` with its
+  instant. An anniversary at the valuation date is month 0's own event:
+  - `pols_pu_init` and `pu_benefit_pp_init`, the paid-up count and its cover per policy;
+  - `prem_cum_pp_init`, the premiums paid to the end of month −1;
+  - `cover_pp_init` and `premium_pp_init`, the cover and the premium before month 0's
+    events, the last premium paid once premiums have ceased;
+  - `crossover_mth_init`, the policy month the premiums paid first exceeded the cover, if
+    it fell before the valuation date, else −1. The model then searches forward from it.
+- *`Data` holds each history to the contract*, to half a cent:
+  - the premiums paid exactly on a level point, and between the issue and the latest
+    premium on an escalating one;
+  - the paid-up cover between SA·⌈T/2⌉/T and the cover·min(d, T)/T;
+  - the crossover in a premium month before the valuation date. It is not −1 where the
+    premiums paid exceed the cover, and is ⌊SA/P⌋ on a level point.
+- *The committed rows*, 17 points:
+  - S's 7 as twins;
+  - 9 derived rows, reaching the moratorium, the paid-up strand, cessation and the
+    anniversaries. Three are under References of their own (`derived_refs`): RPI 5%, a
+    take-up of 0.5, and a lapse stress of 100;
+  - one future row, issued 13 months on.
+- *Beside the model:* `run_sec.py`, `model-sec.md`, the generated pages, uklib's
+  `index.md` row and the `sec_uk` job's `whole_of_life` legs.
+- *Tests.* By default 457 pass and 159 skip in 207 s, at a peak of 1.96 GB. On the full
+  grid 616 pass in 429 s.
+
+**Departures and precisions.**
+- *The cover and premium columns are on every point*, not only RPI's. The fixed variant's
+  increases were taken up at the take-up of their day.
+- *`crossover_mth` is history*, carried as a column (above). It is one loop over the
+  contractual schedule, with no tuple, text or generator, asks `proj_len()` first, and
+  keeps S's policy month.
+- *Commission continues* on a point valued in its first policy year.
+- *A value past the largest float is refused in the month it first appears*, naming the
+  point. This covers the benefits, the paid-up cover, the premiums, the claims, the
+  expenses, the commission and `net_cf`. An overflowing power raises Python's
+  `OverflowError`, which a test pins for all five powers. M22's form waits for M6.
+- *`omega_age` is read as an int.* A whole float projects as the int does.
+- *`omega_age` may be 121*, the table's last age plus one. The `t` cache's comment says
+  0..1,356.
+- *`result_pols` gains `pols_death_pu` and `pols_maturity`*, as well as `pols_new_biz`,
+  because there are two strands.
+- *T3's before-issue check* covers the reads by age and policy year and the monthly rates,
+  not the annual ones. S's `result_pols` publishes `mort_rate` and `lapse_rate`, which
+  return 0.0 before issue without a table read.
+- *The roll-forward test runs 10 million policies*, not 1 million. At 1 million an
+  unscaled tolerance would still pass.
+- *T2 holds improvement at 0*, since it runs on the valuation clock, and holds the
+  crossover's stress at 0.5. Improvement is switched on at 0.2% elsewhere: the truncation
+  check holds there, and gives way at 0.4%, as a test records.
+- *The every-state test runs five input sets:* shipped, the splice's, lapse-all, RPI 8%
+  and a take-up of 0.5.
+- *S's test that swaps the mortality table* writes the lighter table beside a copy of the
+  model in `tmp_path`, not into the product folder (`49bf970`). A run killed mid-test
+  would leave the file behind, and the CSV-set tests of both models would then fail.
+- *The default run* keeps 24 of the 149 splice cases and 5 of the 26 future ones in its
+  core. Seven slow tests run six committed points by default, the rest under
+  `UKLIB_SEC_FULL=1`. The core-reach test holds every branch.
+
+**Measured for K6.**
+- The committed sweep passes at a recursion limit of 12. Cold chains run at most 16 cells
+  beyond one a month.
+- `crossover_mth` loops up to 1,224 months a point.
+- At landing, `4d6bc88` ran its gate here in three jobs:
+  - the full grid: 620 passed, in 424 s;
+  - the conventions, harness and S suites: 737 passed, in 361 s;
+  - the generators' checks for WOL, ULB, CI and Term;
+  - the harness check;
+  - doccheck at 0 warnings;
+  - the scaffolding at 0 files.
+
+  A case-insensitive search of `model_point_table_sec.csv`, for every publisher and
+  product `whole_of_life/sources.md` cites, finds none.
+
+In CI, the Tests workflow's run 53 on `4d6bc88` ran 94 jobs, of which 90 passed. The other
+four, all on macOS and none of them M5's, were still waiting for a runner two hours after
+the dispatch, when this record was written: `sec_uk`'s core leg for CI, and three of
+uslib's. M5's legs passed at the first attempt:
+- `sec_uk`'s three WOL legs: the full grid on Ubuntu in 8.0 min, and the core on Windows in
+  5.3 and on macOS in 4.1;
+- the `test` job on Python 3.14 and Ubuntu, 7,093 passed and 112 skipped in 38 min 27 s,
+  its harness step agreeing.
+
+**Faults.** Each was injected into a copy of its own.
+- The builder: 20, then 18 on the rework and 2 with the last gaps, all caught.
+- The review: 26, of which six were missed:
+  - the crossover's back-loop reading today's cover;
+  - the refund rebuilt from the premium schedule;
+  - the first-year rule starting at month 2;
+  - an escalating point after cessation, missed by the default run only;
+  - the earliest paid-up month floored, which equals the ceiling whenever cessation is a
+    multiple of 12;
+  - the truncation tolerance on full cover only.
+
+  Each is caught since the rework.
+- The verification: 20, of which two were missed: the paid-up cover's lower bound
+  floored, and the escalating premiums-paid bound on months rather than premiums due.
+  Both are caught since `4d6bc88`.
+
+**Carried into M6 and after.**
+- *For M6*, beyond §6.4's C list:
+  - M22's form on the cover, premium, inflation, improvement and crossover powers;
+  - a contract Reference for the largest `omega_age`, 121, from which `spec_sec.py`
+    derives `t`;
+  - the refusal messages print `kind` as text, which becomes a code once compiled;
+  - the static check lists 95 lines at stage E: the text timings, kinds, cell and
+    escalation codes; the lookups by basis, sex and smoker; `model_point()` and the
+    `.loc` reads; the `claims` total's generator; and `check_pols_roll_fwd`'s `all()`.
+- *The template, for every later product:*
+  - A month S searches for from issue, such as a crossover, is history like an increase.
+    It is carried as a column, with a K14 test on a history run at other References.
+  - `Data` holds each history column to the contract's bounds, to a cent. Each edge is
+    accepted, and each bound is tried a cent outside: at an odd and an even cessation,
+    and before and past cessation.
+  - The core-reach test names the branches the owner's D6 decision adds: an increase or
+    a review at `t = 0`.
+  - An S test that writes into the product folder writes into `tmp_path` instead.
+
 ### 6.5 With-profits — `WP_UK_SEC` (E: M, C: M)
 
 *Today:* the policy clock, opened late on an anniversary: `proj_start() =
@@ -2312,6 +2488,216 @@ meant to catch it.
   nowhere in its table. `ULB-000004-M66` and CI's point 14 read like restatements at the
   shipped References, and only the specs and `model-sec.md` say otherwise. A `row_kind` or
   a column for them is a shared change, left for M15.
+
+#### Record — M10, done 2026-11-23
+
+Built in two commits on the waiver fix's landing: the C step (`7b5eb0c`), and its docs with
+C6 (`4fbc404`). Two more followed from the review (`221a6eb`, `c6ec871`). It ran beside
+critical illness's compile step, M4, which landed first, and the in-force steps of WOL and
+PA, M5 and M11, two in each stream (§7).
+- One agent built it, injecting 15 faults: the 14 kinds the C step guards against, and a
+  formatted refusal put back on the fund's chain.
+- A second agent reviewed it against this note, the plan and USLIB-SEC-PLAN.md, injecting
+  18 faults of its own.
+  - It confirmed that no number had moved, comparing every value both engines cache:
+    - 233,961 on the 12 committed points;
+    - 2,714,151 on the full splice grid's 142 points, under the shipped References and
+      again under the splice's;
+    - 1,283,979 on 30 rows of its own: issued at 18 now, 7 and 120 months on; in force at
+      11, 611 and 1,211 months; GMDB with and without an adviser charge.
+
+    All were 0 apart, the sign of zero and NaN included.
+  - It found:
+    - `omega_age_max` at 120, which refused the `omega_age` of 121 that S and stage E
+      project. M9's `a15d894` had raised the bound to the table's last age plus one for
+      exactly that reason. At 121, EC refused all six shipped points, the four whose
+      frames fit the caches among them;
+    - the chain-refusal test blind to a message built outside the `raise` expression, by
+      concatenation or into a local, both of which passed every test;
+    - the compiled stack test running its second head warm, on the ItemSpace the first had
+      filled;
+    - three doc errors.
+- The builder fixed all of them, with 4 faults more caught.
+- The reviewer verified the fixes with 8 faults of its own, all caught, the two that had
+  passed among them.
+
+**What exists now.**
+- *`ULB_UK_SEC` at stage EC*, compiled under modelx-cython and checked against modelx.
+  - `Data` turns each model point column a formula reads into an int64 or float64 vector:
+    20 vectors and arrays, and three extents.
+    - Mortality is an array by sex and attained age, padded from age 0.
+    - Surrender is an array by policy year 1 to 11, beside its last year, an int cell.
+    - Each is padded with NaN that no reader reads.
+    - The text is decoded once for every point: the sex into its row of the mortality
+      table, the withdrawal pattern into its code, the rider's True or False into 0/1.
+      `lives` is refused unless single.
+  - `Projection` takes `idx`, `point_id()` naming the point in every refusal.
+  - Codes:
+    - the count's `BEF_NB`, `BEF_DECR`, `BEF_SURR` and `AFT_DECR`;
+    - the fund's `BEF_GROWTH`, `AFT_GROWTH`, `AFT_CHARGE` and `AFT_WD`;
+    - `claims`' `DEATH` and `SURRENDER`, and `ALL` for the total;
+    - one inner width of 8.
+  - `claims(t, ALL)` is written left to right, S's sum to the last bit with two kinds.
+  - A contract Reference, `omega_age_max`, 121, the shipped table's last age plus one,
+    bounds `omega_age`. `proj_len()` refuses past it, so the table's length bounds no
+    frame.
+  - The caches:
+    - `t` is 1,358, 12 × (121 − 18) + 120 + 2;
+    - the 2-D caches are 1,358 by 8;
+    - `y` is 104, 121 − 18 + 1.
+  - A compiled ItemSpace is 1,156,248 bytes.
+  - M22's guard is on expense inflation's power. References are printed as compiled, and
+    the `idx` edges compared across the engines.
+- *Beside the model:*
+  - `sample_sec.py`, which traces every cell under a recursion limit of 2,000;
+  - `spec_sec.py`, each size derived from the contract's References in its comment and
+    held there by a test;
+  - `run_sec.py --cython`;
+  - `model-sec.md`'s *The compiled model*;
+  - the `cython_uk` job's `unit_linked_bond` shard.
+- *Tests.* By default 323 pass and 97 skip; on the full grid 420 pass; the shard runs 14
+  compile tests.
+
+**The stack.** ULB's chains are the longest yet compiled in uklib, and the form PA and WP
+will copy.
+- *One cell a month* missed the 256 KiB the brief set this machine. A cold `net_cf` at the
+  longest cover, then 1,224 months from issue at 18, needed 288 KiB. The count's chain
+  needed 288 and the fund's 248 to 252.
+- *Moving the fund's formatted refusal alone did not help.* Moving it into
+  `av_pp_grown_refusal`, which only its error path calls, shrank `av_pp_at`'s C frame from
+  208 bytes to 96. No bracket moved, because the cells that recur every month never held a
+  formatted `raise`.
+- *Blocked by policy year.* The fund, the withdrawals since issue and the count each open a
+  year at `av_pp_py`, `wd_cum_pp_py` or `pols_if_py`. Each walks the year before in
+  ascending order and returns its last month's closing value: the same float, by
+  construction.
+- *After*, at ω 121, the longest cover being 1,236 months:
+  - modelx runs 231 cells deep on a chain of 215 (229 on 213 at ω 120);
+  - compiled, measured to 4 KiB:
+
+    | Heads | Runs on | Dies on |
+    |---|---|---|
+    | `net_cf`, the count, the residual, the death strain | 60 KiB | 56 KiB |
+    | The fund | 56–60 KiB | 52–56 KiB |
+    | The withdrawals since issue | 52–56 KiB | 48–52 KiB |
+    | Shapes that run 353 or 323 months | 36 KiB | 32 KiB |
+
+  - The compiled call needs a recursion limit of 24. The export needs 477.
+- *The depth bound*, Term's 16 beyond the chain, is met with no margin. The year walk adds
+  four cells to one-a-month's 12, and every monthly cell was called cold at every code to
+  find it.
+
+**Departures and precisions.**
+- *All three chains are blocked*, not only the fund that §6.6 named. The count's chain was
+  the one over the limit.
+- *`omega_age_max` is 121*, not the 120 that §6.6's C list sized `t` from. §6.6 was written
+  before M9's `a15d894`. At 121, nothing stage E accepted is refused, and the bound still
+  refuses an `omega_age` that a longer table would admit.
+- *`sex()` refuses anything but M or F*, as `lives()` and `wd_pattern()` refuse theirs.
+  `Data` already did, so no accepted input changes, and all three labels compile to `str`.
+- *The tables' gap checks run in one pass over the keys.* A mortality age, a surrender year
+  or an issue age of `2**53` or more is refused, which numpy would cast without a word.
+- *The refusal cell takes only the month.* It recomputes what it names from cached cells,
+  since a float parameter would give it a dict cache. It returns the value where finite, so
+  that the sample can type it.
+- *A code inside the 8-wide cache that a cell does not take* is refused compiled as in
+  modelx, by a test of its own, such as a fund timing in the count's cell.
+- *A fractional int Reference set late* is truncated compiled, where modelx refuses it, as
+  for every compiled Reference. The compiled refusal cases skip it.
+- *Two kinds commute.* With two kinds, the total's kinds swapped is no fault, IEEE addition
+  being commutative, so the fault used is a kind read twice.
+
+**Measured for K6.** On the shared 4-CPU Linux machine, under a load of 2.5 to 4:
+- A build takes 53 to 64 s with gcc 13.3.
+- C6 ran on a build at `4fbc404`, before each `t` cache grew by 12 months, which grew the
+  struct by 0.9%. Each figure is the median of three runs, with the range:
+
+  | Engine | Points | `net_cf`, a point | `result_cf`, a point | Peak |
+  |---|---|---|---|---|
+  | compiled | 6,000 | 0.236 ms (0.236–0.240) | 0.813 ms (0.796–0.854) | 86 MB |
+  | export | 600 | 3.13 ms (3.08–3.25) | 4.54 ms (4.37–4.56) | 86 MB |
+  | modelx | 120 | 111 ms (105–113) | 163 ms (150–172) | 135–137 MB |
+
+  - The compiled model runs 13.1 times its export and 470 times modelx on `net_cf`, and
+    5.5 and 191 times on `result_cf`.
+  - The compiled block grows by less than 0.1 MB.
+  - The review's run at a higher load gave 0.285, 3.61 and 118 ms, with the same `net_cf`
+    sum, 87,156.19325.
+- At landing, `c6ec871` ran its gate here in three jobs:
+  - the full grid, its compile tests included: 420 passed, in 925 s;
+  - the conventions, harness and S suites: 641 passed, in 341 s;
+  - the `unit_linked_bond` shard: 14 passed, in 284 s. Each head, in an ItemSpace of its
+    own, ran on 64 KiB and not on 48, in that test's coarser steps;
+  - the `critical_illness`, `term_assurance` and `toolchain` shards;
+  - the generators' checks for ULB, CI and Term;
+  - the harness check;
+  - doccheck at 0 warnings;
+  - the scaffolding at 0 files.
+
+In CI, the Tests workflow's run 52 on `c6ec871` ran 91 jobs, the `cython_uk` job's four
+shards among them. M10's legs passed at the first attempt:
+- the `cython_uk` `unit_linked_bond` legs, the first to compile `ULB_UK_SEC`, 14 tests
+  each, in 207 s on Ubuntu and 227 s on Windows;
+- `sec_uk`'s three ULB legs: the full grid on Ubuntu in 9.1 min, and the core on Windows in
+  5.6 and on macOS in 2.9;
+- the `test` job on Python 3.14 and Ubuntu, 7,057 passed and 111 skipped in 37 min 7 s,
+  its harness step agreeing.
+
+Six other legs, all on macOS, were never given a runner. Each was cancelled after 64 to 73
+minutes in the queue with no log, as two of run 51's were (*Record — M4*):
+- the `sec_uk` core leg for Term;
+- uslib's `sec` core legs for four products;
+- the `test` job on Python 3.11.
+
+On the rerun of the run's failed jobs, four passed, Term's among them. The other two,
+uslib's core leg for the deferred income annuity and the `test` job on Python 3.11, were
+still waiting for a runner 65 minutes later, when this record was written.
+
+The compiled cold call's stack, as its test records it in its coarser steps, each head in
+an ItemSpace of its own:
+
+| Where | Ran on | Not on |
+|---|---|---|
+| Here | 64 KiB | 48 KiB |
+| Ubuntu | 192 KiB | 128 KiB |
+| Windows | 96 KiB | 64 KiB |
+
+Both runners are well within the 1 MiB thread the test asserts. Ubuntu needed 2 to 3.4
+times the 56 to 60 KiB this machine needs, within the factor of two to four that Term's
+records measured (*Record — M2*).
+
+**Faults.** Each was injected into a copy of its own.
+- The builder: 15, then 4 on the rework.
+  - All were caught but two.
+    - The total's kinds swapped, which is no fault with two kinds.
+    - A parameterless cell returning numpy's int64. It compiles to `long long`, not
+      `object`, and the representation test catches it. A cell returning None on a traced
+      path compiles to `object`, and C3 catches it.
+- The review: 18. Two were missed: a message concatenated in `pols_if_at`'s `raise`, and
+  one formatted into a local in `wd_cum_pp_py`. Both are caught since `221a6eb`.
+- The verification: 8, all caught.
+
+**Carried into M12 and M14**, the compile steps of PA and WP, whose chains are longer:
+- *Measure the cold call's stack first.* If it needs more than 256 KiB here, block every
+  chain that recurses by policy year:
+  - use the `_py(y)` form, its walk ascending and returning the closing value;
+  - size `y` from the contract;
+  - measure and derive the depth bound for the walk, rather than copy 16.
+- *No cell a chain recurses through builds text.* A refusal that names values is a
+  `*_refusal(t)` cell of its own with no float parameter, traced by the sample. The
+  chain-text test holds every cell that appears twice or more on the deepest path:
+  - each `raise` calls one exception on one string constant;
+  - nothing else in the formula builds text;
+  - each blocked chain's cells must be among those checked.
+- *Each stack head runs cold*, in an ItemSpace of its own.
+- *A contract Reference for the largest limiting age* is the table's last age plus one, so
+  that nothing stage E accepted is refused.
+- *A code inside the shared inner width that a cell does not take* is refused, by a
+  compiled test.
+- *Table keys are bounded below `2**53`* before they are cast, and gaps are found in one
+  pass.
+- *The faults' forms:* a kind read twice for a two-kind total, and a None return for an
+  `object` cell.
 
 ### 6.7 Pension annuity — `PA_UK_SEC` (E: M, C: M)
 
