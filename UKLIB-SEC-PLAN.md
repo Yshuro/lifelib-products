@@ -4,10 +4,11 @@
 drafted the same day. Phase 0 (M0) is done, 2026-11-22, its gate met by the Tests
 workflow's run 43 (§3, *Record — M0*), and so is Term's in-force step, M1, by run 45
 (§6.1, *Record — M1*). Term's compile step, M2, is done too, 2026-11-23, by run 46
-(§6.1, *Record — M2*). The in-force steps of critical illness, M3, and of the
-unit-linked bond, M9, are next, one in each stream (§7). Like USLIB-SEC-PLAN.md, this
-document is both the specification and the record: each milestone records what it
-actually did, including where the implementation departed from the plan.
+(§6.1, *Record — M2*), and critical illness's in-force step, M3, by run 47 (§6.2,
+*Record — M3*). The unit-linked bond's, M9, has landed and awaits its run (§6.6). Like
+USLIB-SEC-PLAN.md, this document is both the specification and the record: each
+milestone records what it actually did, including where the implementation departed
+from the plan.
 
 Every number in it was measured in this repository, under modelx 0.33.0 and pandas 3.0.5
 as USLIB-SEC-PLAN.md's were, or is quoted from USLIB-SEC-PLAN.md, and each is given with
@@ -1249,6 +1250,198 @@ acquisition, inflation, joint combination, index columns, lapse reader and `Data
 CI has no selective lapsation, family income benefit, waiver or commission; it adds the
 review history, the pivot arrays, the paid-and-exit split of the standalone variant with
 `check_claim_split`'s tolerance, and the Neumaier total.
+
+#### Record — M3, done 2026-11-23
+
+Built in three commits, as U1 and §7 ask, on M2's record: `CI_UK_S` copied with only
+`_name` changed (`256c079`), the enhancement (`d8c7b75`), and the Phase 1 fingerprint
+frozen alone (`c770956`). The review's fixes followed in seven commits more (`7858f7f` to
+`325596e`), among them a change to the shared harness (`7858f7f`) and a refreeze of the
+fingerprint, alone (`d0d32ad`). It ran beside ULB's in-force step, M9, one in each stream
+(§7).
+- One agent built it, injecting 30 faults, all caught.
+- A second agent reviewed it against this note, the plan and USLIB-SEC-PLAN.md, injecting
+  23 faults of its own, of which 16 were caught. It found no wrong number on the committed
+  points, and ten gaps in what the model refuses and the tests hold:
+  - two NaN References lost silently, a threshold and a slope: on twin 3, claims 5.3%
+    high, every check passing;
+  - out-of-range References projecting negative premiums, rates and claims;
+  - the select latch carried as its factor, so that a latch S closed at a loading of 0
+    read as open and closed again at today's: claims 4.9% high on a copy of point 11;
+  - the trend's reach held on one cell of one row;
+  - no committed row with any review history, so that C2 froze none;
+  - five lesser gaps: the splice's ρ equal to the shipped η, the threshold's equality,
+    the second life's cap, refusals on a relabelled table, and a docs line.
+
+  It also named a loop in `proj_len()` that the C step would have had to restructure.
+- The builder fixed all ten and two plausible items, and 40 faults more were caught.
+- The reviewer verified the rework with 27 faults of its own, of which 24 were caught. It
+  found five gaps more, which `325596e` closes:
+  - References still losing a NaN or leaving their range: the indexation caps and
+    multiplier, the two benefit caps, the shares, the expenses, `rpi_rate`;
+  - the one-review rule's edges unpinned;
+  - a state S reaches refused by `Data`: a latch closed at 0 under η = −1;
+  - no test of a check failing a NaN residual, which the domains now keep any input from
+    reaching;
+  - a review period of 60.0 projecting a float count of reviews.
+
+  28 faults more were caught there.
+
+**What exists now.**
+- *`CI_UK_SEC` at stage E.* `Projection` keeps all 63 of `CI_UK_S`'s cells and adds 14:
+  - `policy_count`, `duration_mth_init`, `t_entry`, `is_active` and `pols_new_biz`;
+  - `expiry_mth`, the month cover ends, named after the event as uslib's rule names it;
+  - `review_prem_factor` and `review_prem_change`, the reviews from the valuation date on;
+  - the opening state's six cells.
+- *The opening state* (D6), six columns, each documented in `model-sec.md` with its
+  instant. A review or an anniversary that falls in the valuation month counts as made.
+  - `idx_factor_init` and `idx_prem_factor_init`, the RPI increases already given;
+  - `review_prem_factor_init`, the premium factor the reviews made so far have given;
+  - `ci_sel_latched_init`, 0 or 1, and `ci_sel_factor_init`, read only when the latch is
+    closed;
+  - `review_prem_shock_init`, the change made by the review that opened the period, read
+    only inside that review's 12-month window.
+
+  Each has a K14 test on a reachable state that departs from today's References. No
+  companion is needed: CI has no benefit in payment.
+- *`model_point_table_sec.csv`*, 14 rows.
+  - S's seven points are twins.
+  - Five rows are derived: point 4 on its third anniversary, indexed; point 3 at its first
+    review, inside the shock window it opens, and past it; point 1 in its last covered
+    month.
+  - One row is future, point 4 issued at `t = 13`.
+  - Point 14 is derived from S under a review change of 10% at month 124 (*Departures*):
+    latched at 1.1, a review factor of 1.21, a change of 0.1, its shock window open.
+  - A case-insensitive search for every publisher, product and form code that
+    `critical_illness/sources.md` cites finds none.
+- *`tests/test_critical_illness_uk_sec.py`*, in the template's forms:
+  - T2 on a core and a full splice grid, at ρ = 12% and τ = 0;
+  - T3, T4 at 2.5, T5, T6;
+  - the rules test, the cold-depth bound, the caps and the NaN tests, the runner and the
+    committed rows;
+  - K14 tests for the six history columns;
+  - every twin compared with S with τ = 2% and ρ = 12% on in both models;
+  - the domains, 177 cases.
+
+  465 tests pass and 101 skip by default; 566 pass on the full grid.
+- *The rest:* `run_sec.py`; `model-sec.md`, with a table of the domains; the registry
+  entry directly after `CI_UK_S`, with its `INPUT_FILES`; the generated pages; uklib's
+  `index.md` row; the `sec_uk` job over `critical_illness` too.
+
+**Departures and precisions.**
+- *τ is 0 in the splice.* §6.2's splice line says "with ρ and τ on", against its inputs
+  paragraph, D7 and §9 item 4, which put τ at 0, as uslib's splice does since M11 (§5.2
+  there).
+  - S trends from issue and this model from the valuation date, so no splice can match
+    with τ on.
+  - The trend's clock is held by a test of its own. Its reach is held by comparing every
+    twin with S, cell by cell, with τ and ρ on in both models: on new business the two
+    clocks coincide.
+- *ρ is 12% in the splice,* not the 10% the review found equal to the shipped η, under
+  which a latch closing at `1 + ρ` passed every case. A case at 20% reaches the cap side of
+  `min(review_lapse_cap, shock)`.
+- *The latch is a flag beside its factor.* `Data` refuses an open latch whose factor is
+  not 1, a factor not finite or below 0, and a closed latch on a guaranteed or unissued
+  point. A latch closed at 1.0 or at 0.95 stays closed through a later shock review.
+- *Domains.* `proj_len()` refuses 29 References off their domains, by name, NaN and ±inf
+  included, among them every rate, cap, multiplier, share and expense, the five contract
+  bounds as whole numbers, and `claim_split_tol`. `Data` holds `future_horizon_mth` to
+  whole months.
+  - `ap_freq_factor` and `child_freq` are bounded by 0 to 12, so that no month's count per
+    policy in force can pass 1. The bound is derived in each one's docstring.
+  - `review_period_mths` must be whole, and is read as an int.
+  - The review found these by NaNs lost in S's bound-first and bound-second `min`s, and
+    by values that project negative premiums and claims, every check passing.
+- *History S cannot reach is refused,* where the relation is contractual:
+  - review history before the first review;
+  - between the first review and the second, a factor other than 1 + the change;
+  - an index factor other than 1 in the first policy year.
+
+  A latch left open after a change past today's threshold is accepted, since the
+  threshold may have been higher then.
+- *`q_exit` past 1,* where S's residual turns complex, is refused in
+  `check_claim_split_resid`.
+- *The contract's bounds,* none of which S enforces, are refused in `proj_len()`: a term
+  of 5 to 50 years, entry at 18 to 64, and cover ending by the 75th birthday.
+- *The pivot table is checked in its reader,* before S's sort, so that a refusal can name
+  the file's lines.
+- *The `life` defaults are dropped* from eight cells. S's caps stay as M0 left them, the
+  bound second.
+- *A row derived under References of its own.* `SecSpec` gains `derived_refs`, `{(p,
+  d): {reference: value}}`, in both copies of the harness (`7858f7f`; U3).
+  - Such rows are derived last, from S run under those References, which a `finally`
+    restores.
+  - A repeated `(p, d)`, an unknown Reference and a spec with companions are refused.
+  - No uslib spec uses it, and every uslib and uklib `--check` is unchanged.
+  - Point 14 is compared with S under its 10% up to its next review, 56 months, every
+    cell. After that, today's References take over.
+
+**Measured for K6.** On the shared 4-CPU Linux machine:
+- the default module takes 145 s and the full grid 188 s, each near 925 MiB;
+- a cold `net_cf` runs 11 cells beyond its one-a-month chain on every shape, inside 16.
+
+At landing, `325596e` ran its gate here in four jobs at once, beside ULB's builder:
+- uklib's suite: 1,624 passed and 231 skipped, in 637 s;
+- the full grid: 566 passed;
+- Term's `term_assurance` compile shard: 13 passed;
+- uslib's `test_sec_support.py`: 78 passed;
+- `gen_sec_points.py --check` and `gen_sec_fingerprint.py --check`: current and
+  reproduced, for CI_UK_SEC, Term_UK_SEC and all twelve uslib models;
+- `check_sec_harness.py`: agreed;
+- doccheck: 0 warnings;
+- the scaffolding: 0 files, for both libraries.
+
+In CI, the Tests workflow's run 47 on `325596e` passed all 84 jobs, 1 h 28 min from
+dispatch to the last:
+- `sec_uk`'s three new legs: the full grid on Ubuntu in 4.5 min, and the core on Windows
+  in 3.2 and on macOS in 3.3;
+- Term's legs, both `cython_uk` shards and every uslib leg, unchanged;
+- the `test` job on Python 3.14 and Ubuntu: 7,009 passed and 103 skipped, in 40 min
+  26 s, its harness step agreeing.
+
+**Faults.** Each was injected into a copy of its own, and each run was held to the test
+meant to catch it.
+- The builder: 30, then 40 on the rework and 28 on the last gaps, all caught.
+- The review: 23, of which 16 were caught. Each miss is caught since the rework:
+  - the second life uncapped;
+  - refusals naming positions;
+  - the trend dropped from the standalone paid rate;
+  - the threshold's `<=` turned to `<`, at either site;
+  - a latch factor below 1 read as open;
+  - `Data`'s floor on the change raised to 0.
+- The verification: 27, of which 24 were caught. Each miss is caught since `325596e`:
+  - the one-review rule's tolerance loosened;
+  - its window ended a month early;
+  - a check passing a NaN residual.
+
+**Carried into M4 and after.**
+- *M4, §6.2's C list,* and M2's compile form:
+  - the pivot arrays, the decodes and codes, and the claims total as R12's compensated
+    loop, with `ALL` and a `twin_arg_map`;
+  - `idx`, the reporting labels, and caches of `t` 722 and an inner width of 5;
+  - M22's guards on the five powers: inflation, the trend, the two index factors and the
+    review factor;
+  - References printed as compiled, the `2**53` bounds and the `idx` edges;
+  - `sample_sec.py`, `spec_sec.py`, the `cython_uk` shard and C6.
+
+  `static_faults` lists, in `proj_len()`, only the `"reviewable"` code, and elsewhere
+  only what that list rewrites.
+- *The template, for every later product:*
+  - A domain for every Reference a bound-first or bound-second `min` or `max` reads, or a
+    closed form raises, NaN and ±inf included: a NaN is otherwise lost, or a value leaves
+    its range with every check passing. A bound the C step's caches rest on is a whole
+    number.
+  - A latch, or any state S holds as a value standing for an event, is carried with a
+    flag beside it.
+  - History columns are held to each other only where the relation is contractual.
+  - Where the shipped References leave a path's history trivial, one committed row is
+    derived under References of its own (`derived_refs`), so that C2 freezes the path.
+  - A splice Reference differs from every shipped one it could be mistaken for.
+  - Each threshold is tested at equality and one float past it.
+  - A Reference read on the valuation clock has its reach held by the twins compared with
+    S with it on: on new business the two clocks coincide.
+  - Some `MALFORMED` cases run on a relabelled table.
+  - A test replaces each residual's formula with NaN, and the check must fail.
 
 ### 6.3 Income protection — `IP_UK_SEC` (E: L, C: L)
 
