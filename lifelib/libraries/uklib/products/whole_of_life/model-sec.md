@@ -518,11 +518,13 @@ raise the same error.
   reach what S's own cannot: the RPI point with the pro-rata paid-up value, the double
   accidental benefit with it, the anchor cell issued at 80 with its premiums ceasing at 90
   and no crossover, the underwritten increasing point as a female smoker, and the paid-up
-  point with an odd cessation, 239 months, its strand in force from 120. A core of 33 of
-  the 149 splice cases and 9 of the 26 future ones runs by default, the RPI point after
+  point with an odd cessation, 239 months, its strand in force from 120. A core of 24 of
+  the 149 splice cases and 5 of the 26 future ones runs by default, the RPI point after
   its premiums ceased among them, and the full grid with `UKLIB_SEC_FULL=1`; a test
   asserts the core reaches every branch, opening-state column, kind of valuation month and
-  side of every `min` and `max` the full grid reaches.
+  side of every `min` and `max` the full grid reaches. The slower tests over every
+  committed point, every shape or every cap run a part of it by default, six points among
+  which every flow is nonzero, and the rest with the full grid.
 - **Future new business**: issued 1, 12 and 120 months after the valuation date, each S
   point is the S projection moved on, with zeros before issue and no table read there, and
   so is each variant issued 13 months on, more than a year after the valuation date and
@@ -546,7 +548,7 @@ raise the same error.
   tolerance scaled by the policies on both strands, closes on ten million policies, the
   point paid-up entirely among them; and so does the truncation check, on that point with
   ten million paid-up policies at a loading under which survivors reach the limiting age.
-- **Validation and regeneration**: each malformed row of the table, 85 cases, is refused
+- **Validation and regeneration**: each malformed row of the table, 87 cases, is refused
   naming its point, and naming its label on an extract labelled otherwise than by position,
   among them each bound of the premiums paid, the paid-up cover and the crossover a cent or
   a month outside, the first year's history a month after issue, and a paid-up strand at

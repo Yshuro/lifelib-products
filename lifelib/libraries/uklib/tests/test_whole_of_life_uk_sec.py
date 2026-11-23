@@ -81,12 +81,16 @@ SEC month ``t`` is S month ``t + source_mth`` throughout, the direction in which
 in-force twin.
 
 **The core grid and the full one** (UKLIB-SEC-PLAN.md U6).  T2 and T3 over every S point
-at every month, about 170 cases, run by default on a core, chosen so that between them they
+at every month, 175 cases, run by default on a core of 29, chosen so that between them they
 reach every branch, every opening-state column, every kind of valuation month and both
 sides of every ``min`` and ``max`` the full grid reaches, which
 ``test_the_core_grid_reaches_every_branch`` asserts.  The other cases, and the rules
 test's scan of their rows, carry the ``sec_full`` marker and are skipped, with the reason
-shown, unless ``UKLIB_SEC_FULL=1`` is set.  They are never dropped: one leg of the CI
+shown, unless ``UKLIB_SEC_FULL=1`` is set.  So do the slower tests' other cases
+(``GRIDS``): over the committed points, the default run takes six among which every flow
+and counted cell is nonzero (``CORE_POINTS``), and the full grid the rest; the cold
+chains run on the paid-up shape by default and on the other three with the full grid; and
+so on, each test's docstring saying which.  They are never dropped: one leg of the CI
 matrix sets it, and ``UKLIB_SEC_FULL=1 python -m pytest -m sec_full
 lifelib/libraries/uklib/tests/test_whole_of_life_uk_sec.py`` runs them alone.  Each
 splice row is released once it has been read (``_release``), as ``run_sec.py --block``
@@ -240,15 +244,12 @@ FUTURES = tuple((p, k) for p in S_POINTS for k in FUTURE_MTHS) + LATE_FUTURES
 CORE_SPLICES = {
     ("derived", 1, 6): "the anchor cell inside its moratorium, in its first policy year",
     ("derived", 1, 11): "the anchor cell in the moratorium's last month",
-    ("derived", 1, 12): "the anchor cell on its first anniversary, the moratorium over",
     ("derived", 1, 166): "the anchor cell in its crossover month, stressed from t = 0",
     ("derived", 1, 240): "the anchor cell as its premiums cease",
     ("derived", 1, 480): "the anchor cell in its first capped month",
     ("derived", 1, 599): "the anchor cell in the last month before the limiting age",
-    ("derived", 2, 13): "the double accidental benefit past the moratorium",
     ("derived", 3, 119): "the paid-up point in the month of its first conversions",
     ("derived", 3, 120): "the paid-up point with its first conversions in force",
-    ("derived", 3, 167): "the paid-up point past its crossover, the stress converting",
     ("derived", 3, 241): "the paid-up point after cessation, its strand running off",
     ("derived", 4, 12): "the RPI point on its first anniversary, its first increase",
     ("derived", 4, 186): "the RPI point past its crossover",
@@ -258,36 +259,38 @@ CORE_SPLICES = {
     ("derived", 5, 888): "underwritten in its first capped month",
     ("derived", 6, 11): "underwritten increasing, inside the suicide window",
     ("derived", 6, 643): "underwritten increasing past its crossover",
-    ("derived", 6, 959): "underwritten increasing in its last month",
     ("derived", 7, 223): "the male smoker past its crossover",
     ("derived", 7, 300): "the male smoker as its premiums cease",
-    ("derived", 7, 432): "the male smoker in its first capped month",
-    ("derived", 8, 120): "RPI and paid-up together, the first conversions in force",
     ("derived", 8, 186): "RPI and paid-up past the crossover",
-    ("derived", 9, 12): "the double accidental benefit with paid-up, the moratorium over",
     ("derived", 9, 200): "the double accidental benefit with paid-up, the strand in force",
-    ("derived", 10, 120): "issued at 80, its premiums ceasing",
     ("derived", 10, 360): "issued at 80, its first capped month",
-    ("derived", 11, 12): "an underwritten female smoker on its first anniversary",
     ("derived", 11, 852): "an underwritten female smoker in its first capped month",
     ("derived", 12, 120): "an odd cessation, its strand in force from half of 239 up",
 }
 CORE_FUTURES = {
     (1, 1): "issued a month off the valuation anniversaries",
-    (1, 12): "issued on them, a year on",
     (3, 120): "the paid-up point at the horizon",
     (4, 1): "the RPI increases a month off the valuation anniversaries",
     (6, 12): "underwritten increasing, a year on",
-    (7, 1): "the male smoker",
     (8, 13): "RPI and paid-up, more than a year on",
-    (10, 13): "issued at 80, more than a year on",
-    (11, 13): "an underwritten female smoker, more than a year on",
 }
 
 SEC_FULL = os.environ.get("UKLIB_SEC_FULL") == "1"
 FULL_ONLY = (pytest.mark.sec_full,
              pytest.mark.skipif(not SEC_FULL, reason="the full splice grid runs with "
                                 "UKLIB_SEC_FULL=1 (UKLIB-SEC-PLAN.md U6)"))
+
+# The tests that run over every committed point run the core's by default and the rest on
+# the full grid (GRIDS): the twins of the anchor, paid-up and underwritten points, the
+# paid-up point in force, the RPI point issued later and the point paid-up entirely, by
+# label, among which every flow and every counted cell is nonzero.
+CORE_POINTS = (1, 3, 5, 10, 14, 17)
+GRIDS = [pytest.param("core", id="core"), pytest.param("full", id="full", marks=FULL_ONLY)]
+
+
+def _on_grid(grid, label):
+    """Whether committed point ``label`` is one the ``grid`` case of a test runs on."""
+    return (label in CORE_POINTS) == (grid == "core")
 
 # What the splice sets in both models, S and SEC alike, before either evaluates anything.
 # Two inputs run on the valuation clock (D7): expense inflation, which S runs from issue
@@ -1080,8 +1083,8 @@ PAID_UP_HEADS = (("pols_pu", None), ("pu_benefit", None))
 # with their heads: the anchor cell, level; the paid-up point, its strand's two chains
 # among them; the RPI point, its increases in every year; and the underwritten increasing
 # point, paying for life.
-CHAIN_SHAPES = ((1, CHAIN_HEADS), (3, CHAIN_HEADS + PAID_UP_HEADS), (4, CHAIN_HEADS),
-                (6, CHAIN_HEADS))
+CHAIN_SHAPES = {1: CHAIN_HEADS, 3: CHAIN_HEADS + PAID_UP_HEADS, 4: CHAIN_HEADS,
+                6: CHAIN_HEADS}
 
 
 def _cold_depth(proj, cell, args):
@@ -1099,9 +1102,10 @@ def _cold_depth(proj, cell, args):
     return deepest
 
 
-def _longest_cover(tmp_path):
-    """A copy whose table holds each of :data:`CHAIN_SHAPES` at the longest cover, issued
-    now and 120 months on, and each row's frame, ``t_entry()`` and heads.
+def _longest_cover(tmp_path, shape):
+    """A copy whose table holds the twin of S point ``shape``, one of :data:`CHAIN_SHAPES`,
+    at the longest cover, issued now and 120 months on, and each row's frame,
+    ``t_entry()`` and heads.
 
     Each S point's twin, issued at 18, 1,224 months from the limiting age, issued at the
     valuation date and 120 months after it, the shipped ``future_horizon_mth``: frames of
@@ -1109,8 +1113,8 @@ def _longest_cover(tmp_path):
     every age from 18.
     """
     committed = _committed()
-    labels = [_label(committed, "twin", p, 0) for p, _ in CHAIN_SHAPES]
-    heads = [h for _, h in CHAIN_SHAPES]
+    labels = [_label(committed, "twin", shape, 0)]
+    heads = [CHAIN_SHAPES[shape]]
     top = committed.index.max()
     rows = committed.loc[labels + labels].assign(entry_age=YOUNGEST)
     later = list(range(top + 1, top + 1 + len(labels)))
@@ -1124,7 +1128,10 @@ def _longest_cover(tmp_path):
 
 # modelx warns as its stack trace starts and stops, which is all the test does with it.
 @pytest.mark.filterwarnings("ignore:call stack trace:UserWarning")
-def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path):
+@pytest.mark.parametrize("shape", [pytest.param(p, id=f"point{p}",
+                                                marks=() if p == 3 else FULL_ONLY)
+                                   for p in CHAIN_SHAPES])
+def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path, shape):
     """Called cold, each chain runs one cell a month back to ``t_entry()``, no more.
 
     No number shows how deep a chain runs, and a compiled model runs it on the C stack, so
@@ -1138,9 +1145,10 @@ def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path):
     month and improvement moves the rates.  On each shape at the contract's longest cover,
     1,224 months from issue age 18, issued now and 120 months on (:func:`_longest_cover`),
     each row's frame asserted first, as §7.5's *Record — M5* and M14's carried rule ask,
-    and M1's that every chain runs at its own shape's longest cover.
+    and M1's that every chain runs at its own shape's longest cover.  The paid-up shape,
+    which runs all four chains, runs by default, and the others on the full grid.
     """
-    folder, frames = _longest_cover(tmp_path)
+    folder, frames = _longest_cover(tmp_path, shape)
     found = []
     for label, months, entry, heads in frames:
         for cell, timing in heads:
@@ -1256,7 +1264,8 @@ def test_result_pols_is_s_report_with_the_new_business_beside_it(sec_model, s_mo
 COUNT_FACTOR = 2.5
 
 
-def test_scaling_the_counts_scales_every_flow_and_no_per_policy_value(tmp_path):
+@pytest.mark.parametrize("grid", GRIDS)
+def test_scaling_the_counts_scales_every_flow_and_no_per_policy_value(tmp_path, grid):
     """The counts are the weights: 2.5 times both, 2.5 times every flow, the same per policy.
 
     The committed table, and a copy with every ``policy_count`` and every ``pols_pu_init``
@@ -1280,6 +1289,9 @@ def test_scaling_the_counts_scales_every_flow_and_no_per_policy_value(tmp_path):
     paid-up rows.  A paid-up flow weighted by the full-cover count scales with both counts
     alike, so this test cannot see it: the month-on restatement, which moves one count and
     not the other, does.
+
+    The default run takes :data:`CORE_POINTS`, among which every counted cell is nonzero,
+    and the full grid the other committed points.
     """
     table = _committed()
     base = mx.read_model(_sec_inputs(tmp_path / "base", table), name=_name("counted"))
@@ -1293,7 +1305,9 @@ def test_scaling_the_counts_scales_every_flow_and_no_per_policy_value(tmp_path):
         for model in (base, scaled):
             for ref, value in SWITCHED_ON.items():
                 setattr(model.Projection, ref, value)
-        for key, scaled_key in zip(point_keys(base), point_keys(scaled)):
+        for key, scaled_key, label in zip(point_keys(base), point_keys(scaled), table.index):
+            if not _on_grid(grid, label):
+                continue
             one, many = projection(base, key), projection(scaled, scaled_key)
             sweep(one)
             for report in reports:
@@ -1321,8 +1335,9 @@ def test_scaling_the_counts_scales_every_flow_and_no_per_policy_value(tmp_path):
     finally:
         scaled.close()
         base.close()
-    want = set(counted) - RESIDUALS
-    assert want <= nonzero, f"0 on every point: {sorted(want - nonzero)}"
+    if grid == "core":
+        want = set(counted) - RESIDUALS
+        assert want <= nonzero, f"0 on every core point: {sorted(want - nonzero)}"
 
 
 def test_a_point_restated_a_month_on_continues_its_own_flows(tmp_path):
@@ -1398,7 +1413,8 @@ def test_a_point_restated_a_month_on_continues_its_own_flows(tmp_path):
     assert not found, found[:20]
 
 
-def test_the_roll_forward_closes_on_ten_million_policies(tmp_path):
+@pytest.mark.parametrize("grid", GRIDS)
+def test_the_roll_forward_closes_on_ten_million_policies(tmp_path, grid):
     """``check_pols_roll_fwd`` scales its tolerance with the policies on the books, and
     closes at 1e7.
 
@@ -1415,6 +1431,9 @@ def test_the_roll_forward_closes_on_ten_million_policies(tmp_path):
     alone, which a tolerance scaled by the full-cover count would leave at 1e-10.  At a
     million policies the largest residuals are about 1e-10, and the paid-up point's
     5.7e-11, which an unscaled tolerance would pass.
+
+    The default run takes :data:`CORE_POINTS`, the point paid-up entirely among them, and
+    the full grid the other committed points.
     """
     table = _committed()
     table = table.assign(policy_count=1e7 * (table["policy_count"] > 0),
@@ -1423,6 +1442,8 @@ def test_the_roll_forward_closes_on_ten_million_policies(tmp_path):
     least, paid_up_only = math.inf, 0.0
     try:
         for key, point_id in zip(point_keys(model), table.index):
+            if not _on_grid(grid, point_id):
+                continue
             p = projection(model, key)
             assert p.check_pols_roll_fwd() and p.check_truncation(), point_id
             largest = max(abs(p.check_pols_roll_fwd_resid(t)) for t in range(p.proj_len()))
@@ -1433,7 +1454,8 @@ def test_the_roll_forward_closes_on_ten_million_policies(tmp_path):
     finally:
         model.close()
     assert least > 1e-10, least
-    assert paid_up_only > 1e-10, paid_up_only
+    if grid == "core":
+        assert paid_up_only > 1e-10, paid_up_only
 
 
 # ---------------------------------------------------------------------------
@@ -2023,6 +2045,28 @@ def test_each_reference_is_held_to_its_domain_at_both_edges(case, refs, message)
         model.close()
 
 
+@pytest.mark.parametrize("refs, message", [
+    ({"rpi_rate": math.nan}, "point_id 4: rpi_rate must be a finite number, not nan"),
+    ({"esc_take_up": 5}, "point_id 4: esc_take_up must be a number from 0 to 1, not 5.0")],
+    ids=["rpi_rate=nan", "esc_take_up=5"])
+def test_the_crossover_asks_for_the_frame_first(refs, message):
+    """``crossover_mth()`` refuses a Reference off its domain, as a report does (§6.4).
+
+    No cell of the projection reads the crossover, so no report's call of ``proj_len()``
+    stands before it when it is asked alone: the review found it searching at an RPI of NaN
+    and reporting no crossover, -1, and at a take-up of 5 reporting 260, months no policy
+    has.  It asks ``proj_len()`` for the frame first, so each is refused, by name, on the
+    twin of the RPI point.  Each Reference is set on a model just read (K7).
+    """
+    model = mx.read_model(model_path(SEC), name=_name("crossover_frame"))
+    try:
+        for ref, value in refs.items():
+            setattr(model.Projection, ref, value)
+        _refused(_row(model, "twin", 4, 0).crossover_mth, message)
+    finally:
+        model.close()
+
+
 # A value that leaves the floats, from an opening state and References each in its domain,
 # as (case, the table's edit, the References set, the point, the call, a report that reads
 # it, the start of the message).  The RPI row at 186 opened on a cover or a premium near
@@ -2161,7 +2205,8 @@ def test_an_overflowing_power_raises_python_s_overflow_error(case, refs, s_point
         model.close()
 
 
-def test_a_whole_limit_written_as_a_float_projects_as_the_int_does():
+@pytest.mark.parametrize("grid", GRIDS)
+def test_a_whole_limit_written_as_a_float_projects_as_the_int_does(grid):
     """``omega_age = 120.0`` projects what 120 projects, cell for cell (§6.4).
 
     ``proj_len()`` holds ``omega_age``, ``issue_age_min`` and ``suicide_mths`` to whole
@@ -2172,6 +2217,9 @@ def test_a_whole_limit_written_as_a_float_projects_as_the_int_does():
     the twins of S's anchor and underwritten points, the paid-up point in force and the RPI
     point issued later are what the shipped model makes of them in every cell, bit for bit,
     each integer cell an ``int`` in both.
+
+    The twin of the anchor cell and the paid-up point in force run by default, and the
+    underwritten twin and the RPI point issued later with the full grid.
     """
     floats = mx.read_model(model_path(SEC), name=_name("floats"))
     ints = mx.read_model(model_path(SEC), name=_name("ints"))
@@ -2179,7 +2227,9 @@ def test_a_whole_limit_written_as_a_float_projects_as_the_int_does():
         floats.Projection.omega_age = 120.0
         floats.Projection.issue_age_min = 18.0
         floats.Projection.suicide_mths = 12.0
-        for case in (("twin", 1, 0), ("twin", 5, 0), ("derived", 3, 200), ("future", 4, -13)):
+        cases = ((("twin", 1, 0), ("derived", 3, 200)) if grid == "core"
+                 else (("twin", 5, 0), ("future", 4, -13)))
+        for case in cases:
             mine, theirs = _row(floats, *case), _row(ints, *case)
             sweep(theirs)
             assert twin_mismatches(theirs, mine, exempt=frozenset(), rtol=0.0,
@@ -3182,7 +3232,8 @@ def test_mortality_improvement_runs_on_the_valuation_clock(tmp_path):
         model.close()
 
 
-def test_improvement_carries_survivors_past_the_truncation_check():
+@pytest.mark.parametrize("grid", GRIDS)
+def test_improvement_carries_survivors_past_the_truncation_check(grid):
     """Where improvement gives way to the truncation check, recorded (§6.4).
 
     The shipped tables reach 1 well before the limiting age, so ``check_truncation()``
@@ -3194,11 +3245,12 @@ def test_improvement_carries_survivors_past_the_truncation_check():
     at 1% the underwritten twins hold 7.1e-6 of a policy at age 120; and at 2% the check
     gives way on every twin but the male smoker's, whose rates are the heaviest.  The
     underwritten twins hold the same count, as the escalation moves no decrement.  The two
-    larger rates are read on the twins alone.  Each improvement is set on a model just read
-    (K7).
+    larger rates are read on the twins alone.  The default run reads :data:`IMPROVEMENT`,
+    and the full grid where the check gives way.  Each improvement is set on a model just
+    read (K7).
     """
     found, worst = {}, {}
-    for rate in (IMPROVEMENT, 0.004, 0.01, 0.02):
+    for rate in (IMPROVEMENT,) if grid == "core" else (0.004, 0.01, 0.02):
         model = mx.read_model(model_path(SEC), name=_name("truncation"))
         try:
             model.Projection.mort_improvement = rate
@@ -3215,13 +3267,16 @@ def test_improvement_carries_survivors_past_the_truncation_check():
             found[rate], worst[rate] = gives_way, largest
         finally:
             model.close()
-    assert found[IMPROVEMENT] == {} and 1e-12 < worst[IMPROVEMENT] < 1e-11
+    if grid == "core":
+        assert found[IMPROVEMENT] == {} and 1e-12 < worst[IMPROVEMENT] < 1e-11
+        return
     assert set(found[0.004]) == {5, 6, 12}
     assert found[0.01][5] == found[0.01][6] == pytest.approx(7.1e-6, rel=0.01)
     assert set(found[0.02]) == set(S_POINTS) - {7}
 
 
-def test_every_twin_is_s_with_improvement_rpi_take_up_and_the_stress_on():
+@pytest.mark.parametrize("grid", GRIDS)
+def test_every_twin_is_s_with_improvement_rpi_take_up_and_the_stress_on(grid):
     """On new business, each twin is S's in every cell with every rate dial moved, in both.
 
     T1 compares the twins at the shipped References, where improvement and the stress are
@@ -3234,6 +3289,9 @@ def test_every_twin_is_s_with_improvement_rpi_take_up_and_the_stress_on():
     0.5 set in both models, each twin of S's seven points is S's in every cell S evaluates
     in its sweep and in both reports, to 1e-9 relative with no absolute floor but on the
     residual (:func:`_compare`).  The References are set on models just read (K7).
+
+    The twins of S points 1, 3, 4 and 6 run by default, and those of 2, 5 and 7 with the
+    full grid.
     """
     refs = {"mort_improvement": IMPROVEMENT, "rpi_rate": 0.06, "esc_take_up": 0.8,
             "lapse_crossover_beta": SPLICED_REFS["lapse_crossover_beta"]}
@@ -3245,11 +3303,15 @@ def test_every_twin_is_s_with_improvement_rpi_take_up_and_the_stress_on():
                 setattr(model.Projection, ref, value)
         found = []
         for point in S_POINTS:
+            if (point in (1, 3, 4, 6)) != (grid == "core"):
+                continue
             s_proj, twin = _point(s, point), _row(sec, "twin", point, 0)
             _sweep_s(s_proj)
             found += [f"point {point}: {line}" for line in _compare(
                 s_proj, twin, 0, TWIN_EXEMPT_DEFAULT | SPEC.exempt)]
         assert not found, found[:20]
+        if grid == "full":
+            return
         twin = _row(sec, "twin", 4, 0)
         assert twin.mort_improve_factor(12) == 1.0 - IMPROVEMENT
         assert twin.esc_cover_step() == pytest.approx(0.06 * 0.8, rel=1e-15)
@@ -3367,10 +3429,12 @@ def test_acquisition_is_charged_on_new_business_only(sec_model):
 # months): at a stress of 100 the lapse rate's bound at 1 binds, min(1.0, w), its bound
 # first as in WOL_UK_S, and every would-be lapse leaves at the crossover, the paid-up
 # point's converting.
-LAPSE_ALL_CASES = ((1, (165, 166, 167, 200)), (3, (165, 166, 167, 200)))
+LAPSE_ALL_CASES = {"core": ((1, (166, 200)), (3, (166, 200))),
+                   "full": ((1, (165, 167)), (3, (165, 167)))}
 
 
-def test_a_stress_that_lapses_every_policy_continues_the_s_projection(tmp_path):
+@pytest.mark.parametrize("grid", GRIDS)
+def test_a_stress_that_lapses_every_policy_continues_the_s_projection(tmp_path, grid):
     """T2 with the lapse rate's bound binding, which the splice's stress does not reach.
 
     The splice's stress of 0.5 takes no lapse rate past 1, so the bound side of the lapse
@@ -3382,13 +3446,17 @@ def test_a_stress_that_lapses_every_policy_continues_the_s_projection(tmp_path):
     from the crossover, every policy on full cover leaves in it, the paid-up point's
     converting, and the rows after it are paid-up entirely or empty, the states the
     every-state test reads.
+
+    The default run splices the crossover month and month 200, and the full grid the months
+    either side of the crossover.
     """
     s = mx.read_model(model_path(TWIN), name=_name("lapse_all_s"))
     sec = None
     try:
         for ref, value in LAPSE_ALL.items():
             setattr(s.Projection, ref, value)
-        spec = dataclasses.replace(SPEC, derived=tuple((p, d) for p, mths in LAPSE_ALL_CASES
+        cases = LAPSE_ALL_CASES[grid]
+        spec = dataclasses.replace(SPEC, derived=tuple((p, d) for p, mths in cases
                                                        for d in mths),
                                    future=(), derived_refs={})
         table, _ = build_sec_table(spec, s)
@@ -3396,13 +3464,15 @@ def test_a_stress_that_lapses_every_policy_continues_the_s_projection(tmp_path):
         for ref, value in LAPSE_ALL.items():
             setattr(sec.Projection, ref, value)
         found = []
-        for p, mths in LAPSE_ALL_CASES:
+        for p, mths in cases:
             s_proj = _point(s, p)
             _sweep_s(s_proj)
             for d in mths:
                 found += [f"point {p} at {d}: {line}" for line in _compare(
                     s_proj, _row(sec, "derived", p, d), d, SPLICE_EXEMPT)]
         assert not found, found[:20]
+        if grid == "full":
+            return
         on = _row(sec, "derived", 3, 166)
         assert on.lapse_rate(0) == 1.0 and on.lapse_rate_mth(0) == 1.0
         assert on.pols_if(1) == 0.0 and on.pols_convert(0) == on.pols_exit(0) > 0.0
@@ -3461,7 +3531,10 @@ def test_the_rpi_increases_are_floored_at_0_and_capped(rpi, steps):
 CAPPED_POINTS = {1: (480, 110), 7: (432, 101), 5: (888, 114)}
 
 
-def test_an_annual_mortality_past_1_is_capped_in_both_models(s_model, tmp_path):
+@pytest.mark.parametrize("capped", [pytest.param(p, id=f"point{p}",
+                                                 marks=() if p == 1 else FULL_ONLY)
+                                    for p in CAPPED_POINTS])
+def test_an_annual_mortality_past_1_is_capped_in_both_models(s_model, tmp_path, capped):
     """Where the annual mortality rate passes 1, both models' rate is 1.
 
     On each of :data:`CAPPED_POINTS`, at the shipped tables, ``WOL_UK_S``'s rate reaches 1
@@ -3481,6 +3554,9 @@ def test_an_annual_mortality_past_1_is_capped_in_both_models(s_model, tmp_path):
     capped year, opened with S's state there and one policy, since S's count there is 0.  On
     each, the capped rates are 1.0 from its first capped month, every policy in force there
     dies in it, and the count is 0.0 after it.
+
+    The anchor cell runs by default, and the male smoker and the underwritten point with
+    the full grid.
     """
     s = mx.read_model(model_path(TWIN), name=_name("capped_s"))
     sec = None
@@ -3488,7 +3564,8 @@ def test_an_annual_mortality_past_1_is_capped_in_both_models(s_model, tmp_path):
         for ref, value in SPLICED_REFS.items():
             setattr(s.Projection, ref, value)
         derived, future = [], []
-        for s_point, (cap, age) in CAPPED_POINTS.items():
+        points = {capped: CAPPED_POINTS[capped]}
+        for s_point, (cap, age) in points.items():
             sp = _point(s, s_point)
             end = sp.proj_len()
             first = next(t for t in range(end) if sp.mort_rate(t) == 1.0)
@@ -3508,12 +3585,12 @@ def test_an_annual_mortality_past_1_is_capped_in_both_models(s_model, tmp_path):
                                                       future=tuple(future),
                                                       derived_refs={}), s)
         emptied = (rows["row_kind"] == "derived") & (rows["policy_count"] == 0.0)
-        assert emptied.sum() == len(CAPPED_POINTS)
+        assert emptied.sum() == len(points)
         rows.loc[emptied, "policy_count"] = 1.0
         sec = mx.read_model(_sec_inputs(tmp_path / "sec", rows), name=_name("capped"))
         for ref, value in SPLICED_REFS.items():
             setattr(sec.Projection, ref, value)
-        for s_point, (cap, _) in CAPPED_POINTS.items():
+        for s_point, (cap, _) in points.items():
             sp = _point(s, s_point)
             cases = ((("twin", s_point, 0), cap, TWIN_EXEMPT_DEFAULT | SPEC.exempt),
                      (("future", s_point, -12), cap + 12, FUTURE_EXEMPT),
@@ -3729,13 +3806,13 @@ def test_every_guarded_cell_holds_its_outside_cover_value(spliced):
 def test_the_points_sum_row_by_row_into_a_block(spliced):
     """Row ``t`` is the same month on every point, so a block is its frames summed (D3).
 
-    S point 1's twin, the point restated at month 12 and the point issued 12 months on,
-    summed as ``run_sec.py --block`` sums them, are indexed 0..611 and equal S's frame added
-    to itself moved 12 months earlier and 12 months later.  A model whose frames sat on the
+    S point 1's twin, the point restated at month 6 and the point issued a month on, summed
+    as ``run_sec.py --block`` sums them, are indexed 0..600 and equal S's frame added to
+    itself moved 6 months earlier and a month later.  A model whose frames sat on the
     policy clock would fail it.
     """
     s, sec = spliced
-    cases = (("derived", 1, 12), ("future", 1, -12))
+    cases = (("derived", 1, 6), ("future", 1, -1))
     keys = [_row_key(sec, *case) for case in cases if SEC_FULL or case in CORE_GRID]
     assert len(keys) == 2, "the block's rows are the core's"
     twin = _row_key(sec, "twin", 1, 0)
@@ -3746,9 +3823,9 @@ def test_the_points_sum_row_by_row_into_a_block(spliced):
             _release(sec, key)
     block = pd.concat(frames).groupby(level="t").sum()
     sdf = _point(s, 1).result_cf()
-    expected = pd.concat([sdf, sdf.set_axis(sdf.index - 12).loc[0:],
-                          sdf.set_axis(sdf.index + 12)]).groupby(level=0).sum()
-    assert list(block.index) == list(range(612))
+    expected = pd.concat([sdf, sdf.set_axis(sdf.index - 6).loc[0:],
+                          sdf.set_axis(sdf.index + 1)]).groupby(level=0).sum()
+    assert list(block.index) == list(range(601))
     assert frame_mismatches(expected, block) == []
 
 
@@ -3766,7 +3843,8 @@ def _extract():
     return extract
 
 
-def test_an_in_force_extract_needs_none_of_the_generator_columns(sec_model, tmp_path):
+@pytest.mark.parametrize("grid", GRIDS)
+def test_an_in_force_extract_needs_none_of_the_generator_columns(sec_model, tmp_path, grid):
     """The model reads the in-force interface and S's columns, never where a row came from,
     and names each point by its label, wherever the row stands.
 
@@ -3778,6 +3856,9 @@ def test_an_in_force_extract_needs_none_of_the_generator_columns(sec_model, tmp_
     ``source_mth`` equals ``duration_mth``, so a formula that read the one for the other
     would pass every test that leaves ``duration_mth`` as generated.  And a refusal names
     the extract's label.
+
+    The default run compares :data:`CORE_POINTS` and runs the runner and the moved row, and
+    the full grid compares the other committed points.
     """
     extract = _extract()
     folder = _sec_inputs(tmp_path / "extract", extract)
@@ -3786,7 +3867,10 @@ def test_an_in_force_extract_needs_none_of_the_generator_columns(sec_model, tmp_
         table = model.Data.model_point_table()
         assert not set(GENERATED_COLUMNS) & set(table.columns)
         assert list(table.index) == list(EXTRACT_LABELS)
-        for key, base_key in zip(point_keys(model), point_keys(sec_model)):
+        for key, base_key, label in zip(point_keys(model), point_keys(sec_model),
+                                        _committed().index):
+            if not _on_grid(grid, label):
+                continue
             mine, base = projection(model, key), projection(sec_model, base_key)
             for report in ("result_cf", "result_pols"):
                 assert frame_mismatches(base.cells[report](), mine.cells[report](),
@@ -3794,6 +3878,8 @@ def test_an_in_force_extract_needs_none_of_the_generator_columns(sec_model, tmp_
             _release(model, key)
     finally:
         model.close()
+    if grid == "full":
+        return
     runner = folder.parent / "run_sec.py"
     shutil.copy(model_path(SEC).parent / "run_sec.py", runner)
     label = extract.index[extract["policy_id"] == "WOL-000003-M200"][0]
