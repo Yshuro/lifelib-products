@@ -234,7 +234,7 @@ first, which keeps the bound where a NaN meets it:
 | Reference | Domain | Outside it |
 |---|---|---|
 | `issue_age_min` | a whole number of years below `2**53`, 0 or more | a NaN switches the bound off, every comparison with it failing; past `2**53` the compiled model's `long long` cannot hold it |
-| `omega_age` | a whole number of years below `2**53`, above `issue_age_min`, at most `Data.mort_age_last()`, 120 | it sizes every frame: a NaN, an infinity or a fraction raises in the fund's search, and past the table's last age no rate is read |
+| `omega_age` | a whole number of years below `2**53`, above `issue_age_min`, at most a year past the table's last age, `Data.mort_age_last() + 1`, 121 | it sizes every frame: a NaN, an infinity or a fraction raises in the fund's search; cover reads attained ages to `omega_age − 1`, so past a year beyond the table's last age a rate would be read beyond the table |
 | `fund_return`, `inflation_rate` | finite, −1 or more | the monthly return `(1 + g)^(1/12) − 1` has no real value, and the inflation factor changes sign each year |
 | `return_shock` | finite, and `fund_return + return_shock`, the trailing year's return, above −1 | a trailing return of −100% or less is a fund lost whole; a NaN reads as no shock |
 | `mort_be_factor` | finite, 0 or more | a mortality rate is negative |
@@ -248,8 +248,8 @@ Each check is a comparison written out, a finite bound the largest float and a w
 `2**53`, so that the compiled model runs it in C; the three integer References are printed
 through `int()` once they are whole. A value a formula computes past the floats from
 References each in its domain is refused in the cell where it first is, naming the
-References: the fund, where a `fund_return` near the largest float grows it, at
-`av_pp_at(t, "AFT_GROWTH")`, where `ULB_UK_S` makes `inf − inf` a NaN, floors it to 0 and
+References: the fund, where a `fund_return` or an opening fund near the largest float
+grows it past them, at `av_pp_at(t, "AFT_GROWTH")`, naming both, where `ULB_UK_S` makes `inf − inf` a NaN, floors it to 0 and
 reads it as exhaustion; and the allowance, under a `wd_allowance_rate` that large, which
 the excess gain's `max(0, …)` would read as no gain. And so does a bond whose opening fund
 is at or below the threshold (*Where the fund runs out*). A loop over the
@@ -272,8 +272,11 @@ gap or a repeat, each rate a number from 0 to 1; and `Data.surr_last_year` for t
 surrender table, policy years from 1 without a gap, each rate from 0 to 1. A key is read
 by its value, so an age written `35.0` is 35. Each refusal names the file, the column and
 the lines at fault: the mortality table's check reads the file as it stands, one read
-that `ULB_UK_S`'s reader then sorts. No frame reaches past the table's last age, which
-`proj_len()` holds `omega_age` to; a read below its first, a bond issued at an age the
+that `ULB_UK_S`'s reader then sorts. No frame reads past the table's last age: cover
+reads attained ages to `omega_age − 1`, and `proj_len()` holds `omega_age` to a year past
+that age. For M10: the frame is so bounded by the table's length, not by the contract, and
+the C step's `t` cache will need a contract Reference for the largest `omega_age`, as
+Term's caches have theirs. A read below the table's first age, a bond issued at an age the
 table does not rate, is refused by the one cell that reads it, naming the point and the
 age, where `ULB_UK_S`'s lookup raised `KeyError`. The surrender table takes its last year
 for every later one, as `ULB_UK_S` does, so no read is beyond it.

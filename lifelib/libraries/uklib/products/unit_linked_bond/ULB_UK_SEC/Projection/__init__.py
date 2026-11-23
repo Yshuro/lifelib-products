@@ -733,9 +733,10 @@ def proj_len():
     * a bond issued below ``issue_age_min``, 18, the youngest age the mortality table
       rates, though the product admits issue from 3 months;
     * ``omega_age`` that is not a whole number below ``2**53``, above ``issue_age_min`` and
-      at most the mortality table's last age, ``Data.mort_age_last()``: the limiting age
-      sizes every frame, so the compiled model's caches, and a NaN, an infinity or a
-      fraction of a year would leave the frame's months no whole number;
+      at most a year past the mortality table's last age, ``Data.mort_age_last() + 1``,
+      since cover reads attained ages to ``omega_age - 1``: the limiting age sizes every
+      frame, so the compiled model's caches, and a NaN, an infinity or a fraction of a year
+      would leave the frame's months no whole number;
     * one issued at or past ``omega_age``, which has no cover from issue;
     * one whose cover had ended by the valuation date, at or past the limiting age, which
       an in-force extract should not carry;
@@ -803,11 +804,11 @@ def proj_len():
         raise ValueError(f"point_id {point_id}: omega_age must be a whole number "  # noqa: F821
                          f"below 2**53, not {float(omega_age)}")     # noqa: F821
     if not (omega_age > issue_age_min                                # noqa: F821
-            and omega_age <= data.mort_age_last()):                   # noqa: F821
+            and omega_age <= data.mort_age_last() + 1):               # noqa: F821
         raise ValueError(
             f"point_id {point_id}: omega_age must be above issue_age_min, "  # noqa: F821
-            f"{int(issue_age_min)}, and at most mort_table.csv's last age, "  # noqa: F821
-            f"{data.mort_age_last()}, not {int(omega_age)}")         # noqa: F821
+            f"{int(issue_age_min)}, and at most {data.mort_age_last() + 1}, a year past "  # noqa: F821
+            f"mort_table.csv's last age, not {int(omega_age)}")      # noqa: F821
     if horizon_mths() <= 0:
         raise ValueError(f"point_id {point_id}: the issue age, {x}, is at or past "  # noqa: F821
                          f"omega_age, {int(omega_age)}: the bond has no cover")  # noqa: F821
@@ -1089,8 +1090,9 @@ def av_pp_at(t, timing):
     ``t + 1`` is past it, closes on its own fund.  0 outside cover, at every timing.
 
     ``"AFT_GROWTH"`` is where a fund that a ``fund_return`` past every amount of money
-    grows first leaves the floats, and where it is refused, naming the month and
-    ``fund_return``: past it ``inf - inf`` makes a NaN, which the floors of ``"AFT_WD"``
+    grows, or an opening fund near the largest float, first leaves the floats, and where it
+    is refused, naming the month, ``fund_return`` and the opening fund, ``av_pp_init``,
+    either of which may be the cause: past it ``inf - inf`` makes a NaN, which the floors of ``"AFT_WD"``
     and :func:`av_pp`, ``max(0, ...)``, would read as a fund drawn to nothing, and the
     threshold as exhaustion.  Every month :func:`av_pp` grows inline reads this timing of
     the month before, through :func:`wd_pp`, so the refusal holds for both.
@@ -1103,7 +1105,8 @@ def av_pp_at(t, timing):
             raise ValueError(
                 f"point_id {point_id}: the unit fund grown in month {t}, "  # noqa: F821
                 f"av_pp_at({t}, 'AFT_GROWTH'), is {grown}, not a finite number, under "
-                f"fund_return {float(fund_return)}")                 # noqa: F821
+                f"fund_return {float(fund_return)} and av_pp_init "  # noqa: F821
+                f"{av_pp_init()}")
         return grown
     if timing == "AFT_CHARGE":
         return av_pp_at(t, "AFT_GROWTH") - amc_pp(t) - further_costs_pp(t)

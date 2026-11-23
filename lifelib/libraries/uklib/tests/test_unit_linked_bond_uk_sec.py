@@ -1976,15 +1976,15 @@ def _returns(fund_return, return_shock):
             f"{float(fund_return)} and return_shock {float(return_shock)}")
 
 
-OMEGA = ("point_id 1: omega_age must be above issue_age_min, 18, and at most "
-         "mort_table.csv's last age, 120, not {}")
+OMEGA = ("point_id 1: omega_age must be above issue_age_min, 18, and at most 121, a year "
+         "past mort_table.csv's last age, not {}")
 DOMAINS = [
     *_domain("fund_return", "a finite number, -1 or more", (), (math.nextafter(-1.0, -2.0),)),
     ("fund_return=-1.0 with return_shock 0.5", {"fund_return": -1.0, "return_shock": 0.5},
      None),
     ("fund_return=BIG", {"fund_return": BIG},
      f"point_id 1: the unit fund grown in month 11, av_pp_at(11, 'AFT_GROWTH'), is nan, "
-     f"not a finite number, under fund_return {BIG}"),
+     f"not a finite number, under fund_return {BIG} and av_pp_init 100000.0"),
     *_domain("inflation_rate", "a finite number, -1 or more", (-1.0, BIG),
              (math.nextafter(-1.0, -2.0),)),
     *_domain("return_shock", "a finite number", (-1.0, BIG), ()),
@@ -2009,8 +2009,8 @@ DOMAINS = [
     *_whole_domain("issue_age_min", (0,)),
     ("issue_age_min=2**53-1", {"issue_age_min": WHOLE - 1},
      f"point_id 1: the issue age, 65, is below issue_age_min, {int(WHOLE - 1)}"),
-    *_whole_domain("omega_age", (120,), below=False),
-    ("omega_age=121", {"omega_age": 121}, OMEGA.format(121)),
+    *_whole_domain("omega_age", (120, 121), below=False),
+    ("omega_age=122", {"omega_age": 122}, OMEGA.format(122)),
     ("omega_age=18", {"omega_age": 18}, OMEGA.format(18)),
     ("omega_age=19", {"omega_age": 19},
      "point_id 1: the issue age, 65, is at or past omega_age, 19: the bond has no cover"),
@@ -2045,6 +2045,24 @@ def test_each_reference_is_held_to_its_domain_at_both_edges(case, refs, message)
             assert p.proj_len() > 0
         else:
             _refused(p.result_cf, message)
+    finally:
+        model.close()
+
+
+def test_an_opening_fund_past_the_floats_is_refused_naming_it(tmp_path):
+    """An opening fund near the largest float is refused where it leaves the floats.
+
+    ``Data`` holds ``av_pp_init`` to a finite number above 0, so a fund of 1.79e308 reads;
+    a month's growth at the shipped 5% then takes it past the floats in month 1, where
+    ``av_pp_at(1, "AFT_GROWTH")`` refuses it.  The refusal names the opening fund beside
+    ``fund_return``, so that it reads true whichever is the cause: here the fund, at a
+    shipped return; under ``DOMAINS``' ``fund_return`` at the largest float, the return.
+    """
+    model = _read_edited(tmp_path, _set("av_pp_init", [7], 1.79e308))
+    try:
+        _refused(_point(model, 7).result_cf,
+                 "point_id 7: the unit fund grown in month 1, av_pp_at(1, 'AFT_GROWTH'), is "
+                 "inf, not a finite number, under fund_return 0.05 and av_pp_init 1.79e+308")
     finally:
         model.close()
 
@@ -2520,10 +2538,12 @@ def test_a_read_beyond_the_mortality_table_is_refused_naming_its_point(tmp_path)
     """A read past the mortality table's ages is refused, naming the point.
 
     ``ULB_UK_S``'s lookup raises ``KeyError`` beyond the table, naming no point.  Above it,
-    the limiting age, ``omega_age``, is held to the table's last age by ``proj_len()``, so
-    no frame reaches past it: a table cut to ages 20 to 100 refuses every point, naming the
-    limiting age and the table's last age, and so does a limiting age raised to 121, past
-    the shipped table's 120.  Below it, the mortality rate's read at an attained age the
+    cover reads attained ages to ``omega_age - 1``, and ``proj_len()`` holds the limiting
+    age to a year past the table's last age, so no frame reads past it: a table cut to ages
+    20 to 100 refuses every point, naming the limiting age and the bound, and so does a
+    limiting age raised to 122, two years past the shipped table's 120.  At 121, a year
+    past it, cover reads ages to 120, all in the table, and the accumulation cell projects
+    what ``ULB_UK_S`` projects at that limiting age, 672 months, in every column.  Below it, the mortality rate's read at an attained age the
     table does not rate raises ``ValueError`` naming the point and the age: the anchor
     cell issued at 18, the youngest the contract issues, under a table that starts at 20.
     The surrender table takes its last year for every later one, as ``ULB_UK_S`` does, so
@@ -2535,7 +2555,7 @@ def test_a_read_beyond_the_mortality_table_is_refused_naming_its_point(tmp_path)
         for point in (2, 6):
             _refused(_point(model, point).result_cf,
                      f"point_id {point}: omega_age must be above issue_age_min, 18, and at "
-                     f"most mort_table.csv's last age, 100, not 120")
+                     f"most 101, a year past mort_table.csv's last age, not 120")
     finally:
         model.close()
     low = {MORT: _dropped(lambda t: t["age"] < 20)}
@@ -2547,12 +2567,23 @@ def test_a_read_beyond_the_mortality_table_is_refused_naming_its_point(tmp_path)
         model.close()
     model = _read_edited(tmp_path / "omega", lambda t: t)
     try:
-        model.Projection.omega_age = 121
+        model.Projection.omega_age = 122
         _refused(_point(model, 2).result_cf,
-                 "point_id 2: omega_age must be above issue_age_min, 18, and at most "
-                 "mort_table.csv's last age, 120, not 121")
+                 "point_id 2: omega_age must be above issue_age_min, 18, and at most 121, a "
+                 "year past mort_table.csv's last age, not 122")
     finally:
         model.close()
+    s = mx.read_model(model_path(TWIN), name=_name("s_omega"))
+    sec = mx.read_model(model_path(SEC), name=_name("sec_omega"))
+    try:
+        for each in (s, sec):
+            each.Projection.omega_age = 121
+        sp, p = _point(s, 2), _row(sec, "twin", 2, 0)
+        assert sp.proj_len() == p.proj_len() == 12 * (121 - 65)
+        assert frame_mismatches(sp.result_cf(), p.result_cf(), rtol=0.0, atol=0.0) == []
+    finally:
+        sec.close()
+        s.close()
 
 
 def test_a_key_written_as_a_float_reads_as_ulb_uk_s_reads_it(sec_model, tmp_path):
