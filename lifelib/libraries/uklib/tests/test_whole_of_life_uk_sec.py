@@ -102,7 +102,10 @@ shown, unless ``UKLIB_SEC_FULL=1`` is set.  So do the slower tests' other cases
 (``GRIDS``): over the committed points, the default run takes six among which every flow
 and counted cell is nonzero (``CORE_POINTS``), and the full grid the rest; the cold
 chains run on the paid-up shape by default and on the other three with the full grid; and
-so on, each test's docstring saying which.  They are never dropped: one leg of the CI
+so on, each test's docstring saying which.  A compile test is never skipped, since a skip
+fails the cython_uk job: those that compare the committed table under References of their
+own compare by default the rows those References move (``_c4_rows``), and the whole table
+with the full grid.  They are never dropped: one leg of the CI
 matrix sets it, and ``UKLIB_SEC_FULL=1 python -m pytest -m sec_full
 lifelib/libraries/uklib/tests/test_whole_of_life_uk_sec.py`` runs them alone.  Each
 splice row is released once it has been read (``_release``), as ``run_sec.py --block``
@@ -5008,6 +5011,15 @@ def test_every_decode_is_wol_uk_s_own_on_every_value(tmp_path):
     assert not found, found[:20]
 
 
+def _uw_to_year_9(table):
+    """*lapse_table.csv* with the UW cell's rows run on to policy year 9, at 1.1%, 1.2%
+    and 1.3%, three years past O50's last."""
+    last = table[(table["cell"] == "UW") & (table["policy_year"] == 6)]
+    more = [last.assign(policy_year=year, lapse_rate=rate)
+            for year, rate in ((7, 0.011), (8, 0.012), (9, 0.013))]
+    return pd.concat([table, *more], ignore_index=True)
+
+
 def test_every_padded_array_holds_nan_and_no_reader_reads_it(sec_model, tmp_path):
     """The padding is NaN, and each table's one reader reads inside its keys alone.
 
@@ -5019,7 +5031,10 @@ def test_every_padded_array_holds_nan_and_no_reader_reads_it(sec_model, tmp_path
     UW rows stop at policy year 3, the UW row holds NaN from year 4, past its own last
     year, which ``Data.lapse_last_year`` says is 3, and the underwritten point's lapse rate
     reads year 3 at every later year, as ``WOL_UK_S``'s ``tbl.index.max()`` on the cell's
-    own rows does.  And on the extract labelled otherwise than by position
+    own rows does; and on a copy whose UW rows run on to policy year 9, past O50's 6, the
+    array is ten years wide, as wide as the longest cell, O50's row NaN past its own last
+    year, and each point reads its own cell's last year at every later year.  And on the
+    extract labelled otherwise than by position
     (:func:`_extract`), where a label read as ``idx + 1`` would name another point, the
     mortality rate refuses an attained age below the table, naming the point and the age,
     on a copy of the table that starts at 20, before it reads the array.
@@ -5041,6 +5056,21 @@ def test_every_padded_array_holds_nan_and_no_reader_reads_it(sec_model, tmp_path
         assert np.isnan(array[1, 4:]).all() and not np.isnan(array[1, 1:4]).any()
         uw = _row(model, "twin", 5, 0)
         assert [uw.lapse_rate_base(t) for t in (24, 36, 120)] == [array[1, 3]] * 3
+    finally:
+        model.close()
+    # And the other way about: the UW rows running to year 9, three years past O50's last,
+    # so that the array is as wide as the longest cell, not the first, and O50's row holds
+    # NaN past its own last year, which its point reads every later year at.
+    model = _read_edited(tmp_path / "long", lambda t: t, edits={LAPSE: _uw_to_year_9})
+    try:
+        array = model.Data.lapse_table_array()
+        assert list(model.Data.lapse_last_year()) == [6, 9] and array.shape == (2, 10)
+        assert np.isnan(array[0, 7:]).all() and not np.isnan(array[1, 1:]).any()
+        assert list(array[1, 7:]) == [0.011, 0.012, 0.013]
+        uw, o50 = _row(model, "twin", 5, 0), _row(model, "twin", 1, 0)
+        assert [uw.lapse_rate_base(t) for t in (72, 96, 108, 240)] == [
+            0.011, 0.013, 0.013, 0.013]
+        assert [o50.lapse_rate_base(t) for t in (60, 96, 108)] == [array[0, 6]] * 3
     finally:
         model.close()
     extract = _extract()
@@ -6391,12 +6421,55 @@ def _mismatch_lines(found):
     return f"{len(found)} mismatches, first:\n  " + "\n  ".join(found[:50])
 
 
+def _wol_c4_also(proj):
+    """What C4 compares of a ``WOL_UK_SEC`` point beyond its full sweep (M6).
+
+    ``uk_sec_support.full_sweep`` reaches a cell of more than ``t`` only at the codes some
+    swept cell asks of it: no cell reads the count at ``AFT_DECR``, the end of the month,
+    and on the underwritten cell none reads ``benefit_pp`` at ``NON_ACC`` or ``ACC``, which
+    only the over-50s blend reads.  So, as ``sample_sec.py`` does, this calls every timing,
+    every benefit and every kind, the claims total among them, at ``t = 0 ..
+    proj_len()``; every code inside the one inner width is one its cell takes, so none
+    raises.  Passed to ``uk_sec_support.compiled_mismatches`` as ``also``, as uslib's
+    DIA, MYGA and FIA modules pass theirs.
+    """
+    codes = {"pols_if_at": TIMINGS, "benefit_pp": BENEFITS, "claims": (*KINDS, "ALL")}
+    for t in range(proj.proj_len() + 1):
+        for cell, names in codes.items():
+            for name in names:
+                proj.cells[cell](t, _code(proj, name))
+
+
 # How many rows of a grid C4 compares at once.  compiled_mismatches sweeps every row of its
 # case in one modelx read and keeps every value of every row, in the parent and in the
 # child, until it compares them.  A WOL row runs at most 1,356 months, as ULB's do, so
 # twenty rows hold about what its chunks of twenty do (UKLIB-SEC-PLAN.md §6.6, *Record --
 # M10*).
 C4_CHUNK = 20
+
+# The committed rows a C4 comparison under References other than the shipped ones reads by
+# default: the rows those References move.  Under an RPI of its own, the RPI rows: the twin,
+# the row past its crossover, the row issued 13 months on and the row read under an RPI of
+# 5%.  Under a take-up, those and the fixed increases' rows: the twin, the row on its first
+# anniversary and the row read under a take-up of a half.  Under a stress, the paid-up
+# rows: the twin, the row with its strand in force and the row paid-up entirely.  And on an
+# anniversary, the three rows valued on one.  The full grid compares the whole committed
+# table under each set, as the cython_uk job's Linux legs run it (UKLIB_SEC_FULL=1).  A
+# compile test is never skipped, since a skip fails that job, so the default run compares
+# these rows rather than none: the eight comparisons of the whole table took about 100 s of
+# the default run (UKLIB-SEC-PLAN.md U6).
+RPI_ROWS = (4, 11, 14, 15)
+ESCALATING_ROWS = (*RPI_ROWS, 6, 12, 16)
+PAID_UP_ROWS = (3, 10, 17)
+ANNIVERSARY_ROWS = (12, 15, 16)
+OWN_REFS_ROWS = {"rpi_rate": RPI_ROWS, "esc_take_up": ESCALATING_ROWS,
+                 "lapse_crossover_beta": PAID_UP_ROWS}
+
+
+def _c4_rows(labels):
+    """The committed table under ``UKLIB_SEC_FULL=1``, and its rows ``labels`` otherwise."""
+    rows = _committed()
+    return rows if SEC_FULL else rows.loc[list(labels)]
 
 
 @pytest.mark.cython
@@ -6428,7 +6501,8 @@ def test_the_compiled_model_computes_what_modelx_computes_on_the_splice_grid(spl
         chunk = table.iloc[start:start + C4_CHUNK]
         case = compiled_case(build, tmp_path / f"chunk{start}", model_points=chunk)
         found += [f"rows {start} on: {line}"
-                  for line in compiled_mismatches(build, case, refs=SPLICED_REFS)]
+                  for line in compiled_mismatches(build, case, refs=SPLICED_REFS,
+                                                 also=_wol_c4_also)]
     assert not found, _mismatch_lines(found)
 
 
@@ -6501,23 +6575,23 @@ def test_the_compiled_model_computes_what_modelx_computes_at_the_contract_extrem
     covers = 12 * (OMEGA_MAX - rows["entry_age"]) - rows["duration_mth"]
     assert covers.max() == 1356
     folder = compiled_case(build, tmp_path / "extremes", model_points=rows)
-    found = compiled_mismatches(build, folder, refs=LONGEST_REFS)
+    found = compiled_mismatches(build, folder, refs=LONGEST_REFS, also=_wol_c4_also)
     assert not found, _mismatch_lines(found)
 
 
-def _capped_rows(tmp_path):
-    """The rows of the mortality cap's test, on each of :data:`CAPPED_POINTS`: the twin, the
-    row issued 12 months on, and the rows restated the month before the cap and five months
-    into the capped year, the last opened with one policy, built from S under
-    :data:`SPLICED_REFS`."""
+def _capped_rows(tmp_path, points=tuple(CAPPED_POINTS)):
+    """The rows of the mortality cap's test, on each of ``points``, by default every one of
+    :data:`CAPPED_POINTS`: the twin, the row issued 12 months on, and the rows restated the
+    month before the cap and five months into the capped year, the last opened with one
+    policy, built from S under :data:`SPLICED_REFS`."""
     s = mx.read_model(model_path(TWIN), name=_name("capped_s"))
     try:
         for ref, value in SPLICED_REFS.items():
             setattr(s.Projection, ref, value)
-        derived = tuple((p, d) for p, (cap, _) in CAPPED_POINTS.items()
-                        for d in (cap - 1, cap + 5))
+        derived = tuple((p, d) for p in points for d in (CAPPED_POINTS[p][0] - 1,
+                                                          CAPPED_POINTS[p][0] + 5))
         spec = dataclasses.replace(SPEC, derived=derived, derived_refs={},
-                                   future=tuple((p, 12) for p in CAPPED_POINTS))
+                                   future=tuple((p, 12) for p in points))
         rows, _ = build_sec_table(spec, s)
     finally:
         s.close()
@@ -6566,15 +6640,19 @@ def test_the_compiled_model_computes_what_modelx_computes_where_each_cap_binds(
     premium's steps 0.0, or 10% and 15%, the lapse rate 1.0; then modelx sweeps the rows
     fully under the same References, and the compiled model must agree at every argument
     modelx caches, identically on x86-64 and to 1e-12 relative elsewhere.  No other compiled
-    test reaches these sides of the ``min`` and the ``max``.
+    test reaches these sides of the ``min`` and the ``max``.  By default the cap's rows are
+    the male smoker's, whose capped months the core grid does not reach, as it reaches the
+    anchor cell's and the underwritten point's, and the RPI's are the committed RPI rows
+    (:data:`RPI_ROWS`); with the full grid, all three capped points' and the whole
+    committed table.
     """
     build = sec_build(SEC)
     if case == "the mortality cap":
-        rows = _capped_rows(tmp_path / "s")
+        rows = _capped_rows(tmp_path / "s", tuple(CAPPED_POINTS) if SEC_FULL else (7,))
     elif case == "the lapse rate's bound":
         rows = _lapse_all_rows()
     else:
-        rows = _committed()
+        rows = _c4_rows(RPI_ROWS)
     model = mx.read_model(_sec_inputs(tmp_path / "check", rows), name=_name("binds"))
     try:
         for ref, value in refs.items():
@@ -6593,7 +6671,7 @@ def test_the_compiled_model_computes_what_modelx_computes_where_each_cap_binds(
         model.close()
     assert bound and all(bound), (case, bound)
     folder = compiled_case(build, tmp_path / "binds", model_points=rows)
-    found = compiled_mismatches(build, folder, refs=refs)
+    found = compiled_mismatches(build, folder, refs=refs, also=_wol_c4_also)
     assert not found, _mismatch_lines(found)
 
 
@@ -6614,7 +6692,7 @@ def test_the_compiled_model_computes_what_modelx_computes_on_every_decoded_value
     s, twins = _decoded_twins(tmp_path)
     s.close()
     folder = compiled_case(build, tmp_path / "decoded", model_points=twins)
-    found = compiled_mismatches(build, folder)
+    found = compiled_mismatches(build, folder, also=_wol_c4_also)
     assert not found, _mismatch_lines(found)
 
 
@@ -6696,7 +6774,7 @@ def test_the_compiled_model_reads_keys_written_as_floats_as_modelx_does(sec_buil
     finally:
         model.close()
         as_written.close()
-    found = compiled_mismatches(build, folder)
+    found = compiled_mismatches(build, folder, also=_wol_c4_also)
     assert not found, _mismatch_lines(found)
 
 
@@ -6714,12 +6792,16 @@ def test_the_compiled_model_computes_what_modelx_computes_under_a_row_s_own_refe
     100, paid-up entirely, its ``policy_count`` 0.  C4 on the committed points compares
     them at the shipped References; under their own, set on the compiled model as on modelx
     before either computes, each continues S's path, which other rows' References leave
-    untaken: so the committed table is swept fully under each set, and the compiled model
-    must agree everywhere, the point paid-up entirely and the rows past cessation among it.
+    untaken: so the committed rows each set moves (:data:`OWN_REFS_ROWS`), the whole
+    committed table with the full grid, are swept fully under it, and the compiled model
+    must agree everywhere, the point paid-up entirely and the rows past cessation among
+    them.
     """
     build = sec_build(SEC)
-    folder = compiled_case(build, tmp_path / "own")
-    found = compiled_mismatches(build, folder, refs=refs)
+    (ref,) = refs
+    folder = compiled_case(build, tmp_path / "own",
+                           model_points=_c4_rows(OWN_REFS_ROWS[ref]))
+    found = compiled_mismatches(build, folder, refs=refs, also=_wol_c4_also)
     assert not found, _mismatch_lines(found)
 
 
@@ -6739,9 +6821,10 @@ def test_the_compiled_model_computes_what_modelx_computes_on_an_anniversary(sec_
     increasing point on its first, and the RPI and underwritten increasing points on their
     tenth.  In modelx, under :data:`ANNIVERSARY_REFS`, each steps its cover and its premium
     at ``t = 0``, from its columns, at today's step, which is asserted: ``cover_pp(0)`` is
-    ``cover_pp_init()`` times ``1 + esc_cover_step()``, above the column.  Then the
-    committed table is swept fully under those References, and the compiled model must
-    agree everywhere, the month-0 step and every year's after it among it.
+    ``cover_pp_init()`` times ``1 + esc_cover_step()``, above the column.  Then the three
+    rows, the whole committed table with the full grid (:data:`ANNIVERSARY_ROWS`), are swept
+    fully under those References, and the compiled model must agree everywhere, the
+    month-0 step and every year's after it among it.
     """
     build = sec_build(SEC)
     model = mx.read_model(model_path(SEC), name=_name("anniversary"))
@@ -6762,8 +6845,9 @@ def test_the_compiled_model_computes_what_modelx_computes_on_an_anniversary(sec_
             assert p.premium_pp(0) == p.premium_pp_init() * (1.0 + p.esc_prem_step())
     finally:
         model.close()
-    folder = compiled_case(build, tmp_path / "anniversary")
-    found = compiled_mismatches(build, folder, refs=ANNIVERSARY_REFS)
+    folder = compiled_case(build, tmp_path / "anniversary",
+                           model_points=_c4_rows(ANNIVERSARY_ROWS))
+    found = compiled_mismatches(build, folder, refs=ANNIVERSARY_REFS, also=_wol_c4_also)
     assert not found, _mismatch_lines(found)
 
 
