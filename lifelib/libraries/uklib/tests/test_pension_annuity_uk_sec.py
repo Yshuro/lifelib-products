@@ -32,12 +32,14 @@ product's own facts:
   months straddle the product's events: quarterly payments in arrears, the anniversaries,
   the scenario death, the guarantee's end, value protection running out on the first and
   the last death, the mortality cap, the older life past the limiting age and the frame's
-  last month.  Twelve variants of S's points, in a copy of S's table, add advance timing
-  with value protection, semi-annual and annual payments, the dependant dying first, both
-  lives dead with and without a guarantee, a guarantee past the age stop, a rated joint
-  life, the proportionate payment on the table basis and the RPI bases without
-  first-death value protection; and the RPI points are spliced under RPIs of 8% and -2%,
-  where the LPI cap and floor bind and the ratchet freezes.
+  last month.  Sixteen variants of S's points, in a copy of S's table, add advance timing
+  with value protection on either death, semi-annual and annual payments, the dependant
+  dying first, both lives dead with and without a guarantee, a guarantee past the age
+  stop, a rated joint life, the proportionate payment on the table basis, the RPI bases
+  without first-death value protection, value protection apart from the dependant's
+  share and on a single life, a dependant older than the annuitant and a dependant's
+  share of 0; and the RPI points are spliced under RPIs of 8% and -2%, where the LPI cap
+  and floor bind and the ratchet freezes, beside a fixed escalation, which no RPI moves.
 * T3, future new business: a point starting ``k`` months after the valuation date is S's
   projection ``k`` months on, with zeros before it and no rate evaluated there.
 * D11's R1 and R2, and D3's and D5's chains: on the splice's grid no cell is called at a
@@ -55,15 +57,19 @@ product's own facts:
   raises ``PA_UK_S``'s message; the mortality table is refused before a value of it is
   read; the future horizon is a Reference; a point at or past its stop, one owing nothing,
   one the contract does not issue and one read under a Reference outside its domain are
-  refused by the frame, each domain at both its edges; the edges of the interface are
-  accepted; and so is every state ``PA_UK_S`` reaches, on each set of inputs on which those
-  states differ, but a contract owing nothing, which is set aside and shown refused.
+  refused by the frame, each domain at both its edges, each accepted edge projected; a
+  value a power or a product takes past the floats is refused where it first is, naming
+  the References; the edges of the interface are accepted, each window of ``Data``'s at
+  both its ends; and so is every state ``PA_UK_S`` reaches, on each set of inputs on which
+  those states differ, but a contract owing nothing, which is set aside and shown
+  refused.
 * T6, regeneration: the committed ``model_point_table_sec.csv`` is what the generator makes
   of ``PA_UK_S`` and its table as they stand.
 * Then the product's own facts: the two clocks; the committed rows continuing their S
-  points, and the two read from S under an RPI of their own; each history column read
-  rather than recomputed (UKLIB-SEC-PLAN.md K14), the ratchet's catch-up among them, with
-  goldens of its own; the income measured before month 0's anniversary; the RPI, inflation
+  points, and the three read from S under an RPI of their own, the two LPI rows projected
+  under it to the cap's and the floor's goldens; each history column read rather than
+  recomputed (UKLIB-SEC-PLAN.md K14), the ratchet's catch-up among them, with goldens of
+  its own; the income measured before month 0's anniversary; the RPI, inflation
   and improvement each on its clock; no premium and no acquisition; the cap on mortality
   and a NaN that reaches it; the checks failing a NaN residual; the values outside the
   frame; the block; an in-force extract; the runner; the docstrings; the shared input
@@ -139,8 +145,10 @@ SPEC = SEC_SPECS[SEC]
 # proportionate final payment (9); and value protection on the last death (10).
 S_POINTS = tuple(range(1, 11))
 
-# Twelve more S points, in the splice's copy of S's table and never in the committed one,
-# each one of S's points changed so as to reach what S's own points cannot:
+# Sixteen more S points, in the splice's copy of S's table and never in the committed one,
+# each one of S's points changed so as to reach what S's own points cannot.  A committed row
+# is one of S's points restated (D8), so a term S's own table never holds, value protection
+# apart from the dependant's share or on a single life, reaches T2 alone:
 #
 # 11, S point 2 in advance: value protection measured after an advance instalment;
 # 12, S point 2 paying twice a year, in arrears;
@@ -154,12 +162,20 @@ S_POINTS = tuple(range(1, 11))
 # 18, S point 2 rated, the annuitant at 1.3 and the dependant at 1.5;
 # 19, S point 2 with the proportionate final payment, on the table basis, where it is paid
 #   in every month a life can die;
-# 20, S point 10 in advance: last-survivor value protection measured after an advance
-#   instalment;
+# 20, S point 10 in advance on the table basis: last-survivor value protection measured
+#   after an advance instalment, which the scenario's dependant, who never dies, never
+#   claims;
 # 21, S point 6 without value protection: RPI-linked, so the annuitant's payments to date
 #   are read nowhere;
 # 22, S point 7 with value protection on the last death: RPI-linked, the annuitant's
-#   payments to date read nowhere either.
+#   payments to date read nowhere either;
+# 23, S point 2 with value protection of 30%, apart from the dependant's 50%: the balance
+#   nets v x P, which every S point's v = delta = 0.5 hides;
+# 24, S point 5 with value protection of 50% on its single life, monthly in advance;
+# 25, S point 2 with a dependant of 70, older than the annuitant: the age stop is on the
+#   annuitant, the youngest life;
+# 26, S point 2 with a dependant's share of 0: the obligation measure drops the dependant's
+#   leg while the dependant is alive.
 #
 # Each variant is (the S point it changes, the columns it changes); the policy_id keeps the
 # generated ids apart.
@@ -173,15 +189,20 @@ VARIANTS = {
     17: (5, {"policy_id": "PA-900017", "annuitant_age": 90, "guarantee_months": 360}),
     18: (2, {"policy_id": "PA-900018", "rating_multiplier": 1.3, "dependant_rating": 1.5}),
     19: (2, {"policy_id": "PA-900019", "proportion": True}),
-    20: (10, {"policy_id": "PA-900020", "timing": "advance"}),
+    20: (10, {"policy_id": "PA-900020", "timing": "advance", "mort_basis": "table"}),
     21: (6, {"policy_id": "PA-900021", "vp_pct": 0.0}),
     22: (7, {"policy_id": "PA-900022", "vp_basis": "last_survivor"}),
+    23: (2, {"policy_id": "PA-900023", "vp_pct": 0.3}),
+    24: (5, {"policy_id": "PA-900024", "vp_pct": 0.5}),
+    25: (2, {"policy_id": "PA-900025", "dependant_age": 70}),
+    26: (2, {"policy_id": "PA-900026", "dependant_pct": 0.0}),
 }
 
 # Each point's frame from its start, in months: the age stop on its youngest life, or the
 # guarantee if longer.
 FRAME = {**{p: 636 for p in (1, 2, 3, 4, 6, 7, 9, 10)}, 5: 600, 8: 600,
-         **{p: 636 for p in (11, 12, 14, 15, 16, 18, 19, 20, 21, 22)}, 13: 600, 17: 360}
+         **{p: 636 for p in (11, 12, 14, 15, 16, 18, 19, 20, 21, 22, 23, 26)}, 13: 600,
+         17: 360, 24: 600, 25: 600}
 
 # The first S month from which a point owes nothing, every covered life dead and no
 # guarantee left, so that proj_len() refuses it restated there or later: S point 8, whose
@@ -201,14 +222,18 @@ OWES_NOTHING_FROM = {8: 577, 14: 41, 15: 120, 16: 31}
 # (OWES_NOTHING_FROM), is left out.  Each variant's months straddle its own events: the
 # advance balance's last month, 99, and run-out, 100; the first semi-annual payments; the
 # annual instalment's anniversary; each death; the age stop at 300 inside the guarantee;
-# the rated annuitant's cap from 576; and the advance last-survivor balance's run-out at
-# 166.
+# the rated annuitant's cap from 576; the advance last-survivor balance's last claim, 98,
+# and run-out at 100; the 30% balance's run-out at 63 and the single life's at 91; the
+# older dependant past the limiting age from 540; and the dependant at 0% alive past the
+# annuitant from 601 (measured at M11).
 SPLICE_MTHS = (1, 2, 3, 11, 12, 13, 15, 16, 17, 23, 24, 25, 101, 102, 119, 120, 121, 122,
                170, 171, 575, 576, 599, 600, 635)
 VARIANT_MTHS = {11: (2, 3, 99, 100), 12: (1, 5, 6, 101), 13: (1, 12, 13, 599),
                 14: (9, 10, 11, 39, 40), 15: (16, 29, 30, 31, 119),
                 16: (16, 17, 29, 30), 17: (1, 299, 300, 359), 18: (1, 24, 575, 576),
-                19: (1, 2, 24), 20: (1, 2, 16, 17, 165, 166), 21: (12, 24), 22: (12, 24)}
+                19: (1, 2, 24), 20: (1, 3, 16, 98, 99), 21: (12, 24), 22: (12, 24),
+                23: (1, 24, 61, 62, 63), 24: (1, 12, 89, 90, 91),
+                25: (1, 539, 540, 541, 599), 26: (1, 101, 575, 601)}
 
 
 def _owes(s_point, month):
@@ -224,7 +249,8 @@ def _owes(s_point, month):
 # calendar on the policy clock in both, and so is left at its shipped scale (D7, precised at
 # M11).  rpi_rate is a flat Reference, the RPI on either clock, so the RPI sets run S and
 # SEC at one rate: 8%, past the LPI's 5% cap, and -2%, below its floor, where the catch-up's
-# index falls and the ratchet freezes the income.  Nothing else ships at 0 to switch on.
+# index falls and the ratchet freezes the income; and a fixed escalation runs beside them,
+# at its own 3%, which the shipped RPI equals.  Nothing else ships at 0 to switch on.
 SPLICE_SETS = {
     "shipped": {"inflation_rate": 0.0},
     "rpi_high": {"inflation_rate": 0.0, "rpi_rate": 0.08},
@@ -233,9 +259,14 @@ SPLICE_SETS = {
 
 # The RPI points, spliced under each RPI set at its anniversaries, the month before and
 # after each, and the sixth: S's two RPI points and the variants that move their value
-# protection.
+# protection.  And beside them S point 2, fixed at 3%, spliced at 24 and at 101, valued
+# late, where the income compounds at the valuation date's key: under an RPI of 3%, the
+# shipped one, an income compounded at the RPI rather than at the contract's g is the same
+# number.  The RPI sets' S models hold these five points.
 RPI_POINTS = (6, 7, 21, 22)
 RPI_MTHS = (11, 12, 13, 23, 24, 25, 60, 61)
+FIXED_POINT, FIXED_MTHS = 2, (24, 101)
+RPI_SET_POINTS = (FIXED_POINT, *RPI_POINTS)
 
 # T2's cases, as (set, row_kind, S point, source_mth): each S point restated in payment at
 # each of its months inside its frame, then each variant at its own, then the RPI points
@@ -246,7 +277,9 @@ SPLICES = (tuple(("shipped", "derived", p, d) for p in S_POINTS for d in SPLICE_
            + tuple(("shipped", "derived", p, d) for p, mths in VARIANT_MTHS.items()
                    for d in mths if _owes(p, d))
            + tuple((rates, "derived", p, d) for rates in ("rpi_high", "rpi_low")
-                   for p in RPI_POINTS for d in RPI_MTHS))
+                   for p in RPI_POINTS for d in RPI_MTHS)
+           + tuple((rates, "derived", FIXED_POINT, d) for rates in ("rpi_high", "rpi_low")
+                   for d in FIXED_MTHS))
 IN_FORCE_TWINS = ()
 FUTURES = (tuple(("shipped", p, k) for p in S_POINTS for k in (1, 12))
            + tuple(("shipped", p, 1) for p in VARIANTS)
@@ -288,14 +321,20 @@ CORE_SPLICES = {
     ("shipped", "derived", 17, 300): "the guarantee past the age stop",
     ("shipped", "derived", 18, 24): "a rated joint life",
     ("shipped", "derived", 19, 2): "the proportionate payment on the table basis",
-    ("shipped", "derived", 20, 16): "last-survivor value protection in advance",
+    ("shipped", "derived", 20, 3): "last-survivor value protection in advance, claimed",
     ("shipped", "derived", 21, 24): "the RPI catch-up without value protection",
     ("shipped", "derived", 22, 12): "the LPI with last-survivor value protection",
+    ("shipped", "derived", 23, 24): "value protection apart from the dependant's share",
+    ("shipped", "derived", 24, 12): "value protection on a single life, in advance",
+    ("shipped", "derived", 25, 539): "a dependant older than the annuitant, at its stop",
+    ("shipped", "derived", 26, 575): "a joint life at a dependant's share of 0",
     ("rpi_high", "derived", 7, 24): "the LPI cap binding, its history capped",
     ("rpi_high", "derived", 6, 13): "the catch-up's index rising past its peak",
     ("rpi_low", "derived", 6, 24): "the ratchet frozen, its peak above the index",
     ("rpi_low", "derived", 7, 25): "the LPI floor binding",
     ("rpi_low", "derived", 21, 61): "the ratchet frozen, no value protection",
+    ("rpi_high", "derived", 2, 24): "a fixed escalation under an RPI above it",
+    ("rpi_low", "derived", 2, 101): "a fixed escalation under an RPI below it, valued late",
 }
 CORE_FUTURES = {
     ("shipped", 1, 1): "starting a month off the valuation anniversaries",
@@ -563,24 +602,43 @@ def _raised(err):
     return f"{type(err).__name__}: {lines[0] if lines else ''}"
 
 
-def _sweep_s(proj):
-    """Evaluate on an S point what the splice compares: the sweep, and the cells it misses.
+# Every how many time points a sweep evaluates the survival check's residual (_sweep).
+SAMPLED = 25
 
-    :func:`uk_sec_support.sweep` reaches ``PA_UK_S``'s ``next_payment_mth`` and
-    ``mths_since_payment`` only where a point takes the proportionate payment, and
-    ``lives_death`` of the dependant, ``duration_mth`` and ``payment_surv_mth`` nowhere; a
-    cell S never evaluates is compared nowhere.  They are evaluated here over the frame, so
-    the splice and the future comparison see them too.
+
+def _sweep(proj):
+    """Evaluate on an S point or an SEC row what a comparison reads: the reports and more.
+
+    ``result_cf()``, ``result_pols()`` and the three checks that read the frame once,
+    ``check_payment_factor()``, ``check_guarantee_xor()`` and ``check_vp_bound()``; then,
+    over the frame, the cells no report reaches on every point, so that the comparisons see
+    them too: ``next_payment_mth`` and ``mths_since_payment``, which only the proportionate
+    payment reads, ``duration_mth``, ``payment_surv_mth`` and each covered life's
+    ``lives_death``.  Not ``check_lives_roll_fwd``: its independent rebuild of survival is
+    a product over every month before each time point, quadratic in the frame, about 110 MB
+    of modelx's dependency graph on a point on the table basis, which held in the module's
+    swept models took its peak past 4 GB (measured at M11), and SPIA's sweep leaves it out
+    too (USLIB-SEC-PLAN.md §7.12).  Its residual is evaluated instead at every
+    :data:`SAMPLED`-th time point and at the frame's close, so that a comparison still
+    holds S's residual against this model's there.  The whole check runs on every
+    committed row in the conventions, on every twin in T1, and on every splice row in the
+    rules test (:func:`_rule_breaches`).
     """
-    sweep(proj)
+    proj.result_cf()
+    proj.result_pols()
+    for name in ("check_payment_factor", "check_guarantee_xor", "check_vp_bound"):
+        proj.cells[name]()
     lives = (1, 2) if proj.is_joint() else (1,)
-    for t in range(proj.proj_len()):
+    end = proj.proj_len()
+    for t in range(end):
         proj.next_payment_mth(t)
         proj.mths_since_payment(t)
         proj.duration_mth(t)
         proj.payment_surv_mth(t)
         for life in lives:
             proj.lives_death(t, life)
+    for k in (*range(0, end + 1, SAMPLED), end):
+        proj.check_lives_roll_fwd_resid(k)
 
 
 def _rpi_linked(s_proj):
@@ -731,8 +789,9 @@ def sec_read():
 
     The model is first asked for ``duration_mth(500)`` on the twin of S point 1, and the
     keys that call leaves in ``duration_mth`` are kept.  Then every committed point is
-    swept (:func:`uk_sec_support.sweep`: ``result_cf``, the other report and the checks),
-    in table order and each column in ascending ``t``, under a recursion limit lowered to
+    swept (:func:`_sweep`: the reports, the checks that read the frame once and the
+    survival check's residual sampled), in table order and each column in ascending ``t``,
+    under a recursion limit lowered to
     :data:`CALL_DEPTH`, and whatever that raises is kept, point by point, rather than
     raised.  So the record says what a cold model does, which the clock and depth test
     asserts (D3, R2), and every test on the committed model reads a model already swept:
@@ -748,7 +807,7 @@ def sec_read():
     try:
         for key, point_id in zip(point_keys(model), labels):
             try:
-                sweep(projection(model, key))
+                _sweep(projection(model, key))
             except Exception as err:            # kept, so every point is swept
                 record["deep"].append(f"point {point_id}: the sweep raised {_raised(err)}")
     finally:
@@ -773,7 +832,7 @@ def s_model():
     """
     model = mx.read_model(model_path(TWIN), name=_name("s"))
     for key in point_keys(model):
-        _sweep_s(projection(model, key))
+        _sweep(projection(model, key))
     yield model
     model.close()
 
@@ -781,7 +840,7 @@ def s_model():
 # How many S points of a splice set are kept swept at once (_Splices.s_point).  A swept S
 # point on the table basis holds about 140 MB, most of it modelx's record of what
 # PA_UK_S's survival check reads, a product over every month before each time point, so
-# that the shipped set's 22 points swept together held 1.8 GB (measured at M11).  T2 and
+# that 22 of the shipped set's points swept together held 1.8 GB (measured at M11).  T2 and
 # T3 run their cases point by point, so two are enough.
 SWEPT = 2
 
@@ -797,7 +856,7 @@ class _Splices:
     run selects, the core or the full grid (:func:`_selected`), out of this S model, so each
     row opens with the state of the very run it is compared with; the set's References are
     set on it too.  No input table moves with ``d``: PA's one valuation-clock input is the
-    ``inflation_rate`` Reference.  An S point is swept (:func:`_sweep_s`) when a case first
+    ``inflation_rate`` Reference.  An S point is swept (:func:`_sweep`) when a case first
     compares a row with it (:meth:`s_point`), and the :data:`SWEPT` most recently compared
     stay swept; each SEC row is projected by the case that compares it and released once
     compared (:func:`_settle`).
@@ -809,7 +868,7 @@ class _Splices:
     def pair(self, rates):
         if rates not in self.pairs:
             refs = SPLICE_SETS[rates]
-            points = None if rates == "shipped" else RPI_POINTS
+            points = None if rates == "shipped" else RPI_SET_POINTS
             s = mx.read_model(temp_inputs(self.root / rates / "s", model_path(TWIN),
                                           model_points=_s_table_with_variants(points)),
                               name=_name(f"s_{rates}"))
@@ -847,7 +906,7 @@ class _Splices:
             while len(swept) >= SWEPT:
                 _release(s, swept.pop(0))
                 gc.collect()
-            _sweep_s(projection(s, key))
+            _sweep(projection(s, key))
         swept.append(key)
         return projection(s, key)
 
@@ -970,21 +1029,24 @@ def _closed_reads(proj):
 def _rule_breaches(proj):
     """R1 and R2's look-ahead on one row, once it has run whole.
 
-    The row's reports and checks are run (:func:`uk_sec_support.sweep`), and then every
-    monthly cell at every month of the frame and the month after it, as the C step's sweep
-    runs them (:func:`uk_sec_support.full_sweep`): no report of a row need read every state,
-    and a base at ``t == 0`` would hide in a cell the reports leave unread
-    (USLIB-SEC-PLAN.md §5.2, T2, precised at M4).  ``{"negative": [...], "early": [...],
-    "ahead": [...], "closed": [...], "raised": [...]}``: every cached call with a negative
-    argument; every call keyed by a month before ``t_entry()`` that a call keyed by a month
-    at or after it reads; every call keyed by a month beyond ``t + 1`` that a call keyed by
-    ``t`` reads, but :data:`LOOK_AHEAD`'s; every key before the valuation date an RPI-linked
-    row asked (:func:`_closed_reads`); and every call the full sweep found raising.  A call
+    The row's reports and every check are run (:func:`uk_sec_support.sweep`), the whole
+    survival check among them, and then every monthly cell at every month of the frame and
+    the month after it, as the C step's sweep runs them (:func:`uk_sec_support.full_sweep`):
+    no report of a row need read every state, and a base at ``t == 0`` would hide in a cell
+    the reports leave unread (USLIB-SEC-PLAN.md §5.2, T2, precised at M4).  ``{"negative":
+    [...], "early": [...], "ahead": [...], "closed": [...], "raised": [...], "checks":
+    [...]}``: every cached call with a negative argument; every call keyed by a month
+    before ``t_entry()`` that a call keyed by a month at or after it reads; every call keyed
+    by a month beyond ``t + 1`` that a call keyed by ``t`` reads, but :data:`LOOK_AHEAD`'s;
+    every key before the valuation date an RPI-linked row asked (:func:`_closed_reads`);
+    every call the full sweep found raising; and every check that does not hold.  The row is
+    released once read, so its quadratic survival check is held a row at a time.  A call
     reads its precedents, as modelx's dependency graph records them, and, through a
     precedent keyed by no month, whatever that precedent reads in turn
     (:func:`_months_read`).
     """
-    sweep(proj)
+    checks = [name for name, value in sweep(proj).items()
+              if name.startswith("check_") and value is not True]
     raised = [f"{name}{args}: {text}" for (name, args), text in full_sweep(proj).items()]
     entry, end = proj.t_entry(), proj.proj_len()
     negative, early, ahead = [], [], []
@@ -1009,7 +1071,7 @@ def _rule_breaches(proj):
                         continue
                     ahead.append(f"{name}{args} -> {text}")
     return {"negative": negative, "early": early, "ahead": ahead,
-            "closed": _closed_reads(proj), "raised": raised}
+            "closed": _closed_reads(proj), "raised": raised, "checks": checks}
 
 
 def _vp_paid(x, t):
@@ -1050,6 +1112,13 @@ AT_VALUATION = {
         0 < x.duration_mth_init() < x.guarantee_mths()),
     "valued past the guarantee": lambda x: (
         0 < x.guarantee_mths() <= x.duration_mth_init()),
+    "value protection apart from the dependant's share": lambda x: (
+        x.vp_pct() > 0.0 and x.is_joint() and x.vp_pct() != x.dependant_pct()),
+    "value protection on a single life": lambda x: x.vp_pct() > 0.0 and not x.is_joint(),
+    "a dependant older than the annuitant": lambda x: (
+        x.is_joint() and x.age_at_entry(2) > x.age_at_entry(1)),
+    "a fixed escalation apart from the RPI": lambda x: (
+        x.is_fixed() and x.escalation_rate() != x.rpi_rate),
 }
 IN_FRAME = {
     "the guarantee's floor paying past survival": lambda x, t: (
@@ -1075,6 +1144,9 @@ IN_FRAME = {
     "value protection netting an advance instalment": lambda x, t: (
         x.vp_pct() > 0.0 and not x.is_arrears() and x.is_payment_mth(t)
         and _vp_paid(x, t) > 0.0),
+    "last-survivor value protection netting an advance instalment": lambda x, t: (
+        x.vp_pct() > 0.0 and not x.is_first_death() and not x.is_arrears()
+        and x.is_payment_mth(t) and _vp_paid(x, t) > 0.0),
     "the proportionate payment": lambda x, t: (
         x.proportion() and x.claims(t, _code(x, "PROP")) > 0.0),
     "a payment month": lambda x, t: x.is_payment_mth(t),
@@ -1109,7 +1181,8 @@ IN_FRAME = {
         x.dependant_pct() > 0.0 and x.certain_floor(t) == 1.0
         and x.lives_if(t + 1, 1) < 1.0 and x.lives_if(t + 1, 2) > 0.0),
     "the obligation's dependant leg dropped": lambda x, t: (
-        x.is_active(t) and x.dependant_pct() == 0.0),
+        x.is_joint() and x.is_active(t) and x.dependant_pct() == 0.0
+        and x.lives_if(t + 1, 1) < 1.0 and x.lives_if(t + 1, 2) > 0.0),
     "the frame ending at the age stop": lambda x, t: (
         t == x.proj_len() - 1 and x.stop_mth() == x.horizon_mths()),
     "the frame ending at the guarantee": lambda x, t: (
@@ -1138,7 +1211,7 @@ def _scan(records, case, proj):
         record["failed"] = None
     except Exception as err:                    # recorded, and reported by the rules test
         record = {"negative": [], "early": [], "ahead": [], "closed": [], "raised": [],
-                  "branches": set(), "failed": _raised(err)}
+                  "checks": [], "branches": set(), "failed": _raised(err)}
     records[case] = record
     return record
 
@@ -1298,7 +1371,8 @@ def test_no_cell_is_called_before_the_valuation_date_or_reads_far_ahead(spliced,
     * On an RPI-linked row no cell asked a year, an anniversary or a policy month before
       the valuation date of the cells keyed on the policy clock (:func:`_closed_reads`):
       that history is the opening state's.
-    * And no call of the full sweep raised.
+    * No call of the full sweep raised, and every check holds, the whole survival check
+      among them, which the module's sweeps sample (:func:`_sweep`).
 
     Each row was scanned by the T2 or T3 case that compared it, before the comparison
     (:func:`_scan`), and a row no case has scanned is scanned here.  The core case covers
@@ -1308,6 +1382,7 @@ def test_no_cell_is_called_before_the_valuation_date_or_reads_far_ahead(spliced,
     """
     cases = [case for case in GRID if (case in CORE_GRID) == (grid == "core")]
     negative, early, ahead, closed, raised, failed = [], [], [], [], [], []
+    checks = []
     for case in cases:
         record, where = _record_of(spliced, splice_records, case), _case_id(*case)
         negative += [f"{where}: {call}" for call in record["negative"]]
@@ -1315,11 +1390,13 @@ def test_no_cell_is_called_before_the_valuation_date_or_reads_far_ahead(spliced,
         ahead += [f"{where}: {read}" for read in record["ahead"]]
         closed += [f"{where}: {read}" for read in record["closed"]]
         raised += [f"{where}: {call}" for call in record["raised"]]
+        checks += [f"{where}: {name}" for name in record["checks"]]
         if record["failed"]:
             failed.append(f"{where}: {record['failed']}")
     assert cases, f"the {grid} grid has no rows"
     assert not failed, f"rows that raised: {failed[:10]}"
     assert not raised, f"calls the full sweep found raising: {raised[:10]}"
+    assert not checks, f"checks that do not hold: {checks[:10]}"
     assert not negative, f"called before the valuation date: {negative[:10]}"
     assert not early, f"read before the start from the books: {early[:10]}"
     assert not ahead, f"read beyond t + 1: {ahead[:10]}"
@@ -1412,25 +1489,27 @@ LATE_DEPTH = 8
 # chain of two cells a month runs a frame's length beyond.
 CHAIN_OVERHEAD = 16
 
-# The contract's longest cover, held by proj_len() and the mortality table: every covered
-# life issued at the youngest age the basis projects, issue_age_min, 0, on the scenario
-# basis, which reads no mortality, and the table's first age, 50, on the table basis,
-# which reads it from the issue age on; so frames of 12 x 115 = 1,380 months and 12 x 65 =
-# 780 from the start, the age stop on the youngest life.  Each issued now and
+# The contract's longest cover, held by proj_len() and the mortality table: a frame of
+# 12 x (omega_age - issue_age_min) = 1,380 months from the start.  On the scenario basis,
+# which reads no mortality, every covered life issued at issue_age_min, 0, reaches it by
+# the age stop.  On the table basis, which reads the table from the issue age on, a life
+# issued at its first age, 50, stops at 780 months, and the frame reaches 1,380 by a
+# guarantee of that length, which proj_len() accepts.  Each issued now and
 # future_horizon_mth, 120 months, on.
 YOUNGEST = {"scenario": 0, "table": 50}
 LONGEST = 1380
 
 # Each shape and the chains it runs, called cold in the last month of the frame at its own
-# longest cover, each on a read of its own: (the S point whose twin it is, its basis, the
-# chain heads, each a (cell, its arguments beyond the month)).  On the scenario basis
-# survival is a step function, so the chains are the payments to date: the worked example
-# reads the annuitant's, on the policy clock, through first-death value protection, and
-# the last-survivor point the expected payments on both streams, on the valuation clock.
-# On the table basis survival recurses too, and the obligation measure, the reports and
-# the survival check read it: the worked example's table twin, the RPI catch-up and the
-# LPI, whose income recurses by the year and whose payments to date are the annuitant's;
-# and the rated single life, which the cap kills before its frame ends.
+# longest cover, each on a read of its own: (the S point whose twin it is, its basis, its
+# guarantee, the chain heads, each a (cell, its arguments beyond the month)).  On the
+# scenario basis survival is a step function, so the chains are the payments to date: the
+# worked example reads the annuitant's, on the policy clock, through first-death value
+# protection, and the last-survivor point the expected payments on both streams, on the
+# valuation clock.  On the table basis survival recurses too, and the obligation measure,
+# the reports and the survival check read it, through a guarantee to the longest frame:
+# the worked example's table twin, the RPI catch-up and the LPI, whose income recurses by
+# the year and whose payments to date are the annuitant's; and the rated single life,
+# which the cap kills long before its guarantee ends.
 SCENARIO_HEADS = (("net_cf", ()), ("vp_balance", ()), ("claims", ("VP",)),
                   ("cum_annuity_all", ()))
 TABLE_HEADS = (("net_cf", ()), ("pols_if", ()), ("vp_balance", ()),
@@ -1438,9 +1517,19 @@ TABLE_HEADS = (("net_cf", ()), ("pols_if", ()), ("vp_balance", ()),
                ("claims", ("VP",)), ("lives_if", (1,)), ("lives_if", (2,)))
 SINGLE_HEADS = (("net_cf", ()), ("pols_if", ()), ("cum_annuity_all", ()),
                 ("check_lives_roll_fwd_resid", ()), ("lives_if", (1,)))
-SHAPES = ((1, "scenario", SCENARIO_HEADS), (10, "scenario", SCENARIO_HEADS),
-          (2, "table", TABLE_HEADS), (6, "table", TABLE_HEADS), (7, "table", TABLE_HEADS),
-          (8, "table", SINGLE_HEADS))
+SHAPES = ((1, "scenario", 0, SCENARIO_HEADS), (10, "scenario", 0, SCENARIO_HEADS),
+          (2, "table", LONGEST, TABLE_HEADS), (6, "table", LONGEST, TABLE_HEADS),
+          (7, "table", LONGEST, TABLE_HEADS), (8, "table", LONGEST, SINGLE_HEADS))
+
+# How deep each shape's deepest chain head runs, called cold in the last month of its
+# longest cover, issued now or 120 months on, by S point (measured at M11): net_cf in each,
+# 1,379 months back to t_entry() and 7 to 12 cells more.  The deepest, DEEPEST_SHAPE's,
+# net_cf(1379) through the table basis's survival under a 1,380-month guarantee, 1,391
+# cells, as deep on points 6, 7 and 8, is the chain the C step measures its stack on
+# (UKLIB-SEC-PLAN.md §6.7, *Risk*, which put it at about 1,510).
+SHAPE_DEPTHS = {1: 1386, 10: 1387, 2: 1391, 6: 1391, 7: 1391, 8: 1391}
+DEEPEST_SHAPE = 2
+DEEPEST = SHAPE_DEPTHS[DEEPEST_SHAPE]
 
 
 def _cold_depth(proj, cell, args):
@@ -1466,18 +1555,19 @@ def _longest_cover(tmp_path):
     committed = _committed()
     rows, frames = [], []
     top = committed.index.max()
-    for s_point, basis, heads in SHAPES:
+    for s_point, basis, guarantee, heads in SHAPES:
         twin = _label(committed, "twin", s_point, 0)
         age = YOUNGEST[basis]
         assert committed.at[twin, "mort_basis"] == basis, s_point
         for k in (0, 120):
             top += 1
-            row = committed.loc[[twin]].assign(annuitant_age=age, duration_mth=-k)
+            row = committed.loc[[twin]].assign(annuitant_age=age, duration_mth=-k,
+                                               guarantee_months=guarantee)
             if str(row["dependant_present"].iloc[0]) == "True":
                 row = row.assign(dependant_age=age)
             row.index = pd.Index([top], name="point_id")
             rows.append(row)
-            frames.append((top, 12 * (115 - age) + k, k, heads))
+            frames.append((top, max(12 * (115 - age), guarantee) + k, k, heads, s_point))
     return _sec_inputs(tmp_path, pd.concat(rows)), frames
 
 
@@ -1493,16 +1583,17 @@ def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path):
     how deep a call runs, against one cell a month back to ``t_entry()`` and
     :data:`CHAIN_OVERHEAD` more, with modelx's recursion limit where the module leaves it:
     each chain head of each of :data:`SHAPES`, in the last month of the frame, each on a
-    read of its own and called first.  At each shape's longest cover, every life issued at
-    the youngest age its basis projects, now and 120 months on (:func:`_longest_cover`);
-    each row's frame is asserted after.  The deepest, ``net_cf`` through the scenario
-    basis's payments to date at 1,380 months, 1,379 months back to ``t_entry()``, runs
-    1,387 cells, measured at M11: the longest chain the C step's stack must carry
-    (UKLIB-SEC-PLAN.md §6.7, *Risk*, which put it at about 1,510).
+    read of its own and called first.  At each shape's longest cover, 1,380 months from
+    the start, every life issued at the youngest age its basis projects, and on the table
+    basis a guarantee to that month, now and 120 months on (:func:`_longest_cover`); each
+    row's frame is asserted after.  Each shape's deepest call is its measure in
+    :data:`SHAPE_DEPTHS`, so that a shape left out, or a chain grown, fails here; the
+    deepest of all, :data:`DEEPEST_SHAPE`'s, is the longest chain the C step's stack must
+    carry (UKLIB-SEC-PLAN.md §6.7, *Risk*, which put it at about 1,510).
     """
     folder, frames = _longest_cover(tmp_path)
-    found, deepest = [], 0
-    for label, months, entry, heads in frames:
+    found, deepest = [], {}
+    for label, months, entry, heads, s_point in frames:
         for cell, extra in heads:
             fresh = mx.read_model(folder, name=_name("cold"))
             try:
@@ -1510,7 +1601,7 @@ def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path):
                 last = months - 1
                 args = (last, *(_code(p, a) if isinstance(a, str) else a for a in extra))
                 depth, chain = _cold_depth(p, cell, args), last - entry
-                deepest = max(deepest, depth)
+                deepest[s_point] = max(deepest.get(s_point, 0), depth)
                 assert (p.proj_len(), p.t_entry()) == (months, entry), label
                 if not chain <= depth <= chain + CHAIN_OVERHEAD:
                     found.append(f"point {label}: {cell}{args} cold runs {depth} cells "
@@ -1520,7 +1611,9 @@ def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path):
             finally:
                 fresh.close()
     assert not found, found
-    assert LONGEST - 1 <= deepest <= LONGEST - 1 + CHAIN_OVERHEAD, deepest
+    assert deepest == SHAPE_DEPTHS, deepest
+    assert max(deepest.values()) == deepest[DEEPEST_SHAPE] == DEEPEST
+    assert LONGEST - 1 <= DEEPEST <= LONGEST - 1 + CHAIN_OVERHEAD, DEEPEST
 
 
 # ---------------------------------------------------------------------------
@@ -1625,7 +1718,7 @@ def test_scaling_the_count_scales_every_flow_and_no_per_contract_value(sec_model
     try:
         for key, scaled_key in zip(point_keys(sec_model), point_keys(scaled)):
             one, many = projection(sec_model, key), projection(scaled, scaled_key)
-            sweep(one)
+            _sweep(one)
             for report in REPORTS:
                 b, d = one.cells[report](), many.cells[report]()
                 assert d.index.equals(b.index) and list(d.columns) == list(b.columns)
@@ -1709,7 +1802,7 @@ def test_a_point_restated_a_month_on_continues_its_own_flows(tmp_path):
                   for label, _ in pairs}
     finally:
         model.close()
-    assert len(pairs) == 10
+    assert len(pairs) == 11
     restated = mx.read_model(_sec_inputs(tmp_path / "on", pd.concat([table, *rows])),
                              name=_name("month_on"))
     restated.Projection.inflation_rate = 0.0
@@ -1911,8 +2004,16 @@ MALFORMED = [
      _rule("cum_annuity_pp_init", "a finite number, 0 or more", [14], PAID)),
     ("negative annuitant payments", _set("cum_annuity_pp_init", [21], -1.0),
      _rule("cum_annuity_pp_init", "a finite number, 0 or more", [21], PAID)),
+    ("an RPI income below the first year's", _set("annual_income_init", [14], 5000.0),
+     "{file}: annual_income_init must be annual_income or more on RPI-linked escalation, "
+     "whose income never falls below the first year's; it is not at point_id [14]"),
+    # Each window at both its ends: the start date's at duration_mth 0 and -120, the
+    # horizon; the first policy year's at 1 and 12.
     ("survival at the start of a contract not yet in payment",
      _set("lives_if_init_1", [20], 0.99), _start("lives_if_init_1", [20])),
+    ("survival at the start of a contract 120 months on",
+     _then(_set("duration_mth", [20], -120), _set("lives_if_init_1", [20], 0.99)),
+     _start("lives_if_init_1", [20])),
     ("a dead dependant at the start", _set("lives_if_init_2", [1], 0.0),
      _start("lives_if_init_2", [1])),
     ("payments before the start", _set("cum_annuity_all_init", [6], 10.0),
@@ -1923,11 +2024,18 @@ MALFORMED = [
      _start("rpi_peak_init", [6])),
     ("annuitant payments before the start", _set("cum_annuity_pp_init", [7], 1350.0),
      _start("cum_annuity_pp_init", [7])),
-    ("an RPI income in the first year other than the first",
+    ("an RPI income in the first month other than the first year's",
+     _then(_set("duration_mth", [15], 1), _set("annual_income_init", [15], 5562.0)),
+     _first_year("annual_income_init", [15])),
+    ("an RPI income in the twelfth month other than the first year's",
      _then(_set("duration_mth", [15], 12), _set("annual_income_init", [15], 5562.0)),
      _first_year("annual_income_init", [15])),
-    ("a peak in the first year other than 1",
-     _then(_set("duration_mth", [21], 7), _set("annual_income_init", [21], 5400.0),
+    ("a peak in the first month other than 1",
+     _then(_set("duration_mth", [21], 1), _set("annual_income_init", [21], 5400.0),
+           _set("rpi_peak_init", [21], 1.01)),
+     _first_year("rpi_peak_init", [21])),
+    ("a peak in the twelfth month other than 1",
+     _then(_set("duration_mth", [21], 12), _set("annual_income_init", [21], 5400.0),
            _set("rpi_peak_init", [21], 1.01)),
      _first_year("rpi_peak_init", [21])),
     ("a scenario annuitant alive after the death", _set("lives_if_init_1", [11], 1.0),
@@ -1967,9 +2075,9 @@ def test_a_malformed_in_force_row_is_refused_naming_its_point(malformed, case, e
     _refused(model.Data.model_point_table, message.format(file=files[case]))
 
 
-# The labels an extract carries: the committed points' in reverse, from 122 down, so that
+# The labels an extract carries: the committed points' in reverse, from 123 down, so that
 # a label is neither a position plus one nor in the order of the rows.
-EXTRACT_LABELS = tuple(range(122, 100, -1))
+EXTRACT_LABELS = tuple(range(123, 100, -1))
 
 
 def _relabelled(message, relabel):
@@ -2259,17 +2367,23 @@ def test_a_point_the_contract_does_not_issue_is_refused_by_proj_len(tmp_path, ca
 
 
 # Each Reference proj_len() holds to a domain, at both edges of it, as (case, the References
-# set, the point, the refusal, or None where proj_len() accepts them; proj_len's docstring
-# gives each domain's reason).  NaN and the infinities are outside every domain: PA_UK_S
-# reads several of them through a min or a max whose bound comes first, where a NaN is lost,
-# and the rest through a power.  A finite domain's upper edge is the largest float, accepted.
-# The integer References are whole numbers below 2**53, which the compiled model holds as
-# long long, printed through int() once whole: each is refused at a fraction and at exactly
-# 2**53.  Each is held on the points that read it: on every point, the expense and the
-# inflation, held on point 1; on the table basis the mortality References, on point 2; on
-# fixed escalation its cap, on point 1; on RPI-linked escalation rpi_rate, on points 6 and
-# 7; on lpi5 its cap, on point 7.  A point that does not read one projects whatever it is,
-# point 1 a NaN rpi_rate and a NaN annuitant_adj, point 2 a NaN esc_lpi_cap.
+# set, the point, the refusal, or None where proj_len() accepts them, and then the refusal
+# a report meets, or None where the reports project; proj_len's docstring gives each
+# domain's reason).  NaN and the infinities are outside every domain: PA_UK_S reads several
+# of them through a min or a max whose bound comes first, where a NaN is lost, and the rest
+# through a power.  A finite domain's upper edge is the largest float, accepted.  The
+# integer References are whole numbers below 2**53, which the compiled model holds as long
+# long, printed through int() once whole: each is refused at a fraction and at exactly
+# 2**53 either way, and read as a whole float too.  Each is held on the points that read
+# it: on every point, the expense and the inflation, held on point 1; on the table basis the
+# mortality References, on point 2; on fixed escalation its cap, on point 1; on RPI-linked
+# escalation rpi_rate, on points 6 and 7; on lpi5 its cap, on point 7.  A point that does not
+# read one projects whatever it is, point 1 a NaN rpi_rate and a NaN annuitant_adj, point 2
+# a NaN esc_lpi_cap.  Every accepted edge's reports are projected: an edge that takes a
+# value past the floats is refused where that value first is, naming the References (the
+# PAST_FLOATS cases below), and a fixed escalation's cap of 0 is the contract's own refusal
+# of a 3% escalation.  omega_age's upper edge would size a frame of 2**53 years, which no
+# machine projects, so it is projected at 120.
 BIG = 1.7976931348623157e308
 WHOLE = 2.0 ** 53
 BELOW_0 = math.nextafter(0.0, -1.0)
@@ -2278,31 +2392,41 @@ ABOVE_MINUS_1 = math.nextafter(-1.0, 0.0)
 BELOW_1 = math.nextafter(1.0, 0.0)
 
 
-def _domain(ref, rule, point, accepted, refused):
-    """The DOMAINS cases of ``ref`` on ``point``: each of ``accepted`` projects, each of
-    ``refused`` is refused by the domain's ``rule``, and NaN and the infinities by it
-    too."""
+def _domain(ref, rule, point, accepted, refused, reports=None):
+    """The DOMAINS cases of ``ref`` on ``point``: each of ``accepted`` projects, or meets
+    the report refusal ``reports`` gives it, and each of ``refused`` is refused by the
+    domain's ``rule``, and NaN and the infinities by it too."""
     message = f"point_id {point}: {ref} must be {rule}, not {{}}"
-    cases = [(f"{ref}={value!r} on {point}", {ref: value}, point, None)
+    reports = reports or {}
+    cases = [(f"{ref}={value!r} on {point}", {ref: value}, point, None, reports.get(value))
              for value in accepted]
     return cases + [(f"{ref}={value!r} on {point}", {ref: value}, point,
-                     message.format(float(value)))
+                     message.format(float(value)), None)
                     for value in (*refused, math.nan, math.inf, -math.inf)]
 
 
-def _whole_domain(ref, point, accepted, below=True):
+def _whole_domain(ref, point, accepted, below=True, reports=None):
     """The DOMAINS cases of an integer Reference: a whole number below 2**53, and 0 or more
-    where ``below``, printed through int() once whole."""
+    where ``below``, printed through int() once whole; each of ``accepted`` projects, or
+    meets the report refusal ``reports`` gives it."""
     whole = f"point_id {point}: {ref} must be a whole number below 2**53, not {{}}"
-    cases = [(f"{ref}={value!r} on {point}", {ref: value}, point, None)
+    reports = reports or {}
+    cases = [(f"{ref}={value!r} on {point}", {ref: value}, point, None, reports.get(value))
              for value in accepted]
     if below:
         cases.append((f"{ref}=-1 on {point}", {ref: -1}, point,
-                      f"point_id {point}: {ref} must be 0 or more, not -1"))
+                      f"point_id {point}: {ref} must be 0 or more, not -1", None))
     return cases + [(f"{ref}={value!r} on {point}", {ref: value}, point,
-                     whole.format(float(value)))
-                    for value in (0.5, 2023.5, WHOLE, 1e300, math.nan, math.inf,
+                     whole.format(float(value)), None)
+                    for value in (0.5, 2023.5, WHOLE, -WHOLE, 1e300, math.nan, math.inf,
                                   -math.inf)]
+
+
+def _improvement_past(rate, k, base, year):
+    """The refusal of an improvement factor past the floats at point 2's month 0."""
+    return (f"point_id 2: the improvement factor improve_factor(0, 1) is past the largest "
+            f"float, (1 - {rate}) to the power {k}, under improve_rate_base {float(base)} "
+            f"and mort_table_year {int(year)}")
 
 
 OMEGA_TABLE = ("point_id 2: omega_age must be at most 116, a year past mort_table.csv's "
@@ -2310,37 +2434,50 @@ OMEGA_TABLE = ("point_id 2: omega_age must be at most 116, a year past mort_tabl
 DOMAINS = [
     *_domain("expense_maint", "a finite number, 0 or more", 1, (0.0, BIG), (BELOW_0,)),
     *_domain("inflation_rate", "a finite number, -1 or more", 1, (-1.0, BIG),
-             (BELOW_MINUS_1,)),
+             (BELOW_MINUS_1,),
+             {BIG: f"point_id 1: the expense expenses(12) is inf, not a finite number, under "
+                   f"expense_maint 30.0 and inflation_rate {BIG}"}),
     *_domain("annuitant_adj", "a finite number, 0 or more", 2, (0.0, BIG), (BELOW_0,)),
-    *_domain("improve_rate_base", "a finite number below 1", 2, (-BIG, BELOW_1), (1.0,)),
+    *_domain("improve_rate_base", "a finite number below 1", 2, (-BIG, BELOW_1), (1.0,),
+             {-BIG: _improvement_past(-BIG, 3, -BIG, 2023)}),
     *_domain("improve_flat_age", "a finite number", 2, (-BIG, BIG), ()),
     *_domain("improve_taper_age", "a finite number", 2, (-BIG, BIG), ()),
-    *_whole_domain("mort_table_year", 2, (0, 2023, WHOLE - 1), below=False),
+    *_whole_domain("mort_table_year", 2, (0, 2023, 2023.0, WHOLE - 1, 1 - WHOLE),
+                   below=False,
+                   reports={WHOLE - 1: _improvement_past(0.0125, 2026 - int(WHOLE - 1),
+                                                         0.0125, WHOLE - 1)}),
     *_domain("esc_fixed_cap", "a finite number, 0 or more", 1, (0.03, BIG),
              (BELOW_0,)),
-    ("esc_fixed_cap=0.0 on 1", {"esc_fixed_cap": 0.0}, 1, None),
+    ("esc_fixed_cap=0.0 on 1", {"esc_fixed_cap": 0.0}, 1, None,
+     "fixed escalation exceeds the contractual cap"),
     *_domain("rpi_rate", "a finite number above -1", 7, (ABOVE_MINUS_1, BIG), (-1.0,)),
-    *_domain("rpi_rate", "a finite number above -1", 6, (ABOVE_MINUS_1, BIG), (-1.0,)),
+    *_domain("rpi_rate", "a finite number above -1", 6, (ABOVE_MINUS_1, BIG), (-1.0,),
+             {BIG: f"point_id 6: the income annual_income(2) is inf, not a finite number, "
+                   f"under rpi_rate {BIG}, annual_income_init 5400.0 and rpi_peak_init "
+                   f"1.0"}),
     *_domain("esc_lpi_cap", "a finite number, 0 or more", 7, (0.0, BIG), (BELOW_0,)),
-    *_whole_domain("issue_age_min", 1, (0,)),
+    *_whole_domain("issue_age_min", 1, (0, 0.0)),
     ("issue_age_min=2**53-1 on 1", {"issue_age_min": WHOLE - 1}, 1,
-     f"point_id 1: life 1's issue age, 65, is below issue_age_min, {int(WHOLE - 1)}"),
-    *_whole_domain("omega_age", 1, (115, 116, 2000), below=False),
+     f"point_id 1: life 1's issue age, 65, is below issue_age_min, {int(WHOLE - 1)}", None),
+    *_whole_domain("omega_age", 1, (115, 115.0, 116, 120), below=False),
     ("omega_age=0 on 1", {"omega_age": 0}, 1,
-     "point_id 1: omega_age must be above issue_age_min, 0, not 0"),
+     "point_id 1: omega_age must be above issue_age_min, 0, not 0", None),
     ("omega_age=-5 on 1", {"omega_age": -5}, 1,
-     "point_id 1: omega_age must be above issue_age_min, 0, not -5"),
-    ("omega_age=116 on 2", {"omega_age": 116}, 2, None),
-    ("omega_age=117 on 2", {"omega_age": 117}, 2, OMEGA_TABLE.format(117)),
-    ("rpi_rate=nan on 1", {"rpi_rate": math.nan}, 1, None),
-    ("annuitant_adj=nan on 1", {"annuitant_adj": math.nan}, 1, None),
-    ("esc_lpi_cap=nan on 6", {"esc_lpi_cap": math.nan}, 6, None),
-    ("esc_fixed_cap=nan on 7", {"esc_fixed_cap": math.nan}, 7, None),
+     "point_id 1: omega_age must be above issue_age_min, 0, not -5", None),
+    ("omega_age=116 on 2", {"omega_age": 116}, 2, None, None),
+    ("omega_age=116.0 on 2", {"omega_age": 116.0}, 2, None, None),
+    ("omega_age=117 on 2", {"omega_age": 117}, 2, OMEGA_TABLE.format(117), None),
+    ("rpi_rate=nan on 1", {"rpi_rate": math.nan}, 1, None, None),
+    ("annuitant_adj=nan on 1", {"annuitant_adj": math.nan}, 1, None, None),
+    ("esc_lpi_cap=nan on 6", {"esc_lpi_cap": math.nan}, 6, None, None),
+    ("esc_fixed_cap=nan on 7", {"esc_fixed_cap": math.nan}, 7, None, None),
 ]
 
 
-@pytest.mark.parametrize("case, refs, point, message", DOMAINS, ids=[c[0] for c in DOMAINS])
-def test_each_reference_is_held_to_its_domain_at_both_edges(case, refs, point, message):
+@pytest.mark.parametrize("case, refs, point, message, report", DOMAINS,
+                         ids=[c[0] for c in DOMAINS])
+def test_each_reference_is_held_to_its_domain_at_both_edges(case, refs, point, message,
+                                                            report):
     """``proj_len()`` holds each Reference to its domain, NaN and the infinities outside it.
 
     ``PA_UK_S`` reads ``rpi_rate`` through the LPI's floor, ``max(0, rpi_rate)``, its bound
@@ -2351,19 +2488,77 @@ def test_each_reference_is_held_to_its_domain_at_both_edges(case, refs, point, m
     an infinity as certain death, and the improvement's power; and the integer References in
     comparisons a NaN switches off, the limiting age sizing every frame.  The frame refuses
     each such Reference, by name, before it projects anything, and every report with it, at
-    the nearest value outside each edge of its domain, and accepts the edge itself
-    (:data:`DOMAINS`), on the points that read it; a point that does not read it projects
-    whatever it is.  Each case sets its References on a model just read (K7).
+    the nearest value outside each edge of its domain (:data:`DOMAINS`), on the points that
+    read it; a point that does not read it projects whatever it is.  And the frame accepts
+    each edge, whose reports then project, in finite floats over the whole frame, but where
+    the edge takes a value past the floats, which is refused where it first is, naming the
+    References, or where the contract refuses it.  A whole float, ``115.0``, reads as the
+    whole number.  Each case sets its References on a model just read (K7).
     """
     model = mx.read_model(model_path(SEC), name=_name("domain"))
     try:
         for ref, value in refs.items():
             setattr(model.Projection, ref, value)
         p = _row(model, "twin", point, 0)
-        if message is None:
-            assert p.proj_len() > 0
-        else:
+        if message is not None:
             _refused(p.result_cf, message)
+        elif report is not None:
+            assert p.proj_len() > 0
+            _refused(p.result_cf, report)
+        else:
+            frames = [p.cells[name]() for name in REPORTS]
+            for frame in frames:
+                assert list(frame.index) == list(range(p.proj_len()))
+                assert np.isfinite(frame.to_numpy(dtype=float)).all(), case
+    finally:
+        model.close()
+
+
+# A value a power or a product makes past the floats from References each inside its
+# domain, as (case, the References set, the point, the refusal), each where it first is:
+# the inflation factor at the second anniversary of the valuation date, where 1e200 squared
+# leaves them; the expense at the anniversary where an inflation of 50% takes the largest
+# float's expense past them, the factor still finite; the catch-up's index at its second
+# anniversary under an RPI of 1e200, its first year's income still finite; and the
+# improvement factor in month 0, under a rate of -1e200, or of 0.999999 with the table's
+# year 74 years after the contract's (UKLIB-SEC-PLAN.md §6.7; the M11 review).
+PAST_FLOATS = [
+    ("an inflation of 1e200", {"inflation_rate": 1e200}, 1,
+     "point_id 1: the inflation factor inflation_factor(24) is past the largest float, "
+     "under inflation_rate 1e+200"),
+    ("the largest expense, inflating 50% a year", {"expense_maint": BIG,
+                                                   "inflation_rate": 0.5}, 1,
+     f"point_id 1: the expense expenses(84) is inf, not a finite number, under "
+     f"expense_maint {BIG} and inflation_rate 0.5"),
+    ("an RPI of 1e200 on the catch-up", {"rpi_rate": 1e200}, 6,
+     "point_id 6: the index rpi_index(2) is past the largest float, under rpi_rate 1e+200"),
+    ("an improvement of -1e200", {"improve_rate_base": -1e200}, 2,
+     _improvement_past(-1e200, 3, -1e200, 2023)),
+    ("an improvement of 0.999999 from 2100", {"improve_rate_base": 0.999999,
+                                              "mort_table_year": 2100}, 2,
+     _improvement_past(0.999999, -74, 0.999999, 2100)),
+]
+
+
+@pytest.mark.parametrize("case, refs, point, message", PAST_FLOATS,
+                         ids=[c[0] for c in PAST_FLOATS])
+def test_a_power_past_the_floats_is_refused_where_it_first_is(case, refs, point, message):
+    """A power or a product past the floats is refused where it first is, by name (§6.7).
+
+    Each Reference of :data:`PAST_FLOATS` is inside its domain, and the frame reads, but
+    the value it makes leaves the floats in some month: Python's power raises
+    ``OverflowError`` there, naming no point and no Reference, and a product, or C's power,
+    gives an infinity, which the flows would carry on silently.  The cell refuses it in the
+    month it first is, naming the point and the References that made it, and so does every
+    report that reads it.  Each case sets its References on a model just read (K7).
+    """
+    model = mx.read_model(model_path(SEC), name=_name("past"))
+    try:
+        for ref, value in refs.items():
+            setattr(model.Projection, ref, value)
+        p = _row(model, "twin", point, 0)
+        assert p.proj_len() > 0
+        _refused(p.result_cf, message)
     finally:
         model.close()
 
@@ -2454,21 +2649,26 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
     back as the int the policy clock counts in; an annuity starting 120 months after the
     valuation date, the shipped ``future_horizon_mth``, is the last one the table admits,
     with a frame of 756 months, 636 from its start after 120 before it.  A row valued in its
-    first month, 1, holds each life's survival and a payment to date.  And each bound of the
-    contract at its edge projects: issue at 0, the youngest the contract allows, a frame of
-    1,380 months on the scenario basis, and a guarantee of exactly 1,380 months, the longest
-    frame from the start.
+    first month, 1, holds each life's survival and a payment to date.  Just past the first
+    policy year, in month 13, an RPI-linked row holds the income and the peak its history
+    gives, which the first year's rule no longer reads.  And each bound of the contract at
+    its edge projects: issue at 0, the youngest the contract allows, a frame of 1,380 months
+    on the scenario basis, and a guarantee of exactly 1,380 months, the longest frame from
+    the start.
     """
     committed = _committed()
     last = _label(committed, "derived", 2, 635)
     future = _label(committed, "future", 6, -13)
     first = _label(committed, "derived", 2, 101)
+    capped = _label(committed, "derived", 7, 42)
+    frozen = _label(committed, "derived", 6, 60)
 
     def edit(table):
         table = _set("policy_count", [last], 0.0)(table)
         table = table.assign(duration_mth=table["duration_mth"].astype(float))
         table = _set("duration_mth", [future], -120.0)(table)
         table = _set("duration_mth", [first], 1.0)(table)
+        table = _set("duration_mth", [capped, frozen], 13.0)(table)
         table = _set("annuitant_age", [1], 0)(table)
         table = _set("dependant_age", [1], 0)(table)
         return _set("guarantee_months", [3], 1380)(table)
@@ -2488,6 +2688,13 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
         assert (late.t_entry(), late.proj_len(), late.pols_new_biz(120)) == (120, 756, 1.0)
         one = _point(model, first)
         assert one.duration_mth_init() == 1 and one.cum_annuity_all_init() > 0.0
+        for label in (capped, frozen):
+            p13 = _point(model, label)
+            assert p13.duration_mth_init() == 13 and p13.policy_year_init() == 2, label
+            assert p13.annual_income_init() == committed.at[label, "annual_income_init"]
+            assert len(p13.result_cf()) == 636 - 13, label
+        assert _point(model, frozen).rpi_peak_init() == committed.at[frozen,
+                                                                     "rpi_peak_init"]
         assert len(_point(model, 1).result_cf()) == 1380
         assert len(_point(model, 3).result_cf()) == 1380
         for point in (1, 3):
@@ -2585,17 +2792,20 @@ def test_every_state_s_reaches_is_accepted_in_force(s_model, spliced, tmp_path):
 
     * S as shipped, its ten points under its own References, as T1 and the committed rows
       read it (``s_model``);
-    * the splice's shipped set, its points and twelve variants;
-    * the RPI sets, the RPI points under 8% and under -2%, where the income and both
-      payments to date move, and under -2% the peak, and nothing else does.
+    * the splice's shipped set, its points and sixteen variants;
+    * the RPI sets, the RPI points and the fixed point beside them under 8% and under -2%,
+      where the RPI points' income and both payments to date move, and under -2% the peak,
+      and nothing else does: the fixed point's states, compared with S's as shipped, move
+      with no RPI.
 
     Expense inflation moves no state, and the mortality basis's References move the lives
     and the payments alike on every point, so neither is run.
     """
     sets = {"shipped": (s_model, {}, None),
             "spliced": (spliced.pair("shipped")[0], SPLICE_SETS["shipped"], None),
-            "rpi_high": (spliced.pair("rpi_high")[0], SPLICE_SETS["rpi_high"], RPI_POINTS),
-            "rpi_low": (spliced.pair("rpi_low")[0], SPLICE_SETS["rpi_low"], RPI_POINTS)}
+            "rpi_high": (spliced.pair("rpi_high")[0], SPLICE_SETS["rpi_high"],
+                         RPI_SET_POINTS),
+            "rpi_low": (spliced.pair("rpi_low")[0], SPLICE_SETS["rpi_low"], RPI_SET_POINTS)}
     found, states, set_aside = {}, {}, {}
     for tag, (s, refs, points) in sets.items():
         s_table = s.Data.model_point_table()
@@ -2818,6 +3028,27 @@ def test_the_committed_sec_inputs_are_what_s_generates(s_model):
 # The product's own facts
 
 
+def test_the_payments_on_every_stream_are_one_total_before_the_valuation_date(sec_model):
+    """``cum_annuity_pp(k, "ALL")`` refuses a key before the valuation date (§6.7, *E*).
+
+    The payments to date on every stream are the opening state's one total,
+    ``cum_annuity_all_init``, so a key before the valuation date's policy time has no value
+    here: the worked example in payment 17 months reads its total at policy time 17, the
+    column, and later keys from the valuation clock, and refuses policy time 16, naming the
+    point and the column, where :mod:`~.PA_UK_S` would sum a schedule this model does not
+    carry.  A key at or before 0 is 0, as in ``PA_UK_S``.
+    """
+    old = _row(sec_model, "derived", 1, 17)
+    label = _label(sec_model.Data.model_point_table(), "derived", 1, 17)
+    assert old.cum_annuity_pp(17, "ALL") == old.cum_annuity_all_init() == 6790.5
+    assert old.cum_annuity_pp(20, "ALL") == old.cum_annuity_all(3)
+    assert old.cum_annuity_pp(0, "ALL") == 0.0
+    _refused(lambda: old.cum_annuity_pp(16, "ALL"),
+             f"point_id {label}: cum_annuity_pp(16, 'ALL') is before the valuation date, "
+             f"policy time 17, where the payments to date are cum_annuity_all_init, one "
+             f"total")
+
+
 def test_the_two_clocks_on_the_shipped_points(sec_model):
     """``t`` counts from the valuation date; ``duration_mth(t)`` from the start (D3, D4).
 
@@ -2883,12 +3114,13 @@ def test_the_committed_rows_continue_their_s_points(sec_model, s_model):
 
 
 def test_the_rows_read_under_an_rpi_of_their_own_continue_s_under_it(sec_model):
-    """The two committed rows S reaches only under an RPI of its own are S's under it (C2).
+    """The three committed rows S reaches only under an RPI of its own are S's under it (C2).
 
     At ``PA_UK_S``'s flat 3% no state holds a ratchet's peak above its index, nor an LPI
-    increase capped, so the spec restates the catch-up point at its month 60 from S run
-    under an RPI of -2%, and the LPI point at its month 42 from S under 8% (the spec's
-    ``derived_refs``), and C2 freezes both.  Three things are held of each:
+    increase capped or floored, so the spec restates the catch-up point at its month 60
+    from S run under an RPI of -2%, the LPI point at its month 42 from S under 8%, and the
+    LPI point at its month 54 from S under -2% (the spec's ``derived_refs``), and C2
+    freezes all three.  Three things are held of each:
 
     * the row is S's state under that RPI: S read under it holds, at the row's month, the
       row's count, survival, payments to date, income, peak and annuitant's payments;
@@ -2925,7 +3157,7 @@ def test_the_rows_read_under_an_rpi_of_their_own_continue_s_under_it(sec_model):
                     sp.rpi_peak(year - 1) / sp.rpi_index(year - 1), rel=1e-12)
             assert row.cum_annuity_pp_init() == pytest.approx(
                 sp.cum_annuity_pp(month, "ANNUITANT"), rel=1e-12)
-            _sweep_s(sp)
+            _sweep(sp)
             assert _continues_s(sp, _point(sec, label), month) == []
             for t in range(row.proj_len()):
                 for cell in ("pols_if", "certain_floor"):
@@ -3020,6 +3252,50 @@ def test_the_rpi_linked_income_is_read_from_the_model_point(sec_model, tmp_path)
         assert p.annuity_pp(2) == pytest.approx(6000.0 * 1.03 / 4, rel=1e-12)
     finally:
         model.close()
+
+
+# The LPI rows read from S under an RPI of their own, by (S point, month): above the cap,
+# and below the floor (the spec's derived_refs).  Projected under that RPI from the
+# valuation date, each year's income is the column's times (1 + step)^n, the step the cap,
+# 5%, under 8%, and the floor, 0, under -2%: 6,251.18 rises to 6,563.73 and on to 7,978.26
+# in five years, and 5,400.00 stays 5,400.00.
+LPI_BOUNDS = {(7, 42): (0.08, 0.05, 6251.175, (6563.73375, 6891.9204375, 7236.516459375,
+                                               7598.34228234375, 7978.2593964609375)),
+              (7, 54): (-0.02, 0.0, 5400.0, (5400.0, 5400.0, 5400.0, 5400.0, 5400.0))}
+
+
+def test_the_lpi_rows_hold_the_cap_and_the_floor_under_their_own_rpi(sec_model):
+    """Each LPI row read under an RPI of its own, projected under it, meets its bound.
+
+    C2 projects every committed row at the shipped References, under which the LPI's step,
+    ``min(esc_lpi_cap, max(0, rpi_rate))``, is 3% on every row, so it freezes the history
+    the cap and the floor made, read from S under 8% and -2%, but neither bound itself.
+    Here each row is projected under the RPI it was read under (:data:`LPI_BOUNDS`), on a
+    model read for it: under 8% the cap holds each year's increase at 5%, and under -2%
+    the floor at 0, to the penny over five years, and the instalments follow, a quarter of
+    the year's income.  Dropping the cap, or the floor, fails here in the default run, as
+    the splice's RPI sets also see.
+    """
+    table = sec_model.Data.model_point_table()
+    for (s_point, month), (rpi, step, opening, goldens) in LPI_BOUNDS.items():
+        label = _label(table, "derived", s_point, month)
+        assert SPEC.derived_refs[(s_point, month)] == {"rpi_rate": rpi}
+        model = mx.read_model(model_path(SEC), name=_name("lpi_bounds"))
+        try:
+            model.Projection.rpi_rate = rpi
+            row = _point(model, label)
+            y0 = row.policy_year_init()
+            assert row.annual_income_init() == opening
+            incomes = [row.annual_income(y0 + n) for n in range(1, 6)]
+            assert incomes == pytest.approx(list(goldens), abs=0.005), (label, incomes)
+            assert incomes == pytest.approx([opening * (1.0 + step) ** n
+                                             for n in range(1, 6)], rel=1e-12)
+            first = 12 * y0 - month            # the first month of the year after y0's
+            paid = [t for t in range(first, first + 12) if row.is_payment_mth(t)]
+            assert paid and all(row.annuity_pp(t) == pytest.approx(goldens[0] / 4, abs=0.005)
+                                for t in paid), label
+        finally:
+            model.close()
 
 
 def test_the_income_is_taken_before_month_0s_anniversary(s_model, tmp_path):
@@ -3137,7 +3413,7 @@ def test_the_rpi_is_one_flat_rate_on_either_clock(sec_model, s_model):
     item 4).  On every RPI-linked committed row in payment the relative index is 1 at the
     latest anniversary, ``rpi_index(a0)``, and rises by the shipped 3% an anniversary from
     there; and on each such row read from S at the shipped RPI, the income of the year under
-    way and of the four after it is S's, to 1e-12.  The two rows read from S under an RPI of
+    way and of the four after it is S's, to 1e-12.  The three rows read from S under an RPI of
     their own carry history S's 3% does not make, which their own tests hold.
     """
     table = sec_model.Data.model_point_table()
@@ -3158,7 +3434,7 @@ def test_the_rpi_is_one_flat_rate_on_either_clock(sec_model, s_model):
         for year in range(p.policy_year_init(), p.policy_year_init() + 5):
             assert p.annual_income(year) == pytest.approx(s.annual_income(year),
                                                           rel=1e-12), (label, year)
-    assert linked == 4
+    assert linked == 5
 
 
 def test_expense_inflation_runs_on_the_valuation_clock(sec_model, s_model):
@@ -3344,23 +3620,31 @@ def test_a_nan_that_reaches_a_bound_stays_nan(bound, ref, s_point, calls):
 @pytest.mark.parametrize("check, resid", [
     ("check_lives_roll_fwd", "check_lives_roll_fwd_resid"),
     ("check_payment_factor", "check_payment_factor_resid")])
-def test_a_check_fails_a_residual_that_is_not_a_number(sec_model, check, resid):
+def test_a_check_fails_a_residual_that_is_not_a_number(check, resid):
     """Each check returns False where its residual is NaN (§7.1, item 11).
 
     A check is ``abs(resid) < tolerance`` over the frame, which no NaN passes, as
     ``PA_UK_S``'s is; but no input the frame accepts gives a NaN residual, so the residual's
     formula is replaced, on a model read for the test, by one that returns NaN in every
     month.  Then the check is the bool False on every committed point, where with its own
-    formula it is True.  A check that asked whether any residual was past its tolerance would
-    pass NaN.
+    formula it is True, as it is first shown on the worked example's twin and on the rated
+    life at 575, each released once read: the whole survival check is quadratic in the
+    frame, and the conventions run it on every point.  A check that asked whether any
+    residual was past its tolerance would pass NaN.
     """
     model = mx.read_model(model_path(SEC), name=_name("nan_resid"))
     try:
+        table = model.Data.model_point_table()
+        for kind, s_point, month in (("twin", 1, 0), ("derived", 8, 575)):
+            key = _row_key(model, kind, s_point, month)
+            assert projection(model, key).cells[check]() is True, (kind, s_point, month)
+            _release(model, key)
         model.Projection.cells[resid].formula = lambda t: float("nan")
-        for key in point_keys(model):
-            p, shipped = projection(model, key), projection(sec_model, key)
-            assert math.isnan(p.cells[resid](0)), key
-            assert shipped.cells[check]() is True and p.cells[check]() is False, key
+        for key, point_id in zip(point_keys(model), table.index):
+            p = projection(model, key)
+            assert math.isnan(p.cells[resid](0)), point_id
+            assert p.cells[check]() is False, point_id
+            _release(model, key)
     finally:
         model.close()
 
@@ -3565,7 +3849,7 @@ def test_run_sec_prints_a_point_and_the_block(sec_model):
     payment 17 months; point 13, the guarantee's point at 120, whose frame ends at the age
     stop; and point 20, to start 13 months on: each with the lines that say where its row
     came from and where it stands, which only the committed table's generator columns can
-    say.  And the block: a line for each of the 22 points, in table order, its first twelve
+    say.  And the block: a line for each of the 23 points, in table order, its first twelve
     rows, which must be the committed points' frames summed row by row, as this test sums
     them, and those frames summed into projection years, each year's ``pols_if`` the one of
     its first month.  Nothing else runs the runner on the committed table.
@@ -3710,35 +3994,53 @@ def test_no_cell_takes_a_default_but_the_claims_total():
     assert _defaulted(SEC) == ["claims"]
 
 
-# The texts a cell keyed by t may hold at stage "E": the kinds and the timings, which the C
-# step makes int References, as it did Term's, CI's and ULB's (R9).
+# The texts a computed cell may hold at stage "E", beside a column's name read off the
+# model point: the kinds and the timings, which the C step makes int References, as it did
+# Term's, CI's and ULB's (R9).
 CODES = frozenset({"VP", "PROP", "BEF_NB", "BEF_DECR", "ANNUITANT", "ALL"})
 
+# The cells the static check leaves to the C step, each an item of UKLIB-SEC-PLAN.md §6.7's
+# C list or a cell that stays Python: the reports and the checks; the label accessors, which
+# become reporting cells; the seven decodes, which read int columns once the text columns
+# are decoded; the claims total, left to right on int kinds; horizon_mths's list, one
+# comparison; and the one reader of the mortality table, an array read.
+STATIC_EXEMPT = {
+    "result_cf", "result_pols", "check_lives_roll_fwd", "check_payment_factor",
+    "check_guarantee_xor", "check_vp_bound", "model_point", "sex", "payment_timing",
+    "escalation_type", "vp_basis", "mort_basis", "is_arrears", "is_first_death",
+    "is_scenario", "is_level", "is_fixed", "is_lpi5", "is_rpi_catchup", "claims",
+    "horizon_mths", "mort_rate_base_at"}
 
-def test_no_monthly_cell_builds_a_python_object(sec_model):
-    """No cell keyed by ``t`` builds a tuple, a text or a generator but to raise (§6.7, *C*).
+
+def test_no_computed_cell_builds_a_python_object(sec_model):
+    """No computed cell builds a tuple, a text or a generator but to raise (§6.7, *C*).
 
     The C step's static check refuses a Python object in a computed cell, and turns
-    ``PA_UK_S``'s own into the C forms UKLIB-SEC-PLAN.md §6.7 lists: the claims total's
-    generator, ``horizon_mths``'s list, which takes no ``t``, the label accessors' text and
-    the text kinds and timings.  So that the C step restructures nothing beyond that list,
-    no ``Projection`` cell with a ``t`` parameter but ``claims``, the total, holds a tuple, a
-    list, a set, a dict, a comprehension, a generator or an f-string, or a text other than
-    a kind or a timing (:data:`CODES`), but inside a ``raise`` statement, read from the
-    source as the build reads it.
+    ``PA_UK_S``'s own into the C forms UKLIB-SEC-PLAN.md §6.7 lists (:data:`STATIC_EXEMPT`).
+    So that the C step restructures nothing beyond that list, no other ``Projection`` cell
+    holds a tuple, a list, a set, a dict, a comprehension, a generator or an f-string, or a
+    text other than a kind or a timing (:data:`CODES`) or the name of a column it reads off
+    ``model_point()``, but inside a ``raise`` statement, read from the source as the build
+    reads it.  ``try`` is allowed: a power that leaves the floats raises Python's
+    ``OverflowError``, which the cell names.  Every cell of the Space is read, and every
+    exemption is a cell of it.
     """
     source = (model_path(SEC) / "Projection" / "__init__.py").read_text(encoding="utf-8")
     built = (ast.Tuple, ast.List, ast.Set, ast.Dict, ast.GeneratorExp, ast.ListComp,
-             ast.SetComp, ast.DictComp, ast.JoinedStr)
-    found, monthly = [], []
+             ast.SetComp, ast.DictComp, ast.JoinedStr, ast.Lambda)
+    found, read = [], set()
     for node in ast.parse(source).body:
-        if not isinstance(node, ast.FunctionDef) or node.name == "claims":
+        if not isinstance(node, ast.FunctionDef):
             continue
-        if "t" not in [arg.arg for arg in node.args.args]:
+        read.add(node.name)
+        if node.name in STATIC_EXEMPT:
             continue
-        monthly.append(node.name)
         raises = {id(n) for r in ast.walk(node) if isinstance(r, ast.Raise)
                   for n in ast.walk(r)}
+        columns = {id(n) for s in ast.walk(node)
+                   if isinstance(s, ast.Subscript) and isinstance(s.value, ast.Call)
+                   and getattr(s.value.func, "id", None) == "model_point"
+                   for n in ast.walk(s.slice)}
         body = node.body[1:] if ast.get_docstring(node) is not None else node.body
         for inner in (n for statement in body for n in ast.walk(statement)):
             if id(inner) in raises:
@@ -3746,11 +4048,11 @@ def test_no_monthly_cell_builds_a_python_object(sec_model):
             if isinstance(inner, built):
                 found.append(f"{node.name}: {type(inner).__name__} at line {inner.lineno}")
             elif (isinstance(inner, ast.Constant) and isinstance(inner.value, str)
-                  and inner.value not in CODES):
+                  and inner.value not in CODES and id(inner) not in columns):
                 found.append(f"{node.name}: the text {inner.value!r} at line "
                              f"{inner.lineno}")
-    assert set(monthly) == {name for name, cells in sec_model.Projection.cells.items()
-                            if "t" in cells.parameters} - {"claims"}
+    assert read == set(sec_model.Projection.cells)
+    assert STATIC_EXEMPT <= read
     assert not found, found
 
 

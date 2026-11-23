@@ -1770,15 +1770,20 @@ SEC_SPECS: dict[str, SecSpec] = {
     # policy years -1 and 0, where a missing guard would show.  T2's splice grid is built
     # from this spec in a temporary table, not committed.
     #
-    # And two rows S reaches only under an RPI of their own (derived_refs).  At the shipped
-    # flat 3% the index never falls, so no state S reaches holds a ratchet's peak above its
-    # index, nor an LPI increase capped, and C2 would freeze neither path.  So the catch-up
-    # point is restated at S month 60, its fifth anniversary in month 0, from S run under an
-    # RPI of -2%: its income frozen at the first year's and its peak 1 / 0.98^4 over the
-    # latest index, so that at the shipped 3% from the valuation date its income stays
-    # frozen through two anniversaries and catches up at the third.  And the LPI point at
-    # S month 42 from S run under 8%: its income raised by the cap's 5% a year, where the
-    # shipped 3% would have raised it by 3%.
+    # And three rows S reaches only under an RPI of their own (derived_refs).  At the
+    # shipped flat 3% the index never falls, so no state S reaches holds a ratchet's peak
+    # above its index, nor an LPI increase capped or floored, and C2 would freeze no such
+    # history.  So the catch-up point is restated at S month 60, its fifth anniversary in
+    # month 0, from S run under an RPI of -2%: its income frozen at the first year's and its
+    # peak 1 / 0.98^4 over the latest index, so that at the shipped 3% from the valuation
+    # date its income stays frozen through two anniversaries and catches up at the third.
+    # The LPI point at S month 42 from S run under 8%: its income raised by the cap's 5% a
+    # year, where the shipped 3% would have raised it by 3%.  And the LPI point at S month
+    # 54 from S run under -2%: its income held at the first year's by the floor.  C2
+    # projects every row at the shipped References, under which the LPI's step is 3% on
+    # every row, so it freezes the cap's and the floor's history, not the bounds
+    # themselves; test_pension_annuity_uk_sec.py projects the two LPI rows under their own
+    # RPI, where each bound binds.
     #
     # T1 holds on PA at any count: neither model charges acquisition, and every flow is the
     # count times a per-contract amount.  It skips one S cell besides the default three:
@@ -1806,7 +1811,8 @@ SEC_SPECS: dict[str, SecSpec] = {
         state=_PA_STATE,
         twin_state={c: f for c, f in _PA_STATE.items() if c != "policy_count"},
         exempt=frozenset({"result_pols"}),
-        derived_refs={(6, 60): {"rpi_rate": -0.02}, (7, 42): {"rpi_rate": 0.08}},
+        derived_refs={(6, 60): {"rpi_rate": -0.02}, (7, 42): {"rpi_rate": 0.08},
+                      (7, 54): {"rpi_rate": -0.02}},
     ),
 }
 

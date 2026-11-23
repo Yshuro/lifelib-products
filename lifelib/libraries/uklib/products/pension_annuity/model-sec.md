@@ -112,9 +112,11 @@ block = pd.concat(frames).groupby(level="t").sum()
 
 On a point starting at `t = 0` the two clocks coincide, and the model computes what
 `PA_UK_S` computes: every cell the two models share agrees, but `pols_if_init()`, now the
-count already in payment at the valuation date, 0 for new business, `annual_income_init()`,
-now the income of the year under way at the valuation date, `PA_UK_S`'s first year's income
-being `annual_income_first()`, and `model_point()`, a row of another table.
+count already in payment at the valuation date, 0 for new business, and `model_point()`,
+a row of another table. `annual_income_init()` agrees too: it is now the income of the
+year under way at the valuation date, which on such a point is the first year's, the
+value `PA_UK_S`'s cell of that name returns, and which this model also gives as
+`annual_income_first()`.
 
 ## The in-force interface
 
@@ -133,7 +135,7 @@ over no month already run (UKLIB-SEC-PLAN.md K14, §9 item 5):
 | `duration_mth` | whole months | the valuation date | the months from the annuity start date: positive in payment, 0 for an annuity starting at the valuation date, `−k` for one to start `k` months later, with `k` at most 120 as shipped |
 | `lives_if_init_1`, `lives_if_init_2` | probabilities | the start of month 0, before any month-0 death | each covered life's probability of being alive, the annuitant's and the dependant's: 1 or 0 on a record, `PA_UK_S`'s `lives_if(d, life)` on a restated point; the dependant's 0 on a single life |
 | `cum_annuity_all_init` | pounds per contract, 0 or more | the start of month 0 | the instalments paid on every stream before the valuation date, the annuitant's, the guaranteed and the dependant's: what was paid on a record, the expectation on a restated point; last-survivor value protection nets it |
-| `annual_income_init` | pounds a year, 0 or more | the start of month 0, before any month-0 anniversary | read on RPI-linked escalation, `lpi5` and `rpi_catchup`: the income of the policy year under way, the increases the RPI has given since the start; on a point valued on an anniversary the year the anniversary closes, month 0 escalating it at the valuation date's RPI |
+| `annual_income_init` | pounds a year, `annual_income` or more | the start of month 0, before any month-0 anniversary | read on RPI-linked escalation, `lpi5` and `rpi_catchup`: the annuitant's income of the policy year under way, before the dependant's percentage, the scale the dependant is paid `δ` times of after the annuitant's death; the increases the RPI has given since the start, never below the first year's; on a point valued on an anniversary the year the anniversary closes, month 0 escalating it at the valuation date's RPI |
 | `rpi_peak_init` | a factor, 1 or more | the anniversary that opened the policy year under way | read on `rpi_catchup`: the ratchet's running peak of the reference index over the latest index, above 1 while the index stands below a past peak |
 | `cum_annuity_pp_init` | pounds per contract, 0 or more | the start of month 0 | read on RPI-linked escalation with value protection on the first death: the annuitant's as-if-alive instalments before the valuation date, which the first-death balance nets |
 
@@ -202,16 +204,24 @@ or a whole number, 0 or more; each survival a probability, the second 0 on a sin
 each state column in its domain where it is read; the start date's values on a point not
 yet in payment, and the first year's in the first policy year; and on the scenario basis
 each life's opening status its month of death's, alive while the death falls at the
-valuation month or later. `PA_UK_S` meets most of these only when a projection reaches
-them, and some never: `bool` reads a blank flag as True, `int()` truncates an age, a
-frequency, a guarantee, a start year and a month of death, and a negative month of death
-reads as a life that never dies (UKLIB-SEC-PLAN.md §6.7, *S defects found*).
+valuation month or later; and on RPI-linked escalation the income of the year under way
+is the first year's or more, the LPI's floor and the ratchet never letting it fall.
+`PA_UK_S` meets most of these only when a projection reaches them, and some never: `bool`
+reads a blank flag as True, `int()` truncates an age, a frequency, a guarantee, a start
+year and a month of death, and a negative month of death reads as a life that never dies
+(UKLIB-SEC-PLAN.md §6.7, *S defects found*). Each window a rule reads, the start date's to
+120 months on and the first policy year's, is held at both its ends. A column some points
+never read, such as a scenario point's rating or start year, is still held on every
+point, as `PA_UK_S`'s reader holds it; refusing it only where it is read is carried into
+the C step, where its refusal by point is reworked (USLIB-SEC-PLAN.md §7.12, M23).
 
 A contract at or past its stop rule, `duration_mth ≥ stop_mth()`, reads, but `proj_len()`
 refuses it, naming the point: the stop is the product's rule, not the table's. So does a
 contract owing nothing after the valuation date: in payment, its guarantee over and every
 covered life dead, its last payment made before the valuation date, which an in-force
-extract should not carry, as `SPIA_US_SEC` refuses it. So does a point the contract does
+extract should not carry, as `SPIA_US_SEC` refuses it. The rule reads the lives and the
+guarantee: a joint contract whose dependant is alive at a share of 0 projects, owing
+zeros, which is no wrong number. So does a point the contract does
 not issue: a life issued below `Projection.issue_age_min`, 0, since `PA_UK_S` projects any
 age on the scenario basis, a negative one among them; and a guarantee longer than
 `12 × (omega_age − issue_age_min)` months, 1,380, the longest frame from the start date.
@@ -238,13 +248,20 @@ that read it:
 
 Each check is a comparison written out, a finite bound the largest float and a whole one
 `2**53`, so that the compiled model runs it in C; the three integer References are printed
-through `int()` once they are whole, the others through `float()`. A value a formula
-computes past the floats from References and columns each in its domain is refused in the
-cell where it first is, naming what made it: the income, in `annual_income` and in the
-valuation date's loop in `annual_income_init`, under an escalation, an RPI or a history
-near the largest float; and the payments to date, in `cum_annuity_pp` and
-`cum_annuity_all`, where the value-protection balance, `max(0, vP − G)`, its bound first,
-would read an infinity as no balance. A loop over the block meets a refused row only when
+through `int()` once they are whole, the others through `float()`, and a whole float,
+`omega_age = 115.0`, is read as the whole number it is. Every accepted edge projects
+through its reports. A value a formula computes past the floats from References and
+columns each in its domain is refused in the cell where it first is, naming what made it,
+where Python's power would raise `OverflowError`, naming nothing, and a product or C's power
+would carry an infinity on: the income, in `annual_income` and in the valuation date's
+loop in `annual_income_init`, under an escalation, an RPI or a history near the largest
+float; the payments to date, in `cum_annuity_pp` and `cum_annuity_all`, where the
+value-protection balance, `max(0, vP − G)`, its bound first, would read an infinity as no
+balance; the three powers, the inflation factor under an `inflation_rate` of 1e200, the
+catch-up's index under an `rpi_rate` of 1e200 and the improvement factor under an
+`improve_rate_base` of −1e200, or of 0.999999 with `mort_table_year` 2100; and the
+maintenance, in `expenses`, where the largest `expense_maint` inflates past them. A loop
+over the block meets a refused row only when
 it reaches it, after projecting the points before it, so `run_sec.py --block` asks every
 point for its frame before it projects any, and stops before it prints anything.
 
@@ -282,6 +299,7 @@ reaches it or fails the suite. In the source repository,
 | 20 | future | S point 6, 13 months on | to start at `t = 13` |
 | 21 | derived | S point 6 at S month 60, S run under an `rpi_rate` of −2% | the catch-up frozen: an income of 5,400, a peak of 1.0841658 over the index, and 27,000 of the annuitant's instalments to date |
 | 22 | derived | S point 7 at S month 42, S run under an `rpi_rate` of 8% | the LPI capped at 5% each year: an income of 6,251.18 and 20,149.09 of the annuitant's instalments to date |
+| 23 | derived | S point 7 at S month 54, S run under an `rpi_rate` of −2% | the LPI held at its floor: an income of 5,400 and 24,300 of the annuitant's instalments to date |
 
 A derived row's `policy_count` is the count `PA_UK_S` weights every flow by, 1, which no
 decrement moves, and its state what S carries into that month, so the row continues the S
@@ -290,12 +308,18 @@ projection from there. Its `policy_id` is the S row's with the month appended,
 `t` of a generated point is month `t + source_mth` of its S point.
 
 No state `PA_UK_S` reaches at its flat 3% holds a ratchet's peak above the index, nor an
-LPI increase capped: a monotone index never leaves the peak above it, and 3% is inside the
-cap. So points 21 and 22 are read from S run under an RPI of its own, the spec's
-`derived_refs`, and C2 freezes both. Set on the model too, that RPI gives each row S's path
-over the whole of both frames; at today's 3%, which takes over from the valuation date, the
-income parts from S's at the row's next anniversary, and survival, the floors and the
-counts, which read no RPI, stay S's.
+LPI increase capped or floored: a monotone index never leaves the peak above it, and 3% is
+inside the cap and above the floor. So points 21, 22 and 23 are read from S run under an
+RPI of its own, the spec's `derived_refs`, and C2 freezes all three. Set on the model too,
+that RPI gives each row S's path over the whole of both frames; at today's 3%, which takes
+over from the valuation date, the income parts from S's at the row's next anniversary, and
+survival, the floors and the counts, which read no RPI, stay S's. C2 projects every row at
+the shipped References, under which the LPI's step is 3% on every row, so it freezes the
+history the cap and the floor made, not the bounds themselves; a test projects the two LPI
+rows under their own RPI, where the cap holds the increase at 5% and the floor at 0. A
+committed row is one of S's points restated, so a contract term S's table never holds,
+value protection apart from the dependant's share or on a single life, a dependant older
+than the annuitant, is the splice's alone.
 
 ## Counts and timings
 
@@ -330,11 +354,14 @@ policy time point, opens at the valuation date's key, `max(duration_mth_init(), 
 runs forward one cell a month from there. So a contract valued late in life reads its
 balance without recursing back to its start date, where `PA_UK_S`'s `G(k)` recurses from
 0. On a model just read, a cold call in the frame's last month runs at most 12 cells deeper
-than one a month back to `t_entry()`, at each shape's longest cover, every life issued at
-the youngest age its basis projects, now and 120 months on: on the scenario basis at 0,
-1,380 months from the start, where `net_cf` runs 1,387 cells deep through the payments to
-date, the deepest call a projection makes; on the table basis at 50, the table's first
-age, 780 months.
+than one a month back to `t_entry()`, at each shape's longest cover, 1,380 months from the
+start, now and 120 months on: on the scenario basis every life issued at 0, where `net_cf`
+runs 1,387 cells deep through the payments to date; on the table basis every life issued
+at 50, the table's first age, whose age stop at 780 months a guarantee of 1,380 months,
+which `proj_len()` accepts, carries to the longest frame. There `net_cf(1379)` runs 1,391
+cells deep through survival, on the worked example's table twin, the RPI points and the
+rated life alike: the deepest call a projection makes, which the C step measures its stack
+on.
 
 Cover is `is_active(t)`, `0 ≤ duration_mth(t) < stop_mth()`, started and short of the stop
 rule, and outside it, before the start and from the stop rule on, every count is zero, and
@@ -408,9 +435,10 @@ cover has one definition. Twenty-four cells are new, and none of `PA_UK_S`'s is 
 | `vp_balance` | keyed by S's time point | keyed by `t`: first death nets `cum_annuity_pp(duration_mth(t), "ANNUITANT")`, last survivor `cum_annuity_all(t)`; 0 before `t_entry()` | The balance on the valuation clock |
 | `annual_income_init`, `annual_income_first`, `policy_year_init`, new | `annual_income_init()`, the first year's income | `annual_income_first()`, the first year's; `annual_income_init()`, the year under way's, `policy_year_init()` | D6's name for the opening income |
 | `annual_income` | from `A(1)` at `y ≤ 1` | from `annual_income_init()` at `y₀`; refused past the floats | The income's history is the contract's |
-| `rpi_index`, `rpi_peak` | `(1 + r)^a`; the peak from `I(0)` | `(1 + r)^(a − a₀)`; the peak from `rpi_peak_init()` at `a₀` | Relative to the latest index, the peak carried in |
-| `inflation_factor` | `1.03^(policy_year(t) − 1)`, from the start | `1.03^(t // 12)`, from the valuation date | Unit costs in valuation-date pounds (D7) |
-| `mort_rate_base_at`, new; `mort_rate_base`, `improve_rate`, `improve_factor`, `mort_rate`, `lives_death`, the floors and factors | unguarded: no `PA_UK_S` frame has a month outside cover | zero outside cover, before any table or rate is read; the table read in one cell, its extents from `Data`, an age outside it refused by name | Before the start S's lookup raises `KeyError` |
+| `rpi_index`, `rpi_peak` | `(1 + r)^a`; the peak from `I(0)` | `(1 + r)^(a − a₀)`; the peak from `rpi_peak_init()` at `a₀`; the index refused past the floats | Relative to the latest index, the peak carried in |
+| `inflation_factor`, `expenses` | `1.03^(policy_year(t) − 1)`, from the start | `1.03^(t // 12)`, from the valuation date; each refused past the floats | Unit costs in valuation-date pounds (D7) |
+| `horizon_mths`, `payment_freq` | `12 × (omega_age − min x)`; a tuple of the four frequencies | `omega_age` read through `int()`; the four compared one by one | A whole float gives the int frame; no Python object in a computed cell |
+| `mort_rate_base_at`, new; `mort_rate_base`, `improve_rate`, `improve_factor`, `mort_rate`, `lives_death`, the floors and factors | unguarded: no `PA_UK_S` frame has a month outside cover | zero outside cover, before any table or rate is read; the table read in one cell, its extents from `Data`, an age outside it refused by name; the improvement factor refused past the floats | Before the start S's lookup raises `KeyError` |
 | `pols_if`, `pols_if_at`, `pols_new_biz`, `pols_if_init` | `pols_if_init() × min(1, …)` | `pols_if_at(t, "BEF_DECR") × min(1, …)`, 0 outside the frame | The count enters once, in payment or in its start month |
 | `result_pols` | `PA_UK_S`'s columns, `pols_if` last | `pols_if`, `pols_new_biz`, then `PA_UK_S`'s others in its order, 0 before the start | After `basiclife/BasicTerm_SE`'s `result_pols()` |
 | `is_arrears`, `is_scenario`, `is_first_death`, `is_level`, `is_fixed`, `is_lpi5`, `is_rpi_catchup`, new | the label accessors, compared as text | decodes of `timing`, `mort_basis`, `vp_basis` and `escalation_type`, each read and validated as its accessor is, raising its message | No projection cell compares text (UKLIB-SEC-PLAN.md §6.7, *C*) |
@@ -436,8 +464,9 @@ the start of the month dies in it; so S's point 8 owes nothing after policy mont
 
 - **The twin identity**, in `tests/test_model_conventions_uk.py`: on points 1 to 10, every
   cell of `PA_UK_S`'s agrees at every argument `PA_UK_S` evaluates in its own sweep, to
-  1e-9 relative with no absolute floor, but `pols_if_init`, `annual_income_init`,
-  `model_point` and `result_pols`, which the spec names with their reasons; a cell this
+  1e-9 relative with no absolute floor, but `pols_if_init`, `model_point` and
+  `result_pols`, the harness's two and the one the spec names, with their reasons;
+  `annual_income_init` is compared, and is the first year's income on a twin. A cell this
   model lacked would fail it. So `PA_UK_S`'s worked example, which
   `tests/test_pension_annuity_uk.py` asserts to the penny, holds here with no number
   restated. The same suite holds the model to the conventions every `_SEC` model meets:
@@ -454,16 +483,20 @@ the start of the month dies in it; so S's point 8 owes nothing after policy mont
   clock, and in both reports, to 1e-9 relative with no absolute floor but the residuals;
   the opening income is held to S's of the year under way, and the relative index and peak
   to S's over its index at the latest anniversary. Inflation, the one input on the
-  valuation clock, is 0 in both. Twelve variants of S's points, in a copy of S's table
+  valuation clock, is 0 in both. Sixteen variants of S's points, in a copy of S's table
   that is never committed, reach what S's own cannot: advance timing with value
-  protection on either basis, semi-annual and annual payments, the dependant dying first,
-  both lives dead with and without a guarantee, a guarantee past the age stop, a rated
-  joint life, the proportionate payment on the table basis and the RPI points without
-  first-death value protection; and the RPI points are spliced under RPIs of 8% and −2%,
-  where the LPI's cap and floor bind and the ratchet freezes. A core of 38 splice cases and
-  7 future ones runs by default, and the full grid with `UKLIB_SEC_FULL=1`; a test asserts
-  the core reaches every branch, opening-state column, kind of valuation month and side of
-  every `min` and `max` the full grid reaches.
+  protection on either basis, the last survivor's on the table basis, where a claim is
+  paid; semi-annual and annual payments; the dependant dying first; both lives dead with
+  and without a guarantee; a guarantee past the age stop; a rated joint life; the
+  proportionate payment on the table basis; the RPI points without first-death value
+  protection; value protection of 30% beside a dependant's 50%, and on a single life; a
+  dependant older than the annuitant; and a dependant's share of 0. The RPI points are
+  spliced under RPIs of 8% and −2%, where the LPI's cap and floor bind and the ratchet
+  freezes, and the worked example's table twin beside them, its fixed 3% apart from either
+  RPI. A core of 44 of the 378 splice cases and 7 of the 46 future ones runs by default,
+  and the full grid with `UKLIB_SEC_FULL=1`; a test asserts the core reaches every branch,
+  opening-state column, kind of valuation month and side of every `min` and `max` the full
+  grid reaches.
 - **Future new business**: starting 1 and 12 months after the valuation date, each S point
   is the S projection moved on, with zeros before the start and no rate evaluated there,
   and so is each variant starting a month on, the catch-up point 13 months on and the
@@ -472,35 +505,41 @@ the start of the month dies in it; so S's point 8 owes nothing after policy mont
   every monthly cell at every month, no cell has been called at a negative month, none on
   the books read a month before `t_entry()`, none read a month later than `t + 1`, none on
   RPI-linked escalation asked a year, an anniversary or a policy month before the valuation
-  date of the cells keyed on the policy clock, and none raised. On a fresh read of the
-  committed model, `duration_mth(500)` evaluates `duration_mth` once, the policy clock being
-  a closed form, and every point's reports and checks run under modelx's recursion limit
-  lowered to 40, which a recursion backward over the frame would exceed. Each chain, called
-  cold in the last month at each shape's longest cover, runs one cell a month back to
-  `t_entry()` and at most 16 more; the schedules at the valuation date's key are S's, bit
-  for bit, and a contract valued in its last month runs its reports within 8 cells.
+  date of the cells keyed on the policy clock, none raised, and every check holds, the
+  whole survival check among them. On a fresh read of the committed model,
+  `duration_mth(500)` evaluates `duration_mth` once, the policy clock being a closed form,
+  and every point's reports and checks run under modelx's recursion limit lowered to 40,
+  which a recursion backward over the frame would exceed. Each chain, called cold in the
+  last month at each shape's longest cover, runs one cell a month back to `t_entry()` and
+  at most 16 more, each shape's deepest as measured, 1,391 on the table basis's; the
+  schedules at the valuation date's key are S's, bit for bit, and a contract valued in
+  its last month runs its reports within 8 cells; and no computed cell outside §6.7's C
+  list holds a Python object.
 - **Counts**: the count is never decremented, `"BEF_NB"` a closed form, and `pols_if` the
   closing measure on it; `result_pols()` is S's report with `pols_new_biz` beside it;
   multiplying `policy_count` by 2.5 multiplies every flow and counted cell and moves no
   per-contract value, every flow nonzero on some point; and each point in payment, restated
   a month on with the state it carries there, continues its own flows.
-- **Validation and regeneration**: each malformed row of the table, 77 cases, is refused
+- **Validation and regeneration**: each malformed row of the table, 81 cases, is refused
   naming its point, on the committed labels and on an extract's; each text value no
   decode knows raises `PA_UK_S`'s message; the horizon is a Reference; a point at its
   stop, one owing nothing and one the contract does not issue are refused by
   `proj_len()`, each bound just past it and each moved past a committed point, and
   `run_sec.py --block` refuses such a point before printing anything; each of twelve
-  References is held to its domain, 97 cases, each edge accepted and the nearest value
-  past it refused, NaN, the infinities, a fraction and `2**53` too; the income and the
-  payments to date are refused where they would pass the floats; each mortality table a
+  References is held to its domain, 105 cases, each edge accepted and its reports
+  projected, and the nearest value past it refused, NaN, the infinities, a fraction,
+  `2**53` and a whole float too; the income, the payments to date, the three powers and
+  the maintenance are refused where they would pass the floats, naming the References;
+  each window of `Data`'s is held at both its ends; each mortality table a
   reader cannot read, 13 cases, is refused naming its lines, and a read beyond it naming
   the point; keys written as floats read as `PA_UK_S` reads them; the edges of the
   interface and of each bound are accepted; every state `PA_UK_S` reaches, as shipped,
   with the variants and under each RPI, is accepted in payment, but a contract owing
   nothing, which is refused; and the committed table is what `PA_UK_S` generates.
 - **The product's own facts**: the two clocks on the shipped points; the committed rows
-  continuing their S points at the shipped assumptions but for inflation, and the two read
-  under an RPI of their own continuing S under it; each history column read, not
+  continuing their S points at the shipped assumptions but for inflation, and the three
+  read under an RPI of their own continuing S under it, the two LPI rows projected under
+  it to the cap's and the floor's goldens; each history column read, not
   recomputed: survival and the payments to date kept under an `annuitant_adj` changed at
   the valuation date and written off S's path, the LPI's capped income and an income no
   flat RPI gives, the ratchet's catch-up with its own goldens, and the annuitant's payments
@@ -511,7 +550,8 @@ the start of the month dies in it; so S's point 8 owes nothing after policy mont
   the block; an extract without the generator's three columns, labelled otherwise,
   projecting the same numbers; `run_sec.py`'s numbers, for a point and for the block, and
   its sum, and its `--cython` stopping where no repository is above it; no cell's parameter
-  defaulted but the `claims` total's, and no monthly cell building a Python object; the
+  defaulted but the `claims` total's, and `cum_annuity_pp`'s total refused before the
+  valuation date; the
   docstrings, read through docutils as the docs build reads them where docutils is
   installed; and the shared input table.
 - **The cap**: on S's point 8 the rated rate passes 1 from policy month 576 to 599; in
@@ -520,6 +560,22 @@ the start of the month dies in it; so S's point 8 owes nothing after policy mont
   finite floats, on the twin and restated in payment the month before. A NaN sent to the
   cap, through `annuitant_adj`, stays NaN; and each check fails a residual that is not a
   number.
+
+Memory is the module's other cost. A swept point holds its cached values and modelx's
+record of what each read, and `PA_UK_S`'s survival check, which rebuilds survival as a
+product over every month before each time point, holds about 110 MB of that record on a
+point on the table basis. So the module's sweeps evaluate the check's residual at every
+25th time point and the frame's close, the whole check running on each splice row as it
+is scanned, released once read; the splice keeps two S points swept at a time. The
+default run peaks at 2.8 GB of memory, inside the 7 GB of the smallest CI runner, macOS's,
+and takes about five and a quarter minutes, 314 s on the shared 4-CPU machine (measured at
+M11): past the five minutes UKLIB-SEC-PLAN.md U6 budgets. Most of it is the core's 44
+splice cases, each scanned whole, and the cold-depth test, 37 s, which reads the model
+afresh for each of its 74 cold calls on frames of 1,380 and 1,500 months; then the 105
+domain cases, each on a model just read, every accepted edge projected. A cut would cost
+coverage: the core's cases are there for what the core-reach test asks of the core, and
+the depth test's table shapes alone hold the deepest chain, the one the C step measures
+its stack on.
 
 ```bash
 python -m pytest tests/test_pension_annuity_uk_sec.py -q

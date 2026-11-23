@@ -566,7 +566,10 @@ def policy_year_init():
 def annual_income_init():
     """A(y0): the annualized income of the policy year under way at the valuation instant.
 
-    The year is :func:`policy_year_init`, before any month-0 anniversary.  By basis:
+    The **annuitant's** income, before the dependant's percentage, as every year's
+    :func:`annual_income` is: on a contract whose annuitant has died it is still the
+    annuitant's scale, the dependant being paid ``delta`` times it.  The year is
+    :func:`policy_year_init`, before any month-0 anniversary.  By basis:
 
     * RPI-linked, ``lpi5`` or ``rpi_catchup``: the ``annual_income_init`` column, history.
       The increases given before the valuation date are facts of the contract, which no
@@ -600,10 +603,11 @@ def payment_freq():
     """m: payments per year, in {12, 4, 2, 1}.
 
     ``Data`` holds the column to a whole number, read by its value, which :mod:`~.PA_UK_S`
-    truncates with ``int``.
+    truncates with ``int``.  The four values are compared one by one, where
+    :mod:`~.PA_UK_S` builds a tuple of them, which a compiled cell cannot hold.
     """
     v = int(model_point()["frequency"])
-    if v not in (12, 4, 2, 1):
+    if v != 12 and v != 4 and v != 2 and v != 1:
         raise ValueError("invalid frequency")
     return v
 
@@ -1033,12 +1037,15 @@ def horizon_mths():
     policy month ``horizon_mths() - 1``.  The notes' other stop test, ``IF(t) < 1e-6``, is
     not implemented, because a stopping rule that depends on the projection it bounds is
     harder to reason about than one that does not.  The two-element list is
-    :mod:`~.PA_UK_S`'s, which the C step makes one comparison.
+    :mod:`~.PA_UK_S`'s, which the C step makes one comparison.  ``omega_age`` is read
+    through ``int()``, which :func:`proj_len` has held to a whole number, so that a whole
+    float, ``115.0``, gives the int frame every report counts its months in, as
+    ``Term_UK_SEC`` reads one.
     """
     ages = [age_at_entry(1)]
     if is_joint():
         ages.append(age_at_entry(2))
-    return 12 * (omega_age - min(ages))                              # noqa: F821
+    return 12 * (int(omega_age) - min(ages))                         # noqa: F821
 
 
 def proj_len():
@@ -1118,8 +1125,10 @@ def proj_len():
     compiled model will type it: ``issue_age_min``, ``omega_age`` and ``mort_table_year``
     through ``int()`` once they are whole numbers, and every other through ``float()``.  A
     value a formula computes past the floats, from References and columns each in its
-    domain, is refused in the cell where it first is: the income, in :func:`annual_income`,
-    and the payments to date, in :func:`cum_annuity_pp` and :func:`cum_annuity_all`.
+    domain, is refused in the cell where it first is: the income, in :func:`annual_income`
+    and :func:`annual_income_init`; the payments to date, in :func:`cum_annuity_pp` and
+    :func:`cum_annuity_all`; the three powers, :func:`inflation_factor`, :func:`rpi_index`
+    and :func:`improve_factor`; and the maintenance, in :func:`expenses`.
     """
     if not (issue_age_min > -9007199254740992.0                       # noqa: F821
             and issue_age_min < 9007199254740992.0                    # noqa: F821
@@ -1274,8 +1283,22 @@ def rpi_index(a):
     the zero floor, the catch-up ratchet or the LPI cap - all of them inflation options -
     and values them at intrinsic only; a market-consistent value needs stochastic
     inflation.  :func:`proj_len` holds ``rpi_rate`` above -1, where the level stays above 0.
+    A level past the largest float, which only an ``rpi_rate`` past every rate of inflation
+    makes, is refused at the anniversary it first is, naming the point and the Reference,
+    where Python's power raises ``OverflowError``, naming neither, and C's gives an
+    infinity.
     """
-    return (1.0 + rpi_rate) ** (a - (policy_year_init() - 1))        # noqa: F821
+    try:
+        index = (1.0 + rpi_rate) ** (a - (policy_year_init() - 1))   # noqa: F821
+    except OverflowError:
+        raise ValueError(
+            f"point_id {point_id}: the index rpi_index({a}) is past the largest float, "  # noqa: F821
+            f"under rpi_rate {float(rpi_rate)}") from None            # noqa: F821
+    if not index <= 1.7976931348623157e308:
+        raise ValueError(
+            f"point_id {point_id}: the index rpi_index({a}) is past the largest float, "  # noqa: F821
+            f"under rpi_rate {float(rpi_rate)}")                      # noqa: F821
+    return index
 
 
 def rpi_peak(a):
@@ -1493,12 +1516,31 @@ def improve_factor(t, life):
     (:func:`calendar_year`), and ``c0`` the base table's data mid-year, so the basis is
     **generational**: each attained age in each future calendar year carries its own
     improved rate, and a contract in payment reads the calendar years it reaches, whatever
-    the valuation date.  Zero outside the frame, before the calendar year is read.
+    the valuation date.  Zero outside the frame, before the calendar year is read.  A
+    factor past the largest float, which a negative rate far below any improvement makes,
+    or a rate near 1 with ``mort_table_year`` years after the contract's, is refused in the
+    month it first is, naming the point and the References, where Python's power raises
+    ``OverflowError``, naming neither, and C's gives an infinity.
     """
     if not is_active(t):
         return 0.0
     k = calendar_year(t) - mort_table_year                           # noqa: F821
-    return (1.0 - improve_rate(t, life)) ** k
+    rate = improve_rate(t, life)
+    try:
+        factor = (1.0 - rate) ** k
+    except OverflowError:
+        raise ValueError(
+            f"point_id {point_id}: the improvement factor improve_factor({t}, {life}) is "  # noqa: F821
+            f"past the largest float, (1 - {rate}) to the power {int(k)}, under "
+            f"improve_rate_base {float(improve_rate_base)} and mort_table_year "  # noqa: F821
+            f"{int(mort_table_year)}") from None                      # noqa: F821
+    if not factor <= 1.7976931348623157e308:
+        raise ValueError(
+            f"point_id {point_id}: the improvement factor improve_factor({t}, {life}) is "  # noqa: F821
+            f"past the largest float, (1 - {rate}) to the power {int(k)}, under "
+            f"improve_rate_base {float(improve_rate_base)} and mort_table_year "  # noqa: F821
+            f"{int(mort_table_year)}")                                # noqa: F821
+    return factor
 
 
 def mort_rate(t, life):
@@ -1905,9 +1947,22 @@ def inflation_factor(t):
     moved onto ``t``, so that the maintenance charge it inflates is in valuation-date
     pounds, whatever the contract's age, and every point of a block inflates alike,
     stepping on each anniversary of the valuation date.  On a point starting at ``t = 0``
-    the two are the same.
+    the two are the same.  A factor past the largest float, which only an
+    ``inflation_rate`` past every rate of inflation makes, is refused in the month it first
+    is, naming the point and the Reference: Python's power raises ``OverflowError``
+    there, naming neither, and C's gives an infinity.
     """
-    return (1.0 + inflation_rate) ** (t // 12)                       # noqa: F821
+    try:
+        factor = (1.0 + inflation_rate) ** (t // 12)                 # noqa: F821
+    except OverflowError:
+        raise ValueError(
+            f"point_id {point_id}: the inflation factor inflation_factor({t}) is past the "  # noqa: F821
+            f"largest float, under inflation_rate {float(inflation_rate)}") from None  # noqa: F821
+    if not factor <= 1.7976931348623157e308:
+        raise ValueError(
+            f"point_id {point_id}: the inflation factor inflation_factor({t}) is past the "  # noqa: F821
+            f"largest float, under inflation_rate {float(inflation_rate)}")  # noqa: F821
+    return factor
 
 
 def expenses(t):
@@ -1919,9 +1974,18 @@ def expenses(t):
     charges are priced into the annuity rate - and acquisition cost is out of scope, the
     premium being single and the cost priced in, so an annuity starting after the
     valuation date brings none either.  Second-order against the instalments, but the
-    in-payment term is thirty years or more, so the inflation assumption compounds.
+    in-payment term is thirty years or more, so the inflation assumption compounds.  An
+    expense past the largest float, which only an ``expense_maint`` and an inflation
+    factor near it make, is refused in the month it first is, naming the References,
+    where ``liability_cf`` and ``net_cf`` would carry an infinity on.
     """
-    return expense_maint / 12.0 * inflation_factor(t) * pols_if(t)   # noqa: F821
+    cost = expense_maint / 12.0 * inflation_factor(t) * pols_if(t)   # noqa: F821
+    if not cost <= 1.7976931348623157e308:
+        raise ValueError(
+            f"point_id {point_id}: the expense expenses({t}) is {cost}, not a finite "  # noqa: F821
+            f"number, under expense_maint {float(expense_maint)} and inflation_rate "  # noqa: F821
+            f"{float(inflation_rate)}")                               # noqa: F821
+    return cost
 
 
 def liability_cf(t):

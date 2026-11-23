@@ -181,14 +181,19 @@ def model_point_table():
         number, 1 or more, the peak being at least the latest index; and on RPI-linked
         escalation with value protection on the first death ``cum_annuity_pp_init`` is a
         finite number, 0 or more;
-    14. a contract not yet in payment, ``duration_mth`` 0 or less, holds its values at the
+    14. on RPI-linked escalation ``annual_income_init`` is ``annual_income`` or more: the
+        LPI's floor and the ratchet never let the income fall below the first year's, so a
+        lower one is no history the contract can have, as a negative fixed escalation is
+        none;
+    15. a contract not yet in payment, ``duration_mth`` 0 or less, holds its values at the
         start date: each covered life alive, nothing paid, the first year's income,
         ``annual_income``, and a peak of 1;
-    15. a contract in its first policy year, ``duration_mth`` 1 to 12, has passed no
+    16. a contract in its first policy year, ``duration_mth`` 1 to 12, has passed no
         anniversary before month 0: on RPI-linked escalation its income of the year under
         way is the first year's, and on ``rpi_catchup`` its peak is 1.  Beyond the first
-        year the history is the contract's own, and no rule holds one column to another;
-    16. on the scenario basis, each covered life's opening status is its death month's:
+        year the history is the contract's own, and no rule holds one column to another
+        but 14;
+    17. on the scenario basis, each covered life's opening status is its death month's:
         1 while the life survives to the valuation date, ``death_mth`` blank or
         ``duration_mth`` or later, and 0 once it has died.  So the scenario's step
         function, which ``lives_if`` follows after the valuation date, agrees with the
@@ -314,6 +319,11 @@ def model_point_table():
             raise ValueError(f"{name}: {column} must be {rule}{on}; it is not at "
                              f"point_id {bad}")
     income = pd.to_numeric(table["annual_income"], errors="coerce")  # noqa: F821
+    bad = table.index[linked & ~(values["annual_income_init"] >= income)].tolist()
+    if bad:
+        raise ValueError(f"{name}: annual_income_init must be annual_income or more on "
+                         f"RPI-linked escalation, whose income never falls below the first "
+                         f"year's; it is not at point_id {bad}")
     issued = months <= 0
     for column, want, where in (
             ("lives_if_init_1", 1.0, everyone),

@@ -97,10 +97,10 @@ the LPI point on its second anniversary; the RPI catch-up point mid-year; the fi
 value protection in its last month with a balance; the last-survivor value protection
 likewise; the rated single life the month before its mortality cap binds; and the table
 basis's joint point in its last month. Point 20 is the RPI catch-up point starting 13
-months after the valuation date. Points 21 and 22 are restated from S run under an RPI of
+months after the valuation date. Points 21 to 23 are restated from S run under an RPI of
 its own: the catch-up point under an RPI of -2%, its income frozen and its peak above the
-index, and the LPI point under 8%, its increases capped at 5%; histories no state S reaches
-at its shipped RPI holds.
+index, the LPI point under 8%, its increases capped at 5%, and the LPI point under -2%,
+its income held at its floor; histories no state S reaches at its shipped RPI holds.
 
 **Verification.** On the ten twins every cell this model shares with :mod:`~.PA_UK_S`
 agrees with it at every argument the S model evaluates in its sweep, ``pols_if_init`` and
