@@ -215,13 +215,14 @@ or above 50, `policy_term_max`; a life issued below 18, `issue_age_min`, or abov
 `issue_age_max`; or a life whose cover runs past the 75th birthday, `expiry_age_max`, the
 issue age plus the term. Each is a lower-case Reference, the contract a compiled model's
 caches will be sized from: a frame of at most 600 months and the horizon, and attained ages
-from 18 to 74 on the pivot table. On a reviewable point `proj_len()` also refuses a review
-history the point cannot have had, a review factor or a latch other than 1, or a change
-other than 0, while it has been in force fewer months than `review_period_mths`, since no
-review is made before the fifth anniversary; the review period is the projection's
-Reference, which `Data` cannot read. A loop over the block meets such a row only when it
-reaches it, after projecting the points before it, so `run_sec.py --block` asks every
-point for its frame before it projects any, and stops before it prints anything.
+from 18 to 74 on the pivot table. On every point `proj_len()` also refuses a Reference
+off its domain (below), and on a reviewable point a review history the point cannot have
+had, a review factor or a latch other than 1, or a change other than 0, while it has been
+in force fewer months than `review_period_mths`, since no review is made before the fifth
+anniversary; the References are the projection's, which `Data` cannot read. A loop over
+the block meets such a row only when it reaches it, after projecting the points before it,
+so `run_sec.py --block` asks every point for its frame before it projects any, and stops
+before it prints anything.
 
 The assumption tables are checked before a value of them is read. The pivot table is
 checked by its reader, `Data.ci_rate_table`, as it reads the file and before it indexes
@@ -317,7 +318,7 @@ definition. Thirteen cells are new — `policy_count`, `duration_mth_init`, `t_e
 | Cells | `CI_UK_S` | `CI_UK_SEC` | Why |
 |---|---|---|---|
 | `duration_mth`, `duration` | `t`, `t // 12` | `duration_mth_init() + t`, `duration_mth(t) // 12` | The policy clock, opened from the model point |
-| `proj_len` | `12 × policy_term()`, from issue | `expiry_mth() − duration_mth_init()`, from the valuation date; raises past cover, outside the contract's bounds, on a reviewable point under a review period or a lapse cap off its domain, and on a review history before the first review | The frame starts at the valuation date |
+| `proj_len` | `12 × policy_term()`, from issue | `expiry_mth() − duration_mth_init()`, from the valuation date; raises past cover, outside the contract's bounds, on a Reference off its domain, and on a review history before the first review | The frame starts at the valuation date |
 | `age_at_entry`, `sex`, `smoker`, `age`, `ci_rate_base`, `mort_rate`, `ci_rate`, `claim_rate_life` | `life=1`, a default | `life`, no default; every call passes 1 or 2, positionally | A compiled model declares a defaulted parameter as `long long life=*`, which the C step's typing guard would read as a parameter of that name; modelx keys `CI_UK_S`'s `age(t)` as `(t, 1)`, so the twin identity pairs the cells as before |
 | `pols_if`, `pols_if_at`, `pols_if_init` | a recursion through `"AFT_DECR"`, three cells a month, from the column's 1.0 at `t = 0` | `"BEF_DECR"`, one cell a month from `t_entry()`; `pols_if_init()` is 0 unless in force | Policies in force at the valuation date open the count; new business joins it in its issue month |
 | `pols_maturity`, `"AFT_DECR"` | at `t = proj_len() − 1` | at `duration_mth(t) = expiry_mth() − 1` | One definition of cover, on the policy clock |
@@ -355,22 +356,33 @@ test shows. The additional-payment and children's benefits take their caps the s
 `min(share × SA(t), cap)`. The lapse rate's bounds keep `CI_UK_S`'s order,
 `min(0.30, w + 2.0 max(0, ρ − 0.05))`: they are no cap on a claim rate.
 
-**Domains `CI_UK_S` leaves unchecked.** On a reviewable point `proj_len()` refuses, naming
-the point and the Reference:
+**Domains `CI_UK_S` leaves unchecked.** `CI_UK_S` raises a Reference to a power, divides
+by it, bounds a rate with it or reads it as a share, a loading or a frequency, and checks
+none. Off its domain it projects a negative premium, rate or claim with every check
+passing, as a trend of −3, an overlap of 3 or a review change of −150% would, or a
+complex lapse rate; and a NaN fails every comparison it meets, so that a NaN threshold
+closes the latch at a review that changed nothing, and a NaN slope reads as the cap through
+the lapse rate's `min`. Here `proj_len()` refuses each Reference off its domain, naming the
+point, the Reference, the domain and the value, on every point that reads it:
 
-- `review_period_mths` below 1: the reviews divide the policy months by it, which at 0
-  divides by zero, and below 0 counts reviews backward, to powers of `1 + ρ` below 0, which
-  at a change of −100% divide by zero in Python where C's `pow` gives an infinity;
-- `review_lapse_cap` outside 0 to 1, or NaN: the shock lapse is at most the cap, and past 1
-  its monthly rate, `1 − (1 − w)^(1/12)`, has no real value, which `CI_UK_S` projects as a
-  complex number, and below 0 the window lapses a negative share.
+| Reference | Read on | Domain | Off it |
+|---|---|---|---|
+| `ci_trend` (τ), `inflation_rate` | every point | a finite number, −1 or more | the factors `(1 + τ)^n` and `(1 + i)^n` are negative, and so the diagnosis rate or the expense they multiply |
+| `sel_lapse_ci_loading` (η) | every point | a finite number, −1 or more | a closed latch's factor, `1 + η`, is negative, and so the diagnosis rate |
+| `overlap_k` (k), `survival_slip` (δ) | every point | a number from 0 to 1 | the shares of the deaths and of the diagnoses that do not pay make a negative claim, paid or exit rate |
+| `ap_freq_factor`, `child_freq` | every point | a number from 0 to 12 | a month's additional payments, `ap_freq_factor × i_ci / 12` with `i_ci` capped at 1, or children's claims, `child_freq / 12`, number more than one per policy in force, or fewer than none |
+| `review_period_mths` | a reviewable point | a whole number of months, 1 or more | the reviews divide the policy months by it: at 0 by zero, below it counting reviews backward, off a whole number in parts |
+| `review_lapse_cap` | a reviewable point | a number from 0 to 1 | the shock lapse is at most the cap: past 1 its monthly rate, `1 − (1 − w)^(1/12)`, has no real value, which `CI_UK_S` projects as a complex number, and below 0 the window lapses a negative share |
+| `review_prem_shock` (ρ) | a reviewable point | a finite number, −1 or more | a review takes the premium below 0 |
+| `review_lapse_threshold` | a reviewable point | a finite number | the latch and the window compare a change with it, and a NaN closes the latch at every review |
+| `review_lapse_slope` | a reviewable point | a finite number, 0 or more | the window lapses fewer the more the premium rises; at NaN, at the cap |
 
-The other References `CI_UK_S` raises to a power, `inflation_rate`, `ci_trend`,
-`review_prem_shock` and the indexation's, are bases of whole-number exponents, 0 or more in
-every month of the frame, and their powers are real at any value; and the pivot rates,
-whose ratio the interpolation raises to a power, are the table's, which `Data` holds above
-0 and at most 1. A guaranteed point reads no review Reference, and projects whatever they
-are.
+Each domain is a comparison no NaN passes, and a finite number one of which `x − x == 0`
+holds, which an infinity fails too. A guaranteed point reads no review Reference, and
+projects whatever they are. The pivot rates, whose ratio the interpolation raises to a
+power, are the table's, which `Data` holds above 0 and at most 1. `rpi_rate` reaches the
+index factors only through the floor at 0 and the 10% cap, and the indexation's caps and
+multiplier, which the contract fixes, are read as `CI_UK_S` reads them.
 
 **The exit rate past 1, refused in its cell.** `check_claim_split_resid` converts the
 notes' annual exit rate, `q_exit = q_d (1 − k) + i_ci δ`, independently, to bound the
@@ -432,15 +444,15 @@ earlier, where the check returns False, as `CI_UK_S`'s does.
   naming its point; the horizon is a Reference; a point past its cover or outside the
   contract's bounds, 14 cases, is refused by `proj_len()`, each bound just inside it and
   each moved past a committed point, and `run_sec.py --block` refuses such a point before
-  printing anything; so is a review history before the first review, 4 cases, and a
-  reviewable point under a review period or a lapse cap off its domain, the value next
-  outside each edge and NaN, where at the edges the twin of S's reviewable point is S's in
-  every cell; an exit rate past 1 is refused in the month it passes, where S's residual is
-  complex; each assumption table a reader cannot read, 22 cases, is refused naming its
-  lines; keys written as floats read as `CI_UK_S` reads them; the edges of the interface and
-  of each bound are accepted; every state `CI_UK_S` reaches, as shipped, under the splice's
-  review change and where the cap binds, is accepted in force; and the committed table is
-  what `CI_UK_S` generates.
+  printing anything; so is a review history before the first review, 4 cases, and each of
+  twelve References off its domain, the value next outside each edge, NaN and both
+  infinities, on every point that reads it, where at the edges the twin that reads it is
+  S's in every cell; an exit rate past 1 is refused in the month it passes, where S's
+  residual is complex; each assumption table a reader cannot read, 22 cases, is refused
+  naming its lines; keys written as floats read as `CI_UK_S` reads them; the edges of the
+  interface and of each bound are accepted; every state `CI_UK_S` reaches, as shipped,
+  under the splice's review change and where the cap binds, is accepted in force; and the
+  committed table is what `CI_UK_S` generates.
 - **The product's own facts**: the two clocks on the shipped points; the committed rows,
   in force and issued later, continuing their S points at the shipped assumptions but for
   inflation; each history column read, not recomputed, the index factors, the review
@@ -466,7 +478,8 @@ earlier, where the check returns False, as `CI_UK_S`'s does.
   months on, and restated in force the month before the cap, to 1e-9 relative with no
   absolute floor. And a NaN sent to a cap, through the overlap, the trend, the latch's
   loading or the survival slippage, or to the RPI's floor and caps or the ancillary
-  benefits' caps, stays NaN, and each check fails a residual that is NaN.
+  benefits' caps, stays NaN in the cell, and no check passes a residual that is NaN: the
+  frame refuses the Reference first.
 
 ```bash
 python -m pytest tests/test_critical_illness_uk_sec.py -q

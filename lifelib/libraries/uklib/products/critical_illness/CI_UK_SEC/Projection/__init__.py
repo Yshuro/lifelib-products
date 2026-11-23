@@ -346,7 +346,11 @@ two responses.
 adds is the contract's own bounds (``product-spec.md``), which :func:`proj_len` holds a
 point to: a term of ``policy_term_min``, 5 years, to ``policy_term_max``, 50; an issue age
 of each life from ``issue_age_min``, 18, to ``issue_age_max``, 64; and cover ending by the
-75th birthday, ``expiry_age_max``: the issue age plus the term.
+75th birthday, ``expiry_age_max``: the issue age plus the term.  It holds the assumptions
+to their domains too, which :mod:`~.CI_UK_S` checks nowhere: each Reference it raises to a
+power, divides by, bounds a rate with or reads as a share, a loading or a frequency, on
+every point that reads it, so that no projection runs on a negative rate, a complex lapse
+or a NaN that a comparison reads as a bound.
 
 .. rubric:: What this product does not have
 
@@ -656,27 +660,45 @@ def proj_len():
     of :func:`result_cf`.  The policy expires at the end of the last month with no maturity
     and no surrender value [S1][S4][S5], so there is nothing after it.
 
-    Six kinds of point raise here, naming the point, rather than project nothing or a
-    frame the contract does not have, each checked in this order:
+    These raise here, naming the point, rather than project nothing, a frame the contract
+    does not have or numbers no policy can have, each checked in this order:
 
-    * one whose cover ended at or before the valuation date, which an in-force extract
+    * a point whose cover ended at or before the valuation date, which an in-force extract
       should not carry;
     * one whose term is below ``policy_term_min``, 5 years, or above ``policy_term_max``,
       50;
     * one with a life issued below ``issue_age_min``, 18, or above ``issue_age_max``, 64;
     * one with a life whose cover runs past the 75th birthday, ``expiry_age_max``: the
       issue age plus the term;
-    * a reviewable one while ``review_period_mths`` is below 1, which the reviews divide
-      the policy months by, or ``review_lapse_cap`` is outside 0 to 1 or not a number: the
-      shock lapse is at most the cap, and past 1 its monthly rate,
-      ``1 - (1 - w)^(1/12)``, has no real value, which :mod:`~.CI_UK_S` projects as a
-      complex number, and below 0 the window lapses a negative share;
-    * a reviewable one in force for fewer months than ``review_period_mths`` with a review
-      history, a review factor or a select factor other than 1 or a last change other than
-      0, a state :mod:`~.CI_UK_S` cannot reach, since no review has yet been made.
+    * any point while a Reference every point reads is off its domain, which the message
+      names: ``ci_trend``, ``inflation_rate`` and ``sel_lapse_ci_loading`` a finite number,
+      -1 or more, since the factors they make, ``1 + tau`` and the rest, below 0 make a
+      negative diagnosis rate or expense; ``overlap_k`` and ``survival_slip`` a number from
+      0 to 1, the shares of the deaths and of the diagnoses that do not pay, which off it
+      make a negative claim, paid or exit rate; and ``ap_freq_factor`` and ``child_freq`` a
+      number from 0 to 12, so that no month's additional payments or children's claims
+      number more than one per policy in force, at any rate the model accepts, or fewer
+      than none (:func:`ap_rate` and :func:`child_rate_mth` derive the bound);
+    * a reviewable point while a review Reference is off its domain: ``review_period_mths``
+      a whole number of months, 1 or more, which the reviews divide the policy months by;
+      ``review_lapse_cap`` a number from 0 to 1, since the shock lapse is at most the cap,
+      and past 1 its monthly rate, ``1 - (1 - w)^(1/12)``, has no real value, which
+      :mod:`~.CI_UK_S` projects as a complex number, and below 0 the window lapses a
+      negative share; ``review_prem_shock`` a finite number, -1 or more, below which a
+      review takes the premium below 0; ``review_lapse_threshold`` a finite number, since
+      a NaN fails every comparison and so closes the latch at a review that changed nothing;
+      and ``review_lapse_slope`` a finite number, 0 or more, since below 0 the window lapses
+      fewer the more the premium rises, and a NaN reads as the cap through
+      :func:`lapse_rate`'s ``min``, its bound first as in :mod:`~.CI_UK_S`;
+    * and a reviewable point in force for fewer months than ``review_period_mths`` with a
+      review history, a review factor or a select factor other than 1 or a last change
+      other than 0, a state :mod:`~.CI_UK_S` cannot reach, since no review has yet been
+      made.
 
-    The last two read this Space's References, which ``Data`` cannot see, so they are
-    checked here.  These are the product's limits (``product-spec.md``), the contract a
+    A domain is a comparison no NaN passes, and a finite number one that ``x - x == 0.0``
+    holds of, which an infinity fails too, an infinity less itself being NaN.  All but the
+    first four read this Space's References, which ``Data`` cannot see, so they are checked
+    here.  The bounds are the product's limits (``product-spec.md``), the contract a
     compiled model's caches will be sized from: a frame of at most 50 years and the future
     horizon, and attained ages from 18 to 74 on the pivot table.  Every report reads this
     cell first, so no point outside them is projected.  A guaranteed point reads no review
@@ -710,25 +732,79 @@ def proj_len():
                 f"{age_at_entry(life) + policy_term()}, issue age "
                 f"{age_at_entry(life)} and a {policy_term()}-year term, past "
                 f"expiry_age_max, {expiry_age_max}")                 # noqa: F821
+    if not (ci_trend >= -1.0 and ci_trend - ci_trend == 0.0):        # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: ci_trend must be a finite number, -1 or "  # noqa: F821
+            f"more, not {ci_trend}")                                 # noqa: F821
+    if not (inflation_rate >= -1.0                                   # noqa: F821
+            and inflation_rate - inflation_rate == 0.0):             # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: inflation_rate must be a finite number, "  # noqa: F821
+            f"-1 or more, not {inflation_rate}")                     # noqa: F821
+    if not (sel_lapse_ci_loading >= -1.0                             # noqa: F821
+            and sel_lapse_ci_loading - sel_lapse_ci_loading == 0.0):  # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: sel_lapse_ci_loading must be a finite "  # noqa: F821
+            f"number, -1 or more, not {sel_lapse_ci_loading}")       # noqa: F821
+    if not (overlap_k >= 0.0 and overlap_k <= 1.0):                  # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: overlap_k must be a number from 0 to 1, "  # noqa: F821
+            f"not {overlap_k}")                                      # noqa: F821
+    if not (survival_slip >= 0.0 and survival_slip <= 1.0):          # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: survival_slip must be a number from 0 to "  # noqa: F821
+            f"1, not {survival_slip}")                               # noqa: F821
+    if not (ap_freq_factor >= 0.0 and ap_freq_factor <= 12.0):       # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: ap_freq_factor must be a number from 0 to "  # noqa: F821
+            f"12, not {ap_freq_factor}")                             # noqa: F821
+    if not (child_freq >= 0.0 and child_freq <= 12.0):               # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: child_freq must be a number from 0 to 12, "  # noqa: F821
+            f"not {child_freq}")                                     # noqa: F821
     if premium_guarantee() == "reviewable":
-        if not review_period_mths >= 1:                              # noqa: F821
-            raise ValueError(f"point_id {point_id}: review_period_mths must be "  # noqa: F821
-                             f"1 month or more, not {review_period_mths}")  # noqa: F821
+        if not (review_period_mths >= 1 and review_period_mths % 1 == 0):  # noqa: F821
+            raise ValueError(
+                f"point_id {point_id}: review_period_mths must be a whole "  # noqa: F821
+                f"number of months, 1 or more, not {review_period_mths}")  # noqa: F821
         if not (review_lapse_cap >= 0.0 and review_lapse_cap <= 1.0):  # noqa: F821
-            raise ValueError(f"point_id {point_id}: review_lapse_cap must be a "  # noqa: F821
-                             f"number from 0 to 1, not {review_lapse_cap}")  # noqa: F821
+            raise ValueError(
+                f"point_id {point_id}: review_lapse_cap must be a number "  # noqa: F821
+                f"from 0 to 1, not {review_lapse_cap}")              # noqa: F821
+        if not (review_prem_shock >= -1.0                            # noqa: F821
+                and review_prem_shock - review_prem_shock == 0.0):   # noqa: F821
+            raise ValueError(
+                f"point_id {point_id}: review_prem_shock must be a finite "  # noqa: F821
+                f"number, -1 or more, not {review_prem_shock}")      # noqa: F821
+        if not review_lapse_threshold - review_lapse_threshold == 0.0:  # noqa: F821
+            raise ValueError(
+                f"point_id {point_id}: review_lapse_threshold must be a "  # noqa: F821
+                f"finite number, not {review_lapse_threshold}")      # noqa: F821
+        if not (review_lapse_slope >= 0.0                            # noqa: F821
+                and review_lapse_slope - review_lapse_slope == 0.0):  # noqa: F821
+            raise ValueError(
+                f"point_id {point_id}: review_lapse_slope must be a finite "  # noqa: F821
+                f"number, 0 or more, not {review_lapse_slope}")      # noqa: F821
         d = duration_mth_init()
         if 0 < d < review_period_mths:                               # noqa: F821
-            for column, value, issue in (
-                    ("review_prem_factor_init", review_prem_factor_init(), 1.0),
-                    ("ci_sel_factor_init", ci_sel_factor_init(), 1.0),
-                    ("review_prem_shock_init", review_prem_shock_init(), 0.0)):
-                if value != issue:
-                    raise ValueError(
-                        f"point_id {point_id}: {column} is {value}, where a "  # noqa: F821
-                        f"reviewable point in force {d} months, fewer than "
-                        f"review_period_mths, {review_period_mths}, "  # noqa: F821
-                        f"has had no review yet: {issue:g}")
+            if review_prem_factor_init() != 1.0:
+                raise ValueError(
+                    f"point_id {point_id}: review_prem_factor_init is "  # noqa: F821
+                    f"{review_prem_factor_init()}, where a reviewable point in force {d} "
+                    f"months, fewer than review_period_mths, "
+                    f"{review_period_mths}, has had no review yet: 1")  # noqa: F821
+            if ci_sel_factor_init() != 1.0:
+                raise ValueError(
+                    f"point_id {point_id}: ci_sel_factor_init is "   # noqa: F821
+                    f"{ci_sel_factor_init()}, where a reviewable point in force {d} "
+                    f"months, fewer than review_period_mths, "
+                    f"{review_period_mths}, has had no review yet: 1")  # noqa: F821
+            if review_prem_shock_init() != 0.0:
+                raise ValueError(
+                    f"point_id {point_id}: review_prem_shock_init is "  # noqa: F821
+                    f"{review_prem_shock_init()}, where a reviewable point in force {d} "
+                    f"months, fewer than review_period_mths, "
+                    f"{review_period_mths}, has had no review yet: 0")  # noqa: F821
     return n
 
 
@@ -877,7 +953,9 @@ def ci_trend_factor(t):
     steps on each anniversary of the valuation date, for every point alike, whatever its
     age (USLIB-SEC-PLAN.md D7).  :mod:`~.CI_UK_S` trends from issue,
     ``(1 + tau)^(y - 1)``; on a point issued at ``t = 0`` the two are the same.  The
-    exponent is a whole number of years, 0 or more, in every month of the frame.
+    exponent is a whole number of years, 0 or more, in every month of the frame, and
+    :func:`proj_len` holds ``ci_trend`` to a finite number, -1 or more, so the factor is
+    a number, 0 or more.
     """
     return (1.0 + ci_trend) ** (t // 12)                             # noqa: F821
 
@@ -925,9 +1003,11 @@ def claim_rate_life(t, life):
     """The combined annual claim decrement for one life: ``i_ci + q_d (1 - k)``.
 
     The overlap term is what stops the two rates being added.  See the Space docstring
-    for why, and for the bounds on ``k``.  Capped at 1, the bound second, as
-    :func:`ci_rate` is: the joint decrement in :func:`claim_rate` is a probability only
-    when each life's rate is, and two lives past 1 would make it less than certain.
+    for why, and for the bounds on ``k``, which :func:`proj_len` holds to 0 to 1: past 1
+    the overlap takes more than every death off the rate, below 0 adds more.  Capped at 1,
+    the bound second, as :func:`ci_rate` is: the joint decrement in :func:`claim_rate` is a
+    probability only when each life's rate is, and two lives past 1 would make it less
+    than certain.
     """
     return min(ci_rate(t, life)
                + mort_rate(t, life) * (1.0 - overlap_k), 1.0)        # noqa: F821
@@ -958,7 +1038,8 @@ def claim_rate_paid(t):
     factor ``k`` belongs to the non-paying exit and never appears here - applying it to
     the paid decrement understates claims, which is the mirror image of the
     double-counting pitfall.  The standalone rate is capped at 1, the bound second, as
-    :func:`claim_rate` is.
+    :func:`claim_rate` is, and ``delta``, the share of the diagnoses that do not pay, is
+    held to 0 to 1 by :func:`proj_len`, off which the paid or the exit rate is negative.
     """
     if contract_type() == "accelerated":
         return claim_rate(t)
@@ -1004,6 +1085,13 @@ def ap_rate(t):
     terminate the policy.  So it has no cap of its own, but it takes :func:`ci_rate`'s,
     which caps ``i_ci`` at 1: the frequency is at most ``ap_freq_factor``, and a NaN
     diagnosis rate reaches it as NaN.
+
+    That bounds ``ap_freq_factor``.  The month's additional payments per policy in force
+    are :func:`ap_rate_mth`, ``ap_freq_factor x ci_rate(t, 1) / 12``, and the diagnosis
+    rate is at most 1 at any rate the model accepts, so they are at most
+    ``ap_freq_factor / 12``: one claim a month per policy in force or fewer while the
+    factor is at most 12, and none fewer than none while it is 0 or more.
+    :func:`proj_len` refuses it outside 0 to 12.
     """
     return ap_freq_factor * ci_rate(t, 1)                            # noqa: F821
 
@@ -1023,7 +1111,9 @@ def child_rate_mth():
 
     Flat in age and duration, and zero if children's cover is not active.  Like the
     additional-payment frequency it is per-year events divided by twelve, not a
-    probability conversion.
+    probability conversion.  It is the month's children's claims per policy in force, so
+    ``child_freq``, the claims a year, is at most 12 for it to be one or fewer, and 0 or
+    more for it to be none fewer than none: :func:`proj_len` refuses it outside 0 to 12.
     """
     if not children_cover():
         return 0.0
@@ -1198,7 +1288,10 @@ def lapse_rate(t):
     :func:`review_prem_change`, and the table rate otherwise; the bounds in
     :mod:`~.CI_UK_S`'s order.  Review-driven shocks are the dominant behavioural risk on
     reviewable business, where one insurer's review changes are subject to no stated
-    limit at all; the slope and the cap are placeholders.
+    limit at all; the slope and the cap are placeholders.  :func:`proj_len` holds the
+    slope to a finite number, 0 or more, the threshold to a finite number and the cap to 0
+    to 1 on a reviewable point, so that ``min`` here, its bound first, never meets a NaN
+    from them.
 
     There is no interest-sensitive dynamic lapse anywhere in this model.  With no cash
     value and no credited rate there is nothing to arbitrage, so the machinery the
@@ -1430,7 +1523,8 @@ def inflation_factor(t):
     age, and every point of a block inflates alike, stepping on each anniversary of the
     valuation date.  :mod:`~.CI_UK_S` inflates from issue, ``(1 + pi)^(y - 1)``, as the
     notes write it; on a point issued at ``t = 0`` the two are the same.  The initial
-    expense is not inflated (see :func:`expenses`).
+    expense is not inflated (see :func:`expenses`).  :func:`proj_len` holds
+    ``inflation_rate`` to a finite number, -1 or more, so the factor is a number, 0 or more.
     """
     return (1.0 + inflation_rate) ** (t // 12)                       # noqa: F821
 
