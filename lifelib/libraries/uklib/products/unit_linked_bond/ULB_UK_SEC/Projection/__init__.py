@@ -112,7 +112,9 @@ event:
   which carry on the allowance-relevant total and open the guaranteed minimum death
   benefit, ``max(0, P - wd_cum_pp_init)``;
 * :func:`allowance_cum_pp_init`, the 5% allowance accrued since issue, through the policy
-  year under way, which the excess gain is measured against.
+  year of the month before the valuation date, which the excess gain is measured against:
+  on an anniversary the year that begins in month 0 accrues in month 0, at the References
+  of the valuation date, as every month-0 event does.
 
 Each is history, read from the model point, never recomputed from a Reference, which is
 an assumption from the valuation date on: a fund return, a withdrawal rate or an
@@ -589,13 +591,16 @@ def wd_cum_pp_init():
 def allowance_cum_pp_init():
     """CumAllow at the valuation date: the 5% allowance accrued since issue.
 
-    :func:`allowance_cum_pp`'s value in month 0, per policy: the allowable element of
-    every policy year from issue to the one under way at the valuation instant, each
-    accrued at its start, so that the year month 0 falls in is in it. History, read from
-    the model point, not rebuilt from ``wd_allowance_rate`` and ``allowance_years``,
-    which are assumptions from the valuation date on: an allowance rate changed there
-    accrues from the next policy year, and moves no year already accrued. 0 on a bond not
-    yet in force, which ``Data`` requires.
+    :func:`allowance_cum_pp`'s value entering month 0, per policy: the allowable element
+    of every policy year from issue to the one month -1 falls in, each accrued at its
+    start.  Measured at the valuation instant, before any month-0 event (USLIB-SEC-PLAN.md
+    D6, precised at M7): mid-year that is the year under way, and on an anniversary the
+    year before it, the year that begins in month 0 accruing in month 0, at the References
+    of the valuation date, as on a bond issued then.  History, read from the model point,
+    not rebuilt from ``wd_allowance_rate`` and ``allowance_years``, which are assumptions
+    from the valuation date on: an allowance rate changed there accrues every year that
+    begins from month 0 on, and moves no year already accrued.  0 on a bond not yet in
+    force, which ``Data`` requires.
     """
     return float(model_point()["allowance_cum_pp_init"])
 
@@ -722,10 +727,15 @@ def proj_len():
     contract does not have, or one that no value of a Reference defines, each checked in
     this order:
 
-    * ``issue_age_min`` that is not a finite number, 0 or more: an age, which a NaN would
-      switch off, every comparison with it failing;
+    * ``issue_age_min`` that is not a whole number, 0 or more, below ``2**53``: an age,
+      which a NaN would switch off, every comparison with it failing, and which the
+      compiled model holds as a ``long long``;
     * a bond issued below ``issue_age_min``, 18, the youngest age the mortality table
       rates, though the product admits issue from 3 months;
+    * ``omega_age`` that is not a whole number below ``2**53``, above ``issue_age_min`` and
+      at most the mortality table's last age, ``Data.mort_age_last()``: the limiting age
+      sizes every frame, so the compiled model's caches, and a NaN, an infinity or a
+      fraction of a year would leave the frame's months no whole number;
     * one issued at or past ``omega_age``, which has no cover from issue;
     * one whose cover had ended by the valuation date, at or past the limiting age, which
       an in-force extract should not carry;
@@ -737,14 +747,15 @@ def proj_len():
       - ``fund_return`` and ``inflation_rate``, finite, -1 or more: below -1 the monthly
         return, ``(1 + g)^(1/12) - 1``, has no real value, and the inflation factor
         changes sign each year;
-      - ``return_shock``, finite and above -1: a trailing year's return 100 points or more
-        below the fund's is a fund lost whole; a NaN would read as no shock, through the
-        shortfall's ``max(0, ...)``;
+      - ``return_shock``, finite, and with ``fund_return`` a trailing year's return,
+        ``fund_return + return_shock``, above -1: a return of -100% or less is a fund lost
+        whole; a NaN shock would read as no shock, through the shortfall's ``max(0, ...)``;
       - ``mort_be_factor``, finite, 0 or more: below 0 a mortality rate is negative;
       - ``wd_allowance_rate``, finite, 0 or more: below 0 the allowance accrued and the
         anchor pattern's withdrawal are negative;
-      - ``allowance_years``, a finite number of years, 0 or more: below 0 the allowance
-        accrued is negative, and a NaN would let it accrue without end;
+      - ``allowance_years``, a whole number of years, 0 or more, below ``2**53``: below 0
+        the allowance accrued is negative, a NaN would let it accrue without end, and the
+        compiled model holds it as a ``long long``;
       - ``depletion_threshold``, finite, 0 or more: below 0 no fund, floored at 0, would
         ever count as exhausted;
       - ``surr_rate_cap`` and ``wd_cap_rate``, from 0 to 1: the cap on a probability, and
@@ -766,16 +777,19 @@ def proj_len():
     frame of at most ``omega_age - issue_age_min`` years and the future horizon, and ages
     from 18 to ``omega_age`` on the mortality table.  Every report reads this cell first,
     and so does every count, so no point outside them is projected.  Each check is a
-    comparison written out, a finite bound the largest float, 1.7976931348623157e308, so
-    that a compiled cell runs it in C, as ``Term_UK_SEC``'s do, and each Reference is
-    printed as the compiled model will type it: ``issue_age_min``, ``omega_age`` and
-    ``allowance_years`` through ``int()`` where they are finite, and every other through
-    ``float()``.
+    comparison written out, a finite bound the largest float, 1.7976931348623157e308, and
+    a whole one ``2**53``, so that a compiled cell runs it in C, as ``Term_UK_SEC``'s do,
+    and each Reference is printed as the compiled model will type it: ``issue_age_min``,
+    ``omega_age`` and ``allowance_years`` through ``int()`` once they are whole numbers,
+    and every other through ``float()``.  A value a formula computes past the floats,
+    from References each in its domain, is refused in the cell where it first is: the
+    fund, at ``av_pp_at(t, "AFT_GROWTH")``, and the allowance.
     """
-    if not (issue_age_min >= -1.7976931348623157e308                  # noqa: F821
-            and issue_age_min <= 1.7976931348623157e308):             # noqa: F821
-        raise ValueError(f"point_id {point_id}: issue_age_min must be a finite "  # noqa: F821
-                         f"number, not {float(issue_age_min)}")      # noqa: F821
+    if not (issue_age_min > -9007199254740992.0                       # noqa: F821
+            and issue_age_min < 9007199254740992.0                    # noqa: F821
+            and issue_age_min == issue_age_min // 1):                 # noqa: F821
+        raise ValueError(f"point_id {point_id}: issue_age_min must be a whole number "  # noqa: F821
+                         f"below 2**53, not {float(issue_age_min)}")  # noqa: F821
     if issue_age_min < 0:                                            # noqa: F821
         raise ValueError(f"point_id {point_id}: issue_age_min must be 0 or more, "  # noqa: F821
                          f"not {int(issue_age_min)}")                # noqa: F821
@@ -783,6 +797,17 @@ def proj_len():
     if x < issue_age_min:                                            # noqa: F821
         raise ValueError(f"point_id {point_id}: the issue age, {x}, is below "  # noqa: F821
                          f"issue_age_min, {int(issue_age_min)}")     # noqa: F821
+    if not (omega_age > -9007199254740992.0                           # noqa: F821
+            and omega_age < 9007199254740992.0                        # noqa: F821
+            and omega_age == omega_age // 1):                         # noqa: F821
+        raise ValueError(f"point_id {point_id}: omega_age must be a whole number "  # noqa: F821
+                         f"below 2**53, not {float(omega_age)}")     # noqa: F821
+    if not (omega_age > issue_age_min                                # noqa: F821
+            and omega_age <= data.mort_age_last()):                   # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: omega_age must be above issue_age_min, "  # noqa: F821
+            f"{int(issue_age_min)}, and at most mort_table.csv's last age, "  # noqa: F821
+            f"{data.mort_age_last()}, not {int(omega_age)}")         # noqa: F821
     if horizon_mths() <= 0:
         raise ValueError(f"point_id {point_id}: the issue age, {x}, is at or past "  # noqa: F821
                          f"omega_age, {int(omega_age)}: the bond has no cover")  # noqa: F821
@@ -799,10 +824,16 @@ def proj_len():
             and inflation_rate <= 1.7976931348623157e308):            # noqa: F821
         raise ValueError(f"point_id {point_id}: inflation_rate must be a finite number, "  # noqa: F821
                          f"-1 or more, not {float(inflation_rate)}")  # noqa: F821
-    if not (return_shock > -1.0                                      # noqa: F821
+    if not (return_shock >= -1.7976931348623157e308                   # noqa: F821
             and return_shock <= 1.7976931348623157e308):              # noqa: F821
-        raise ValueError(f"point_id {point_id}: return_shock must be a finite number "  # noqa: F821
-                         f"above -1, not {float(return_shock)}")     # noqa: F821
+        raise ValueError(f"point_id {point_id}: return_shock must be a finite number, "  # noqa: F821
+                         f"not {float(return_shock)}")               # noqa: F821
+    if not fund_return + return_shock > -1.0:                        # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: fund_return + return_shock, the trailing year's "  # noqa: F821
+            f"return, must be above -1, not {float(fund_return + return_shock)}, under "  # noqa: F821
+            f"fund_return {float(fund_return)} and return_shock "    # noqa: F821
+            f"{float(return_shock)}")                                # noqa: F821
     if not (mort_be_factor >= 0.0                                    # noqa: F821
             and mort_be_factor <= 1.7976931348623157e308):            # noqa: F821
         raise ValueError(f"point_id {point_id}: mort_be_factor must be a finite number, "  # noqa: F821
@@ -811,10 +842,11 @@ def proj_len():
             and wd_allowance_rate <= 1.7976931348623157e308):         # noqa: F821
         raise ValueError(f"point_id {point_id}: wd_allowance_rate must be a finite "  # noqa: F821
                          f"number, 0 or more, not {float(wd_allowance_rate)}")  # noqa: F821
-    if not (allowance_years >= -1.7976931348623157e308                # noqa: F821
-            and allowance_years <= 1.7976931348623157e308):           # noqa: F821
-        raise ValueError(f"point_id {point_id}: allowance_years must be a finite "  # noqa: F821
-                         f"number, not {float(allowance_years)}")    # noqa: F821
+    if not (allowance_years > -9007199254740992.0                     # noqa: F821
+            and allowance_years < 9007199254740992.0                  # noqa: F821
+            and allowance_years == allowance_years // 1):             # noqa: F821
+        raise ValueError(f"point_id {point_id}: allowance_years must be a whole number "  # noqa: F821
+                         f"below 2**53, not {float(allowance_years)}")  # noqa: F821
     if allowance_years < 0:                                          # noqa: F821
         raise ValueError(f"point_id {point_id}: allowance_years must be 0 or more, "  # noqa: F821
                          f"not {int(allowance_years)}")              # noqa: F821
@@ -1055,11 +1087,24 @@ def av_pp_at(t, timing):
     Each reads :func:`av_pp` of its own month, which carries the chain; ``"AFT_WD"`` is
     computed here rather than read at ``t + 1``, so that the last month of cover, whose
     ``t + 1`` is past it, closes on its own fund.  0 outside cover, at every timing.
+
+    ``"AFT_GROWTH"`` is where a fund that a ``fund_return`` past every amount of money
+    grows first leaves the floats, and where it is refused, naming the month and
+    ``fund_return``: past it ``inf - inf`` makes a NaN, which the floors of ``"AFT_WD"``
+    and :func:`av_pp`, ``max(0, ...)``, would read as a fund drawn to nothing, and the
+    threshold as exhaustion.  Every month :func:`av_pp` grows inline reads this timing of
+    the month before, through :func:`wd_pp`, so the refusal holds for both.
     """
     if timing == "BEF_GROWTH":
         return av_pp(t)
     if timing == "AFT_GROWTH":
-        return av_pp(t) + fund_growth_pp(t) - tax_provision_pp(t)
+        grown = av_pp(t) + fund_growth_pp(t) - tax_provision_pp(t)
+        if not grown <= 1.7976931348623157e308:
+            raise ValueError(
+                f"point_id {point_id}: the unit fund grown in month {t}, "  # noqa: F821
+                f"av_pp_at({t}, 'AFT_GROWTH'), is {grown}, not a finite number, under "
+                f"fund_return {float(fund_return)}")                 # noqa: F821
+        return grown
     if timing == "AFT_CHARGE":
         return av_pp_at(t, "AFT_GROWTH") - amc_pp(t) - further_costs_pp(t)
     if timing == "AFT_WD":
@@ -1234,19 +1279,28 @@ def allowance_cum_pp(t):
 
     Each policy year's allowable element accrues at its start, ``wd_allowance_rate`` of
     the premium for each of the first ``allowance_years``.  On a bond in force the years
-    to the one under way at the valuation instant, ``y0``, are history,
-    :func:`allowance_cum_pp_init`, and each later year accrues at the Reference:
+    to the one month -1 falls in, ``y0 = (d - 1) // 12 + 1`` for ``d`` the policy months
+    at the valuation date, are history, :func:`allowance_cum_pp_init`, and each later
+    year accrues at the Reference, an anniversary's in month 0 among them:
     ``CumAllow(t) = CumAllow_0 + P x (min(y, n) - min(y0, n)) x r``, ``n`` the years and
     ``r`` the rate.  A bond not yet in force has accrued nothing, ``y0 = 0``, and its
-    allowance is :mod:`~.ULB_UK_S`'s closed form from issue, the same float.  0 outside
-    cover, where the policy year is 0 or less.
+    allowance is :mod:`~.ULB_UK_S`'s closed form from issue, the same float.  An allowance
+    that is not a finite number, which only a rate past every amount of money makes, is
+    refused in the month it first is, naming the References, where :func:`excess_gain_pp`
+    would floor it to no gain.  0 outside cover, where the policy year is 0 or less.
     """
     if not is_active(t):
         return 0.0
     y = policy_year(t)
-    y0 = duration_mth_init() // 12 + 1 if duration_mth_init() > 0 else 0
+    y0 = (duration_mth_init() - 1) // 12 + 1 if duration_mth_init() > 0 else 0
     later = min(y, allowance_years) - min(y0, allowance_years)          # noqa: F821
-    return allowance_cum_pp_init() + premium() * later * wd_allowance_rate  # noqa: F821
+    allowed = allowance_cum_pp_init() + premium() * later * wd_allowance_rate  # noqa: F821
+    if not allowed <= 1.7976931348623157e308:
+        raise ValueError(
+            f"point_id {point_id}: the allowance allowance_cum_pp({t}) is {allowed}, not "  # noqa: F821
+            f"a finite number, under wd_allowance_rate {float(wd_allowance_rate)} and "  # noqa: F821
+            f"allowance_years {int(allowance_years)}")               # noqa: F821
+    return allowed
 
 
 def excess_gain_pp(t):

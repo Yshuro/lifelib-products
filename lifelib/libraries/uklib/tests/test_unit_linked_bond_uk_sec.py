@@ -1926,50 +1926,77 @@ def test_a_point_the_contract_does_not_issue_is_refused_by_proj_len(tmp_path, ca
             shipped.close()
 
 
-# Each Reference proj_len() holds to a domain, at both edges of it, as (Reference, value,
-# the refusal, or None where proj_len() accepts it), on the anchor cell's twin (the
-# Projection docstring of proj_len gives each domain's reason).  NaN and the infinities are
+# Each Reference proj_len() holds to a domain, at both edges of it, as (case, the
+# References set, the refusal, or None where proj_len() accepts them), on the anchor cell's
+# twin (proj_len's docstring gives each domain's reason).  NaN and the infinities are
 # outside every domain: S reads several of them through a min or a max whose bound comes
 # first, where a NaN is lost.  A finite domain's upper edge is the largest float, accepted,
 # where the frame computes what it can of it: depletion_threshold there holds the fund at
-# outset exhausted, and issue_age_min there refuses the issue age, each by its own rule,
-# past the domain.  issue_age_min and allowance_years are whole numbers of years, which the
-# compiled model will type as integers, so a value below 0 is printed through int().
+# outset exhausted, and a fund_return there grows the fund past the floats, each refused by
+# its own rule, past the domain.  issue_age_min, allowance_years and omega_age are whole
+# numbers of years below 2**53, which the compiled model holds as long long, printed through
+# int() once whole: each is refused at a fraction and at exactly 2**53, and its largest
+# whole number is accepted, or refused by a later rule.  return_shock is held with
+# fund_return: their sum, the trailing year's return, must be above -1.
 BIG = 1.7976931348623157e308
+WHOLE = 2.0 ** 53
 BELOW_0 = math.nextafter(0.0, -1.0)
 ABOVE_1 = math.nextafter(1.0, 2.0)
 
 
 def _domain(ref, rule, accepted, refused, printed=float):
-    """The DOMAINS cases of ``ref``: each of ``accepted`` projects, each of ``refused`` is
-    refused by the domain's ``rule``, and NaN and the infinities by it too."""
+    """The DOMAINS cases of ``ref`` alone: each of ``accepted`` projects, each of
+    ``refused`` is refused by the domain's ``rule``, and NaN and the infinities by it
+    too."""
     message = f"point_id 1: {ref} must be {rule}, not {{}}"
-    cases = [(ref, value, None) for value in accepted]
-    cases += [(ref, value, message.format(printed(value))) for value in refused]
-    return cases + [(ref, value, message.format(float(value)))
+    cases = [(f"{ref}={value!r}", {ref: value}, None) for value in accepted]
+    cases += [(f"{ref}={value!r}", {ref: value}, message.format(printed(value)))
+              for value in refused]
+    return cases + [(f"{ref}={value!r}", {ref: value}, message.format(float(value)))
                     for value in (math.nan, math.inf, -math.inf)]
 
 
-def _whole_domain(ref, accepted):
-    """The DOMAINS cases of an integer Reference: finite, 0 or more."""
-    cases = [(ref, value, None) for value in accepted]
-    cases.append((ref, -1, f"point_id 1: {ref} must be 0 or more, not -1"))
-    return cases + [(ref, value, f"point_id 1: {ref} must be a finite number, not "
-                     f"{float(value)}") for value in (math.nan, math.inf, -math.inf)]
+def _whole_domain(ref, accepted, below=True):
+    """The DOMAINS cases of an integer Reference: a whole number below 2**53, and 0 or
+    more where ``below``, printed through int() once whole."""
+    whole = f"point_id 1: {ref} must be a whole number below 2**53, not {{}}"
+    cases = [(f"{ref}={value!r}", {ref: value}, None) for value in accepted]
+    if below:
+        cases.append((f"{ref}=-1", {ref: -1}, f"point_id 1: {ref} must be 0 or more, not -1"))
+    return cases + [(f"{ref}={value!r}", {ref: value}, whole.format(float(value)))
+                    for value in (0.5, 120.5, WHOLE, 1e300, math.nan, math.inf, -math.inf)]
 
 
+def _returns(fund_return, return_shock):
+    """The joint rule's refusal, at ``fund_return`` and ``return_shock``."""
+    return (f"point_id 1: fund_return + return_shock, the trailing year's return, must be "
+            f"above -1, not {float(fund_return + return_shock)}, under fund_return "
+            f"{float(fund_return)} and return_shock {float(return_shock)}")
+
+
+OMEGA = ("point_id 1: omega_age must be above issue_age_min, 18, and at most "
+         "mort_table.csv's last age, 120, not {}")
 DOMAINS = [
-    *_domain("fund_return", "a finite number, -1 or more", (-1.0, BIG),
-             (math.nextafter(-1.0, -2.0),)),
+    *_domain("fund_return", "a finite number, -1 or more", (), (math.nextafter(-1.0, -2.0),)),
+    ("fund_return=-1.0 with return_shock 0.5", {"fund_return": -1.0, "return_shock": 0.5},
+     None),
+    ("fund_return=BIG", {"fund_return": BIG},
+     f"point_id 1: the unit fund grown in month 11, av_pp_at(11, 'AFT_GROWTH'), is nan, "
+     f"not a finite number, under fund_return {BIG}"),
     *_domain("inflation_rate", "a finite number, -1 or more", (-1.0, BIG),
              (math.nextafter(-1.0, -2.0),)),
-    *_domain("return_shock", "a finite number above -1", (math.nextafter(-1.0, 0.0), BIG),
-             (-1.0,)),
+    *_domain("return_shock", "a finite number", (-1.0, BIG), ()),
+    ("fund_return 0 with return_shock -1", {"fund_return": 0.0, "return_shock": -1.0},
+     _returns(0.0, -1.0)),
+    ("fund_return 0 with return_shock just above -1",
+     {"fund_return": 0.0, "return_shock": math.nextafter(-1.0, 0.0)}, None),
+    ("fund_return -0.9 with return_shock -0.5", {"fund_return": -0.9, "return_shock": -0.5},
+     _returns(-0.9, -0.5)),
     *_domain("mort_be_factor", "a finite number, 0 or more", (0.0, BIG), (BELOW_0,)),
     *_domain("wd_allowance_rate", "a finite number, 0 or more", (0.0, BIG), (BELOW_0,)),
-    *_whole_domain("allowance_years", (0, BIG)),
+    *_whole_domain("allowance_years", (0, WHOLE - 1)),
     *_domain("depletion_threshold", "a finite number, 0 or more", (0.0,), (BELOW_0,)),
-    ("depletion_threshold", BIG,
+    ("depletion_threshold=BIG", {"depletion_threshold": BIG},
      "point_id 1: av_pp_init, the fund at outset, is 100000.0, at or below "
      f"depletion_threshold, {BIG}: the bond holds nothing to project from its issue month"),
     *_domain("surr_rate_cap", "a number from 0 to 1", (0.0, 1.0), (BELOW_0, ABOVE_1)),
@@ -1978,14 +2005,19 @@ DOMAINS = [
     *_domain("perf_factor_slope", "a finite number, 0 or more", (0.0, BIG), (BELOW_0,)),
     *_domain("allow_step", "a finite number, 0 or more", (0.0, BIG), (BELOW_0,)),
     *_whole_domain("issue_age_min", (0,)),
-    ("issue_age_min", BIG,
-     f"point_id 1: the issue age, 65, is below issue_age_min, {int(BIG)}"),
+    ("issue_age_min=2**53-1", {"issue_age_min": WHOLE - 1},
+     f"point_id 1: the issue age, 65, is below issue_age_min, {int(WHOLE - 1)}"),
+    *_whole_domain("omega_age", (120,), below=False),
+    ("omega_age=121", {"omega_age": 121}, OMEGA.format(121)),
+    ("omega_age=18", {"omega_age": 18}, OMEGA.format(18)),
+    ("omega_age=19", {"omega_age": 19},
+     "point_id 1: the issue age, 65, is at or past omega_age, 19: the bond has no cover"),
+    ("omega_age=2**53-1", {"omega_age": WHOLE - 1}, OMEGA.format(int(WHOLE - 1))),
 ]
 
 
-@pytest.mark.parametrize("ref, value, message", DOMAINS,
-                         ids=[f"{c[0]}={c[1]!r}" for c in DOMAINS])
-def test_each_reference_is_held_to_its_domain_at_both_edges(ref, value, message):
+@pytest.mark.parametrize("case, refs, message", DOMAINS, ids=[c[0] for c in DOMAINS])
+def test_each_reference_is_held_to_its_domain_at_both_edges(case, refs, message):
     """``proj_len()`` holds each Reference to its domain, NaN and the infinities outside it.
 
     :mod:`~.ULB_UK_S` reads ``perf_factor_cap`` and ``allow_step`` through a ``min`` whose
@@ -1993,19 +2025,46 @@ def test_each_reference_is_held_to_its_domain_at_both_edges(ref, value, message)
     month; ``return_shock`` through the shortfall's ``max(0, ...)``, so that a NaN reads as
     no shock; ``wd_cap_rate`` through the room's, so that a NaN, or a negative rate, pays no
     withdrawal, and the anchor cell projects 660 months where it projects 353; and
-    ``issue_age_min`` in a comparison a NaN switches off.  The frame refuses each such
-    Reference, by name, before it projects anything, and every report with it, at the
-    nearest value outside each edge of its domain, and accepts the edge itself
-    (:data:`DOMAINS`).  Each case sets its Reference on a model just read (K7).
+    ``issue_age_min`` and ``omega_age`` in comparisons a NaN switches off, the limiting age
+    sizing every frame.  The frame refuses each such Reference, by name, before it projects
+    anything, and every report with it, at the nearest value outside each edge of its
+    domain, and accepts the edge itself (:data:`DOMAINS`): the integer References at a
+    fraction and at exactly ``2**53``, ``omega_age`` past the mortality table's last age,
+    and ``return_shock`` where the trailing year's return it makes with ``fund_return``
+    is -100% or less, which a shock of -1 at the shipped 5% return is not.  Each case sets
+    its References on a model just read (K7).
     """
     model = mx.read_model(model_path(SEC), name=_name("domain"))
     try:
-        setattr(model.Projection, ref, value)
+        for ref, value in refs.items():
+            setattr(model.Projection, ref, value)
         p = _row(model, "twin", 1, 0)
         if message is None:
             assert p.proj_len() > 0
         else:
             _refused(p.result_cf, message)
+    finally:
+        model.close()
+
+
+def test_the_allowance_past_the_floats_is_refused_in_its_cell():
+    """An allowance a rate past every amount of money makes is refused where it first is.
+
+    ``wd_allowance_rate`` at the largest float is in its domain, and the frame projects, the
+    anchor pattern's withdrawal capped at 7.5%; but the allowance it accrues is past the
+    floats from the first month, where :func:`excess_gain_pp`'s ``max(0, ...)`` would read
+    it as no excess gain.  ``allowance_cum_pp`` refuses it, naming the month and the
+    References, and so does every report that reads it: a computed value out of its range
+    is refused in its cell (USLIB-SEC-PLAN.md §7.1, *Record - M1*).
+    """
+    model = mx.read_model(model_path(SEC), name=_name("allowance_big"))
+    try:
+        model.Projection.wd_allowance_rate = BIG
+        p = _row(model, "twin", 1, 0)
+        assert len(p.result_cf()) > 0
+        _refused(p.result_uf, f"point_id 1: the allowance allowance_cum_pp(0) is inf, not a "
+                              f"finite number, under wd_allowance_rate {BIG} and "
+                              f"allowance_years 20")
     finally:
         model.close()
 
@@ -2456,31 +2515,40 @@ def test_a_table_a_reader_cannot_read_is_refused_naming_its_rows(tmp_path, case,
 
 
 def test_a_read_beyond_the_mortality_table_is_refused_naming_its_point(tmp_path):
-    """A read past the mortality table's ages is refused by the one cell that reads it.
+    """A read past the mortality table's ages is refused, naming the point.
 
-    ``ULB_UK_S``'s lookup raises ``KeyError`` beyond the table, naming no point.  Here the
-    mortality rate's read at an attained age outside the table, above or below it, raises
-    ``ValueError`` naming the point and the age: a table cut to ages 20 to 100, so that the
-    anchor cell, issued at 65, is refused where it reaches 101, and the custom point, issued
-    at 55, the same.  And under a limiting age raised to 122, past the table's last age, a
-    point is refused where its age reaches 121.  The surrender table takes its last year for
-    every later one, as ``ULB_UK_S`` does, so no read is beyond it.
+    ``ULB_UK_S``'s lookup raises ``KeyError`` beyond the table, naming no point.  Above it,
+    the limiting age, ``omega_age``, is held to the table's last age by ``proj_len()``, so
+    no frame reaches past it: a table cut to ages 20 to 100 refuses every point, naming the
+    limiting age and the table's last age, and so does a limiting age raised to 121, past
+    the shipped table's 120.  Below it, the mortality rate's read at an attained age the
+    table does not rate raises ``ValueError`` naming the point and the age: the anchor
+    cell issued at 18, the youngest the contract issues, under a table that starts at 20.
+    The surrender table takes its last year for every later one, as ``ULB_UK_S`` does, so
+    no read is beyond it.
     """
     cut = {MORT: _dropped(lambda t: (t["age"] > 100) | (t["age"] < 20))}
     model = _read_edited(tmp_path, lambda t: t, edits=cut)
     try:
-        _refused(_point(model, 2).result_cf,
-                 "point_id 2: mort_table.csv has no rate at attained age 101")
-        _refused(_point(model, 6).result_cf,
-                 "point_id 6: mort_table.csv has no rate at attained age 101")
+        for point in (2, 6):
+            _refused(_point(model, point).result_cf,
+                     f"point_id {point}: omega_age must be above issue_age_min, 18, and at "
+                     f"most mort_table.csv's last age, 100, not 120")
+    finally:
+        model.close()
+    low = {MORT: _dropped(lambda t: t["age"] < 20)}
+    model = _read_edited(tmp_path / "low", _set("age_at_entry", [1], 18), edits=low)
+    try:
+        _refused(_point(model, 1).result_cf,
+                 "point_id 1: mort_table.csv has no rate at attained age 18")
     finally:
         model.close()
     model = _read_edited(tmp_path / "omega", lambda t: t)
     try:
-        model.Projection.omega_age = 122
+        model.Projection.omega_age = 121
         _refused(_point(model, 2).result_cf,
-                 "point_id 2: mort_table.csv has no rate at attained age 121")
-        assert len(_point(model, 1).result_cf()) == 353
+                 "point_id 2: omega_age must be above issue_age_min, 18, and at most "
+                 "mort_table.csv's last age, 120, not 121")
     finally:
         model.close()
 
@@ -2745,7 +2813,7 @@ def test_the_withdrawals_since_issue_are_read_from_the_model_point(sec_model, tm
         model.close()
 
 
-def test_the_allowance_accrued_is_read_from_the_model_point(sec_model, tmp_path):
+def test_the_allowance_accrued_is_read_from_the_model_point(sec_model, s_model, tmp_path):
     """The allowance a bond has accrued since issue is the point's, not today's (K14; D6).
 
     ``ULB_UK_S`` rebuilds the 5% allowance from ``wd_allowance_rate`` and
@@ -2766,6 +2834,13 @@ def test_the_allowance_accrued_is_read_from_the_model_point(sec_model, tmp_path)
       95,000 in every month, its excess gain 5,000 above the committed row's, and its fund,
       its withdrawals and its frame the committed row's: the allowance moves the tax
       machinery alone.
+    * On an anniversary, at 4% from the valuation date: the column is measured before
+      month 0's own events (D6, precised at M7), and the accrual of the year that begins
+      in month 0 is one, so it reads the valuation date's rate.  The anchor cell restated
+      at its month 12 opens with its first year's 5,000 and accrues 4,000 in month 0, as
+      its twin, issued at ``t = 0``, and the row issued 13 months on accrue their first
+      year's 4,000 in their issue month.  A column that held month 0's accrual too would
+      open at 10,000, its second year at the old 5%.
     """
     adviser = _label(_committed(), "derived", 3, 66)
     gmdb = _label(_committed(), "derived", 4, 240)
@@ -2784,6 +2859,21 @@ def test_the_allowance_accrued_is_read_from_the_model_point(sec_model, tmp_path)
         assert [a.allowance_cum_pp(t) for t in (0, 5, 6, 17, 18)] == pytest.approx(
             [30000.0, 30000.0, 34000.0, 34000.0, 38000.0], rel=1e-12)
         assert [g.allowance_cum_pp(t) for t in (0, 12, 100)] == [100000.0] * 3
+    finally:
+        model.close()
+    spec = dataclasses.replace(SPEC, derived=((1, 12),), future=((1, 13),))
+    rows, _ = build_sec_table(spec, s_model)
+    model = mx.read_model(_sec_inputs(tmp_path / "anniversary", rows),
+                          name=_name("anniversary"))
+    try:
+        model.Projection.wd_allowance_rate = 0.04
+        restated = _row(model, "derived", 1, 12)
+        assert restated.allowance_cum_pp_init() == 5000.0
+        assert restated.allowance_cum_pp(0) == pytest.approx(9000.0, rel=1e-12)
+        assert _row(model, "twin", 1, 0).allowance_cum_pp(0) == pytest.approx(4000.0,
+                                                                               rel=1e-12)
+        assert _row(model, "future", 1, -13).allowance_cum_pp(13) == pytest.approx(
+            4000.0, rel=1e-12)
     finally:
         model.close()
     model = _read_edited(tmp_path, _set("allowance_cum_pp_init", [gmdb], 95000.0))

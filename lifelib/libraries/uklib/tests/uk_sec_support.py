@@ -1295,21 +1295,24 @@ def _ulb_withdrawn(s, d):
 
 
 def _ulb_allowed(s, d):
-    """``ULB_UK_S``'s 5% allowance accrued in month ``d``, per policy.
+    """``ULB_UK_S``'s 5% allowance accrued entering month ``d``, per policy.
 
-    S's ``allowance_cum_pp(d)``: the allowable element of every policy year to the one
-    month ``d`` falls in, each accrued at its start.  0 at issue, where that year's accrual
-    is month 0's own event, which the opening state is measured before.
+    S's ``allowance_cum_pp(d - 1)``: the allowable element of every policy year to the one
+    month ``d - 1`` falls in, each accrued at its start.  The opening state is measured
+    before any month-0 event (D6, precised at M7), and a policy year's accrual at its start
+    is one: mid-year it is the year under way, and on an anniversary the year before it,
+    the new year accruing in the restated row's month 0, at the References of its valuation
+    date.  0 at issue, where the first year's accrual is month 0's own.
     """
-    return s.allowance_cum_pp(d) if d > 0 else 0.0
+    return s.allowance_cum_pp(d - 1) if d > 0 else 0.0
 
 
 # ULB_UK_SEC's opening state (D6; UKLIB-SEC-PLAN.md §6.6): what ULB_UK_S carries into month
 # d, each per policy, so that policy_count is the one weight.  The unit fund at the start of
 # month d, S's av_pp(d), the column S calls uf_init, renamed; the withdrawals and adviser
 # charges since issue, S's wd_cum_pp(d - 1) (_ulb_withdrawn), which open the GMDB; and the
-# allowance accrued, S's allowance_cum_pp(d) (_ulb_allowed), which the excess gain is
-# measured against.  At a twin's source_mth, 0 on every S point, these are what S itself
+# allowance accrued entering month d, S's allowance_cum_pp(d - 1) (_ulb_allowed), which
+# the excess gain is measured against.  At a twin's source_mth, 0 on every S point, these are what S itself
 # assumes at issue: the fund at outset, S's uf_init, nothing withdrawn and nothing accrued.
 _ULB_STATE = {
     "av_pp_init": lambda s, d: s.av_pp(d),

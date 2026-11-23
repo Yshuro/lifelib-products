@@ -132,7 +132,7 @@ already run (UKLIB-SEC-PLAN.md K14, §9 item 5):
 | `duration_mth` | whole months | the valuation date | the bond's age in months: positive in force, 0 for a bond issued at the valuation date, `−k` for one to be issued `k` months later, with `k` at most 120 as shipped |
 | `av_pp_init` | pounds per bond, above 0 | for a point in force, the start of month 0, before the month's growth, charges and cancellations; for any other, its issue month | the unit fund, the bid value of units the frame opens with: `av_pp(0)` in force, the fund at outset otherwise, the premium on every shipped point |
 | `wd_cum_pp_init` | pounds per bond, 0 or more | the end of month −1, after its cancellations: the start of month 0 | the withdrawals and adviser charges cancelled since issue, the total the 5% allowance is measured against and the guaranteed minimum death benefit is net of; 0 on a point not yet in force |
-| `allowance_cum_pp_init` | pounds per bond, 0 or more | the start of month 0, after the allowance of the policy year it falls in has accrued, at that year's start | the 5% allowance accrued since issue, through the policy year under way, which the excess gain is measured against; 0 on a point not yet in force |
+| `allowance_cum_pp_init` | pounds per bond, 0 or more | the start of month 0, before any month-0 event: through the policy year of month −1, so that on an anniversary the year beginning in month 0 accrues in month 0, at the valuation date's References | the 5% allowance accrued since issue, which the excess gain is measured against; 0 on a point not yet in force |
 
 `ULB_UK_S` re-derives all three from References where its frame opens, which a Reference
 changed at the valuation date would rewrite back to issue. Its fund is the premium grown
@@ -147,10 +147,15 @@ money from its first month. And its allowance is `P × min(y, 20) × 5%` from is
 rate and the twenty years Projection References, so that an allowance rate changed at the
 valuation date would rewrite every year already accrued, and the excess gain with it: at
 4%, point 8's excess gain at `t = 0` would be 6,415.35 and point 9's 20,333.33, where the
-history makes them 415.35 and 333.33. Here the years through the one under way are the
-column, and each later year accrues at the References,
-`CumAllow(t) = CumAllow₀ + P × (min(y, 20) − min(y₀, 20)) × r`; a test changes the rate at
-the valuation date and writes the column off any path of it.
+history makes them 415.35 and 333.33. Here the years through the one month −1 falls in,
+`y₀ = (d − 1) // 12 + 1`, are the column, and each later year accrues at the References,
+`CumAllow(t) = CumAllow₀ + P × (min(y, 20) − min(y₀, 20)) × r`. Mid-year that is the year
+under way; on an anniversary the year that begins in month 0 is month 0's own accrual,
+which reads the valuation date's References as every month-0 event does
+(USLIB-SEC-PLAN.md D6, precised at M7): at 4% the anchor cell restated at its month 12
+opens with its first year's 5,000 and accrues 4,000 in month 0, as its twin issued at
+`t = 0` accrues its first. A test changes the rate at the valuation date, mid-year and on
+an anniversary, and writes the column off any path of it.
 
 Nothing else of the contract is rebuilt from the References of the day. The excess gain
 is the withdrawals since issue less the allowance, and the allowance-exhaustion step reads
@@ -228,19 +233,26 @@ first, which keeps the bound where a NaN meets it:
 
 | Reference | Domain | Outside it |
 |---|---|---|
-| `issue_age_min` | finite, 0 or more, years, printed through `int()` | a NaN switches the bound off, every comparison with it failing |
+| `issue_age_min` | a whole number of years below `2**53`, 0 or more | a NaN switches the bound off, every comparison with it failing; past `2**53` the compiled model's `long long` cannot hold it |
+| `omega_age` | a whole number of years below `2**53`, above `issue_age_min`, at most `Data.mort_age_last()`, 120 | it sizes every frame: a NaN, an infinity or a fraction raises in the fund's search, and past the table's last age no rate is read |
 | `fund_return`, `inflation_rate` | finite, −1 or more | the monthly return `(1 + g)^(1/12) − 1` has no real value, and the inflation factor changes sign each year |
-| `return_shock` | finite, above −1 | a trailing year 100 points or more below the fund's is a fund lost whole; a NaN reads as no shock |
+| `return_shock` | finite, and `fund_return + return_shock`, the trailing year's return, above −1 | a trailing return of −100% or less is a fund lost whole; a NaN reads as no shock |
 | `mort_be_factor` | finite, 0 or more | a mortality rate is negative |
 | `wd_allowance_rate` | finite, 0 or more | the allowance and the anchor pattern's withdrawal are negative |
-| `allowance_years` | finite, 0 or more, years, printed through `int()` | the allowance is negative, and a NaN lets it accrue without end |
+| `allowance_years` | a whole number of years below `2**53`, 0 or more | the allowance is negative, a NaN lets it accrue without end, and past `2**53` the compiled model's `long long` cannot hold it |
 | `depletion_threshold` | finite, 0 or more | no fund, floored at 0, would count as exhausted |
 | `surr_rate_cap`, `wd_cap_rate` | 0 to 1 | no probability, and no share of the fund or the premium; a NaN or negative withdrawal cap pays no withdrawal, so the anchor cell projects 660 months, not 353 |
 | `perf_factor_cap`, `perf_factor_slope`, `allow_step` | finite, 0 or more | a negative surrender rate; a NaN is lost in the bound-first `min`, and the surrender rate reads the cap in every month |
 
-Each check is a comparison written out, a finite bound the largest float, so that the
-compiled model runs it in C. And so does a bond whose opening fund is at or below the
-threshold (*Where the fund runs out*). A loop over the
+Each check is a comparison written out, a finite bound the largest float and a whole one
+`2**53`, so that the compiled model runs it in C; the three integer References are printed
+through `int()` once they are whole. A value a formula computes past the floats from
+References each in its domain is refused in the cell where it first is, naming the
+References: the fund, where a `fund_return` near the largest float grows it, at
+`av_pp_at(t, "AFT_GROWTH")`, where `ULB_UK_S` makes `inf − inf` a NaN, floors it to 0 and
+reads it as exhaustion; and the allowance, under a `wd_allowance_rate` that large, which
+the excess gain's `max(0, …)` would read as no gain. And so does a bond whose opening fund
+is at or below the threshold (*Where the fund runs out*). A loop over the
 block meets such a row only when it reaches it, after projecting the points before it,
 so `run_sec.py --block` asks every point for its frame before it projects any, and stops
 before it prints anything.
@@ -260,10 +272,11 @@ gap or a repeat, each rate a number from 0 to 1; and `Data.surr_last_year` for t
 surrender table, policy years from 1 without a gap, each rate from 0 to 1. A key is read
 by its value, so an age written `35.0` is 35. Each refusal names the file, the column and
 the lines at fault: the mortality table's check reads the file as it stands, one read
-that `ULB_UK_S`'s reader then sorts. A read at an attained age
-outside the mortality table is refused by the one cell that reads it, naming the point,
-where `ULB_UK_S`'s lookup raised `KeyError`; the surrender table takes its last year for
-every later one, as `ULB_UK_S` does, so no read is beyond it.
+that `ULB_UK_S`'s reader then sorts. No frame reaches past the table's last age, which
+`proj_len()` holds `omega_age` to; a read below its first, a bond issued at an age the
+table does not rate, is refused by the one cell that reads it, naming the point and the
+age, where `ULB_UK_S`'s lookup raised `KeyError`. The surrender table takes its last year
+for every later one, as `ULB_UK_S` does, so no read is beyond it.
 
 ## The model points
 
@@ -406,10 +419,10 @@ without saying so would fail it.
 | `duration_mth`, `duration` | `t`, `t // 12` | `duration_mth_init() + t`, `duration_mth(t) // 12` | The policy clock, opened from the model point |
 | `t_entry`, `is_active`, new | — | `max(0, −duration_mth_init())`; `0 ≤ duration_mth(t) < horizon_mths()` | The first month on the books, and cover, read from the limiting age alone |
 | `fund_exhaust_mth` | the first `t` from 0 whose fund is 0 or less | the first month from `t_entry()` whose fund is at or below `depletion_threshold`, as a policy month | *Where the fund runs out* |
-| `proj_len` | `min(horizon_mths(), fund_exhaust_mth())`, from issue | the same less `duration_mth_init()`, from the valuation date; raises past cover, outside the contract's bounds, under any of thirteen References outside its domain, and on an opening fund at or below the threshold | The frame starts at the valuation date |
+| `proj_len` | `min(horizon_mths(), fund_exhaust_mth())`, from issue | the same less `duration_mth_init()`, from the valuation date; raises past cover, outside the contract's bounds, under any of fourteen References outside its domain, and on an opening fund at or below the threshold | The frame starts at the valuation date |
 | `av_pp`, `av_pp_at` | `av_pp(t) = av_pp_at(t − 1, "AFT_WD")`, four cells a month, from `uf_init` at 0 | `av_pp_init()` at `t_entry()`, then month `t − 1`'s growth, tax provision, charges and cancellations inline, in `av_pp_at`'s order and floats, one cell a month; `av_pp_at` reads `av_pp`; 0 outside cover | One cell a month (D5); the same float as S's in every month |
 | `wd_cum_pp`, `gmdb_guarantee_pp` | 0 before `t = 0` | `wd_cum_pp_init()` before `t_entry()` | The withdrawals since issue are history, and the guarantee opens from them |
-| `allowance_cum_pp` | `P × min(y, n) × r`, every year from issue | `allowance_cum_pp_init()`, then `P × (min(y, n) − min(y₀, n)) × r` for the years after the one under way at the valuation instant | The allowance accrued is history; the same float on a point not yet in force |
+| `allowance_cum_pp` | `P × min(y, n) × r`, every year from issue | `allowance_cum_pp_init()`, then `P × (min(y, n) − min(y₀, n)) × r` for the years after the one month −1 falls in; refused past the floats | The allowance accrued is history; the same float on a point not yet in force |
 | `pols_if`, `pols_if_at`, `pols_if_init` | a recursion through `"AFT_DECR"`, three cells a month, from the column's 1.0 at 0 | `"BEF_DECR"`, one cell a month from `t_entry()` through `"BEF_NB"`; `pols_if_init()` is 0 unless in force | Bonds in force at the valuation date open the count; new business joins it in its issue month |
 | `pols_death`, `pols_surr`, `"BEF_SURR"` | unguarded | zero outside cover and the frame, before a rate is read | No count evaluates a rate outside cover |
 | `mort_rate`, `surr_rate_base`, `allow_factor`, `allowance_cum_pp`, `wd_cap_pp`, `wd_pp`, `gmdb_charge_pp` | unguarded: no `ULB_UK_S` frame has a month outside cover | zero outside cover, before any table or rate is read; the tables' extents from `Data`, a read past the mortality table refused by name | Before issue S's tables raise `KeyError`, and its allowance is negative |
@@ -495,8 +508,9 @@ attained age 111 at 1.25, which a test shows. The surrender rate's bound keeps
   naming its point; the horizon is a Reference; a point past its cover or outside the
   contract's bounds, 5 cases, is refused by `proj_len()`, each bound just inside it and
   each moved past a committed point, and `run_sec.py --block` refuses such a point before
-  printing anything; each of thirteen References is held to its domain, 80 cases, each
-  edge accepted and the nearest value past it refused, NaN and the infinities too; so is a
+  printing anything; each of fourteen References is held to its domain, 102 cases, each
+  edge accepted and the nearest value past it refused, NaN, the infinities, a fraction and
+  `2**53` too, the fund and the allowance refused where they would pass the floats; so is a
   fund at or below the threshold, at exactly it, part of it and a rounding above 0, where
   the least fund past it projects; a surrender rate of exactly 1 is accepted, and one just
   above 1 or below 0 refused in its month and by the frame; each assumption table a reader

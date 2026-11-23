@@ -76,8 +76,8 @@ point, whose policies enter as new business at ``t = 0``.
 carries into the month it is valued at, each per policy and measured at the valuation
 instant: the unit fund; the withdrawals and adviser charges since issue, which the
 allowance is measured against and the guaranteed minimum death benefit is net of; and the
-5% allowance accrued since issue, through the policy year under way. Each is history,
-which no Reference changed at the valuation date reaches back to.
+5% allowance accrued since issue, through the policy year of the month before. Each is
+history, which no Reference changed at the valuation date reaches back to.
 ``result_pols()`` sets out the counts: in force, new business and each decrement, month by
 month.
 
