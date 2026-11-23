@@ -995,10 +995,11 @@ class SecSpec:
         ``derived`` would make of its pair had S shipped those References, which are set on
         S's ``Projection`` while the row is read and restored after it, and its
         ``provenance``, where the S table has one, names each Reference and its value.  A
-        pair may not be one of ``derived``'s, whose row would take its ``policy_id``; a
-        name must be one of the References of S's ``Projection``; and a spec with
-        ``companions`` may have none, since a companion's builder reads S at its own
-        References and would give such a row the state of another run.  Empty by default.
+        pair may not be one of ``derived``'s, whose row would take its ``policy_id``; and a
+        name must be one of the References of S's ``Projection``.  Each companion's rows
+        for such a row are built under the row's References too, from the row alone
+        (:func:`build_sec_table`), so that a companion holds the state of the run its row
+        was read from.  Empty by default.
     ``future``
         ``(S point_id, k)`` pairs; each S point must be new business.
     ``state``
@@ -1112,11 +1113,6 @@ class SecSpec:
                     f"derived_refs row ({p}, {d}), under {_reference_settings(refs)}, "
                     f"repeats derived row ({p}, {d}), read from S at its own References: "
                     f"the two would take one policy_id")
-        if self.derived_refs and self.companions:
-            raise ValueError(
-                f"derived_refs rows {list(self.derived_refs)} and companions "
-                f"{list(self.companions)}: a companion's builder reads S at its own "
-                f"References, and would give such a row the state of another run")
 
 
 # >>> product specs: this library's own.  tools/check_sec_harness.py compares the rest.
@@ -2020,7 +2016,13 @@ def build_sec_table(spec, s_model):
 
     Returns ``(table, companions)``: the table on a default index, ``point_id`` its first
     column, exactly as the file is written; and ``{filename: DataFrame}`` from the spec's
-    companion builders.
+    companion builders.  Each builder is given the rows read from S as it ships, and then
+    each ``derived_refs`` row alone, under that row's References, set on S's
+    ``Projection`` and restored after it in a ``finally`` as for the row itself; its
+    frames are joined in that order, an empty one left out, on a default index.  So a
+    companion gives each row the state of the run the row was read from, and a builder
+    builds the rows of the table it is given and no others.  A spec with no
+    ``derived_refs`` calls each builder once, on the whole table, as it always has.
 
     Every S point's ``result_cf()`` is projected, to find its first row.  Pass a model whose
     points are already swept, the instance T1 swept, and that costs nothing.
@@ -2149,11 +2151,26 @@ def build_sec_table(spec, s_model):
             raise ValueError(f"the SEC table repeats {key} {dupes}; is a (point, month) "
                              f"pair listed twice?")
     companions = {}
+    shipped = len(table) - len(spec.derived_refs)
     for filename, build in spec.companions.items():
-        frame = build(s_model, table.copy())
-        if not isinstance(frame, pd.DataFrame):
-            raise TypeError(f"the builder of {filename} returned a "
-                            f"{type(frame).__name__}, not a DataFrame")
+        parts = [build(s_model, table.iloc[:shipped].copy())]
+        for i, refs in enumerate(spec.derived_refs.values()):
+            saved = {name: space.refs[name] for name in refs}
+            try:
+                for name, value in refs.items():
+                    setattr(space, name, value)
+                parts.append(build(s_model, table.iloc[[shipped + i]].copy()))
+            finally:
+                for name, value in saved.items():
+                    setattr(space, name, value)
+        for frame in parts:
+            if not isinstance(frame, pd.DataFrame):
+                raise TypeError(f"the builder of {filename} returned a "
+                                f"{type(frame).__name__}, not a DataFrame")
+        kept = [frame for frame in parts if len(frame)]
+        frame = parts[0]
+        if len(parts) > 1 and kept:
+            frame = pd.concat(kept, ignore_index=True)
         companions[filename] = frame
     return table, companions
 

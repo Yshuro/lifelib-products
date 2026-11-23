@@ -886,14 +886,12 @@ def test_generated_text_is_s_text_or_composed_from_s_keys(tmp_path):
     ({"companions": {"model_point_table_sec.csv": lambda m, t: t}}, "would replace"),
     ({"future_state": {"policy_count": lambda s, k: 2.0}}, "the generator owns them"),
     ({"future_state": {"duration_mth": lambda s, k: 0}}, "the generator owns them"),
-    # A row under References of its own may not take a shipped row's place, nor set none,
-    # nor sit beside a companion, whose builder reads S at its own References.
+    # A row under References of its own may not take a shipped row's place, nor set none.
+    # It may sit beside a companion, whose rows for it are built under its References too
+    # (test_a_companion_row_of_a_derived_refs_row_is_s_run_under_its_references).
     ({"derived_refs": {(1, 12): {"mort_scale": 0.9}}},
      r"derived_refs row \(1, 12\), under mort_scale 0\.9, repeats derived row \(1, 12\)"),
     ({"derived_refs": {(1, 24): {}}}, r"derived_refs row \(1, 24\) sets no Reference"),
-    ({"derived_refs": {(1, 24): {"mort_scale": 0.9}},
-      "companions": {"policy_ids_sec.csv": lambda m, t: t}},
-     "a companion's builder reads S at its own References"),
 ])
 def test_a_spec_that_could_clobber_s_or_the_generator_is_refused(change, error):
     with pytest.raises(ValueError, match=error):
@@ -1004,6 +1002,88 @@ def test_a_derived_refs_row_is_s_run_under_its_references(tmp_path):
         "1.5, expense_maint 31.0",
         "S point 2 (TA-000002) restated in force at S month 12 under premium_market_ratio "
         "1.2"]
+
+
+def _lapses_seen(calls):
+    """A companion builder, recording each table it is given in ``calls``: one row for each
+    row in force in S, its SEC ``point_id`` and the lapse rate S gives its source policy in
+    its source month, read from S at whatever References S is read at."""
+    def build(s_model, table):
+        calls.append(table["point_id"].tolist())
+        s_table = s_model.Data.model_point_table()
+        rows = []
+        for record in table.to_dict("records"):
+            if record["source_mth"] <= 0:
+                continue
+            pid = int(s_table.index[s_table["policy_id"] == record["source_policy_id"]][0])
+            rows.append({"point_id": record["point_id"],
+                         "lapse_seen": s_model.Projection[pid].lapse_rate(
+                             record["source_mth"])})
+        return pd.DataFrame(rows, columns=["point_id", "lapse_seen"])
+    return build
+
+
+def test_a_companion_row_of_a_derived_refs_row_is_s_run_under_its_references():
+    """A companion's rows for a ``derived_refs`` row are read from S under its References.
+
+    A builder reads S where it is told to, so given the whole table it would read a row of
+    ``derived_refs`` at S's own References and give it the state of another run.  So the
+    generator gives it the rows read from S as it ships, once, and then each
+    ``derived_refs`` row alone, with that row's References set on S, and joins the frames
+    in that order.  Here the companion holds, for each row in force in S, the lapse rate S
+    gives its source in its month: on the twin in force and the shipped derived row, S's as
+    shipped; on the two ``derived_refs`` rows, what a second read of S run under each
+    row's References gives, which is not S's as shipped.  The builder is called three
+    times, on the eleven shipped rows and then on each row alone.  S's References are its
+    own again afterwards, and so they are when a builder raises under a row's References.
+    The table is the one the spec makes without the companion, exactly, and with no
+    ``derived_refs`` the builder is called once, on the whole table.
+    """
+    model, shipped = _read("companion_under"), _read("companion_shipped")
+    calls = []
+    spec = dataclasses.replace(UNDER_SPEC, companions={"seen_sec.csv": _lapses_seen(calls)})
+    try:
+        table, companions = build_sec_table(spec, model)
+        assert calls == [list(range(1, 11)), [11], [12]]
+        seen = companions["seen_sec.csv"]
+        assert seen["point_id"].tolist() == [8, 9, 11, 12]
+        assert seen.index.tolist() == [0, 1, 2, 3]
+        for point_id, s_point, d in ((8, 8, 60), (9, 1, 12)):
+            got = seen.loc[seen["point_id"] == point_id, "lapse_seen"].item()
+            assert got == shipped.Projection[s_point].lapse_rate(d), point_id
+        for point_id, ((p, d), refs) in zip((11, 12), UNDER.items()):
+            under = _read(f"companion_under_{p}")
+            try:
+                for name, value in refs.items():
+                    setattr(under.Projection, name, value)
+                got = seen.loc[seen["point_id"] == point_id, "lapse_seen"].item()
+                assert got == under.Projection[p].lapse_rate(d), (p, d)
+                assert got != shipped.Projection[p].lapse_rate(d), (p, d)
+            finally:
+                under.close()
+        alone, _ = build_sec_table(UNDER_SPEC, model)
+        pd.testing.assert_frame_equal(table, alone, check_exact=True)
+        assert (model.Projection.premium_market_ratio,
+                model.Projection.expense_maint) == (1.0, 30.0)
+
+        def fails_under(s_model, table):
+            if s_model.Projection.premium_market_ratio != 1.0:
+                raise RuntimeError("a builder that fails under a row's References")
+            return table[["point_id"]]
+
+        failing = dataclasses.replace(UNDER_SPEC, companions={"seen_sec.csv": fails_under})
+        with pytest.raises(RuntimeError, match="fails under a row's References"):
+            build_sec_table(failing, model)
+        assert model.Projection.premium_market_ratio == 1.0
+        assert model.Projection[1].pols_if(24) == shipped.Projection[1].pols_if(24)
+        calls.clear()
+        plain = dataclasses.replace(spec, derived_refs={})
+        _, companions = build_sec_table(plain, model)
+        assert calls == [list(range(1, 11))]
+        assert companions["seen_sec.csv"]["point_id"].tolist() == [8, 9]
+    finally:
+        model.close()
+        shipped.close()
 
 
 def _policy_ids(s_model, table):
