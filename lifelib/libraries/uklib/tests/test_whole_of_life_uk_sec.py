@@ -1918,6 +1918,11 @@ MALFORMED = [
     ("a moratorium of 2**53 months", _set("moratorium_months", [2], 2.0 ** 53),
      "{file}: moratorium_months must be a whole number of months, 0 or more, below 2**53; "
      "it is not at point_id [2]"),
+    # The bound at 2**53 itself; 2**53 - 1 reads, and proj_len() refuses it as a cessation
+    # past the limiting age (NOT_ISSUED).
+    ("a cessation of 2**53 months", _set("cessation_months", [1], 2.0 ** 53),
+     "{file}: cessation_months must be a whole number of months, 0 or more, below 2**53; "
+     "it is not at point_id [1]"),
     ("the paid-up value without a cessation date", _set("cessation_months", [3], 0),
      "{file}: a pro-rata paid-up point must have a premium cessation date, "
      "cessation_months above 0, which the paid-up value is measured to; it is not at "
@@ -1988,6 +1993,12 @@ MALFORMED = [
     ("a crossover below -1", _set("crossover_mth_init", [11], -2), _CROSS_WHOLE + "[11]"),
     ("a blank crossover", _set("crossover_mth_init", [13], float("nan")),
      _CROSS_WHOLE + "[13]"),
+    # The bound at 2**53 itself, and 2**53 - 1, a whole number Data reads and then refuses
+    # as no month before the valuation date.
+    ("a crossover of 2**53", _set("crossover_mth_init", [11], 2.0 ** 53),
+     _CROSS_WHOLE + "[11]"),
+    ("a crossover of 2**53 - 1", _set("crossover_mth_init", [11], 2 ** 53 - 1),
+     _CROSS_MONTH + "[11]"),
     ("a crossover on new business", _set("crossover_mth_init", [1], 166),
      "{file}: crossover_mth_init must be -1 on a policy not yet in force, duration_mth 0 "
      "or less; it is not at point_id [1]"),
@@ -2216,7 +2227,11 @@ def test_a_point_past_the_limiting_age_is_refused_by_proj_len(tmp_path):
 # Each bound is refused just inside it here, and accepted at it in the edges test.  And
 # each bound, moved past a committed twin, refuses it, which at the shipped bound projects
 # its frame: the Reference is what refuses it.  Point 1 is the anchor cell, issued at 70;
-# point 5 the underwritten one, at 40.
+# point 5 the underwritten one, at 40.  And a point whose premiums cease past the limiting
+# age, which no contract writes, and on which the crossover's search, which runs the
+# premium-paying months, would run past the contract's longest cover: a month past it, at
+# 2**53 - 1, which Data reads, and past a limiting age lowered below the anchor cell's
+# cessation at 90; the edges test reads premiums ceasing at the limiting age itself.
 NOT_ISSUED = [
     ("an issue age of 17", _set("entry_age", [5], 17), {}, 5,
      "point_id 5: the issue age, 17, is below issue_age_min, 18", None),
@@ -2231,6 +2246,15 @@ NOT_ISSUED = [
     ("an issue age of 2**53 - 1", _set("entry_age", [1], 2 ** 53 - 1), {}, 1,
      f"point_id 1: the issue age, {2 ** 53 - 1}, is at or past omega_age, 120: the policy "
      f"has no cover", None),
+    ("a cessation a month past the limiting age", _set("cessation_months", [1], 601), {}, 1,
+     "point_id 1: cessation_months 601 is past the limiting age, policy month 600, "
+     "omega_age 120", None),
+    ("a cessation of 2**53 - 1", _set("cessation_months", [1], 2 ** 53 - 1), {}, 1,
+     f"point_id 1: cessation_months {2 ** 53 - 1} is past the limiting age, policy month "
+     f"600, omega_age 120", None),
+    ("a cessation past a limiting age lowered to 89", None, {"omega_age": 89}, 1,
+     "point_id 1: cessation_months 240 is past the limiting age, policy month 228, "
+     "omega_age 89", 600),
 ]
 
 
@@ -2247,9 +2271,12 @@ def test_a_point_the_contract_does_not_issue_is_refused_by_proj_len(tmp_path, ca
     to 120.  So the frame refuses such a point, naming it, as it refuses a point past the
     limiting age, and every report with it (:data:`NOT_ISSUED`): each bound just inside it,
     and each bound moved past a committed twin, which projects at the shipped bound, on a
-    model read afresh.  A bound off by one, or a refusal lost, lets a point through.  The
-    table reads either way.  Every Reference is set on a model just read, before its
-    projection computes anything (K7).
+    model read afresh.  So it refuses a point whose premiums cease past the limiting age,
+    whose crossover search would run past the contract's longest cover, a cessation of
+    ``2**53 - 1`` months among them, which would run it about ``9e15`` times in either
+    engine.  A bound off by one, or a refusal lost, lets a point through.  The table reads
+    either way.  Every Reference is set on a model just read, before its projection
+    computes anything (K7).
     """
     model = _read_edited(tmp_path, edit or (lambda t: t))
     try:
@@ -2599,7 +2626,8 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
     values, an RPI of 0 since issue, are read; and so is a level point valued after its
     premiums ceased, its premium the last one paid.  And each bound of the contract at its
     edge projects: issue at 18, 1,224 months to the limiting age, and issue at 119, 12
-    months.  Then the history's bounds, each at its edge (``Data``'s rules 16 and 17): the
+    months, its premiums ceasing at the limiting age, the last cessation the frame reads.
+    Then the history's bounds, each at its edge (``Data``'s rules 16 and 17): the
     premiums paid on an escalating point at the premium at issue and at the latest premium
     times the premiums due; on a level point a third of a cent past the premiums due, an
     extract rounded to the cent; the paid-up cover at the sum assured's share at the first
@@ -2624,7 +2652,8 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
                              "pu_benefit_pp_init": 2500.0, "crossover_mth_init": -1}),
               22: (rpi, {"cover_pp_init": 5000.0, "premium_pp_init": 30.0,
                          "prem_cum_pp_init": 5580.0, "crossover_mth_init": 166}),
-              23: (crossover, {"entry_age": 119, "duration_mth": 0, "prem_cum_pp_init": 0.0}),
+              23: (crossover, {"entry_age": 119, "duration_mth": 0, "prem_cum_pp_init": 0.0,
+                               "cessation_months": 12}),
               24: (rpi, {"prem_cum_pp_init": 5580.0}),
               25: (rpi, {"prem_cum_pp_init": latest}),
               26: (paid_up, {"pu_benefit_pp_init": 2500.0}),
@@ -2677,6 +2706,7 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
         assert flat.cover_pp(6) == pytest.approx(5150.0, rel=1e-12)
         last = _point(model, 23)
         assert len(last.result_cf()) == last.proj_len() == 12
+        assert last.cessation_mths() == last.limit_mth() and last.crossover_mth() == -1
         old = _point(model, ceased)
         assert old.premium_pp_init() == 45.0 and old.premium_pp(0) == 0.0
         assert len(old.result_cf()) == 360

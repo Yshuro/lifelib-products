@@ -454,7 +454,9 @@ product issues, and a limiting age, ``omega_age``, above it and no more than a y
 the table's last age, and at most ``omega_age_max``, 121, the shipped table's last age
 plus one and the largest limiting age the compiled model's caches are sized for
 (``spec_sec.py``), so that every limiting age the shipped table admits projects and a
-longer table bounds no frame. :func:`proj_len` holds each point to them, and holds every
+longer table bounds no frame. :func:`proj_len` holds each point to them, and to premiums
+ceasing no later than the limiting age, so that :func:`crossover_mth`'s search over the
+premium-paying months runs no longer than the contract's longest cover; and it holds every
 assumption to its domain too, which :mod:`~.WOL_UK_S` checks nowhere: each Reference it
 raises to a power, bounds a rate with, reads through a ``min`` or a ``max``, or reads as a
 share, a loading or an amount, so that no projection runs on a negative rate, benefit or
@@ -886,6 +888,13 @@ def proj_len():
     * a point at or past the limiting age at the valuation date, ``duration_mth`` at or
       past :func:`limit_mth`, keyed on the policy clock, which an in-force extract should
       not carry;
+    * a point whose premiums cease past the limiting age, ``cessation_months`` above
+      :func:`limit_mth`: no premium is payable after cover ends, and :func:`crossover_mth`
+      searches the premium-paying months, so that no point the frame accepts runs that
+      search past the contract's longest cover, 1,236 months, where a cessation of
+      ``2**52`` months would run it about ``4.5e15`` times.  Premiums ceasing at the
+      limiting age itself, ``cessation_months`` equal to :func:`limit_mth`, are payable to
+      the end of cover, and read;
     * any point while a Reference is off its domain, which the message names. NaN and the
       infinities are outside every one:
 
@@ -980,6 +989,10 @@ def proj_len():
         raise ValueError(
             f"point_id {point_id()}: duration_mth {d} is at or past the limiting age, "  # noqa: F821
             f"policy month {limit_mth()}, omega_age {int(omega_age)}")  # noqa: F821
+    if cessation_mths() > limit_mth():
+        raise ValueError(
+            f"point_id {point_id()}: cessation_months {cessation_mths()} is past the "
+            f"limiting age, policy month {limit_mth()}, omega_age {int(omega_age)}")  # noqa: F821
     if not (mort_loading_o50 >= 0.0                                  # noqa: F821
             and mort_loading_o50 <= 1.7976931348623157e308):          # noqa: F821
         raise ValueError(f"point_id {point_id()}: mort_loading_o50 must be a finite "  # noqa: F821
@@ -1480,8 +1493,9 @@ def crossover_mth():
     too.  No cell of the projection reads it: the crossover stress on the lapse rate
     compares the premiums paid and the cover month by month instead.
 
-    The search is one loop, up to 1,224 months a point, with no tuple, text or generator,
-    so that it compiles to a C loop.  Each step's power is computed as
+    The search is one loop, with no tuple, text or generator, so that it compiles to a C
+    loop, and runs at most 1,236 months a point, the contract's longest cover:
+    :func:`proj_len` refuses a cessation past the limiting age.  Each step's power is computed as
     :mod:`~.WOL_UK_S` computes it, the premium's and then the cover's, and where one is
     infinite from a finite base the cell calls Python's own float power, which raises
     ``OverflowError`` with the platform's message in the compiled model as in modelx, where
