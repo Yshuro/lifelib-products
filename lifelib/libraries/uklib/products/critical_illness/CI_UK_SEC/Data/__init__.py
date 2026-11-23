@@ -67,14 +67,14 @@ naming nothing, at the first month past the caches. It refuses, too, what
 flag that is not True or False, a code that names no contract type, life basis, sex,
 smoker status, cover basis, premium guarantee or premium mode, an age, a term or an amount
 that is not a number in its range, a joint point with no second life or on the standalone
-contract, an indexation history before the first anniversary, an open latch with a
-factor, and a history of indexation or reviews on a point without the option or the
-reviews. The checks run in turn, and the first that fails raises, naming the missing
-column or every point that fails it. Whether a point is still in cover at the valuation
-date, whether the contract issues it, and whether a reviewable point has had the reviews
-its history says, are rules of the product, and ``Projection.proj_len`` checks them,
-against its own References, the contract the compiled model's caches are sized from as
-they are from the horizon.
+contract, an indexation history on a policy whose first anniversary falls in month 0 or
+later, an open latch with a factor, and a history of indexation or reviews on a point
+without the option or the reviews. The checks run in turn, and the first that fails
+raises, naming the missing column or every point that fails it. Whether a point is still
+in cover at the valuation date, whether the contract issues it, and whether a reviewable
+point has had the reviews its history says, are rules of the product, and
+``Projection.proj_len`` checks them, against its own References, the contract the
+compiled model's caches are sized from as they are from the horizon.
 
 **Each assumption table is checked before a value of it is read.** Its keys are read by
 their value, so an age written ``40.0`` is age 40, and a key that is not whole, text among
@@ -225,8 +225,10 @@ def model_point_table():
        premium below 0;
     7. a policy not yet in force, ``duration_mth`` 0 or less, holds the issue values: 1
        for the four factors, and 0 for the latch and the review's change;
-    8. a policy in force fewer than 12 months, before its first anniversary, holds
-       indexation factors of 1, no increase having been given;
+    8. a policy in force 12 months or fewer holds indexation factors of 1: its first
+       anniversary, policy month 12, falls in month 0 or later, and an anniversary at the
+       valuation date is month 0's event, the projection's, not history
+       (USLIB-SEC-PLAN.md D6, precised at its M7), so no increase was given before it;
     9. an open latch, ``ci_sel_latched_init`` 0, holds a factor of 1: the factor is read
        only once the latch has closed;
     10. each of ``children_cover`` and ``indexation`` is True or False. pandas reads a
@@ -305,11 +307,11 @@ def model_point_table():
             raise ValueError(f"{name}: {column} must be {value} on a policy not yet in "
                              f"force, duration_mth 0 or less; it is not at point_id {bad}")
     for column in ("idx_factor_init", "idx_prem_factor_init"):
-        bad = table.index[(months > 0) & (months < 12) & (state[column] != 1)].tolist()
+        bad = table.index[(months > 0) & (months <= 12) & (state[column] != 1)].tolist()
         if bad:
-            raise ValueError(f"{name}: {column} must be 1 on a policy in force fewer than "
-                             f"12 months, before its first anniversary; it is not at "
-                             f"point_id {bad}")
+            raise ValueError(f"{name}: {column} must be 1 on a policy in force 12 months "
+                             f"or fewer, whose first anniversary falls in month 0 or "
+                             f"later; it is not at point_id {bad}")
     open_latch = state["ci_sel_latched_init"] == 0
     bad = table.index[open_latch & (state["ci_sel_factor_init"] != 1)].tolist()
     if bad:

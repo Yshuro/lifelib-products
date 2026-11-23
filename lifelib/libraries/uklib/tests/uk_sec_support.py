@@ -1265,29 +1265,63 @@ def _term_claims_total(name, args):
     return args
 
 
+def _ci_reviews_made(s, d):
+    """The reviews ``CI_UK_S`` made before month ``d``: S's ``reviews_passed(d - 1)``, the
+    reviews passed in the month before, or none at issue.  The opening state is measured
+    before any month-``d`` event, and a review that falls in month ``d`` is one, the
+    restated row's month 0's, made at the References of its valuation date (D6, precised
+    at uslib's M7)."""
+    return s.reviews_passed(d - 1) if d > 0 else 0
+
+
 def _ci_review_factor(s, d):
-    """The premium factor ``CI_UK_S``'s reviews have given by month ``d``, which S has no
-    cell for: ``(1 + review_prem_shock)`` to the power of the reviews passed, as S's
-    ``premium_pp`` multiplies by it, and 1 before the first review or on a guaranteed
-    point, which passes none.  On a review month, the factor of the period it opens."""
-    return (1.0 + s.review_prem_shock) ** s.reviews_passed(d)
+    """The premium factor ``CI_UK_S``'s reviews before month ``d`` have given, which S has
+    no cell for: ``(1 + review_prem_shock)`` to the power of the reviews made
+    (:func:`_ci_reviews_made`), as S's ``premium_pp`` multiplies by it, and 1 before the
+    first review or on a guaranteed point, which makes none.  On a review month, the
+    factor of the period it closes."""
+    return (1.0 + s.review_prem_shock) ** _ci_reviews_made(s, d)
 
 
 def _ci_review_change(s, d):
-    """The premium change ``CI_UK_S``'s last review at or before month ``d`` made: its one
-    ``review_prem_shock``, once a review has passed, and 0 before the first, or on a
-    guaranteed point."""
-    return float(s.review_prem_shock) if s.reviews_passed(d) >= 1 else 0.0
+    """The premium change ``CI_UK_S``'s last review before month ``d`` made: its one
+    ``review_prem_shock``, once a review has been made (:func:`_ci_reviews_made`), and 0
+    before the first, or on a guaranteed point.  On a review month, the change of the
+    review before it, whose window has closed."""
+    return float(s.review_prem_shock) if _ci_reviews_made(s, d) >= 1 else 0.0
 
 
 def _ci_latched(s, d):
-    """Whether ``CI_UK_S``'s select latch has closed by month ``d``, 1 or 0, which S has no
+    """Whether ``CI_UK_S``'s select latch closed before month ``d``, 1 or 0, which S has no
     cell for: S's ``ci_sel_factor`` takes ``1 + sel_lapse_ci_loading`` on a reviewable
-    point once a review has passed and ``review_prem_shock`` is past the threshold, and
-    those are its branches here.  The factor alone cannot say it: at a loading of 0 a
-    closed latch's factor is 1."""
-    return int(s.premium_guarantee() == "reviewable" and s.reviews_passed(d) >= 1
+    point once a review has been made (:func:`_ci_reviews_made`) and
+    ``review_prem_shock`` is past the threshold, and those are its branches here.  The
+    factor alone cannot say it: at a loading of 0 a closed latch's factor is 1.  On a
+    review month, the latch before that month's review, which closes it at the restated
+    row's ``t = 0`` if it does."""
+    return int(s.premium_guarantee() == "reviewable" and _ci_reviews_made(s, d) >= 1
                and s.review_prem_shock > s.review_lapse_threshold)
+
+
+def _ci_cover_factor(s, d):
+    """``CI_UK_S``'s cover indexation factor entering month ``d``, before its own step:
+    S's ``idx_factor(d - 1)``, the factor of the month before, which on an anniversary is
+    that of the policy year it closes, the step at ``d`` being the restated row's month
+    0's (D6, precised at uslib's M7); at issue, S's ``idx_factor(0)``, 1."""
+    return s.idx_factor(d - 1) if d > 0 else s.idx_factor(d)
+
+
+def _ci_premium_factor(s, d):
+    """``CI_UK_S``'s premium indexation factor entering month ``d``, before its own step,
+    at the instant :func:`_ci_cover_factor` reads the cover factor."""
+    return s.idx_prem_factor(d - 1) if d > 0 else s.idx_prem_factor(d)
+
+
+def _ci_select_factor(s, d):
+    """``CI_UK_S``'s select-latch factor entering month ``d``, before that month's review:
+    S's ``ci_sel_factor(d - 1)``, or at issue S's ``ci_sel_factor(0)``, 1.  Read only where
+    the latch closed before (:func:`_ci_latched`)."""
+    return s.ci_sel_factor(d - 1) if d > 0 else s.ci_sel_factor(d)
 
 
 def _ci_claims_total(name, args):
@@ -1307,19 +1341,23 @@ def _ci_claims_total(name, args):
 
 # CI_UK_SEC's opening state (D6; UKLIB-SEC-PLAN.md §6.2): the facts of the contract
 # CI_UK_S recomputes from flat References, each read as S's own formulas read it, each a
-# factor, a rate or a flag, so that policy_count is the one weight.  The two indexation
-# factors of the policy year under way, S's idx_factor(d) and idx_prem_factor(d); the
-# premium factor of the review period under way (_ci_review_factor); the select latch,
-# whether it has closed (_ci_latched) and its factor, S's ci_sel_factor(d); and the premium
-# change the last review made (_ci_review_change), which the SEC model reads while that
-# review's shock window runs.  At a twin's source_mth, 0 on every S point, these are the
-# issue values: 1 for the four factors, and 0 for the latch and the change.
+# factor, a rate or a flag, so that policy_count is the one weight, and each before any
+# month-d event: an anniversary or a review that falls in month d is the restated row's
+# month 0's, made at the References of its valuation date (D6, precised at uslib's M7).
+# The two indexation factors entering month d, S's idx_factor(d - 1) and
+# idx_prem_factor(d - 1) (_ci_cover_factor, _ci_premium_factor); the premium factor the
+# reviews before month d have given (_ci_review_factor); the select latch, whether it
+# closed before month d (_ci_latched) and its factor, S's ci_sel_factor(d - 1)
+# (_ci_select_factor); and the premium change the last review before month d made
+# (_ci_review_change), which the SEC model reads while that review's shock window runs.
+# At a twin's source_mth, 0 on every S point, these are the issue values: 1 for the four
+# factors, and 0 for the latch and the change.
 _CI_STATE = {
-    "idx_factor_init": lambda s, d: s.idx_factor(d),
-    "idx_prem_factor_init": lambda s, d: s.idx_prem_factor(d),
+    "idx_factor_init": _ci_cover_factor,
+    "idx_prem_factor_init": _ci_premium_factor,
     "review_prem_factor_init": _ci_review_factor,
     "ci_sel_latched_init": _ci_latched,
-    "ci_sel_factor_init": lambda s, d: s.ci_sel_factor(d),
+    "ci_sel_factor_init": _ci_select_factor,
     "review_prem_shock_init": _ci_review_change,
 }
 
@@ -1583,15 +1621,16 @@ SEC_SPECS: dict[str, SecSpec] = {
     # latch and the factors are closed forms on the policy clock, and the count is the one
     # chain.  pols_if_init becomes policy_count (the default), and every S point is new
     # business, so duration_of is the default too.  The derived rows are the indexed point
-    # on its third anniversary, 36, the factors of policy year 4 carried in; the reviewable
-    # point on its first review, 60, the review history then, inside the review's
-    # twelve-month shock window, 66, which a review before the valuation date opened, and
-    # mid-year after it, 78, the window closed; and the anchor cell in its last covered
-    # month, 299, a one-row frame.  The future row is the indexed point issued 13 months
-    # after the valuation date: more than a year on and off a valuation anniversary, so that
-    # the months before issue read policy years -1 and 0, where a missing guard would show,
-    # and its index steps fall a month after the valuation anniversaries.  T2's splice grid
-    # is built from this spec in a temporary table, not committed.
+    # on its third anniversary, 36, the factors of policy year 3 carried in and the
+    # anniversary's step its month 0's; the reviewable point on its first review, 60, no
+    # review before it and that review its month 0's, inside the review's twelve-month
+    # shock window, 66, which a review before the valuation date opened, and mid-year after
+    # it, 78, the window closed; and the anchor cell in its last covered month, 299, a
+    # one-row frame.  The future row is the indexed point issued 13 months after the
+    # valuation date: more than a year on and off a valuation anniversary, so that the
+    # months before issue read policy years -1 and 0, where a missing guard would show, and
+    # its index steps fall a month after the valuation anniversaries.  T2's splice grid is
+    # built from this spec in a temporary table, not committed.
     #
     # And one row S reaches only under a review change of its own (derived_refs).  At the
     # shipped change of 0 no S point has a shock month, a closed latch or a review factor

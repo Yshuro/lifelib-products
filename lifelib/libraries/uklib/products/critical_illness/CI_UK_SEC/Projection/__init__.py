@@ -135,23 +135,29 @@ A point in force carries, beside its count, the facts of its contract that
 count is the one weight on every flow, and each measured at the valuation instant, the
 start of month 0, before any month-0 event:
 
-* :func:`idx_factor_init` and :func:`idx_prem_factor_init`, the indexation factors of the
-  policy year under way, the RPI increases already given;
-* :func:`review_prem_factor_init`, the premium factor of the review period under way, the
-  premium changes the reviews already made have given;
-* :func:`ci_sel_latched_init`, the select latch, 1 once a review before the valuation date
-  has shocked lapses and 0 before, and :func:`ci_sel_factor_init`, the anti-selection
-  factor on the diagnosis rate it closed at, read only while it is closed: a latch closed
-  at a loading of 0 holds a factor of 1, and stays closed;
-* :func:`review_prem_shock_init`, the premium change the last review before the valuation
-  date made, which sets the shock lapse of its twelve-month window, read only while that
+* :func:`idx_factor_init` and :func:`idx_prem_factor_init`, the indexation factors
+  entering month 0, the RPI increases given before it: on an anniversary, those of the
+  policy year it closes;
+* :func:`review_prem_factor_init`, the premium factor the reviews made before month 0 have
+  given: on a review month, that of the review period it closes;
+* :func:`ci_sel_latched_init`, the select latch, 1 once a review before month 0 has
+  shocked lapses and 0 before, and :func:`ci_sel_factor_init`, the anti-selection factor
+  on the diagnosis rate it closed at, read only while it is closed: a latch closed at a
+  loading of 0 holds a factor of 1, and stays closed;
+* :func:`review_prem_shock_init`, the premium change the last review before month 0
+  made, which sets the shock lapse of its twelve-month window, read only while that
   window is still running.
 
-A review falling at the valuation date, the start of month 0, is history too: the premium
-due in month 0 is already the reviewed one, as the indexation factors on an anniversary
-are those of the year it opens. Each is read from the model point, never recomputed from a
-Reference, which is an assumption from the valuation date on: ``review_prem_shock`` is the
-premium change at each review after the valuation date, and ``rpi_rate`` the RPI from it.
+Each is read from the model point, never recomputed from a Reference, which is an
+assumption from the valuation date on: ``review_prem_shock`` is the premium change at
+each review from the valuation instant on, and ``rpi_rate`` the RPI from it. An event
+that falls at the valuation date itself is month 0's, the projection's first, made at the
+References of the valuation date, as on a point issued then (USLIB-SEC-PLAN.md D6,
+precised at its M7): on a point valued on its anniversary, that anniversary's RPI increase
+is made at ``rpi_rate``; on one valued in a review month, that review is made at
+``review_prem_shock``, opens its window at that change, and closes the select latch at
+``1 + sel_lapse_ci_loading`` if the change passes ``review_lapse_threshold``, each of the
+valuation date; and the columns hold the state before it.
 
 .. rubric:: Codes
 
@@ -414,9 +420,10 @@ from the notes and which from a factor.
 anniversary, policy month 60, on the policy clock. Premiums are constant between reviews
 and multiplied by ``1 + rho_review`` at each one; the snapshot is ``rho_review = 0``, so
 the variant runs identically to the guaranteed one until the Reference is moved. On a
-point in force, the reviews already made are history, :func:`review_prem_factor_init`,
-and ``rho_review`` applies to each review after the valuation date. Two behavioural
-responses hang off the same switch, both **[std]**:
+point in force, the reviews made before month 0 are history,
+:func:`review_prem_factor_init`, and ``rho_review`` applies to each review from the
+valuation instant on, one in the valuation month among them. Two behavioural responses
+hang off the same switch, both **[std]**:
 
 - a **review shock lapse** in the twelve months after a review that raises premiums by
   more than 5%, ``min(0.30, w(y) + 2.0 max(0, rho - 0.05))``, where ``rho`` is the change
@@ -775,57 +782,69 @@ def duration_mth_init():
 
 
 def idx_factor_init():
-    """idx at the valuation date: the cover factor of the policy year under way.
+    """idx at the valuation instant: the cover factor entering month 0.
 
-    The RPI increases the policy has already been given, as one factor on
-    :func:`sum_assured`, the sum assured at issue: on a valuation on an anniversary, the
-    factor of the policy year it opens. History, read from the model point, not
-    recomputed from ``rpi_rate``, which is the assumed rate from the valuation date on.
-    1 on a point not yet in force or without the option, which ``Data`` requires.  From
+    The RPI increases the policy was given before month 0, as one factor on
+    :func:`sum_assured`, the sum assured at issue: mid-year, the factor of the policy year
+    under way; on a valuation on an anniversary, the factor of the policy year it closes,
+    the anniversary's own increase being month 0's event, which :func:`idx_factor` makes
+    at ``rpi_rate``, the References of the valuation date (USLIB-SEC-PLAN.md D6, precised
+    at its M7). History, read from the model point, not recomputed from ``rpi_rate``,
+    which is the assumed rate from the valuation instant on. 1 on a point not yet in
+    force, on one in force 12 months or fewer, whose first anniversary is month 0's or
+    later, and on one without the option, which ``Data`` requires.  From
     ``Data.idx_factor_init``.
     """
     return float(data.idx_factor_init()[idx])                        # noqa: F821
 
 
 def idx_prem_factor_init():
-    """idx_p at the valuation date: the premium factor of the policy year under way.
+    """idx_p at the valuation instant: the premium factor entering month 0.
 
     :func:`idx_factor_init`'s counterpart on the premium, :func:`premium_mth_pp` the
-    premium at issue.  History, as the cover factor is.  1 on a point not yet in force or
-    without the option, which ``Data`` requires.  From ``Data.idx_prem_factor_init``.
+    premium at issue, measured at the same instant: on an anniversary, the factor of the
+    policy year it closes.  History, as the cover factor is.  1 on a point not yet in
+    force, on one in force 12 months or fewer, and on one without the option, which
+    ``Data`` requires.  From ``Data.idx_prem_factor_init``.
     """
     return float(data.idx_prem_factor_init()[idx])                   # noqa: F821
 
 
 def review_prem_factor_init():
-    """The premium factor of the review period under way at the valuation date.
+    """The premium factor the reviews made before month 0 have given.
 
-    The premium changes the reviews before the valuation date have made, as one factor on
-    the premium at issue: on a valuation in a review month, the factor of the period that
-    review opens, since the premium due in month 0 is already the reviewed one.  History,
-    read from the model point: :mod:`~.CI_UK_S` re-derives it as ``(1 + rho)`` to the
-    power of the reviews passed, so a ``review_prem_shock`` set at the valuation date would
-    reach back over every review already made, repricing premiums long collected.  At a
-    change that never moved, it is that.  1 on a point not yet in force, on a guaranteed
-    point, which ``Data`` requires, and on a reviewable point in force before its first
-    review, which :func:`proj_len` requires.  From ``Data.review_prem_factor_init``.
+    The premium changes the reviews before the valuation instant have made, as one factor
+    on the premium at issue: mid-period, the factor of the review period under way; on a
+    valuation in a review month, the factor of the period that review closes, the review
+    being month 0's event, which :func:`review_prem_factor` makes at today's
+    ``review_prem_shock`` (USLIB-SEC-PLAN.md D6, precised at its M7).  History, read from
+    the model point: :mod:`~.CI_UK_S` re-derives it as ``(1 + rho)`` to the power of the
+    reviews passed, so a ``review_prem_shock`` set at the valuation date would reach back
+    over every review already made, repricing premiums long collected.  At a change that
+    never moved, it is that.  1 on a point not yet in force, on a guaranteed point, which
+    ``Data`` requires, and on a reviewable point in force no longer than the review
+    period, which has made no review before month 0, which :func:`proj_len` requires.
+    From ``Data.review_prem_factor_init``.
     """
     return float(data.review_prem_factor_init()[idx])                # noqa: F821
 
 
 def ci_sel_latched_init():
-    """The select latch at the valuation date: 1 once it has closed, and 0 before.
+    """The select latch entering month 0: 1 once it has closed, and 0 before.
 
-    Whether a review at or before the valuation date raised premiums past the shock
-    threshold of its day, so that the lives remaining carry an anti-selection factor,
-    :func:`ci_sel_factor_init`, from then on.  A flag of its own, not read off the factor:
-    a latch closed at a loading of 0 holds a factor of 1, and stays closed, where read as
-    open it would close again at the next shock review, at today's
-    ``sel_lapse_ci_loading``.  History, read from the model point: :mod:`~.CI_UK_S`
-    re-derives the latch from ``review_prem_shock``, so a change set at the valuation date
-    would open or close it at reviews long past.  0 on a point not yet in force and on a
-    guaranteed point, which ``Data`` requires, and on a reviewable point in force before
-    its first review, which :func:`proj_len` requires.  From ``Data.ci_sel_latched_init``.
+    Whether a review before month 0 raised premiums past the shock threshold of its day,
+    so that the lives remaining carry an anti-selection factor,
+    :func:`ci_sel_factor_init`, from then on.  On a valuation in a review month it is the
+    latch before that review, which is month 0's event: if it closes the latch, it does so
+    at ``t = 0``, at the References of the valuation date (USLIB-SEC-PLAN.md D6, precised
+    at its M7).  A flag of its own, not read off the factor: a latch closed at a loading
+    of 0 holds a factor of 1, and stays closed, where read as open it would close again at
+    the next shock review, at today's ``sel_lapse_ci_loading``.  History, read from the
+    model point: :mod:`~.CI_UK_S` re-derives the latch from ``review_prem_shock``, so a
+    change set at the valuation date would open or close it at reviews long past.  0 on a
+    point not yet in force and on a guaranteed point, which ``Data`` requires, and on a
+    reviewable point in force no longer than the review period, which :func:`proj_len`
+    requires.  From ``Data.ci_sel_latched_init``.
     """
     return int(data.ci_sel_latched_init()[idx])                      # noqa: F821
 
@@ -833,29 +852,33 @@ def ci_sel_latched_init():
 def ci_sel_factor_init():
     """The anti-selection factor the select latch closed at, read only once it has.
 
-    :func:`ci_sel_factor`'s value in month 0 on a point whose latch had closed by the
-    valuation date, :func:`ci_sel_latched_init` 1: ``1 + eta``, at the loading of its day,
-    which :func:`ci_sel_factor` carries unchanged, whatever it is, 1 among them.  History,
-    read from the model point, as the latch is.  A number, 0 or more, as ``Data`` requires:
-    0 for a latch closed at a loading of -1, which :func:`proj_len` admits; and 1 on an
+    :func:`ci_sel_factor`'s value in month 0 on a point whose latch had closed before
+    month 0, :func:`ci_sel_latched_init` 1: ``1 + eta``, at the loading of its day, which
+    :func:`ci_sel_factor` carries unchanged, whatever it is, 1 among them.  History, read
+    from the model point, as the latch is.  A number, 0 or more, as ``Data`` requires: 0
+    for a latch closed at a loading of -1, which :func:`proj_len` admits; and 1 on an
     open latch, on a point not yet in force, on a guaranteed point, and on a reviewable
-    point in force before its first review.  While the latch is open a review after the
-    valuation date closes it at ``1 + sel_lapse_ci_loading``.  From
-    ``Data.ci_sel_factor_init``.
+    point in force no longer than the review period.  While the latch is open a review
+    from month 0 on, a review at the valuation date among them, closes it at
+    ``1 + sel_lapse_ci_loading``.  From ``Data.ci_sel_factor_init``.
     """
     return float(data.ci_sel_factor_init()[idx])                     # noqa: F821
 
 
 def review_prem_shock_init():
-    """rho at the valuation date: the premium change the last review so far made.
+    """rho entering month 0: the premium change the last review before it made.
 
-    The change at the review at or before the valuation date that opened the review period
-    under way, the ``review_prem_shock`` of its day: on a point valued inside that review's
-    twelve-month window it sets the window's shock lapse, through
-    :func:`review_prem_change`, which reads it nowhere else.  History, read from the model
-    point, where :mod:`~.CI_UK_S` reads today's ``review_prem_shock`` at every review.
-    0 on a point not yet in force, on a guaranteed point, which ``Data`` requires, and on a
-    reviewable point in force before its first review, which :func:`proj_len` requires.
+    The change at the last review before month 0, which opened the review period under
+    way or, on a valuation in a review month, the one that month's review closes, the
+    ``review_prem_shock`` of its day: on a point valued inside that review's twelve-month
+    window it sets the window's shock lapse, through :func:`review_prem_change`, which
+    reads it nowhere else.  On a valuation in a review month it is read nowhere: from
+    ``t = 0`` the review under way is that month's own, month 0's event, which opens its
+    own window at today's change (USLIB-SEC-PLAN.md D6, precised at its M7), the window of
+    the review before it having closed.  History, read from the model point, where
+    :mod:`~.CI_UK_S` reads today's ``review_prem_shock`` at every review.  0 on a point not
+    yet in force, on a guaranteed point, which ``Data`` requires, and on a reviewable
+    point in force no longer than the review period, which :func:`proj_len` requires.
     From ``Data.review_prem_shock_init``.
     """
     return float(data.review_prem_shock_init()[idx])                 # noqa: F821
@@ -914,12 +937,15 @@ def proj_len():
       and ``review_lapse_slope`` a finite number, 0 or more, since below 0 the window lapses
       fewer the more the premium rises, and a NaN reads as the cap through
       :func:`lapse_rate`'s ``min``, its bound first as in :mod:`~.CI_UK_S`;
-    * a reviewable point in force for fewer months than ``review_period_mths`` with a
-      review history, a review factor other than 1, a closed latch or a last change other
-      than 0, a state :mod:`~.CI_UK_S` cannot reach, since no review has yet been made;
-    * and a reviewable point between its first review and its second whose review factor
-      is not ``1 + review_prem_shock_init()``, to 1e-12 of it, as an extract may spell
-      the two: the one review made has made that change and no other.
+    * a reviewable point in force for ``review_period_mths`` months or fewer with a review
+      history, a review factor other than 1, a closed latch or a last change other than
+      0, a state :mod:`~.CI_UK_S` cannot reach, since no review has been made before month
+      0: on a point valued in its first review's month, that review is month 0's event,
+      the projection's, not history (USLIB-SEC-PLAN.md D6, precised at its M7);
+    * and a reviewable point in force for more than ``review_period_mths`` months and no
+      more than twice that, one review made before month 0, whose review factor is not
+      ``1 + review_prem_shock_init()``, to 1e-12 of it, as an extract may spell the two:
+      the one review made has made that change and no other.
 
     What depends on an assumption of its day is not refused: a latch left open after a
     change past today's ``review_lapse_threshold`` is a history some point can have, the
@@ -1104,34 +1130,37 @@ def proj_len():
                 f"point_id {point_id()}: review_lapse_slope must be a finite "
                 f"number, 0 or more, not {float(review_lapse_slope)}")  # noqa: F821
         d = duration_mth_init()
-        if 0 < d < review_period_mths:                               # noqa: F821
+        if 0 < d <= review_period_mths:                              # noqa: F821
             if review_prem_factor_init() != 1.0:
                 raise ValueError(
                     f"point_id {point_id()}: review_prem_factor_init is "
                     f"{review_prem_factor_init()}, where a reviewable point in force {d} "
-                    f"months, fewer than review_period_mths, "
-                    f"{int(review_period_mths)}, has had no review yet: 1")  # noqa: F821
+                    f"months, no more than review_period_mths, "
+                    f"{int(review_period_mths)}, has had no review before "  # noqa: F821
+                    "month 0: 1")
             if ci_sel_latched_init() != 0:
                 raise ValueError(
                     f"point_id {point_id()}: ci_sel_latched_init is "
                     f"{ci_sel_latched_init()}, where a reviewable point in force {d} "
-                    f"months, fewer than review_period_mths, "
-                    f"{int(review_period_mths)}, has had no review yet: 0")  # noqa: F821
+                    f"months, no more than review_period_mths, "
+                    f"{int(review_period_mths)}, has had no review before "  # noqa: F821
+                    "month 0: 0")
             if review_prem_shock_init() != 0.0:
                 raise ValueError(
                     f"point_id {point_id()}: review_prem_shock_init is "
                     f"{review_prem_shock_init()}, where a reviewable point in force {d} "
-                    f"months, fewer than review_period_mths, "
-                    f"{int(review_period_mths)}, has had no review yet: 0")  # noqa: F821
-        if review_period_mths <= d < 2 * review_period_mths:         # noqa: F821
+                    f"months, no more than review_period_mths, "
+                    f"{int(review_period_mths)}, has had no review before "  # noqa: F821
+                    "month 0: 0")
+        if review_period_mths < d <= 2 * review_period_mths:         # noqa: F821
             once = 1.0 + review_prem_shock_init()
             if not abs(review_prem_factor_init() - once) <= 1e-12 * abs(once):
                 raise ValueError(
                     f"point_id {point_id()}: review_prem_factor_init is "
                     f"{review_prem_factor_init()}, where a reviewable point in force {d} "
                     f"months, review_period_mths {int(review_period_mths)}, "  # noqa: F821
-                    f"has had one review, whose change, review_prem_shock_init, is "
-                    f"{review_prem_shock_init()}: {once}")
+                    f"has had one review before month 0, whose change, "
+                    f"review_prem_shock_init, is {review_prem_shock_init()}: {once}")
     return n
 
 
@@ -1150,8 +1179,9 @@ def t_entry():
 
     0 for a point in force at the valuation date or issued at it, ``k`` for one issued
     ``k`` months later.  It is the base of the count's recursion, which opens there from
-    the opening state, and reads no month before it; and the reviews and anniversaries
-    counted from it are the ones after the valuation instant.
+    the opening state, and reads no month before it.  The reviews and anniversaries the
+    projection makes are counted from the valuation instant instead, on the policy clock,
+    one that falls at the valuation date the first of them.
     """
     return max(0, -duration_mth_init())
 
@@ -1305,10 +1335,13 @@ def ci_sel_factor(t):
     On a point in force, a latch closed before the valuation date is history,
     :func:`ci_sel_latched_init` 1, and the factor stays at :func:`ci_sel_factor_init`,
     whatever it is: 1 for a latch closed at a loading of 0, or below 1.  Otherwise the
-    latch closes at the first review after the valuation instant, ``reviews_passed(t)``
-    past ``reviews_passed(t_entry())``, that raises the premium by ``review_prem_shock``,
-    past ``review_lapse_threshold``.  On a point issued at or after the valuation date
-    that is :mod:`~.CI_UK_S`'s latch.  Zero outside cover, where there is no rate to load.
+    latch closes at the first review from month 0 on, ``reviews_passed(t)`` past the
+    reviews made before month 0, ``(duration_mth_init() - 1) // review_period_mths``, that
+    raises the premium by ``review_prem_shock``, past ``review_lapse_threshold``: a review
+    that falls at the valuation date closes it at ``t = 0``, at the References of the
+    valuation date (USLIB-SEC-PLAN.md D6, precised at its M7).  On a point issued at or
+    after the valuation date that is :mod:`~.CI_UK_S`'s latch.  Zero outside cover, where
+    there is no rate to load.
     """
     if not is_active(t):
         return 0.0
@@ -1316,7 +1349,8 @@ def ci_sel_factor(t):
         return 1.0
     if ci_sel_latched_init() == 1:
         return ci_sel_factor_init()
-    if reviews_passed(t) <= reviews_passed(t_entry()):
+    made = max(duration_mth_init() - 1, 0) // review_period_mths       # noqa: F821
+    if reviews_passed(t) <= made:
         return 1.0
     if review_prem_shock <= review_lapse_threshold:                  # noqa: F821
         return 1.0
@@ -1461,13 +1495,16 @@ def reviews_passed(t):
     Reviews fall every ``review_period_mths`` policy months from the fifth anniversary
     [S3][S4], which is the start of policy month 60, so the first bites there - the month
     that opens the sixth policy year: ``duration_mth(t) // review_period_mths``.  On a
-    point in force those up to ``reviews_passed(t_entry())`` were made at or before the
-    valuation date, and their premium changes are history; the later ones apply
-    ``review_prem_shock``.  :mod:`~.CI_UK_S` divides ``t``, the same month only on a point
-    issued at ``t = 0``.  Always zero on guaranteed-premium business, where the premium
-    cannot be changed at all, and outside cover.  An int in every month: the period is
-    read as the int it is, :func:`proj_len` having held it to a whole number, so that a
-    period written ``60.0`` counts reviews as 60 does, and not as floats.
+    point in force those before month 0, the first
+    ``(duration_mth_init() - 1) // review_period_mths``, were made before the valuation
+    instant, and their premium changes are history; the later ones apply
+    ``review_prem_shock``, a review that falls at the valuation date the first of them
+    (USLIB-SEC-PLAN.md D6, precised at its M7).  :mod:`~.CI_UK_S` divides ``t``, the same
+    month only on a point issued at ``t = 0``.  Always zero on guaranteed-premium
+    business, where the premium cannot be changed at all, and outside cover.  An int in
+    every month: the period is read as the int it is, :func:`proj_len` having held it to
+    a whole number, so that a period written ``60.0`` counts reviews as 60 does, and not
+    as floats.
     """
     if not is_active(t):
         return 0
@@ -1479,17 +1516,20 @@ def reviews_passed(t):
 def review_prem_change(t):
     """The premium change the review under way in month t made: its rho.
 
-    The review under way is the last at or before month t.  Made at or before the
-    valuation date, on a point in force, it is history, :func:`review_prem_shock_init`;
-    made after it, ``review_prem_shock``, the change assumed at each review from the
-    valuation date on.  :func:`review_shock_active` and :func:`lapse_rate` read it only
-    inside the review's twelve-month window, so the opening column is read only while a
-    review before the valuation date is still inside its window.  0 before the first
+    The review under way is the last at or before month t.  Made before month 0, on a
+    point in force, it is history, :func:`review_prem_shock_init`; made from month 0 on,
+    a review that falls at the valuation date among them, ``review_prem_shock``, the change
+    assumed at each review from the valuation instant on (USLIB-SEC-PLAN.md D6, precised at
+    its M7).  :func:`review_shock_active` and :func:`lapse_rate` read it only inside the
+    review's twelve-month window, so the opening column is read only while a review before
+    the valuation date is still inside its window: on a point valued on a review month,
+    never, that review opening its own window at today's change.  0 before the first
     review, and outside cover.
     """
     if not is_active(t) or reviews_passed(t) < 1:
         return 0.0
-    if reviews_passed(t) == reviews_passed(t_entry()):
+    made = max(duration_mth_init() - 1, 0) // review_period_mths       # noqa: F821
+    if reviews_passed(t) == made:
         return review_prem_shock_init()
     return review_prem_shock                                         # noqa: F821
 
@@ -1518,8 +1558,9 @@ def idx_increase():
     """The cover increase offered at each anniversary under the indexation option.
 
     ``min(max(RPI, 0), 10%)`` [S1][S4] on a flat 3% RPI scenario **[std]**: ``rpi_rate``
-    is the RPI assumed from the valuation date on; the increases already given are the
-    opening state, :func:`idx_factor_init`.
+    is the RPI assumed from the valuation instant on, an anniversary at the valuation
+    date's increase among them; the increases given before month 0 are the opening state,
+    :func:`idx_factor_init`.
     """
     return min(max(rpi_rate, 0.0), idx_cover_cap)                    # noqa: F821
 
@@ -1528,11 +1569,15 @@ def idx_factor(t):
     """idx(t): the cumulative **cover** indexation factor in month t.
 
     Steps on the policy anniversary and is level through the policy year:
-    :func:`idx_factor_init` in the policy year under way at :func:`t_entry`, 1 at issue,
-    then one factor of ``1 + idx_increase()`` per anniversary passed since,
-    ``duration(t) - duration(t_entry())``.  The increases before the valuation date are
-    history, carried in, and those after it are projected at ``rpi_rate``.  1 throughout
-    if the option is not elected, and 0 outside cover, where there is no cover to index.
+    :func:`idx_factor_init`, the factor entering month 0, 1 at issue, then one factor of
+    ``1 + idx_increase()`` for each anniversary from month 0 on, month 0's own among them:
+    ``duration(t)`` less the anniversaries passed before month 0,
+    ``(duration_mth_init() - 1) // 12`` on a point in force and none on one issued at or
+    after the valuation date.  The increases before the valuation instant are history,
+    carried in, and those from it on are projected at ``rpi_rate``, an anniversary that
+    falls at the valuation date the first of them, as on a point issued then
+    (USLIB-SEC-PLAN.md D6, precised at its M7).  1 throughout if the option is not
+    elected, and 0 outside cover, where there is no cover to index.
 
     The exponent is a whole number of years, 0 or more, so the power is real whatever the
     base.  It passes the largest float only where the References put the increase above
@@ -1544,7 +1589,7 @@ def idx_factor(t):
     if not indexation():
         return 1.0
     base = 1.0 + idx_increase()
-    n = duration(t) - duration(t_entry())
+    n = duration(t) - max(duration_mth_init() - 1, 0) // 12
     factor = base ** n
     if factor - factor != 0.0 and base - base == 0.0:
         raise float.__pow__(base, n)
@@ -1556,8 +1601,8 @@ def idx_prem_factor(t):
 
     The premium rises by ``min(1.5 x increase, 15%)`` for a cover increase of
     ``increase`` [S1][S4] - the same x1.5 factor the term assurance chassis carries - on
-    the same anniversary step as the cover factor, from :func:`idx_prem_factor_init`.  1
-    if the option is not elected, and 0 outside cover.
+    the same anniversary steps as the cover factor, from :func:`idx_prem_factor_init`,
+    month 0's own among them.  1 if the option is not elected, and 0 outside cover.
 
     The exponent is a whole number of years, as :func:`idx_factor`'s is, and the power
     passes the largest float only where the References put the step above about 2 million
@@ -1570,7 +1615,7 @@ def idx_prem_factor(t):
         return 1.0
     step = min(idx_prem_mult * idx_increase(), idx_prem_cap)         # noqa: F821
     base = 1.0 + step
-    n = duration(t) - duration(t_entry())
+    n = duration(t) - max(duration_mth_init() - 1, 0) // 12
     factor = base ** n
     if factor - factor != 0.0 and base - base == 0.0:
         raise float.__pow__(base, n)
@@ -1580,27 +1625,36 @@ def idx_prem_factor(t):
 def review_prem_factor(t):
     """The premium factor the reviews have given by month t.
 
-    :func:`review_prem_factor_init`, the factor of the review period under way at
-    :func:`t_entry`, 1 at issue, then one factor of ``1 + review_prem_shock`` for each
-    review after it, ``reviews_passed(t) - reviews_passed(t_entry())``.  The changes made
-    at the valuation date and before are history; those after it are projected at
-    ``review_prem_shock``.  :mod:`~.CI_UK_S` has no such cell: it multiplies the premium by
-    ``(1 + review_prem_shock)`` to the power of every review passed since issue, the same
-    number on a point issued at ``t = 0``.  1 on a guaranteed point, and 0 outside cover.
+    :func:`review_prem_factor_init`, the factor entering month 0, 1 at issue, then one
+    factor of ``1 + review_prem_shock`` for each review from month 0 on, month 0's own
+    among them: ``reviews_passed(t)`` less the reviews made before month 0,
+    ``(duration_mth_init() - 1) // review_period_mths`` on a point in force and none on
+    one issued at or after the valuation date.  The changes made before the valuation
+    instant are history; those from it on are projected at ``review_prem_shock``, a review
+    that falls at the valuation date the first of them, as on a point issued then
+    (USLIB-SEC-PLAN.md D6, precised at its M7).  :mod:`~.CI_UK_S` has no such cell: it
+    multiplies the premium by ``(1 + review_prem_shock)`` to the power of every review
+    passed since issue, the same number on a point issued at ``t = 0``.  1 on a guaranteed
+    point, and 0 outside cover.
 
     The exponent is a whole number of reviews, 0 or more, so the power is real whatever
-    the base, which :func:`proj_len` holds to 0 or more.  It passes the largest float only
-    where ``review_prem_shock`` is far outside the product: above about 1.8e34 at the
-    shipped 60-month period, nine reviews in the longest cover, and above about 2.3 at a
-    period of one month, 600; there the cell raises Python's ``OverflowError`` in both
-    engines, as :func:`ci_trend_factor` does.
+    the base, which :func:`proj_len` holds to 0 or more.  The reviews before month 0 divide
+    by the period as the model holds it, as :func:`ci_sel_factor` and
+    :func:`review_prem_change` count them too: compiled, a C integer, where ``int`` would
+    make the count a Python object; in modelx, a period written ``60.0`` counts them as the
+    float ``1.0``, which moves no value.  It passes the largest float only where
+    ``review_prem_shock`` is far outside the product: above about 1.8e34 at the shipped
+    60-month period, nine reviews in the longest cover, and above about 2.3 at a period of
+    one month, 600; there the cell raises Python's ``OverflowError`` in both engines, as
+    :func:`ci_trend_factor` does.
     """
     if not is_active(t):
         return 0.0
     if not is_reviewable():
         return 1.0
     base = 1.0 + review_prem_shock                                   # noqa: F821
-    n = reviews_passed(t) - reviews_passed(t_entry())
+    made = max(duration_mth_init() - 1, 0) // review_period_mths       # noqa: F821
+    n = reviews_passed(t) - made
     factor = base ** n
     if factor - factor != 0.0 and base - base == 0.0:
         raise float.__pow__(base, n)

@@ -63,7 +63,9 @@ module holds the rest of the plan's tests (its §5) and the product's own facts:
   own continuing S under it to its next review; each history column read rather than
   recomputed, the indexation factors, the review factor, the select latch, read from its own
   flag, and the last review's change, and a review change set at the valuation date reaching
-  back over no review already made (UKLIB-SEC-PLAN.md K14); expense inflation and the
+  back over no review already made (UKLIB-SEC-PLAN.md K14); an anniversary and a review
+  that fall at the valuation date made at today's References, the columns holding the
+  state before them (USLIB-SEC-PLAN.md D6, precised at its M7); expense inflation and the
   morbidity trend on the valuation clock; the initial expense on new business; the reviews
   and their window on the policy clock; the caps on the claim rates, a second life's among
   them, a NaN that reaches a bound and a check whose residual is NaN; a whole review period
@@ -245,7 +247,7 @@ CORE_SPLICES = {
     ("derived", 2, 120): "the standalone contract on a later anniversary",
     ("derived", 3, 1): "reviewable in its second month, before any review",
     ("derived", 3, 59): "reviewable in the month before its first review",
-    ("derived", 3, 60): "reviewable on its first review: its history at t = 0",
+    ("derived", 3, 60): "reviewable on its first review, the projection's at t = 0",
     ("derived", 3, 61): "reviewable inside the first review's window",
     ("derived", 3, 71): "reviewable in the first window's last month",
     ("derived", 3, 72): "reviewable past the first window",
@@ -795,19 +797,33 @@ def _lives(x):
     return (1, 2) if x.is_joint() else (1,)
 
 
+def _reviews_before(x):
+    """The reviews row ``x`` made before month 0, whose history its columns carry: those up
+    to policy month ``duration_mth_init() - 1`` on a point in force, none on one issued at
+    or after the valuation date.  A review at the valuation date is month 0's own event,
+    the projection's (D6, precised at uslib's M7)."""
+    return max(x.duration_mth_init() - 1, 0) // int(x.review_period_mths)
+
+
+def _anniversaries_before(x):
+    """The anniversaries row ``x`` passed before month 0, whose increases its factors carry,
+    as :func:`_reviews_before` counts the reviews."""
+    return max(x.duration_mth_init() - 1, 0) // 12
+
+
 def _historic_window(x, t):
-    """Month ``t`` is in the shock window of a review made at or before the valuation
-    date."""
+    """Month ``t`` is in the shock window of a review made before the valuation date."""
     return (x.review_shock_active(t) and x.duration_mth_init() > 0
-            and x.reviews_passed(t) == x.reviews_passed(x.t_entry()))
+            and x.reviews_passed(t) == _reviews_before(x))
 
 
 # What test_the_core_grid_reaches_every_branch asks of the core's rows in the model's own
 # values, which no column of the table shows: each holds of some core row, or of a core row
 # in some month of its frame.  At the valuation date, every opening-state column in use, a
-# factor apart from 1 and a change apart from 0, and each kind of valuation month the
-# reviews make: on a review, inside a window a review before the valuation date opened, and
-# before the first review.  Later in the frame, every branch and both sides of each min and
+# factor apart from 1 and a change apart from 0, each kind of valuation month the reviews
+# make: on a review, inside a window a review before the valuation date opened, and before
+# the first review; and a review and an index step made at t = 0, each the projection's
+# first event (D6).  Later in the frame, every branch and both sides of each min and
 # max the full grid reaches: a review in the frame and its window, a window carried from
 # before the valuation date, the latch closed in the frame and carried, the pivot
 # interpolation's three branches, the lapse table's last year, an index step, the ancillary
@@ -822,6 +838,12 @@ AT_VALUATION = {
     "valued on a review": lambda x: (
         x.premium_guarantee() == "reviewable" and x.duration_mth_init() > 0
         and x.reviews_passed(0) >= 1 and x.duration_mth_init() % x.review_period_mths == 0),
+    "a review at the valuation date, the projection's": lambda x: (
+        x.premium_guarantee() == "reviewable" and x.duration_mth_init() > 0
+        and x.reviews_passed(0) > _reviews_before(x)
+        and x.review_prem_factor(0) != x.review_prem_factor_init()),
+    "an index step at the valuation date": lambda x: (
+        x.indexation() and x.idx_factor(0) > x.idx_factor_init()),
     "valued inside a window a review before the valuation date opened": lambda x: (
         _historic_window(x, 0)),
     "valued before the first review": lambda x: (
@@ -830,10 +852,9 @@ AT_VALUATION = {
 }
 IN_FRAME = {
     "a review in the frame": lambda x, t: (
-        x.premium_guarantee() == "reviewable"
-        and x.reviews_passed(t) > x.reviews_passed(x.t_entry())),
+        x.premium_guarantee() == "reviewable" and x.reviews_passed(t) > _reviews_before(x)),
     "a shock window from a review in the frame": lambda x, t: (
-        x.review_shock_active(t) and x.reviews_passed(t) > x.reviews_passed(x.t_entry())),
+        x.review_shock_active(t) and x.reviews_passed(t) > _reviews_before(x)),
     "a shock window from a review before the valuation date": _historic_window,
     "a review, past its window": lambda x, t: (
         x.premium_guarantee() == "reviewable" and x.reviews_passed(t) >= 1
@@ -852,7 +873,7 @@ IN_FRAME = {
     "past the lapse table's last year": lambda x, t: (
         x.policy_year(t) > x.data.lapse_last_year()),
     "an index step in the frame": lambda x, t: (
-        x.indexation() and x.duration(t) > x.duration(x.t_entry())),
+        x.indexation() and x.duration(t) > _anniversaries_before(x)),
     "the ancillary benefits below their caps": lambda x, t: (
         x.benefit_pp(t, _code(x, "AP")) < x.ap_cap
         and x.benefit_pp(t, _code(x, "CHILD")) < x.child_cap),
@@ -1466,15 +1487,22 @@ MALFORMED = [
     ("a closed latch on future business", _set("ci_sel_latched_init", [13], 1),
      "{file}: ci_sel_latched_init must be 0 on a policy not yet in force, duration_mth 0 "
      "or less; it is not at point_id [13]"),
-    # No anniversary has passed in a policy's first twelve months: the indexed point on its
-    # third anniversary, moved back into its first policy year with its factors.
+    # No increase is given before month 0 in a policy's first twelve months: its first
+    # anniversary, at policy month 12, is month 0's own event on a policy valued then
+    # (USLIB-SEC-PLAN.md D6, precised at its M7).  The indexed point on its third
+    # anniversary, moved back with its factors, is refused on its first anniversary, the
+    # rule's edge, in its first policy year and in its first month; the edges test reads it
+    # one month on.
+    ("a cover factor on the first anniversary", _set("duration_mth", [8], 12),
+     "{file}: idx_factor_init must be 1 on a policy in force 12 months or fewer, whose "
+     "first anniversary falls in month 0 or later; it is not at point_id [8]"),
     ("a cover factor in the first policy year", _set("duration_mth", [8], 11),
-     "{file}: idx_factor_init must be 1 on a policy in force fewer than 12 months, before "
-     "its first anniversary; it is not at point_id [8]"),
+     "{file}: idx_factor_init must be 1 on a policy in force 12 months or fewer, whose "
+     "first anniversary falls in month 0 or later; it is not at point_id [8]"),
     ("a premium factor in the first policy year",
      _then(_set("duration_mth", [8], 1), _set("idx_factor_init", [8], 1.0)),
-     "{file}: idx_prem_factor_init must be 1 on a policy in force fewer than 12 months, "
-     "before its first anniversary; it is not at point_id [8]"),
+     "{file}: idx_prem_factor_init must be 1 on a policy in force 12 months or fewer, whose "
+     "first anniversary falls in month 0 or later; it is not at point_id [8]"),
     # An open latch is read at 1, whatever its factor says, so the factor must say 1.
     ("an open latch with a factor", _set("ci_sel_factor_init", [10], 1.1),
      "{file}: ci_sel_factor_init must be 1 on an open latch, ci_sel_latched_init 0; it is "
@@ -1980,22 +2008,28 @@ def test_a_reference_outside_its_domain_is_refused(ref, value, refused):
             s.close()
 
 
-def _reviewed_too_soon(point, duration, column, value, issue):
+def _reviewed_too_soon(point, duration, column, value, issue, period=60):
     """The message ``proj_len()`` gives a reviewable point in force ``duration`` months,
-    before the shipped first review, whose ``column`` holds ``value``."""
+    no more than the review period, whose ``column`` holds ``value``."""
     return (f"point_id {point}: {column} is {value}, where a reviewable point in force "
-            f"{duration} months, fewer than review_period_mths, 60, has had no review yet: "
-            f"{issue}")
+            f"{duration} months, no more than review_period_mths, {period}, has had no "
+            f"review before month 0: {issue}")
 
 
 # A review history S cannot reach, as (case, the table's edit, the References set, the
-# point, the message).  No review is made before the fifth anniversary, so a reviewable
-# point in force fewer months than the review period has had none: point 9, the reviewable
-# point on its first review, moved back to 59, 1 and 30 months, is refused a review factor,
-# a latch and a review change, each in turn; and at 60, its own month, the first review's,
-# once the review period is lengthened to 61.  On its own month at the shipped period the
-# row carries its first review's history, which the edges test accepts.
+# point, the message).  No review is made before the fifth anniversary, and one made in
+# the valuation month is month 0's own event, the projection's (USLIB-SEC-PLAN.md D6,
+# precised at its M7), so a reviewable point in force no more months than the review period
+# has made none before month 0: point 9, the reviewable point on its first review, is
+# refused a review factor there, its own month, the rule's edge, and moved back to 59, 1
+# and 30 months, a review factor, a latch and a review change, each in turn; and at 61
+# months, once the review period is lengthened to 61, the edge moving with the Reference.
+# One month past its first review at the shipped period the row may carry that review's
+# history, which the edges test accepts.
 REVIEWED_TOO_SOON = [
+    ("a review factor on the first review, month 0's own",
+     _set("review_prem_factor_init", [9], 1.1), {}, 9,
+     _reviewed_too_soon(9, 60, "review_prem_factor_init", 1.1, 1)),
     ("a review factor before the first review",
      _then(_set("duration_mth", [9], 59), _set("review_prem_factor_init", [9], 1.1)), {}, 9,
      _reviewed_too_soon(9, 59, "review_prem_factor_init", 1.1, 1)),
@@ -2006,10 +2040,10 @@ REVIEWED_TOO_SOON = [
     ("a review change before the first review",
      _then(_set("duration_mth", [9], 30), _set("review_prem_shock_init", [9], 0.1)), {}, 9,
      _reviewed_too_soon(9, 30, "review_prem_shock_init", 0.1, 0)),
-    ("a review factor inside a review period lengthened to 61",
-     _set("review_prem_factor_init", [9], 1.1), {"review_period_mths": 61}, 9,
-     "point_id 9: review_prem_factor_init is 1.1, where a reviewable point in force 60 "
-     "months, fewer than review_period_mths, 61, has had no review yet: 1"),
+    ("a review factor on a review period lengthened to 61",
+     _then(_set("duration_mth", [9], 61), _set("review_prem_factor_init", [9], 1.1)),
+     {"review_period_mths": 61}, 9,
+     _reviewed_too_soon(9, 61, "review_prem_factor_init", 1.1, 1, period=61)),
 ]
 
 
@@ -2017,8 +2051,8 @@ REVIEWED_TOO_SOON = [
                          ids=[c[0] for c in REVIEWED_TOO_SOON])
 def test_a_review_history_before_the_first_review_is_refused(tmp_path, case, edit, refs,
                                                              point, message):
-    """``proj_len()`` refuses a review history on a reviewable point in force fewer months
-    than the review period (§6.2, T5).
+    """``proj_len()`` refuses a review history on a reviewable point in force no more months
+    than the review period, a review in the valuation month being month 0's (§6.2, T5).
 
     ``Data`` reads the table, since its rule is a product's: the review period is
     ``review_period_mths``, a Reference of the projection, which ``Data`` cannot see, so the
@@ -2037,10 +2071,12 @@ def test_a_review_history_before_the_first_review_is_refused(tmp_path, case, edi
 
 def _one_review(point, duration, factor, change, period=60):
     """The message ``proj_len()`` gives a reviewable point in force ``duration`` months,
-    one review made, whose review factor is not 1 plus that review's change."""
+    one review made before month 0, whose review factor is not 1 plus that review's
+    change."""
     return (f"point_id {point}: review_prem_factor_init is {factor}, where a reviewable "
             f"point in force {duration} months, review_period_mths {period}, has had one "
-            f"review, whose change, review_prem_shock_init, is {change}: {1.0 + change}")
+            f"review before month 0, whose change, review_prem_shock_init, is {change}: "
+            f"{1.0 + change}")
 
 
 def _reviewed(points, factor, change):
@@ -2050,22 +2086,24 @@ def _reviewed(points, factor, change):
 
 
 # A review factor the one review made cannot have given, as (case, the table's edit, the
-# References set, the point, the message, or None where the row is accepted).  Between the
-# first review and the second the one review made is the one whose change
-# review_prem_shock_init holds, so the factor is 1 plus that change: point 9, on its first
-# review, point 10 inside its window and point 11 after it, each holding a factor and a
-# change that disagree, are refused.  Two reviews give a factor any two changes make, so
-# point 11's pair, refused at the shipped period, is accepted once the period is shortened
-# to 39 months, when its 78 months hold two.  The rule's edges are pinned: a factor 2e-12
-# of itself off 1.1 is refused and one 0.5e-12 off is accepted, the rule reading to 1e-12
-# as an extract may spell the two; and a mismatch in month 119, the last before the second
-# review, is refused, and one in month 120, the second review's, accepted.  The latch is
-# not asked: one left open after a change past today's threshold is a history the
+# References set, the point, the message, or None where the row is accepted).  From the
+# month after the first review to the second review's month, the one review made before
+# month 0 is the one whose change review_prem_shock_init holds, so the factor is 1 plus
+# that change: point 10 inside its first window and point 11 after it, each holding a
+# factor and a change that disagree, are refused.  Two reviews give a factor any two
+# changes make, so point 11's pair, refused at the shipped period, is accepted once the
+# period is shortened to 38 months, when two reviews precede its 78 months; at 39 the
+# second, at policy month 78, would be its month 0's.  The rule's edges are pinned: a
+# factor 2e-12 of itself off 1.1 is refused and one 0.5e-12 off is accepted, the rule
+# reading to 1e-12 as an extract may spell the two; and a mismatch in month 119, and in
+# month 120, the second review's, which is month 0's own (USLIB-SEC-PLAN.md D6, precised at
+# its M7), is refused, and one in month 121, the second review made, accepted.  The latch
+# is not asked: one left open after a change past today's threshold is a history the
 # threshold of its day may have given.
 ONE_OFF, ONE_NEAR = 1.1 * (1.0 + 2e-12), 1.1 * (1.0 + 0.5e-12)
 ONE_REVIEW_MADE = [
     ("a factor the first review's change did not give",
-     _reviewed([9], 1.3, 0.2), {}, 9, _one_review(9, 60, 1.3, 0.2)),
+     _reviewed([10], 1.3, 0.2), {}, 10, _one_review(10, 66, 1.3, 0.2)),
     ("a factor with no change", _set("review_prem_factor_init", [11], 1.1), {}, 11,
      _one_review(11, 78, 1.1, 0.0)),
     ("a change with no factor", _set("review_prem_shock_init", [10], 0.1), {}, 10,
@@ -2073,15 +2111,20 @@ ONE_REVIEW_MADE = [
     ("two changes' factor at one review", _reviewed([11], 1.21, 0.1), {}, 11,
      _one_review(11, 78, 1.21, 0.1)),
     ("two changes' factor at two reviews", _reviewed([11], 1.21, 0.1),
-     {"review_period_mths": 39}, 11, None),
+     {"review_period_mths": 38}, 11, None),
+    ("two changes' factor, the second review month 0's", _reviewed([11], 1.21, 0.1),
+     {"review_period_mths": 39}, 11, _one_review(11, 78, 1.21, 0.1, period=39)),
     ("a factor 2e-12 of itself off", _reviewed([11], ONE_OFF, 0.1), {}, 11,
      _one_review(11, 78, ONE_OFF, 0.1)),
     ("a factor 0.5e-12 of itself off", _reviewed([11], ONE_NEAR, 0.1), {}, 11, None),
     ("a mismatch in the month before the second review",
      _then(_set("duration_mth", [11], 119), _reviewed([11], 1.3, 0.0)), {}, 11,
      _one_review(11, 119, 1.3, 0.0)),
-    ("a mismatch on the second review",
-     _then(_set("duration_mth", [11], 120), _reviewed([11], 1.3, 0.0)), {}, 11, None),
+    ("a mismatch on the second review, month 0's own",
+     _then(_set("duration_mth", [11], 120), _reviewed([11], 1.3, 0.0)), {}, 11,
+     _one_review(11, 120, 1.3, 0.0)),
+    ("a mismatch the month after the second review",
+     _then(_set("duration_mth", [11], 121), _reviewed([11], 1.3, 0.0)), {}, 11, None),
 ]
 
 
@@ -2091,12 +2134,14 @@ def test_a_review_factor_one_review_cannot_give_is_refused(tmp_path, case, edit,
                                                            point, message):
     """``proj_len()`` refuses a review factor the one review made did not give (T5).
 
-    A reviewable point between its first review and its second has had one, whose change is
-    ``review_prem_shock_init``, so its review factor is ``1 + review_prem_shock_init``: any
-    other is a history no policy has, which the frame refuses, naming the point, the factor
-    and the change (:data:`ONE_REVIEW_MADE`).  At two reviews or more no such rule holds,
-    and the row projects; nor does it at a factor that departs by less than 1e-12 of
-    itself.  Every Reference is set on a model just read (K7).
+    A reviewable point valued after its first review's month, up to its second review's
+    month, has made one review before month 0, the second, if it falls in the valuation
+    month, being month 0's own: that one's change is ``review_prem_shock_init``, so its
+    review factor is ``1 + review_prem_shock_init``, and any other is a history no policy
+    has, which the frame refuses, naming the point, the factor and the change
+    (:data:`ONE_REVIEW_MADE`).  At two reviews or more no such rule holds, and the row
+    projects; nor does it at a factor that departs by less than 1e-12 of itself.  Every
+    Reference is set on a model just read (K7).
     """
     model = _read_edited(tmp_path, edit)
     try:
@@ -2176,18 +2221,22 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
     read back as the int the policy clock counts in; a policy issued 120 months after the
     valuation date, the shipped ``future_horizon_mth``, is the last one the table admits,
     with a frame of 420 months, 300 of cover after 120 before issue.  A reviewable row
-    valued in its first month, 1, holds no review history, and one valued on its first
-    review, 60, a review factor, a closed latch, its factor and a change, the history a
-    policy has once a review is made.  A review may cut the premium: one valued after its
-    first review holds a change of -25% and a factor of 0.75, and one at the edge, a change
-    of -100%, a factor of 0, and pays no premium from then on.  The indexed point valued in
-    its first policy year, at 11 months, holds no increase, and on its first anniversary,
-    12, the first.  A latch closed at a loading of -1, the edge ``proj_len()`` admits, has
-    a factor of 0, the state ``CI_UK_S`` reaches at that loading under a review change of
-    10% at month 72, and the diagnosis rate is 0 from then on.  And each bound of the
-    contract at its edge projects: a 50-year term from issue at 18, a 5-year term at 64,
-    issue at 18 and 64 of each life of a joint point, and cover to 75, of each life.  The
-    extra rows are copies of committed rows under labels of their own, 21 to 25.
+    valued in its first month, 1, holds no review history; so does the one valued on its
+    first review, 60, which is month 0's own event, the projection's (USLIB-SEC-PLAN.md D6,
+    precised at its M7); and one valued a month after it, 61, a review factor, a closed
+    latch, its factor and a change, the history a policy has once a review is made: the
+    edges of the rule on review history before the first review, read either side.  A
+    review may cut the premium: one valued after its first review holds a change of -25%
+    and a factor of 0.75, and one at the edge, a change of -100%, a factor of 0, and pays
+    no premium from then on.  The indexed point valued on its first anniversary, at 12
+    months, holds no increase, which the projection gives at ``t = 0``, and a month after
+    it, at 13, the first: the edges of the first-year rule, read either side.  A latch
+    closed at a loading of -1, the edge ``proj_len()`` admits, has a factor of 0, the state
+    ``CI_UK_S`` reaches at that loading under a review change of 10% at month 72, and the
+    diagnosis rate is 0 from then on.  And each bound of the contract at its edge projects:
+    a 50-year term from issue at 18, a 5-year term at 64, issue at 18 and 64 of each life of
+    a joint point, and cover to 75, of each life.  The extra rows are copies of committed
+    rows under labels of their own, 21 to 26.
     """
     committed = _committed()
     last = _label(committed, "derived", 1, 299)
@@ -2200,13 +2249,14 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
                             "review_prem_shock_init": -0.25}),
               22: (window, {"review_prem_factor_init": 0.0,
                             "review_prem_shock_init": -1.0}),
-              23: (indexed, {"duration_mth": 11, "idx_factor_init": 1.0,
+              23: (indexed, {"duration_mth": 12, "idx_factor_init": 1.0,
                              "idx_prem_factor_init": 1.0}),
-              24: (indexed, {"duration_mth": 12, "idx_factor_init": 1.03,
+              24: (indexed, {"duration_mth": 13, "idx_factor_init": 1.03,
                              "idx_prem_factor_init": 1.045}),
               25: (window, {"duration_mth": 72, "review_prem_factor_init": 1.1,
                             "review_prem_shock_init": 0.1, "ci_sel_latched_init": 1,
-                            "ci_sel_factor_init": 0.0})}
+                            "ci_sel_factor_init": 0.0}),
+              26: (review, {})}
 
     def edit(table):
         extra = []
@@ -2220,6 +2270,7 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
         table = table.assign(duration_mth=table["duration_mth"].astype(float))
         table = _set("duration_mth", [window], 66.0)(table)
         table = _set("duration_mth", [future], -120.0)(table)
+        table = _set("duration_mth", [review], 61.0)(table)
         table = _set("review_prem_factor_init", [review], 1.25)(table)
         table = _set("ci_sel_latched_init", [review], 1)(table)
         table = _set("ci_sel_factor_init", [review], 1.1)(table)
@@ -2249,20 +2300,25 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
         one = _point(model, first)
         assert (one.duration_mth_init(), one.proj_len()) == (1, 299)
         assert one.review_prem_factor(0) == 1.0 and one.ci_sel_factor(0) == 1.0
-        on = _point(model, review)
+        on = _point(model, 26)
+        assert on.duration_mth_init() == 60
         assert len(on.result_cf()) == on.proj_len() == 240
-        assert on.premium_pp(0) == pytest.approx(55.0 * 1.25, rel=1e-12)
-        assert on.ci_sel_factor(0) == 1.1 and on.review_shock_active(0)
+        assert (on.review_prem_factor_init(), on.ci_sel_latched_init()) == (1.0, 0)
+        after = _point(model, review)
+        assert len(after.result_cf()) == after.proj_len() == 239
+        assert after.premium_pp(0) == pytest.approx(55.0 * 1.25, rel=1e-12)
+        assert after.ci_sel_factor(0) == 1.1 and after.review_shock_active(0)
         for label, premium in ((21, 55.0 * 0.75), (22, 0.0)):
             cut = _point(model, label)
             assert len(cut.result_cf()) == cut.proj_len() == 222, label
             assert cut.premium_pp(0) == premium and cut.premium_pp(42) == premium, label
             assert not any(cut.review_shock_active(t) for t in range(cut.proj_len())), label
-        young, anniversary = _point(model, 23), _point(model, 24)
-        assert len(young.result_cf()) == young.proj_len() == 289
+        anniversary, year_on = _point(model, 23), _point(model, 24)
         assert len(anniversary.result_cf()) == anniversary.proj_len() == 288
-        assert young.idx_factor(0) == 1.0 and young.idx_factor(1) == pytest.approx(1.03)
-        assert anniversary.idx_factor(0) == 1.03 and anniversary.idx_prem_factor(0) == 1.045
+        assert len(year_on.result_cf()) == year_on.proj_len() == 287
+        assert (anniversary.idx_factor(0), anniversary.idx_prem_factor(0)) == (1.03, 1.045)
+        assert (year_on.idx_factor(10), year_on.idx_prem_factor(10)) == (1.03, 1.045)
+        assert year_on.idx_factor(11) == pytest.approx(1.03 ** 2, rel=1e-15)
         zero = _point(model, 25)
         assert len(zero.result_cf()) == zero.proj_len() == 228
         assert {zero.ci_sel_factor(t) for t in range(228)} == {0.0}
@@ -2278,16 +2334,19 @@ def _every_state_months(start, end):
     """The S months a point whose S frame runs from ``start`` to ``end`` is restated at.
 
     By default the edges of its windows (USLIB-SEC-PLAN.md §5.2, T5): every month of the
-    first policy year and the first anniversary, through which ``Data``'s rule for a policy
-    not yet in force ends, each anniversary and the month before it, which takes in every
-    review and the month before it, each review's shock window's last month and the month
-    after it, and the last month of the frame, before expiry.  With ``UKLIB_SEC_FULL=1``,
-    every month.  Each after ``start``, the twin's month.
+    first policy year, the first anniversary and the month after it, through which
+    ``Data``'s rules for a policy not yet in force and for one before its first increase
+    end, each anniversary and the month before it, which takes in every review and the
+    month before it, the month after each review, where the rules on the review history
+    move on, a review in the valuation month being month 0's own (D6), each review's shock
+    window's last month and the month after it, and the last month of the frame, before
+    expiry.  With ``UKLIB_SEC_FULL=1``, every month.  Each after ``start``, the twin's
+    month.
     """
     if SEC_FULL:
         return list(range(start + 1, end))
     months = {*range(1, 14), end - 1, *(m for a in range(12, end, 12) for m in (a - 1, a)),
-              *(m for r in range(60, end, 60) for m in (r + 11, r + 12))}
+              *(m for r in range(60, end, 60) for m in (r + 1, r + 11, r + 12))}
     return sorted(m for m in months if start < m < end)
 
 
@@ -2603,9 +2662,11 @@ def test_the_two_clocks_on_the_shipped_points(sec_model):
     On a twin of S's new business the two coincide, and its policies enter as new business
     at ``t = 0``.  The reviewable point valued on its first review, in force 60 months, is in
     policy year 6 at attained age 45 at ``t = 0``, has 240 months of cover left, and is on
-    the books from ``t = 0`` with no new business; its next review falls at ``t = 60``,
-    policy month 120.  The indexed point valued on its third anniversary steps its factors
-    at ``t = 12``.  The point issued 13 months on has nothing in force and nothing to do
+    the books from ``t = 0`` with no new business; its first review falls at ``t = 0``,
+    month 0's own, and its next at ``t = 60``, policy month 120.  The indexed point valued
+    on its third anniversary carries the factors of policy year 3, steps them at ``t = 0``,
+    the anniversary's own month, and again at ``t = 12``.  The point issued 13 months on
+    has nothing in force and nothing to do
     before ``t = 13``, and a frame of 313 months; its index steps at ``t = 25``.  The point
     in its last covered month has a one-month frame, in which its survivors expire.  A
     timing the model does not know is refused rather than answered with another count.
@@ -2623,9 +2684,11 @@ def test_the_two_clocks_on_the_shipped_points(sec_model):
     assert old.pols_if(0) == old.pols_if_init() == old.policy_count()
     assert (old.reviews_passed(0), old.reviews_passed(59), old.reviews_passed(60)) == (
         1, 1, 2)
+    assert _reviews_before(old) == 0
     idx = _row(sec_model, "derived", 4, 36)
-    assert idx.idx_factor(11) == idx.idx_factor_init() == pytest.approx(1.03 ** 3, rel=1e-12)
-    assert idx.idx_factor(12) == pytest.approx(idx.idx_factor_init() * 1.03, rel=1e-12)
+    assert idx.idx_factor_init() == pytest.approx(1.03 ** 2, rel=1e-12)
+    assert idx.idx_factor(0) == idx.idx_factor(11) == pytest.approx(1.03 ** 3, rel=1e-12)
+    assert idx.idx_factor(12) == pytest.approx(idx.idx_factor_init() * 1.03 ** 2, rel=1e-12)
     fut = _row(sec_model, "future", 4, -13)
     assert (fut.duration_mth(0), fut.t_entry(), fut.proj_len()) == (-13, 13, 313)
     assert not fut.is_active(12) and fut.is_active(13)
@@ -2757,12 +2820,12 @@ def test_the_indexation_history_is_read_from_the_model_point(sec_model, tmp_path
     ``CI_UK_S`` recomputes the factors from a flat ``rpi_rate``, so a model that dropped
     the two columns and did the same would pass the splice, since S and the splice
     recompute them alike.  So the indexed point on its third anniversary is projected with
-    factors no flat rate gives, the increases of an RPI past the 10% cap in two years and
-    below 0 in the third: cover 1.21, two increases of 10% and none, and premium 1.3225, two
-    of 15%, the premium cap, and none.  Its cover is the sum assured at issue times 1.21
-    through the year under way, and times 1.03 for each anniversary after; its premium the
-    issue premium times 1.3225, and times 1.045 for each; and the additional payment and
-    children's cover take their caps on the indexed cover.
+    factors no flat rate gives, the increases of the two anniversaries before it of an RPI
+    past the 10% cap: cover 1.21, two increases of 10%, and premium 1.3225, two of 15%, the
+    premium cap.  Its cover is the sum assured at issue times 1.21, and times 1.03 for each
+    anniversary from the valuation date on, its third among them, at ``t = 0``; its premium
+    the issue premium times 1.3225, and times 1.045 for each; and the additional payment
+    and children's cover take their caps on the indexed cover.
     """
     row = _label(_committed(), "derived", 4, 36)
     model = _read_edited(tmp_path, _then(_set("idx_factor_init", [row], 1.21),
@@ -2770,10 +2833,10 @@ def test_the_indexation_history_is_read_from_the_model_point(sec_model, tmp_path
     try:
         p = _point(model, row)
         main, ap, child = (_code(p, kind) for kind in BENEFITS)
-        for t, years in ((0, 0), (11, 0), (12, 1), (30, 2), (263, 21)):
-            cover = 100000.0 * 1.21 * 1.03 ** years
+        for t, steps in ((0, 1), (11, 1), (12, 2), (30, 3), (263, 22)):
+            cover = 100000.0 * 1.21 * 1.03 ** steps
             assert p.benefit_pp(t, main) == pytest.approx(cover, rel=1e-12), t
-            assert p.premium_pp(t) == pytest.approx(55.0 * 1.3225 * 1.045 ** years,
+            assert p.premium_pp(t) == pytest.approx(55.0 * 1.3225 * 1.045 ** steps,
                                                     rel=1e-12), t
             assert p.benefit_pp(t, ap) == min(0.25 * p.benefit_pp(t, main), 25000.0), t
             assert p.benefit_pp(t, child) == min(0.5 * p.benefit_pp(t, main), 25000.0), t
@@ -2783,22 +2846,199 @@ def test_the_indexation_history_is_read_from_the_model_point(sec_model, tmp_path
         model.close()
 
 
+# The RPI the K14 anniversary test sets at the valuation date, apart from the shipped 3%,
+# and the increases it gives, recomputed by hand: the cover's min(max(5%, 0), 10%), and the
+# premium's min(1.5 x 5%, 15%).
+RPI_TODAY = 0.05
+COVER_STEP, PREMIUM_STEP = 1.05, 1.075
+
+
+def test_an_anniversary_at_the_valuation_date_is_made_at_today_s_rpi(s_model, tmp_path):
+    """On a point valued on its anniversary, the factors carried in are those before it,
+    and the anniversary's increase is the projection's, at today's RPI (K14; D6).
+
+    The opening state is measured before any month-0 event, and an anniversary's RPI
+    increase is one: an event that falls at the valuation date is the projection's first,
+    made at the References of the valuation date, as on a point issued then
+    (USLIB-SEC-PLAN.md D6, precised at its M7).  So with the RPI raised from the shipped 3%
+    to 5% at the valuation date, the figures, recomputed here by hand:
+
+    * The indexed point on its third anniversary carries the factors of policy year 3,
+      ``1.03^2`` and ``1.045^2``, and takes its third step at ``t = 0`` at 5%, and each
+      later one too: its cover at ``t = 0`` is ``100,000 x 1.03^2 x 1.05 = 111,394.50`` and
+      its premium ``55 x 1.045^2 x 1.075 = 64.565978``.  A column measured after month 0's
+      event would carry ``1.03^3``, the step made at the history's 3%, and pay 109,272.70.
+    * Against S run under the history's 3%: the columns are S's factors in month 35, the
+      month before the event, and not in month 36, where S has made the step at 3%.
+    * The same point restated on its first anniversary, at month 12, by the generator from
+      S at 3%, carries factors of 1 and takes its first increase at 5% at ``t = 0``.  No
+      state before month 12 reads the RPI, so S run at 5% is S under the history's
+      References up to the event and today's from it: the row is S's at 5% from month 12
+      on, in every cell.
+    """
+    cover0, prem0 = 1.03 ** 2, 1.045 ** 2
+    s = _point(s_model, 4)
+    assert s.rpi_rate == 0.03
+    row = _label(_committed(), "derived", 4, 36)
+    model = mx.read_model(model_path(SEC), name=_name("rpi_today"))
+    try:
+        model.Projection.rpi_rate = RPI_TODAY
+        p = _point(model, row)
+        main = _code(p, "MAIN")
+        assert p.idx_factor_init() == pytest.approx(cover0, rel=1e-15)
+        assert p.idx_prem_factor_init() == pytest.approx(prem0, rel=1e-15)
+        assert (p.idx_factor_init(), p.idx_prem_factor_init()) == (
+            s.idx_factor(35), s.idx_prem_factor(35))
+        assert s.idx_factor(36) == pytest.approx(1.03 ** 3, rel=1e-15)
+        for t, steps in ((0, 1), (11, 1), (12, 2), (263, 22)):
+            assert p.idx_factor(t) == pytest.approx(cover0 * COVER_STEP ** steps,
+                                                    rel=1e-12), t
+            assert p.idx_prem_factor(t) == pytest.approx(prem0 * PREMIUM_STEP ** steps,
+                                                         rel=1e-12), t
+            assert p.benefit_pp(t, main) == pytest.approx(
+                100000.0 * cover0 * COVER_STEP ** steps, rel=1e-12), t
+            assert p.premium_pp(t) == pytest.approx(
+                55.0 * prem0 * PREMIUM_STEP ** steps, rel=1e-12), t
+        assert p.benefit_pp(0, main) == pytest.approx(111394.5, rel=1e-12)
+        assert p.premium_pp(0) == pytest.approx(64.565978125, rel=1e-12)
+        assert 100000.0 * s.idx_factor(36) == pytest.approx(109272.7, rel=1e-12)
+    finally:
+        model.close()
+    rows, _ = build_sec_table(dataclasses.replace(SPEC, derived=((4, 12),), future=(),
+                                                  derived_refs={}), s_model)
+    assert s_model.Projection.rpi_rate == 0.03
+    today = {"rpi_rate": RPI_TODAY, "inflation_rate": 0.0}
+    sec = mx.read_model(_sec_inputs(tmp_path, rows), name=_name("first_anniversary"))
+    s_today = mx.read_model(model_path(TWIN), name=_name("rpi_today_s"))
+    try:
+        for m in (sec, s_today):
+            for ref, value in today.items():
+                setattr(m.Projection, ref, value)
+        first, theirs = _row(sec, "derived", 4, 12), _point(s_today, 4)
+        assert (first.idx_factor_init(), first.idx_prem_factor_init()) == (1.0, 1.0)
+        assert (first.idx_factor(0), first.idx_prem_factor(0)) == (COVER_STEP, PREMIUM_STEP)
+        assert first.policy_count() == s.pols_if(12) == theirs.pols_if(12)
+        _sweep_s(theirs)
+        assert _compare(theirs, first, 12, SPLICE_EXEMPT) == []
+    finally:
+        s_today.close()
+        sec.close()
+
+
+# The review the K14 review test makes at the valuation date: a history read from S run
+# under a review change of 10%, past the shipped threshold of 5%, which closes the latch at
+# the shipped loading of 10% at the first review; and References changed at the valuation
+# date, a change of 15%, a threshold of 8% and a loading of 20%, under which the shock lapse
+# in a review's window, policy year 11 or 6 at the lapse table's last rate of 4%, is
+# min(0.30, 0.04 + 2 x (0.15 - 0.08)) = 0.18, below the cap, recomputed by hand.
+HISTORY_RHO = 0.10
+TODAY = {"review_prem_shock": 0.15, "review_lapse_threshold": 0.08,
+         "sel_lapse_ci_loading": 0.20}
+TODAY_LAPSE = 0.18
+
+
+def test_a_review_at_the_valuation_date_is_made_at_today_s_references(tmp_path):
+    """On a point valued in a review month, the columns hold the state before that review,
+    and the review is the projection's, at today's change, threshold and loading (K14;
+    D6).
+
+    A review that falls at the valuation date is month 0's own event, made at the
+    References of the valuation date, as on a point issued then (USLIB-SEC-PLAN.md D6,
+    precised at its M7).  The reviewable point is restated by the generator from S run
+    under the history's change of 10%, on its first review and on its second, and projected
+    under :data:`TODAY`'s References.  The figures, recomputed here by hand:
+
+    * On its first review, 60: no review before it, so a review factor of 1, the latch
+      open and no change, S's state in month 59.  At ``t = 0`` the review is made at 15%:
+      the premium is ``55 x 1.15 = 63.25``, the window opens at today's change, its lapse
+      0.18 for twelve months, and the latch closes at today's loading, 1.2.  S run under the
+      history's 10% made the review at 10%, 60.50, its lapse 0.14 and its latch 1.1, which a
+      column measured after month 0's event would carry.  Nothing before month 60 reads the
+      three References, so S run under today's from issue is S under the history's up to
+      the event and today's from it, and the row is S's so from month 60 on, in every cell.
+    * On its second, 120: the first review's history, S's in month 119, a factor of 1.1,
+      the latch closed at 1.1 and that review's change of 10%, whose window has long closed.
+      At ``t = 0`` the second review is made at 15%: the premium is
+      ``55 x 1.1 x 1.15 = 69.575``, the window opens at today's 15%, not the first review's
+      10%, its lapse 0.18, and the latch, closed in the history, keeps its 1.1.  S under the
+      history made the review at 10%, 66.55.  The next review, at ``t = 60``, takes the
+      premium to ``55 x 1.1 x 1.15^2 = 80.01125``.
+    """
+    s = mx.read_model(model_path(TWIN), name=_name("history_s"))
+    sec = s_today = None
+    try:
+        s.Projection.review_prem_shock = HISTORY_RHO
+        rows, _ = build_sec_table(dataclasses.replace(
+            SPEC, derived=((3, 60), (3, 120)), future=(), derived_refs={}), s)
+        sp = _point(s, 3)
+        sec = mx.read_model(_sec_inputs(tmp_path, rows), name=_name("review_today"))
+        for ref, value in TODAY.items():
+            setattr(sec.Projection, ref, value)
+        first, second = _row(sec, "derived", 3, 60), _row(sec, "derived", 3, 120)
+
+        assert (first.review_prem_factor_init(), first.ci_sel_latched_init(),
+                first.ci_sel_factor_init(), first.review_prem_shock_init()) == (
+                    1.0, 0, 1.0, 0.0)
+        assert (sp.reviews_passed(59), sp.ci_sel_factor(59), sp.premium_pp(59)) == (
+            0, 1.0, 55.0)
+        assert first.policy_count() == sp.pols_if(60)
+        assert first.premium_pp(0) == pytest.approx(63.25, rel=1e-12)
+        assert first.review_prem_change(0) == 0.15 and first.review_shock_active(0)
+        assert [first.lapse_rate(t) for t in (0, 11)] == pytest.approx(
+            [TODAY_LAPSE] * 2, rel=1e-12)
+        assert first.lapse_rate(12) == first.lapse_rate_base(12) == 0.04
+        assert [first.ci_sel_factor(t) for t in (0, 59, 60, 239)] == [1.2] * 4
+        assert sp.premium_pp(60) == pytest.approx(60.5, rel=1e-12)
+        assert sp.lapse_rate(60) == pytest.approx(0.14, rel=1e-12)
+        assert sp.ci_sel_factor(60) == 1.1
+
+        assert second.review_prem_factor_init() == pytest.approx(1.1, rel=1e-15)
+        assert (second.ci_sel_latched_init(), second.ci_sel_factor_init(),
+                second.review_prem_shock_init()) == (1, 1.1, HISTORY_RHO)
+        assert second.review_prem_factor_init() * 55.0 == pytest.approx(sp.premium_pp(119),
+                                                                         rel=1e-15)
+        assert (sp.reviews_passed(119), sp.ci_sel_factor(119)) == (1, 1.1)
+        assert not sp.review_shock_active(119)
+        assert second.policy_count() == sp.pols_if(120)
+        assert second.premium_pp(0) == pytest.approx(69.575, rel=1e-12)
+        assert second.review_prem_change(0) == 0.15 and second.review_shock_active(0)
+        assert [second.lapse_rate(t) for t in (0, 11)] == pytest.approx(
+            [TODAY_LAPSE] * 2, rel=1e-12)
+        assert [second.ci_sel_factor(t) for t in (0, 60, 179)] == [1.1] * 3
+        assert second.premium_pp(60) == pytest.approx(80.01125, rel=1e-12)
+        assert sp.premium_pp(120) == pytest.approx(66.55, rel=1e-12)
+
+        s_today = mx.read_model(model_path(TWIN), name=_name("review_today_s"))
+        for ref, value in TODAY.items():
+            setattr(s_today.Projection, ref, value)
+        theirs = _point(s_today, 3)
+        _sweep_s(theirs)
+        assert theirs.pols_if(60) == sp.pols_if(60)
+        assert _continues_s(theirs, first, 60) == []
+    finally:
+        for model in (s_today, sec, s):
+            if model is not None:
+                model.close()
+
+
 def test_the_review_history_is_read_from_the_model_point(sec_model, tmp_path):
     """The premium changes the reviews already made are the point's (UKLIB-SEC-PLAN.md
     K14).
 
     ``CI_UK_S`` recomputes the premium at each review from one flat ``review_prem_shock``,
     so a model that dropped the column and did the same would pass the splice.  So the
-    reviewable point valued on its first review is projected with the history of a first
-    review that raised its premium by 30%, a review factor of 1.30 and a change of 30%,
-    which no review the shipped ``review_prem_shock`` of 0 makes: its premium is the issue
-    premium times 1.30 until its next review, at ``t = 60``, policy month 120, and then
-    times ``1 + review_prem_shock`` for each review after, 1 at the shipped 0 and 1.1 under
-    10%; the same point valued mid-year after the review carries the factor too.  And the
+    reviewable point valued inside its first review's window is projected with the history
+    of a first review that raised its premium by 30%, a review factor of 1.30 and a change
+    of 30%, which no review the shipped ``review_prem_shock`` of 0 makes: its premium is
+    the issue premium times 1.30 until its next review, at ``t = 54``, policy month 120,
+    and then times ``1 + review_prem_shock`` for each review after, 1 at the shipped 0 and
+    1.1 under 10%; the same point valued after the window carries the factor too.  And the
     twin of the same point, issued at the valuation date, has no history and reviews at
-    policy month 60 at the Reference.
+    policy month 60 at the Reference.  A point valued in its first review's month has no
+    review history at all, that review being month 0's own, which the K14 review test
+    holds.
     """
-    on, after = (_label(_committed(), "derived", 3, d) for d in (60, 78))
+    on, after = (_label(_committed(), "derived", 3, d) for d in (66, 78))
     edit = _then(_set("review_prem_factor_init", [on, after], 1.30),
                  _set("review_prem_shock_init", [on, after], 0.30))
     for rho, step in ((0.0, 1.0), (0.10, 1.1)):
@@ -2806,7 +3046,7 @@ def test_the_review_history_is_read_from_the_model_point(sec_model, tmp_path):
         try:
             model.Projection.review_prem_shock = rho
             p, q = _point(model, on), _point(model, after)
-            for t, reviews in ((0, 0), (59, 0), (60, 1), (119, 1), (120, 2), (239, 3)):
+            for t, reviews in ((0, 0), (53, 0), (54, 1), (113, 1), (114, 2), (233, 3)):
                 assert p.premium_pp(t) == pytest.approx(55.0 * 1.30 * step ** reviews,
                                                         rel=1e-12), (rho, t)
             assert q.premium_pp(0) == pytest.approx(55.0 * 1.30, rel=1e-12)
@@ -2954,18 +3194,20 @@ def test_a_review_change_set_at_the_valuation_date_reaches_back_over_no_review(s
     """A ``review_prem_shock`` set at the valuation date applies to the reviews after it
     alone (K14; D6).
 
-    The reviews already made, and their windows and latch, are history.  So with the change
-    raised from 0 to 20% at the valuation date, the reviewable point valued on its first
-    review keeps that review's premium, makes no shock lapse in its window and closes no
-    latch, until its next review at ``t = 60``, policy month 120, where the premium rises by
-    20%, the window opens and the latch closes; the rows inside and after the first window
-    likewise, each to its own next review; and the twin issued at the valuation date, which
-    has made no review, reviews at policy month 60 at the new change.
+    The reviews made before the valuation date, and their windows and latch, are history.
+    So with the change raised from 0 to 20% at the valuation date, the rows inside and
+    after the first review's window keep that review's premium, make no shock lapse and
+    close no latch, each until its next review, at ``t = 54`` and ``t = 42``, policy month
+    120, where the premium rises by 20%, the window opens and the latch closes.  A review
+    in the valuation month is not history but month 0's own event (USLIB-SEC-PLAN.md D6,
+    precised at its M7): the row valued on its first review makes it at ``t = 0``, at the
+    new change, as the twin issued at the valuation date makes its first at policy month
+    60.
     """
     model = mx.read_model(model_path(SEC), name=_name("raised"))
     try:
         model.Projection.review_prem_shock = 0.20
-        for d, next_review in ((60, 60), (66, 54), (78, 42)):
+        for d, next_review in ((60, 0), (66, 54), (78, 42)):
             p, before = _row(model, "derived", 3, d), _row(sec_model, "derived", 3, d)
             for t in range(next_review):
                 assert p.premium_pp(t) == before.premium_pp(t), (d, t)
@@ -3111,10 +3353,10 @@ def test_a_review_change_at_an_edge_continues_the_s_projection(tmp_path, case):
     at each of :data:`REVIEW_EDGE_MTHS`, and each row, and the point's twin, is S's from
     its month on in every cell (:func:`_compare`): the windows, the latch and the lapse
     among them.  Then what the change reaches: past the cap, the window's lapse is the
-    cap, 0.30, in the window of the review made at the valuation date and of the next; at
-    the threshold no window opens, no latch closes, and the premium rises by 5% at each
-    review all the same; one float above, every review opens its window and the first
-    closes the latch.
+    cap, 0.30, in the window of the review made at ``t = 0``, the row's first event, which
+    its open latch carries into month 0, and of the next; at the threshold no window opens,
+    no latch closes, and the premium rises by 5% at each review all the same; one float
+    above, every review opens its window and the first, at ``t = 0``, closes the latch.
     """
     rho, shocks, capped = REVIEW_EDGES[case]
     refs = {**SPLICED_REFS, "review_prem_shock": rho}
@@ -3139,7 +3381,7 @@ def test_a_review_change_at_an_edge_continues_the_s_projection(tmp_path, case):
         assert not found, found[:20]
         p = _row(sec, "derived", 3, 60)
         frame = range(p.proj_len())
-        assert p.ci_sel_latched_init() == int(shocks)
+        assert (p.ci_sel_latched_init(), p.review_prem_factor_init()) == (0, 1.0)
         assert [p.review_shock_active(t) for t in (0, 11, 12, 60, 71, 72)] == [
             shocks, shocks, False, shocks, shocks, False]
         assert {p.ci_sel_factor(t) for t in frame} == {1.1 if shocks else 1.0}

@@ -121,24 +121,29 @@ The model point table is `model_point_table_sec.csv`. It carries `CI_UK_S`'s col
 of them restated as the in-force interface under `basiclife/BasicTerm_SE`'s name, a policy
 clock column, and six columns of opening state. Each state column is a factor, a rate or a flag,
 so that `policy_count` is the one weight on every flow, and each is measured at the
-valuation instant, the start of month 0, before any month-0 event (USLIB-SEC-PLAN.md D6). A
-review or an anniversary that falls at the valuation date, the start of month 0, is
-already made at that instant: the premium due in month 0 is the reviewed one, and the cover
-of the year an anniversary opens is the indexed one. Each is history: what the contract has
-given or charged, never re-derived from a Reference, which is an assumption from the
-valuation date on, so that a Reference changed there reaches back over no review or
-anniversary already made (UKLIB-SEC-PLAN.md K14, §9 item 5):
+valuation instant, the start of month 0, before any month-0 event. An event that falls at
+the valuation date itself is month 0's, the projection's first, made at the References of
+the valuation date, as it is on a policy issued then, and is not history (USLIB-SEC-PLAN.md
+D6, precised at its M7): on a point valued on its anniversary, that anniversary's RPI
+increase is made at `t = 0` at the `rpi_rate` of the day; on one valued in a review month,
+that review is made at `t = 0` at the day's `review_prem_shock`, opens its window at that
+change and closes the latch if the change passes the day's `review_lapse_threshold`, at
+the day's `sel_lapse_ci_loading`; and the columns hold the state before it. Each column is
+history: what the contract has given or charged before month 0, never re-derived from a
+Reference, which is an assumption from the valuation date on, so that a Reference changed
+there reaches back over no review or anniversary already made (UKLIB-SEC-PLAN.md K14, §9
+item 5):
 
 | Column | Unit | Measured at | Meaning |
 |---|---|---|---|
 | `policy_count` | policies, not necessarily whole | for a point in force, the start of month 0, before any month-0 event; for any other, its issue month | the policies in force at the valuation date, for a point already in force; the policies issued, for one issued at or after it |
 | `duration_mth` | whole months | the valuation date | the policy's age in months: positive in force, 0 for a policy issued at the valuation date, `−k` for one to be issued `k` months later, with `k` at most 120 as shipped |
-| `idx_factor_init` | a factor, 1 or more | the policy year under way at the valuation date; on an anniversary, the one it opens | the RPI cover increases already given, on the sum assured at issue |
-| `idx_prem_factor_init` | a factor, 1 or more | as `idx_factor_init` | the RPI premium increases already given, on the premium at issue |
-| `review_prem_factor_init` | a factor, 0 or more | the review period under way at the valuation date; on a review month, the one it opens | the premium changes the reviews already made have given, on the premium at issue |
-| `ci_sel_latched_init` | 0 or 1 | the start of month 0 | the select latch: 1 once a review at or before the valuation date has raised premiums past the shock threshold of its day, and 0 before |
+| `idx_factor_init` | a factor, 1 or more | the start of month 0: mid-year, the policy year under way; on an anniversary, the one it closes | the RPI cover increases given before month 0, on the sum assured at issue; 1 on a policy in force 12 months or fewer |
+| `idx_prem_factor_init` | a factor, 1 or more | as `idx_factor_init` | the RPI premium increases given before month 0, on the premium at issue |
+| `review_prem_factor_init` | a factor, 0 or more | the start of month 0: mid-period, the review period under way; on a review month, the one it closes | the premium changes the reviews made before month 0 have given, on the premium at issue; 1 on a policy in force no longer than the review period |
+| `ci_sel_latched_init` | 0 or 1 | the start of month 0; on a review month, before that review | the select latch: 1 once a review before month 0 has raised premiums past the shock threshold of its day, and 0 before |
 | `ci_sel_factor_init` | a multiple of the diagnosis rate, 0 or more | the start of month 0 | the factor the latch closed at, `1 + η` at the loading of its day, read only while the latch is closed: 1 on an open latch, and 1 or below 1 on one closed at a loading of 0 or less |
-| `review_prem_shock_init` | a premium change, −1 or more | the review that opened the review period under way, at or before the valuation date | the change that review made, which sets the shock lapse of its twelve-month window; read only while that window is still running, and 0 before the first review |
+| `review_prem_shock_init` | a premium change, −1 or more | the last review before month 0 | the change that review made, which sets the shock lapse of its twelve-month window; read only while that window is still running, never on a review month, whose own review opens a window at the day's change, and 0 before the first review |
 
 `CI_UK_S` holds none of them. It recomputes the premium at month `t` as
 `P × idx_p(t) × (1 + ρ)^reviews`, one `review_prem_shock` for every review since issue;
@@ -146,20 +151,33 @@ the latch as closed once any review's `ρ` passes the threshold; the shock lapse
 window from that one `ρ`; and the index factors from one flat `rpi_rate`. On a point in
 force those are facts of the contract: a `review_prem_shock` set at the valuation date
 would reprice premiums long collected, open or close the latch at reviews long past, and
-lapse a window already closed. Here a review after the valuation date applies
-`review_prem_shock`, and one at or before it is the history the columns carry:
+lapse a window already closed. Here a review from the valuation instant on, one in the
+valuation month the first, applies `review_prem_shock`, and one before it is the history
+the columns carry, counted on the policy clock as the reviews before month 0,
+`(duration_mth_init() − 1) // review_period_mths` on a point in force:
 
 - `review_prem_factor(t)` opens at `review_prem_factor_init` and takes `1 + ρ` for each
-  review after `t_entry()`, `reviews_passed(t) − reviews_passed(t_entry())`;
+  review from month 0 on, `reviews_passed(t)` less the reviews before month 0;
 - `ci_sel_factor(t)` stays at `ci_sel_factor_init` where `ci_sel_latched_init` is 1, a
   latch already closed, whatever the factor, 1 among them, and otherwise closes at
-  `1 + sel_lapse_ci_loading` at the first review after `t_entry()` whose `ρ` passes the
+  `1 + sel_lapse_ci_loading` at the first review from month 0 on whose `ρ` passes the
   threshold. The latch is a flag of its own because a latch closed at a loading of 0
   holds a factor of 1, which read as open would close again at today's loading;
 - `review_prem_change(t)`, the change the review under way in month `t` made, is
-  `review_prem_shock_init` for a review at or before the valuation date and
-  `review_prem_shock` after it; `review_shock_active(t)` asks it inside a window alone, and
-  the shock lapse reads it there.
+  `review_prem_shock_init` for a review before month 0 and `review_prem_shock` for one
+  from it on; `review_shock_active(t)` asks it inside a window alone, and the shock lapse
+  reads it there.
+
+So the reviewable point valued on its second review, from `CI_UK_S` run under a review
+change of 10%, carries the first review's history, a factor of 1.1, the latch closed at
+1.1 and that review's change of 10%, whose window has long closed. With a change of 15%, a
+threshold of 8% and a loading of 20% set at the valuation date, its second review is made
+at `t = 0` at 15%: its premium is `55 × 1.1 × 1.15 = 69.575`, where a column that held the
+review would carry 10% and 66.55, the window opens at 15%, its lapse
+`min(0.30, 0.04 + 2 × (0.15 − 0.08)) = 0.18`, and the latch keeps its 1.1. Valued on its
+first review, it carries no history, and the review at `t = 0` closes the latch at the
+day's 1.2. The index factors are history up to month 0 alike: the indexed point valued on
+its third anniversary carries `1.03^2` and `1.045^2`, and takes its third step at `t = 0`.
 
 On a point issued at the valuation date each history column holds its issue value, and the
 model is `CI_UK_S`. A model that dropped the columns and recomputed them from the
@@ -206,36 +224,37 @@ below `2**53`, and −120 or more, future new business being written over a hori
 `Data.future_horizon_mth`, 120 months as shipped, which set to 0 refuses future new
 business altogether; each state column is a number in its range, the latch 0 or 1 and its
 factor 0 or more; a point not yet in force holds the issue values, 1 for the factors and 0
-for the latch and the change; a point in force fewer than 12 months, before its first
-anniversary, holds index factors of 1; an open latch holds a factor of 1; each flag is
-True or False;
-each code is one `CI_UK_S` knows, the smoker status `NS` or `S`, not term assurance's `N`;
-the ages and the term are finite numbers, and the amounts zero or more; a joint point has a
-second life, and is not on the standalone contract, which `CI_UK_S` scopes out; and the
-index factors are 1 without indexation, and on a guaranteed point the review factor 1,
-the latch open and the change 0. `CI_UK_S` meets most of these only when a projection reaches
-them, and some never: a blank flag reads as True, and one stray word in a flag column turns
-every `False` in it to text that reads as True.
+for the latch and the change; a point in force 12 months or fewer, whose first anniversary
+falls in month 0 or later, holds index factors of 1; an open latch holds a factor of 1;
+each flag is True or False; each code is one `CI_UK_S` knows, the smoker status `NS` or
+`S`, not term assurance's `N`; the ages and the term are finite numbers, and the amounts
+zero or more; a joint point has a second life, and is not on the standalone contract,
+which `CI_UK_S` scopes out; and the index factors are 1 without indexation, and on a
+guaranteed point the review factor 1, the latch open and the change 0. `CI_UK_S` meets
+most of these only when a projection reaches them, and some never: a blank flag reads as
+True, and one stray word in a flag column turns every `False` in it to text that reads as
+True.
 
 A point whose cover had ended by the valuation date, `duration_mth ≥ 12 × policy_term`,
 reads, but `proj_len()` refuses it, naming the point: the end of cover is the product's
 rule, not the table's. So does a point the contract does not write
-([`product-spec.md`](product-spec.md)): a term below 5 years, `Projection.policy_term_min`,
-or above 50, `policy_term_max`; a life issued below 18, `issue_age_min`, or above 64,
-`issue_age_max`; or a life whose cover runs past the 75th birthday, `expiry_age_max`, the
-issue age plus the term. Each is a lower-case Reference, the contract a compiled model's
-caches will be sized from: a frame of at most 600 months and the horizon, and attained ages
-from 18 to 74 on the pivot table. On every point `proj_len()` also refuses a Reference
-off its domain (below), and on a reviewable point a review history the point cannot have
-had: a review factor other than 1, a closed latch or a change other than 0 while it has
-been in force fewer months than `review_period_mths`, since no review is made before the
-fifth anniversary; and between its first review and its second a review factor other
-than `1 + review_prem_shock_init`, the one change made. What depends on an assumption of
-its day is left alone: a latch left open after a change past today's threshold, the
-threshold of its day perhaps higher, and the factor of two reviews or more. The
-References are the projection's, which `Data` cannot read. A loop over
-the block meets such a row only when it reaches it, after projecting the points before it,
-so `run_sec.py --block` asks every point for its frame before it projects any, and stops
+([`product-spec.md`](product-spec.md)): a term below 5 years,
+`Projection.policy_term_min`, or above 50, `policy_term_max`; a life issued below 18,
+`issue_age_min`, or above 64, `issue_age_max`; or a life whose cover runs past the 75th
+birthday, `expiry_age_max`, the issue age plus the term. Each is a lower-case Reference,
+the contract a compiled model's caches will be sized from: a frame of at most 600 months
+and the horizon, and attained ages from 18 to 74 on the pivot table. On every point
+`proj_len()` also refuses a Reference off its domain (below), and on a reviewable point a
+review history the point cannot have had: a review factor other than 1, a closed latch or
+a change other than 0 while it has been in force no more months than `review_period_mths`,
+since no review is made before the fifth anniversary and one in the valuation month is
+month 0's; and from the month after its first review to its second review's month a review
+factor other than `1 + review_prem_shock_init`, the one change made before month 0. What
+depends on an assumption of its day is left alone: a latch left open after a change past
+today's threshold, the threshold of its day perhaps higher, and the factor of two reviews
+or more. The References are the projection's, which `Data` cannot read. A loop over the
+block meets such a row only when it reaches it, after projecting the points before it, so
+`run_sec.py --block` asks every point for its frame before it projects any, and stops
 before it prints anything.
 
 The assumption tables are checked before a value of them is read. The pivot table is
@@ -265,8 +284,8 @@ writes it.
 | Point | Kind | From | At the valuation date |
 |---|---|---|---|
 | 1 to 7 | twin | S points 1 to 7 | issued at `t = 0`: `CI_UK_S`'s worked example and its contracts, guarantees, lives and options |
-| 8 | derived | S point 4 at S month 36 | the indexed point on its third anniversary, its factors those of policy year 4 |
-| 9 | derived | S point 3 at S month 60 | the reviewable point on its first review, its history that review's |
+| 8 | derived | S point 4 at S month 36 | the indexed point on its third anniversary, its factors those of policy year 3, the anniversary's step its month 0's |
+| 9 | derived | S point 3 at S month 60 | the reviewable point on its first review, no review before it, that review its month 0's |
 | 10 | derived | S point 3 at S month 66 | the reviewable point inside the window its first review opened |
 | 11 | derived | S point 3 at S month 78 | the reviewable point mid-year after the window closed |
 | 12 | derived | S point 1 at S month 299 | in its last covered month: a one-row frame |
@@ -275,8 +294,9 @@ writes it.
 
 A derived row's `policy_count` is the count `CI_UK_S` carries into that month, its
 `pols_if(d)`, and its state what S carries there, so the row continues the S projection from
-there: point 8 opens with 0.772371 policies and cover and premium factors of `1.03^3` and
-`1.045^3`. At the shipped review change of 0 the reviewable rows' history is the issue
+there: point 8 opens with 0.772371 policies and cover and premium factors of `1.03^2` and
+`1.045^2`, which it steps at `t = 0`, as S steps them in month 36. At the shipped review
+change of 0 the reviewable rows' history is the issue
 values, which the tests move off, so one row is read from `CI_UK_S` run under a change of
 10%, which the spec's `derived_refs` records: point 14, with 0.458641 policies, a review
 factor of `1.1^2`, the latch closed at 1.1 and its window's change of 10%. At the shipped
@@ -353,10 +373,10 @@ cell of `CI_UK_S`'s that this model lacked without saying so would fail it.
 | `pols_if`, `pols_if_at`, `pols_if_init` | a recursion through `"AFT_DECR"`, three cells a month, from the column's 1.0 at `t = 0` | `BEF_DECR`, one cell a month from `t_entry()`; `pols_if_init()` is 0 unless in force | Policies in force at the valuation date open the count; new business joins it in its issue month |
 | `pols_maturity`, `AFT_DECR` | at `t = proj_len() − 1` | at `duration_mth(t) = expiry_mth() − 1` | One definition of cover, on the policy clock |
 | `reviews_passed`, `review_shock_active` | `t // review_period_mths`; the window `t % review_period_mths < 12`, after a review whose `review_prem_shock` passes the threshold | `duration_mth(t) // review_period_mths`; the window on `duration_mth(t)`, asked first, after a review whose own change, `review_prem_change(t)`, passes it | A review falls on a policy month, and a review made before the valuation date made its own change |
-| `premium_pp`; `review_prem_factor`, new | `P × idx_p(t) × (1 + ρ)^reviews_passed(t)` | `P × idx_p(t) × review_prem_factor(t)`, the factor opening at `review_prem_factor_init()` and taking `1 + ρ` for each review after `t_entry()` | The reviews already made are history |
-| `ci_sel_factor` | `1 + η` once `reviews_passed(t) ≥ 1` while `ρ` passes the threshold | `ci_sel_factor_init()` while `ci_sel_latched_init()` is 1; else `1 + η` once a review after `t_entry()` has a `ρ` past the threshold | The latch closed before the valuation date is history, at the loading of its day, which may have been 0 |
-| `lapse_rate`; `review_prem_change`, new | the shock `w + 2 max(0, ρ − 0.05)` | the shock from `review_prem_change(t)`, `review_prem_shock_init()` in the window of a review at or before the valuation date | A window open at the valuation date lapses at the change its review made |
-| `idx_factor`, `idx_prem_factor` | a step per anniversary since issue, from 1 | `idx_factor_init()` and `idx_prem_factor_init()`, then a step per anniversary since `t_entry()`'s | The increases already given are history |
+| `premium_pp`; `review_prem_factor`, new | `P × idx_p(t) × (1 + ρ)^reviews_passed(t)` | `P × idx_p(t) × review_prem_factor(t)`, the factor opening at `review_prem_factor_init()` and taking `1 + ρ` for each review from month 0 on, month 0's own among them | The reviews made before month 0 are history; one in the valuation month is the projection's, at the day's `ρ` (*The in-force interface*) |
+| `ci_sel_factor` | `1 + η` once `reviews_passed(t) ≥ 1` while `ρ` passes the threshold | `ci_sel_factor_init()` while `ci_sel_latched_init()` is 1; else `1 + η` once a review from month 0 on has a `ρ` past the threshold | The latch closed before the valuation date is history, at the loading of its day, which may have been 0; one a review in the valuation month closes, closes at `t = 0` at the day's References |
+| `lapse_rate`; `review_prem_change`, new | the shock `w + 2 max(0, ρ − 0.05)` | the shock from `review_prem_change(t)`, `review_prem_shock_init()` in the window of a review before the valuation date | A window open at the valuation date lapses at the change its review made; one a review in the valuation month opens lapses at the day's |
+| `idx_factor`, `idx_prem_factor` | a step per anniversary since issue, from 1 | `idx_factor_init()` and `idx_prem_factor_init()`, then a step for each anniversary from month 0 on, month 0's own among them | The increases given before month 0 are history; an anniversary at the valuation date is the projection's, at the day's `rpi_rate` |
 | `ci_trend_factor` | `(1 + τ)^(y − 1)`, from issue | `(1 + τ)^(t // 12)`, from the valuation date | A calendar trend on a basis stated at the valuation date |
 | `inflation_factor` | `1.03^(y − 1)`, from issue | `1.03^(t // 12)`, from the valuation date | Unit costs in valuation-date pounds |
 | `expenses` | the initial expense on `pols_if(t)` at `t = 0` | on `pols_new_biz(t)` | A point in force bears none, one issued later bears it in its issue month, per policy issued and not inflated, as in `basiclife/BasicTerm_SE` |
@@ -840,46 +860,58 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   multiplies every flow and counted cell and moves no per-policy value, bit for bit, the
   factors, the reviews and the latch among them; and the roll-forward, its tolerance scaled
   by the count, closes on a million policies.
-- **Validation and regeneration**: each malformed row of the table, 76 cases, each
-  `2**53` bound at the bound among them, is refused naming its point, and naming its label
-  on an extract labelled otherwise than by position; the horizon is a Reference; a point
-  past its cover or outside the contract's bounds, 15 cases, a bound set as a float among
-  them, is refused by `proj_len()`, each bound just inside it and each moved past a
-  committed point, and `run_sec.py --block` refuses such a point before printing anything;
-  so is a review history before the first review, 4 cases, a review factor between the first
-  review and the second that is not 1 plus that review's change, 6 cases, the rule's
-  tolerance and the last month of its window among them, accepted at two reviews and within
-  its tolerance, and each of 29 References off its domain, the value next outside each edge,
-  NaN and both infinities, on every point that reads it, each printed as the compiled model
-  holds the Reference, an int set on a float Reference and a whole float on an int one
-  among them, where at the edges the twin that reads it is S's in every cell; a whole
+- **Validation and regeneration**: each malformed row of the table, 77 cases, each `2**53`
+  bound at the bound among them, and an increase given on the first anniversary, the
+  first-year rule's edge, is refused naming its point, and naming its label on an extract
+  labelled otherwise than by position; the horizon is a Reference; a point past its cover
+  or outside the contract's bounds, 15 cases, a bound set as a float among them, is
+  refused by `proj_len()`, each bound just inside it and each moved past a committed
+  point, and `run_sec.py --block` refuses such a point before printing anything; so is a
+  review history on a point in force no longer than the review period, 5 cases, in its
+  first review's month among them, the rule's edge, at the shipped period and at 61, and a
+  review factor from the month after the first review to the second review's month that is
+  not 1 plus the one change made before month 0, 8 cases, the rule's tolerance and both
+  ends of its window among them, accepted at two reviews, past the window and within its
+  tolerance, and each of 29 References off its domain, the value next outside each edge,
+  NaN and both infinities, on every point that reads it, each printed as the compiled
+  model holds the Reference, an int set on a float Reference and a whole float on an int
+  one among them, where at the edges the twin that reads it is S's in every cell; a whole
   review period written `60.0` projects as 60 does, cell for cell and type for type; an
   exit rate past 1 is refused in the month it passes, where S's residual is complex; each
   assumption table a reader cannot read, 25 cases, is refused naming its lines, or the
   group and the age where the pivots' interpolation passes the largest float, three tables
   on which `CI_UK_S` projects the anchor cell; keys written as floats read as `CI_UK_S`
   reads them; the edges of the interface and of each bound are accepted, a review that cut
-  the premium, to 0 at the edge, the first anniversary, and a latch closed at a factor of 0
+  the premium, to 0 at the edge, a review history the month after the first review, an
+  increase the month after the first anniversary, and a latch closed at a factor of 0
   among them; every state `CI_UK_S` reaches, as shipped, under the splice's review change
-  and where the cap binds, is accepted in force; and the committed table is what
-  `CI_UK_S` generates.
-- **The product's own facts**: the two clocks on the shipped points; the committed rows, in
-  force and issued later, continuing their S points at the shipped assumptions but for
-  inflation, and the row read under a review change of 10% continuing `CI_UK_S` under it to
-  its next review, and after it at that change in both; each history column read, not
-  recomputed, the index factors, the review factor, the latch and the window's change, each
-  written off its References' path, on a history a policy can have, and projected through;
-  the latch read from its flag, so that one closed at a factor of 1, or below it, stays
-  closed through a later shock review; the change read inside its window alone; and a review
-  change set at the valuation date reaching back over no review already made
-  (UKLIB-SEC-PLAN.md K14); expense inflation and the morbidity trend on the valuation clock,
-  which only these tests see; the initial expense on new business alone; the reviews and
-  their window on the policy clock; every guarded cell's value outside cover; the block; an
-  extract without the generator's three columns, labelled otherwise, projecting the same
-  numbers; `run_sec.py`'s numbers, for a point, the joint life among them, and for the
-  block, and its sum, and its `--cython` stopping where no repository is above it; no cell's
-  parameter defaulted but the `claims` total's; the docstrings, read through docutils as the
-  docs build reads them where docutils is installed; and the shared input tables.
+  and where the cap binds, is accepted in force, at the months either side of each rule's
+  edges; and the committed table is what `CI_UK_S` generates.
+- **The product's own facts**: the two clocks on the shipped points; the committed rows,
+  in force and issued later, continuing their S points at the shipped assumptions but for
+  inflation, and the row read under a review change of 10% continuing `CI_UK_S` under it
+  to its next review, and after it at that change in both; each history column read, not
+  recomputed, the index factors, the review factor, the latch and the window's change,
+  each written off its References' path, on a history a policy can have, and projected
+  through; the latch read from its flag, so that one closed at a factor of 1, or below it,
+  stays closed through a later shock review; the change read inside its window alone; and
+  a review change set at the valuation date reaching back over no review already made
+  (UKLIB-SEC-PLAN.md K14); an anniversary and a review at the valuation date made at the
+  day's References, each figure recomputed by hand and the columns held to `CI_UK_S`'s
+  state under the history's References in the month before: the RPI at 5% on the indexed
+  point on its third anniversary, and on its first, where the row is `CI_UK_S`'s at 5%
+  from month 12 in every cell; and a change of 15%, a threshold of 8% and a loading of 20%
+  on the reviewable point on its first review and its second, read from `CI_UK_S` under a
+  change of 10%, where on its first the row is `CI_UK_S`'s under the day's References from
+  month 60 in every cell; expense inflation and the morbidity trend on the valuation
+  clock, which only these tests see; the initial expense on new business alone; the
+  reviews and their window on the policy clock; every guarded cell's value outside cover;
+  the block; an extract without the generator's three columns, labelled otherwise,
+  projecting the same numbers; `run_sec.py`'s numbers, for a point, the joint life among
+  them, and for the block, and its sum, and its `--cython` stopping where no repository is
+  above it; no cell's parameter defaulted but the `claims` total's; the docstrings, read
+  through docutils as the docs build reads them where docutils is installed; and the
+  shared input tables.
 - **The caps**: on the reviewable point, the anchor cell and the joint point, its second
   life a male non-smoker issued at 42, with the male non-smoker's diagnosis pivots at 60 and
   65 raised to 0.98 and 1.0, in a copy of the table, under the splice's References: on the
@@ -918,7 +950,12 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   `result_pols`, its sum over the frame, its largest absolute value and its values in five
   months, the first, the last and the three quartiles between, is what the model computed
   when its E step ended, to 1e-12 of the column's largest value, frozen at the end of the
-  module by `tools/gen_sec_fingerprint.py` before the C step changed anything.
+  module by `tools/gen_sec_fingerprint.py` before the C step changed anything. Measuring
+  the opening state before an anniversary or a review at the valuation date, rather than
+  after it, moved point 8's opening factors and none of its numbers but by rounding, at
+  most 2.2e-15 of a value of `net_cf`, which the freeze holds unchanged; no review row
+  moved, point 9's history being the issue values either way at the shipped change of 0,
+  and point 14, at policy month 124, falling on neither.
 - **Compiled**, the tests marked `cython`, which compile the model once a session into a
   temporary directory and run it in child processes: in
   `tests/test_compiled_conventions_uk.py`, C3, the typing guard, on the declarations, the
