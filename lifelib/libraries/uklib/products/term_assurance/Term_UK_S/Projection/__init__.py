@@ -107,7 +107,8 @@ D(t)                       pols_death(t)                   Expected death/TI cla
 inc(t)                     wop_inc_rate                    WOP annual incidence rate
 (recovery)                 wop_rec_rate                    WOP annual recovery rate
 (deferred period)          wop_defer_mths                  26 weeks, read as 6 months
-(none)                     wop_waived_frac(t)              Fraction with premiums waived
+act(t)                     wop_active_frac(t)              Fraction active, can fall ill
+u(t)                       wop_waived_frac(t)              Fraction with premiums waived
 FIBcum(t)                  fib_cum(t)                      FIB streams already in payment
 a(m)                       annuity_certain_factor(m)       m-month annuity-certain factor
 r_c                        fib_commute_disc_rate           FIB commutation rate, 3%
@@ -295,10 +296,11 @@ base run reproduces the worked example while the machinery stays visible and tes
   force, with ``clawback_mths`` at 0. Set it to 48 for the notes' four-year rule. The
   months in force at the end of month ``t`` are ``t + 1`` exactly, so on this grid the
   linear run-off is read month by month rather than in twelve-month jumps.
-- **Waiver of premium**, a two-state incidence/recovery chain on the premium-paying
-  population, with ``wop`` false on every model point but 7. Both its incidence basis
-  and its extra premium are **[std]** placeholders: no public UK incidence basis for
-  the work-tasks definitions exists in the sources. The 26-week deferred period is
+- **Waiver of premium**, with ``wop`` false on every model point but 7: each life in
+  force is active, in the deferred period or waived, and the active fraction follows a
+  two-state incidence/recovery chain, which feeds the waived one. Both its incidence
+  basis and its extra premium are **[std]** placeholders: no public UK incidence basis
+  for the work-tasks definitions exists in the sources. The 26-week deferred period is
   carried as ``wop_defer_mths = 6`` months between incidence and the first waived
   premium **[std]**, and mortality and lapse are assumed independent of the waiver
   state **[std]**, which is what lets the waived population be carried as a fraction
@@ -776,19 +778,53 @@ def pols_maturity(t):
     return pols_if_at(t, "BEF_LAPSE") * (1.0 - lapse_rate_mth(t))
 
 
+def wop_active_frac(t):
+    """act(t): the fraction of in-force policies active at the start of month t.
+
+    The waiver of premium rider puts the life of each policy in force in one of three
+    states **[std]**:
+
+    * *active*: paying premium, and able to fall incapacitated, at ``inc_m`` a month;
+    * *deferred*: incapacitated, and still paying, inside the ``wop_defer_mths`` months
+      of the deferred period [S1] since the incapacity began;
+    * *waived*: incapacitated past the deferred period, its premium waived, the fraction
+      :func:`wop_waived_frac`.
+
+    A deferred life and a waived one recover to active alike, at ``rec_m`` a month, and a
+    deferred life that has not recovered by the end of the deferred period enters waiver.
+    So the active fraction follows a two-state chain of its own, incidence out and
+    recovery in::
+
+        act(t+1) = act(t)(1 - inc_m) + (1 - act(t)) rec_m,   act(proj_start()) = 1
+
+    and the deferred fraction is the rest, ``1 - act(t) - u(t)``.  At rest the chain
+    holds ``act = rec_m / (inc_m + rec_m)``.  :func:`wop_waived_frac` reads it at the
+    month its entrants fell incapacitated, since only an active life can.  1 unless the
+    rider is in force, and in the first projected month, where the waiver opens with no
+    life incapacitated.
+    """
+    if not wop() or t <= proj_start():
+        return 1.0
+    a = wop_active_frac(t - 1)
+    return a * (1.0 - wop_inc_rate_mth()) + (1.0 - a) * wop_rec_rate_mth()
+
+
 def wop_waived_frac(t):
-    """The fraction of in-force policies with premiums waived at the start of month t.
+    """u(t): the fraction of in-force policies with premiums waived at the start of month t.
 
-    A two-state incidence/recovery chain at monthly rates **[std]**, with the 26-week
-    deferred period [S1] carried explicitly as ``wop_defer_mths`` months between
-    incidence and the first waived premium::
+    The waived state of the three :func:`wop_active_frac` sets out, at monthly rates
+    **[std]**, with the 26-week deferred period [S1] carried explicitly as
+    ``wop_defer_mths`` months between incidence and the first waived premium::
 
-        u(t+1) = u(t)(1 - rec_m) + inc_m (1 - u(t - defer)) (1 - rec_m)^defer
+        u(t+1) = u(t)(1 - rec_m) + inc_m act(t - defer) (1 - rec_m)^defer
 
     The entrants of month ``t + 1`` are the lives who became incapacitated ``defer``
-    months earlier and have not recovered since.  That is what the monthly grid buys
-    here: the annual grid could only read the deferred period as "incidence in year
-    ``t``, waiver from year ``t + 1``", rounding 26 weeks to twelve months.
+    months earlier, in month ``t - defer``, and have not recovered since.  That is what
+    the monthly grid buys here: the annual grid could only read the deferred period as
+    "incidence in year ``t``, waiver from year ``t + 1``", rounding 26 weeks to twelve
+    months.  The incidence falls on that month's active fraction alone,
+    :func:`wop_active_frac`: a life already in its deferred period cannot fall
+    incapacitated again, and ``1 - u(t - defer)`` would count it a second time.
 
     Both rates are placeholders: no public UK incidence basis for the waiver work-tasks
     definitions appears in the fetched sources.  Mortality and lapse are assumed
@@ -803,7 +839,7 @@ def wop_waived_frac(t):
     if src < proj_start():
         entrants = 0.0
     else:
-        entrants = (wop_inc_rate_mth() * (1.0 - wop_waived_frac(src))
+        entrants = (wop_inc_rate_mth() * wop_active_frac(src)
                     * (1.0 - wop_rec_rate_mth()) ** wop_defer_mths)  # noqa: F821
     return u * (1.0 - wop_rec_rate_mth()) + entrants
 

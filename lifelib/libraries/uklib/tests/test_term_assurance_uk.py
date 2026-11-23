@@ -813,15 +813,19 @@ def test_commission_clawback_is_off_and_works_when_switched_on(term_assurance):
 
 
 def test_waiver_of_premium_is_off_and_works_when_switched_on(term_assurance):
-    """The waived fraction is a two-state chain; zero unless the rider is in force.
+    """The waived fraction is fed by the active one's chain; zero unless the rider is in
+    force, where every life is active.
 
     The 26-week deferred period is six months on this grid, carried explicitly, so
     nobody is waived before ``t = 7``: the first month whose entrants became
     incapacitated six months earlier.  An annual grid could only round that to a year.
+    Those first entrants fell incapacitated in the issue month, when every life was
+    active.
     """
     p1 = term_assurance.Projection[1]
     assert p1.wop() is False
     assert all(p1.wop_waived_frac(t) == 0.0 for t in range(p1.proj_len()))
+    assert all(p1.wop_active_frac(t) == 1.0 for t in range(p1.proj_len()))
     assert all(p1.pols_payer(t) == p1.pols_if(t) for t in range(p1.proj_len()))
 
     p7 = term_assurance.Projection[7]
@@ -842,16 +846,131 @@ def test_waiver_of_premium_is_off_and_works_when_switched_on(term_assurance):
 def test_waived_fraction_converges_below_one(term_assurance):
     """The chain's equilibrium, with the deferred period's survival factor on entry.
 
-    ``u rec_m = inc_m (1 - u)(1 - rec_m)^defer`` at rest, so the lag lowers the resting
-    waived fraction below the deferred-period-free ``inc / (inc + rec)``.
+    At rest the active fraction loses to incidence what it gains from recovery,
+    ``act inc_m = (1 - act) rec_m``, so ``act = rec_m / (inc_m + rec_m)``; and the waived
+    fraction loses to recovery what the active fraction of ``defer`` months before sends
+    it, ``u rec_m = inc_m act (1 - rec_m)^defer``, so
+    ``u = inc_m (1 - rec_m)^defer / (inc_m + rec_m)``.  The lag lowers the resting waived
+    fraction below the deferred-period-free ``inc_m / (inc_m + rec_m)``.  Point 7's chains
+    settle within its 20 years: the waived fraction of its last month is within 0.03% of
+    the resting one, where incidence on ``1 - u``, which counts the deferred lives twice,
+    would rest 0.18% above it.
     """
     p = term_assurance.Projection[7]
     inc_m = 1 - (1 - 0.004) ** (1 / 12)
     rec_m = 1 - (1 - 0.35) ** (1 / 12)
     survive = (1 - rec_m) ** 6
-    equilibrium = inc_m * survive / (rec_m + inc_m * survive)
-    assert p.wop_waived_frac(p.proj_len() - 1) == pytest.approx(equilibrium, abs=1e-5)
-    assert equilibrium < 0.004 / (0.004 + 0.35)   # the lag costs waived months
+    active = rec_m / (inc_m + rec_m)
+    waived = inc_m * survive / (inc_m + rec_m)
+    last = p.proj_len() - 1
+    assert p.wop_active_frac(last) == pytest.approx(active, rel=1e-5)
+    assert p.wop_waived_frac(last) == pytest.approx(waived, rel=3e-4)
+    assert waived < inc_m / (inc_m + rec_m)       # the lag costs waived months
+    twice = inc_m * survive / (rec_m + inc_m * survive)
+    assert twice / waived - 1 > 1.5e-3
+
+
+def _waiver_ladder(inc, rec, defer, months):
+    """The waiver's three states month by month, rebuilt from the annual rates alone.
+
+    A list of ``(active, deferred, waived)``, the fractions of the in-force at the start
+    of each month from issue, when every life is active.  An explicit ladder, with none of
+    the model's cells and none of its recursions: the deferred lives are held lag by lag,
+    ``deferred[k]`` those incapacitated ``k + 1`` months before, so each life sits on one
+    rung.  In each month an active life becomes incapacitated at ``inc_m``, onto the first
+    rung; every incapacitated life, deferred or waived, recovers to active at ``rec_m``;
+    and every other deferred life climbs a rung, from the last into waiver.
+    """
+    inc_m = 1 - (1 - inc) ** (1 / 12)
+    rec_m = 1 - (1 - rec) ** (1 / 12)
+    active, deferred, waived = 1.0, [0.0] * defer, 0.0
+    states = []
+    for _ in range(months):
+        states.append((active, sum(deferred), waived))
+        falling, ill = active * inc_m, sum(deferred) + waived
+        if defer:
+            waived = (waived + deferred[-1]) * (1 - rec_m)
+            deferred = [falling] + [d * (1 - rec_m) for d in deferred[:-1]]
+        else:
+            waived = waived * (1 - rec_m) + falling
+        active = active * (1 - inc_m) + ill * rec_m
+    return states
+
+
+# The waiver's rates for the partition test, as (case, wop_inc_rate, wop_rec_rate,
+# wop_defer_mths): the shipped ones; an incidence of 0.856, at which incidence on 1 - u
+# took point 7's waived fraction past 1 in month 19; an incidence of 1 and no recovery,
+# where every life is incapacitated in the issue month and waived from month 7 on; and
+# a deferred period of 0, where a life waives from the month after it falls ill.
+WAIVER_LADDERS = [("shipped", 0.004, 0.35, 6), ("incidence 0.856", 0.856, 0.35, 6),
+                  ("incidence 1, no recovery", 1.0, 0.0, 6),
+                  ("no deferred period", 0.3, 0.6, 0)]
+
+
+@pytest.mark.parametrize("case, inc, rec, defer", WAIVER_LADDERS,
+                         ids=[c[0] for c in WAIVER_LADDERS])
+def test_the_waiver_states_partition_the_in_force(case, inc, rec, defer):
+    """Active, deferred and waived partition the in-force in every month: ``act + P + u =
+    1``, each fraction the ladder's (:func:`_waiver_ladder`).
+
+    The model holds the active fraction, ``wop_active_frac``, and the waived one,
+    ``wop_waived_frac``, and the deferred fraction ``P`` is the rest, ``1 - act - u``.
+    The ladder holds all three, lag by lag, and moves every life from rung to rung, so its
+    three sum to 1 by construction and each is the model's to rounding, in each month of
+    point 7's 20 years, at the shipped rates and at the edges of their range
+    (:data:`WAIVER_LADDERS`).  Incidence on ``1 - u`` instead, which counts the deferred
+    lives as able to fall ill, departs from the ladder by 1.4e-5 at the shipped rates.
+    """
+    model = mx.read_model(MODEL_DIR, name="Term_UK_S_ladder")
+    try:
+        model.Projection.wop_inc_rate = inc
+        model.Projection.wop_rec_rate = rec
+        model.Projection.wop_defer_mths = defer
+        p = model.Projection[7]
+        ladder = _waiver_ladder(inc, rec, defer, p.proj_len())
+        for t, (active, deferred, waived) in enumerate(ladder):
+            assert active + deferred + waived == pytest.approx(1.0, abs=1e-14), t
+            act, u = p.wop_active_frac(t), p.wop_waived_frac(t)
+            assert act == pytest.approx(active, abs=1e-14), t
+            assert u == pytest.approx(waived, abs=1e-14), t
+            assert 1.0 - act - u == pytest.approx(deferred, abs=1e-14), t
+            assert p.pols_payer(t) == p.pols_if(t) * (1.0 - u)
+    finally:
+        model.close()
+
+
+@pytest.mark.parametrize("rec", [0.35, 0.0], ids=["shipped recovery", "no recovery"])
+def test_the_waived_fraction_stays_inside_0_to_1_at_an_incidence_of_1(rec):
+    """At an incidence of 1 a year every active life becomes incapacitated each month, and
+    the waived fraction still stays inside 0 to 1, and the premium income at 0 or above.
+
+    Only the active can fall ill, so the waived fraction can take in no more than the
+    lives who were active ``defer`` months before.  At the shipped recovery the whole
+    in-force falls ill in the issue month, and the waived fraction peaks at the share of
+    it that survives the deferred period, ``(1 - rec_m)^6``, in month 7, then settles at
+    ``(1 - rec_m)^6 / (1 + rec_m)``.  With no recovery every life is waived from month 7 to
+    the end of the term, and no premium is collected.  Incidence on ``1 - u`` took the
+    fraction to 7.9e12 at an incidence of 1.
+    """
+    model = mx.read_model(MODEL_DIR, name="Term_UK_S_incidence_1")
+    try:
+        model.Projection.wop_inc_rate = 1.0
+        model.Projection.wop_rec_rate = rec
+        p = model.Projection[7]
+        assert p.wop_inc_rate_mth() == 1.0
+        months = range(p.proj_len())
+        u = [p.wop_waived_frac(t) for t in months]
+        assert all(0.0 <= p.wop_active_frac(t) <= 1.0 for t in months)
+        assert all(0.0 <= x <= 1.0 for x in u)
+        assert all(p.premiums(t) >= 0.0 for t in months)
+        survive = (1 - p.wop_rec_rate_mth()) ** 6
+        assert max(u) == u[7] == pytest.approx(survive, rel=1e-14)
+        assert u[-1] == pytest.approx(survive / (1 + p.wop_rec_rate_mth()), rel=1e-9)
+        if rec == 0.0:
+            assert u[7:] == [1.0] * (p.proj_len() - 7)
+            assert all(p.premiums(t) == 0.0 for t in months[7:])
+    finally:
+        model.close()
 
 
 # ---------------------------------------------------------------------------

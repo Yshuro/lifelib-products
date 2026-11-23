@@ -88,6 +88,8 @@ Cells Descriptions
 
 .. autofunction:: pols_maturity
 
+.. autofunction:: wop_active_frac
+
 .. autofunction:: wop_waived_frac
 
 .. autofunction:: wop_inc_rate_mth
