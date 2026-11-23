@@ -116,6 +116,8 @@ MODELS = {
                    "reporting_columns": {"sex": {1: "sex", 2: "joint_sex"},
                                          "smoker": {1: "smoker", 2: "joint_smoker"}}}),
     "IP_UK_S": ("products/income_protection/IP_UK_S", {**MONTHLY, "age_basis": ANB}),
+    "IP_UK_SEC": ("products/income_protection/IP_UK_SEC",
+                  {**MONTHLY, "age_basis": ANB, "twin": "IP_UK_S", "stage": "E"}),
     "WOL_UK_S": ("products/whole_of_life/WOL_UK_S", {**MONTHLY, "age_basis": ALB}),
     "WOL_UK_SEC": ("products/whole_of_life/WOL_UK_SEC",
                    {**MONTHLY, "age_basis": ALB, "twin": "WOL_UK_S", "stage": "E"}),
@@ -150,6 +152,9 @@ INPUT_FILES = {
     "IP_UK_S": {
         "inception_table.csv", "lapse_table.csv", "model_point_table.csv",
         "mort_table.csv", "termination_table.csv"},
+    "IP_UK_SEC": {
+        "inception_table.csv", "inforce_cohorts_sec.csv", "lapse_table.csv",
+        "model_point_table_sec.csv", "mort_table.csv", "termination_table.csv"},
     "PA_UK_S": {"model_point_table.csv", "mort_table.csv"},
     "PA_UK_SEC": {"model_point_table_sec.csv", "mort_table.csv"},
     "Term_UK_S": {

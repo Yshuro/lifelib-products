@@ -1582,6 +1582,131 @@ _PA_STATE = {
 }
 
 
+def _ip_twin_years(point_id, status, z0, escalation):
+    """n: the whole policy years the twin of ``IP_UK_S``'s point has run at the valuation
+    date.
+
+    0 on an ``active`` cell, which S issues at the valuation date.  An ``in_claim`` cell S
+    opens at the valuation date with its claim in payment, cohort ``z0 + 1``, and its
+    policy clock restarted there, so its twin is issued ``n`` whole years before it, the
+    least that holds the claim: cohort ``z0 + 1`` incepted at the end of the month
+    ``z0 + 1`` months before the valuation date, a month the policy was in force, so
+    ``12n >= z0 + 1``, ``n = ceil((z0 + 1) / 12)`` (UKLIB-SEC-PLAN.md §6.3, §9 item 11).
+    On whole years the twin's anniversaries are S's, a year apart, and its attained ages
+    S's.  But its valuation month is then an anniversary, whose escalation is the
+    projection's first event (D6), where S takes no step at the month its frame opens: so
+    an ``in_claim`` cell with RPI escalation has no twin, and this refuses it, naming the
+    point, rather than write a twin the splice would fail.  No shipped S point is one.
+    """
+    if status != "in_claim":
+        return 0
+    if escalation == "RPI":
+        raise ValueError(
+            f"IP_UK_S point {point_id} is in claim with RPI escalation: S takes no "
+            f"escalation at its month 0, where it restarts its policy clock, and the twin, "
+            f"valued on an anniversary, would take one there, so IP_UK_SEC has no twin of it")
+    return -(-(int(z0) + 1) // 12)
+
+
+def _ip_duration(row):
+    """The twin's ``duration_mth``: ``12n``, :func:`_ip_twin_years` of the S row, 0 on an
+    ``active`` cell."""
+    return 12 * _ip_twin_years(row.name, row["status"], row["claim_duration_months"],
+                               row["escalation"])
+
+
+def _ip_issue_age(s, d):
+    """The twin's ``entry_age``: S's less :func:`_ip_twin_years`, the age the twin was
+    issued at, so that its attained age at the valuation date is S's ``entry_age``, which
+    ``IP_UK_S`` reads as that on an ``in_claim`` cell."""
+    return s.age_at_entry() - _ip_twin_years(s.point_id, s.status(),
+                                             s.claim_duration_months(), s.escalation())
+
+
+def _ip_healthy_share(s, d):
+    """``IP_UK_S``'s healthy share of the count at the start of month ``d``: S's
+    ``pols_active(d)`` over its ``pols_if(d)``, the recoveries of month ``d - 1`` already back
+    in health, before any month-``d`` event.  At a twin's ``source_mth``, 0, it is what S
+    assumes where its frame opens: 1 on an ``active`` cell and 0 on an ``in_claim`` one.
+    Where S's count is 0, as on a claim on the exit basis whose every life has recovered,
+    the row is a point of no policies, all healthy, as one without claim cohorts is, its
+    share 1: it carries nothing, as S does."""
+    count = s.pols_if(d)
+    return s.pols_active(d) / count if count != 0.0 else 1.0
+
+
+def _ip_benefit(s, d):
+    """``IP_UK_S``'s monthly benefit entering month ``d``: S's ``benefit_pp(d - 1)``.
+
+    The opening state is measured before any month-``d`` event, so on a point valued on an
+    anniversary the benefit is the year the anniversary closes, and its escalation is the
+    in-force model's first event (USLIB-SEC-PLAN.md D6, as precised at uslib's M7).  At a
+    twin's ``source_mth``, 0, it is S's ``benefit_pp(0)``, what S pays where its frame
+    opens: the benefit at issue, and on an ``in_claim`` cell the benefit in payment.
+    """
+    return s.benefit_pp(d - 1 if d > 0 else 0)
+
+
+def _ip_premium(s, d):
+    """``IP_UK_S``'s monthly premium entering month ``d``: S's ``premium_pp(d - 1)``, at the
+    instant :func:`_ip_benefit` reads the benefit, and S's ``premium_pp(0)`` on a twin."""
+    return s.premium_pp(d - 1 if d > 0 else 0)
+
+
+# IP_UK_SEC's opening state (D6; UKLIB-SEC-PLAN.md §6.3): what IP_UK_S carries into month d,
+# each a share of the count or an amount per policy, so that policy_count is the one weight.
+# The healthy share (_ip_healthy_share); the monthly benefit and premium before month d's
+# events, S's of month d - 1 (_ip_benefit, _ip_premium), the history of escalations S
+# rebuilds from issue at today's rpi_rate, an anniversary at month d being the in-force
+# model's first event, at today's References; and the claim cohorts, in a companion built by
+# _ip_cohorts.  On a twin, the entry age less the whole years it has run (_ip_issue_age).
+_IP_STATE = {
+    "pols_active_init": _ip_healthy_share,
+    "benefit_pp_init": _ip_benefit,
+    "premium_pp_init": _ip_premium,
+}
+_IP_TWIN_STATE = {"entry_age": _ip_issue_age, **_IP_STATE}
+
+_IP_COHORTS = ("point_id", "z", "pols_sick_dur_init")
+
+
+def _ip_cohorts(s_model, table):
+    """``inforce_cohorts_sec.csv``: each in-force row's claim cohorts, claim duration by
+    claim duration.
+
+    For each row of the table in force, restated at S month ``d`` or the twin of an
+    ``in_claim`` cell, in the table's order: one row for each claim duration ``z`` at
+    which ``IP_UK_S``'s ``sick_cohorts(d)`` holds lives, its share of S's ``pols_if(d)``,
+    the count the row carries, at the start of S's month ``d``, the valuation instant,
+    before any month-``d`` event: cohort 1 holding the claims that incepted at the end of
+    month ``d - 1``, not yet paid, and cohort ``z`` those that incepted at the end of
+    month ``d - z``.  So the SEC row's cohorts at ``t = 0``, the count times each share,
+    are S's to rounding.  A claim duration S holds no lives at is no row: the file is
+    sparse.  The future rows hold none, nor do the twins issued at the valuation date,
+    which open healthy, nor a row of no policies, all healthy (:func:`_ip_healthy_share`).
+    ``point_id`` is the only key to a point.
+
+    It reads only the S cells it needs, and releases nothing: the caller owns the S model,
+    and one T6 passes in may be one it still compares against.
+    """
+    point_of = {pol: pid
+                for pid, pol in s_model.Data.model_point_table()["policy_id"].items()}
+    rows = []
+    for row in table.to_dict("records"):
+        if int(row["duration_mth"]) <= 0:
+            continue
+        s = s_model.Projection[point_of[row["source_policy_id"]]]
+        d = int(row["source_mth"])
+        count = s.pols_if(d)
+        if count == 0.0:
+            continue
+        for z, held in enumerate(s.sick_cohorts(d), start=1):
+            if held != 0.0:
+                rows.append({"point_id": row["point_id"], "z": z,
+                             "pols_sick_dur_init": held / count})
+    return pd.DataFrame(rows, columns=list(_IP_COHORTS))
+
+
 SEC_SPECS: dict[str, SecSpec] = {
     # Term's state is seven columns (_TERM_STATE above) and the waiver pipeline, a long
     # companion, wop_pipeline_sec.csv, keyed (point_id, lag), lag the months before the
@@ -1901,6 +2026,69 @@ SEC_SPECS: dict[str, SecSpec] = {
         exempt=frozenset({"result_pols"}),
         derived_refs={(6, 60): {"rpi_rate": -0.02}, (7, 42): {"rpi_rate": 0.08},
                       (7, 54): {"rpi_rate": -0.02}},
+    ),
+    # IP's state is three columns (_IP_STATE above), the healthy share of the count and the
+    # benefit and premium entering month 0, and the claim cohorts, a sparse companion,
+    # inforce_cohorts_sec.csv, keyed (point_id, z), z the claim duration of the lives in
+    # claim at the valuation instant, each a share of the count, built by _ip_cohorts
+    # (UKLIB-SEC-PLAN.md §6.3).  pols_if_init becomes policy_count (the default), the lives
+    # in health and in claim together, and claim_duration_months, S's one in-force claim
+    # duration, which the cohorts replace, is dropped.  IP_UK_S's in_claim cells, points
+    # 2, 5 and 7, are in force with their policy clock restarted at the valuation date:
+    # their twins are issued n whole years before it, the least that holds the claim,
+    # duration_mth 12n, at their entry age less n (_ip_twin_years), so that their ages,
+    # claims and counts are S's and only their policy clocks differ.  The derived rows are
+    # the anchor cell on its first anniversary, 12, its first escalation at t = 0; at 60,
+    # policy year 6, the lapse table's last, and attained age 40, an inception pivot; and at
+    # 359, its last covered month, its cohort vector 359 long; the claims-in-payment cell at
+    # 24, claim duration 25, in duration year 3; the claim at duration 30 at 6, claim
+    # duration 37, in year 4; the claim on the active-lives basis at 12, its recoveries
+    # back in health and claiming again; the female cell at 13, after its first
+    # anniversary; the older male cell at 118, in its last two months; and the level cell
+    # mid-year at 30.  The future row is the female cell issued 13 months after the
+    # valuation date: more than a year on and off a valuation anniversary, so that the
+    # months before issue read policy years -1 and 0, where a missing guard would show.
+    # T2's splice grid is built from this spec in a temporary table, not committed.
+    #
+    # And two rows S reaches only under an RPI of their own (derived_refs), each with its
+    # cohorts read from S under it too.  At the shipped 3% the premium grows 4.5% a year,
+    # below the escalation lapse shock's 5% threshold, and escalation never reaches its
+    # 10% cap, so no state S reaches holds a lapse shocked by escalation or an escalation
+    # capped, and C2 would freeze no such history.  So the anchor cell is restated at S
+    # month 40 from S run under an RPI of 5%, its lapses shocked by 1.05 from policy year
+    # 2, its benefit and premium 1.05 and 1.075 to the third power; and the female cell at
+    # month 30 from S run under 12%, its benefit 1.1 and its premium 1.15 to the second
+    # power, the cap's.  At the shipped References the committed model projects each from
+    # that history at today's 3%.
+    #
+    # T1 holds on IP at any count: neither model charges acquisition, and every flow is a
+    # count times an amount per policy.  It skips one S cell besides the default three:
+    #   claim_duration_months: S's claim duration on an in_claim cell, which the claim
+    #     cohorts replace (D6); 0 on every twin T1 compares.
+    # S's status, the row's kind there, is kept as a label no formula reads.
+    #
+    # Phase 2 sizes its caches from the contract (UKLIB-SEC-PLAN.md §6.3's C list): t 0..745,
+    # a policy issued at issue_age_min, 18, expiring at expiry_age_max, 70, a cover of 624
+    # months, issued future_horizon_mth, 120 months, after the valuation date, a frame of
+    # 744, and the roll-forward's t + 1; and z 0..625, max_dur(), the cover from issue and
+    # one cohort of headroom, which does not grow with the horizon.  proj_len() refuses an
+    # issue age outside issue_age_min to issue_age_max, an expiry age outside
+    # expiry_age_min to expiry_age_max, and a point at or past its policy end date at the
+    # valuation date, each naming the point.  The cohort vector and its rates are tuples
+    # here, IP_UK_S's, which the C step restructures into pols_sick_dur(t, z), based at
+    # t_entry() on a [point, z] array of the companion.
+    "IP_UK_SEC": SecSpec(
+        twin="IP_UK_S",
+        column_map={"claim_duration_months": None},
+        duration_of=_ip_duration,
+        derived=((1, 12), (1, 60), (1, 359), (2, 24), (5, 6), (7, 12), (4, 13), (6, 118),
+                 (3, 30)),
+        future=((4, 13),),
+        state=_IP_STATE,
+        twin_state=_IP_TWIN_STATE,
+        exempt=frozenset({"claim_duration_months"}),
+        companions={"inforce_cohorts_sec.csv": _ip_cohorts},
+        derived_refs={(1, 40): {"rpi_rate": 0.05}, (4, 30): {"rpi_rate": 0.12}},
     ),
 }
 
