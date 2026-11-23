@@ -110,13 +110,18 @@ event:
   bond not yet in force, its premium as shipped;
 * :func:`wd_cum_pp_init`, the withdrawals and adviser charges cancelled since issue,
   which carry on the allowance-relevant total and open the guaranteed minimum death
-  benefit, ``max(0, P - wd_cum_pp_init)``.
+  benefit, ``max(0, P - wd_cum_pp_init)``;
+* :func:`allowance_cum_pp_init`, the 5% allowance accrued since issue, through the policy
+  year under way, which the excess gain is measured against.
 
 Each is history, read from the model point, never recomputed from a Reference, which is
-an assumption from the valuation date on: a fund return or a withdrawal rate changed at
-the valuation date reaches back over no month already run. The 5% allowance accrued, the
-excess gain and the allowance-exhaustion step are closed forms on the policy year; the
-premium, the charges, the withdrawal pattern and the rider are columns fixed at issue.
+an assumption from the valuation date on: a fund return, a withdrawal rate or an
+allowance rate changed at the valuation date reaches back over no month already run.
+Later policy years accrue the allowance at the References of the day,
+``wd_allowance_rate`` a year for ``allowance_years`` from issue. The excess gain is the
+withdrawals since issue less that allowance, and the allowance-exhaustion step a closed
+form on the policy year; the premium, the charges, the withdrawal pattern and the rider
+are columns.
 
 .. rubric:: Naming
 
@@ -184,6 +189,7 @@ l(t+1) (AFT_DECR)          pols_if_at(t, timing)           The within-month coun
 CumWD(n)                   wd_cum_pp(t)                    Cumulative withdrawals + charges
 (CumWD at t = 0)           wd_cum_pp_init()                Withdrawn since issue, t = 0
 CumAllow(n)                allowance_cum_pp(t)             Cumulative 5% allowable element
+(CumAllow at t = 0)        allowance_cum_pp_init()         Allowance accrued, t = 0
 ExcessGain(n)              excess_gain_pp(t)               Excess-event gain, policyholder side
 E(t)                       expenses(t)                     Acquisition + maintenance
 (none)                     inflation_factor(t)             Expense inflation factor
@@ -342,7 +348,9 @@ What running in force adds is the contract's own bounds, which :func:`proj_len` 
 point to: an issue age of ``issue_age_min``, 18, or more, the youngest the mortality table
 rates, though the product admits issue from 3 months; cover from issue below
 ``omega_age``; and a bond still inside it at the valuation date. ``Data`` bounds future
-new business by ``future_horizon_mth``, 120 months.
+new business by ``future_horizon_mth``, 120 months. And :func:`proj_len` holds every
+Reference a formula reads through a bound, a power or a product to its domain, NaN and
+the infinities outside each, its docstring naming each domain and its reason.
 """
 
 from modelx.serialize.jsonvalues import *
@@ -478,7 +486,11 @@ def wd_rate():
 
     Zero on ``none``, 5% on ``allowance_5pct``, and the model point's own rate on
     ``custom``.  The election from the valuation date on: what was withdrawn before it is
-    :func:`wd_cum_pp_init`.
+    :func:`wd_cum_pp_init`.  ``allowance_5pct`` reads ``wd_allowance_rate``, the one
+    Reference that is also the statutory allowance rate (:func:`allowance_cum_pp`), as
+    :mod:`~.ULB_UK_S` reads it: the pattern is "withdraw what the allowance allows", so a
+    rate changed at the valuation date moves that pattern's withdrawals from then on, and
+    the allowance from the next policy year, together.
     """
     p = wd_pattern()
     if p == "none":
@@ -572,6 +584,20 @@ def wd_cum_pp_init():
     wd_cum_pp_init)``. 0 on a bond not yet in force, which ``Data`` requires.
     """
     return float(model_point()["wd_cum_pp_init"])
+
+
+def allowance_cum_pp_init():
+    """CumAllow at the valuation date: the 5% allowance accrued since issue.
+
+    :func:`allowance_cum_pp`'s value in month 0, per policy: the allowable element of
+    every policy year from issue to the one under way at the valuation instant, each
+    accrued at its start, so that the year month 0 falls in is in it. History, read from
+    the model point, not rebuilt from ``wd_allowance_rate`` and ``allowance_years``,
+    which are assumptions from the valuation date on: an allowance rate changed there
+    accrues from the next policy year, and moves no year already accrued. 0 on a bond not
+    yet in force, which ``Data`` requires.
+    """
+    return float(model_point()["allowance_cum_pp_init"])
 
 
 def t_entry():
@@ -692,22 +718,44 @@ def proj_len():
     project, so the projection also ends when the fund does: the last month is the one
     whose closing fund is exhausted.
 
-    These raise here, naming the point, rather than project nothing or a frame the
-    contract does not have, each checked in this order:
+    These raise here, naming the point, rather than project nothing, a frame the
+    contract does not have, or one that no value of a Reference defines, each checked in
+    this order:
 
-    * one issued below ``issue_age_min``, 18, the youngest age the mortality table rates,
-      though the product admits issue from 3 months;
+    * ``issue_age_min`` that is not a finite number, 0 or more: an age, which a NaN would
+      switch off, every comparison with it failing;
+    * a bond issued below ``issue_age_min``, 18, the youngest age the mortality table
+      rates, though the product admits issue from 3 months;
     * one issued at or past ``omega_age``, which has no cover from issue;
     * one whose cover had ended by the valuation date, at or past the limiting age, which
       an in-force extract should not carry;
-    * one read under a Reference outside its domain, each named: ``fund_return`` that is
-      not a number, -1 or more, below which its monthly rate, ``(1 + g)^(1/12) - 1``, has
-      no real value, and ``inflation_rate`` the same, below which the inflation factor
-      changes sign each year; ``mort_be_factor``, ``wd_allowance_rate`` and
-      ``allowance_years`` that are not numbers, zero or more, below which a mortality
-      rate, a withdrawal or the allowance accrued is negative; and ``depletion_threshold``
-      that is not a finite number, zero or more, under which no fund would ever count as
-      exhausted;
+    * one read under a Reference outside its domain, each named. NaN and the infinities
+      are outside every one: :mod:`~.ULB_UK_S` reads several of them through a ``min`` or
+      a ``max`` whose bound comes first, which keeps the bound where a NaN meets it, so
+      that the NaN is lost rather than carried:
+
+      - ``fund_return`` and ``inflation_rate``, finite, -1 or more: below -1 the monthly
+        return, ``(1 + g)^(1/12) - 1``, has no real value, and the inflation factor
+        changes sign each year;
+      - ``return_shock``, finite and above -1: a trailing year's return 100 points or more
+        below the fund's is a fund lost whole; a NaN would read as no shock, through the
+        shortfall's ``max(0, ...)``;
+      - ``mort_be_factor``, finite, 0 or more: below 0 a mortality rate is negative;
+      - ``wd_allowance_rate``, finite, 0 or more: below 0 the allowance accrued and the
+        anchor pattern's withdrawal are negative;
+      - ``allowance_years``, a finite number of years, 0 or more: below 0 the allowance
+        accrued is negative, and a NaN would let it accrue without end;
+      - ``depletion_threshold``, finite, 0 or more: below 0 no fund, floored at 0, would
+        ever count as exhausted;
+      - ``surr_rate_cap`` and ``wd_cap_rate``, from 0 to 1: the cap on a probability, and
+        the share of the fund or the premium a year's withdrawals may take; a NaN
+        withdrawal cap would pay no withdrawal, through the room's ``max(0, ...)``, and a
+        negative one the same;
+      - ``perf_factor_cap``, ``perf_factor_slope`` and ``allow_step``, finite, 0 or more:
+        multipliers of a probability, below 0 a negative surrender rate; a NaN would be
+        lost in the bound-first ``min`` of the multiplier's cap or of :func:`surr_rate`,
+        which would then read the surrender cap in every month it reaches;
+
     * one in force at the valuation date whose fund, :func:`av_pp_init`, is at or below
       ``depletion_threshold``: the fund is exhausted, and the bond has nothing to project;
     * one not yet in force whose fund at outset, :func:`av_pp_init`, is at or below it,
@@ -717,8 +765,20 @@ def proj_len():
     checked here.  They are the contract a compiled model's caches are sized from: a
     frame of at most ``omega_age - issue_age_min`` years and the future horizon, and ages
     from 18 to ``omega_age`` on the mortality table.  Every report reads this cell first,
-    and so does every count, so no point outside them is projected.
+    and so does every count, so no point outside them is projected.  Each check is a
+    comparison written out, a finite bound the largest float, 1.7976931348623157e308, so
+    that a compiled cell runs it in C, as ``Term_UK_SEC``'s do, and each Reference is
+    printed as the compiled model will type it: ``issue_age_min``, ``omega_age`` and
+    ``allowance_years`` through ``int()`` where they are finite, and every other through
+    ``float()``.
     """
+    if not (issue_age_min >= -1.7976931348623157e308                  # noqa: F821
+            and issue_age_min <= 1.7976931348623157e308):             # noqa: F821
+        raise ValueError(f"point_id {point_id}: issue_age_min must be a finite "  # noqa: F821
+                         f"number, not {float(issue_age_min)}")      # noqa: F821
+    if issue_age_min < 0:                                            # noqa: F821
+        raise ValueError(f"point_id {point_id}: issue_age_min must be 0 or more, "  # noqa: F821
+                         f"not {int(issue_age_min)}")                # noqa: F821
     x = age_at_entry()
     if x < issue_age_min:                                            # noqa: F821
         raise ValueError(f"point_id {point_id}: the issue age, {x}, is below "  # noqa: F821
@@ -731,18 +791,55 @@ def proj_len():
         raise ValueError(
             f"point_id {point_id}: duration_mth {d} is at or past the end of cover, "  # noqa: F821
             f"policy month {horizon_mths()}, the limiting age {int(omega_age)}")  # noqa: F821
-    for ref, value, low, rule in (
-            ("fund_return", fund_return, -1.0, "a number, -1 or more"),  # noqa: F821
-            ("inflation_rate", inflation_rate, -1.0, "a number, -1 or more"),  # noqa: F821
-            ("mort_be_factor", mort_be_factor, 0.0, "a number, zero or more"),  # noqa: F821
-            ("wd_allowance_rate", wd_allowance_rate, 0.0,            # noqa: F821
-             "a number, zero or more"),
-            ("allowance_years", allowance_years, 0.0, "a number, zero or more"),  # noqa: F821
-            ("depletion_threshold", depletion_threshold, 0.0,        # noqa: F821
-             "a number, zero or more")):
-        if not (value >= low and value < float("inf")):
-            raise ValueError(f"point_id {point_id}: {ref} must be {rule}, not "  # noqa: F821
-                             f"{float(value)}")
+    if not (fund_return >= -1.0                                      # noqa: F821
+            and fund_return <= 1.7976931348623157e308):               # noqa: F821
+        raise ValueError(f"point_id {point_id}: fund_return must be a finite number, "  # noqa: F821
+                         f"-1 or more, not {float(fund_return)}")    # noqa: F821
+    if not (inflation_rate >= -1.0                                   # noqa: F821
+            and inflation_rate <= 1.7976931348623157e308):            # noqa: F821
+        raise ValueError(f"point_id {point_id}: inflation_rate must be a finite number, "  # noqa: F821
+                         f"-1 or more, not {float(inflation_rate)}")  # noqa: F821
+    if not (return_shock > -1.0                                      # noqa: F821
+            and return_shock <= 1.7976931348623157e308):              # noqa: F821
+        raise ValueError(f"point_id {point_id}: return_shock must be a finite number "  # noqa: F821
+                         f"above -1, not {float(return_shock)}")     # noqa: F821
+    if not (mort_be_factor >= 0.0                                    # noqa: F821
+            and mort_be_factor <= 1.7976931348623157e308):            # noqa: F821
+        raise ValueError(f"point_id {point_id}: mort_be_factor must be a finite number, "  # noqa: F821
+                         f"0 or more, not {float(mort_be_factor)}")  # noqa: F821
+    if not (wd_allowance_rate >= 0.0                                 # noqa: F821
+            and wd_allowance_rate <= 1.7976931348623157e308):         # noqa: F821
+        raise ValueError(f"point_id {point_id}: wd_allowance_rate must be a finite "  # noqa: F821
+                         f"number, 0 or more, not {float(wd_allowance_rate)}")  # noqa: F821
+    if not (allowance_years >= -1.7976931348623157e308                # noqa: F821
+            and allowance_years <= 1.7976931348623157e308):           # noqa: F821
+        raise ValueError(f"point_id {point_id}: allowance_years must be a finite "  # noqa: F821
+                         f"number, not {float(allowance_years)}")    # noqa: F821
+    if allowance_years < 0:                                          # noqa: F821
+        raise ValueError(f"point_id {point_id}: allowance_years must be 0 or more, "  # noqa: F821
+                         f"not {int(allowance_years)}")              # noqa: F821
+    if not (depletion_threshold >= 0.0                               # noqa: F821
+            and depletion_threshold <= 1.7976931348623157e308):       # noqa: F821
+        raise ValueError(f"point_id {point_id}: depletion_threshold must be a finite "  # noqa: F821
+                         f"number, 0 or more, not {float(depletion_threshold)}")  # noqa: F821
+    if not (surr_rate_cap >= 0.0 and surr_rate_cap <= 1.0):          # noqa: F821
+        raise ValueError(f"point_id {point_id}: surr_rate_cap must be a number from 0 "  # noqa: F821
+                         f"to 1, not {float(surr_rate_cap)}")        # noqa: F821
+    if not (wd_cap_rate >= 0.0 and wd_cap_rate <= 1.0):              # noqa: F821
+        raise ValueError(f"point_id {point_id}: wd_cap_rate must be a number from 0 "  # noqa: F821
+                         f"to 1, not {float(wd_cap_rate)}")          # noqa: F821
+    if not (perf_factor_cap >= 0.0                                   # noqa: F821
+            and perf_factor_cap <= 1.7976931348623157e308):           # noqa: F821
+        raise ValueError(f"point_id {point_id}: perf_factor_cap must be a finite "  # noqa: F821
+                         f"number, 0 or more, not {float(perf_factor_cap)}")  # noqa: F821
+    if not (perf_factor_slope >= 0.0                                 # noqa: F821
+            and perf_factor_slope <= 1.7976931348623157e308):         # noqa: F821
+        raise ValueError(f"point_id {point_id}: perf_factor_slope must be a finite "  # noqa: F821
+                         f"number, 0 or more, not {float(perf_factor_slope)}")  # noqa: F821
+    if not (allow_step >= 0.0                                        # noqa: F821
+            and allow_step <= 1.7976931348623157e308):                # noqa: F821
+        raise ValueError(f"point_id {point_id}: allow_step must be a finite number, "  # noqa: F821
+                         f"0 or more, not {float(allow_step)}")      # noqa: F821
     if av_pp_init() <= depletion_threshold:                          # noqa: F821
         if d > 0:
             raise ValueError(
@@ -874,13 +971,15 @@ def surr_rate(t):
     but truncates the entire future charge stream, which is why persistency rather than
     mortality dominates this product's value.
 
-    The rate is a probability.  ``Data`` holds the table's rates to one, but the
-    multipliers and the cap are References, under which the product can leave 0 to 1:
-    past 1 the monthly rate, ``1 - (1 - w)^(1/12)``, has no real value, which
-    :mod:`~.ULB_UK_S` projects as a complex number, and below 0 the surrenders add
-    policies.  So a rate outside 0 to 1, or one that is not a number, raises
-    ``ValueError`` here, in the month it first leaves, naming the point, the month, the
-    rate and the References that make it.  0 outside cover.
+    The rate is a probability.  ``Data`` holds the table's rates to 0 to 1, and
+    :func:`proj_len` holds the cap to 0 to 1 and each multiplier to a finite number, 0 or
+    more, so no frame reaches a rate outside 0 to 1: past 1 the monthly rate,
+    ``1 - (1 - w)^(1/12)``, has no real value, which :mod:`~.ULB_UK_S` projects as a
+    complex number, and below 0 the surrenders add policies.  The cell still refuses one,
+    or one that is not a number, for a caller that reads it outside a frame: it raises
+    ``ValueError`` in the month the rate first leaves, naming the point, the month, the
+    rate and the References that make it.  A rate of exactly 1, the cap at 1 binding,
+    surrenders every policy in force after the month's deaths.  0 outside cover.
     """
     w = min(surr_rate_cap,                                           # noqa: F821
             surr_rate_base(t) * perf_factor(t) * allow_factor(t))
@@ -1127,18 +1226,27 @@ def wd_cum_pp(t):
 
 
 def allowance_cum_pp(t):
-    """CumAllow: the cumulative 5% allowable element, ``P x min(y, 20) x 5%``.
+    """CumAllow: the cumulative 5% allowable element, ``P x min(y, 20) x 5%`` from issue.
 
     **Policyholder tax machinery, not a product feature.**  It never caps what can be
     withdrawn - the product cap is :func:`wd_cap_pp` - and it generates no insurer cash
-    flow.  It is carried because it drives behaviour through :func:`allow_factor`.  A
-    closed form on the policy year from issue, so a bond in force needs no column for it.
-    0 outside cover, where the policy year is 0 or less.
+    flow.  It is carried because it drives behaviour through :func:`allow_factor`.
+
+    Each policy year's allowable element accrues at its start, ``wd_allowance_rate`` of
+    the premium for each of the first ``allowance_years``.  On a bond in force the years
+    to the one under way at the valuation instant, ``y0``, are history,
+    :func:`allowance_cum_pp_init`, and each later year accrues at the Reference:
+    ``CumAllow(t) = CumAllow_0 + P x (min(y, n) - min(y0, n)) x r``, ``n`` the years and
+    ``r`` the rate.  A bond not yet in force has accrued nothing, ``y0 = 0``, and its
+    allowance is :mod:`~.ULB_UK_S`'s closed form from issue, the same float.  0 outside
+    cover, where the policy year is 0 or less.
     """
     if not is_active(t):
         return 0.0
     y = policy_year(t)
-    return premium() * min(y, allowance_years) * wd_allowance_rate    # noqa: F821
+    y0 = duration_mth_init() // 12 + 1 if duration_mth_init() > 0 else 0
+    later = min(y, allowance_years) - min(y0, allowance_years)          # noqa: F821
+    return allowance_cum_pp_init() + premium() * later * wd_allowance_rate  # noqa: F821
 
 
 def excess_gain_pp(t):

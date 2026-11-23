@@ -12,6 +12,8 @@ Cells Descriptions
 
 .. autofunction:: mort_table
 
+.. autofunction:: mort_table_rows
+
 .. autofunction:: surr_table
 
 .. autofunction:: mort_age_first

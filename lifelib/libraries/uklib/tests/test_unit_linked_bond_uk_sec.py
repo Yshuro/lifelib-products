@@ -6,10 +6,11 @@ clocks: ``t`` counts months from the valuation date, the same month for every mo
 and ``duration_mth(t)`` counts the months the bond has been in force,
 ``duration_mth_init() + t``.  A model point may be a bond already in force at the valuation
 date, in any month of its policy year, one issued at it, or one to be issued after it, as
-in ``basiclife/BasicTerm_SE``.  A bond in force opens with two columns of state beside its
-count, each per policy and measured at the valuation instant: the unit fund,
-``av_pp_init``, and the withdrawals and adviser charges since issue, ``wd_cum_pp_init``,
-which open the guaranteed minimum death benefit.  Its frame ends at the limiting age or at
+in ``basiclife/BasicTerm_SE``.  A bond in force opens with three columns of state beside
+its count, each per policy and measured at the valuation instant: the unit fund,
+``av_pp_init``; the withdrawals and adviser charges since issue, ``wd_cum_pp_init``, which
+open the guaranteed minimum death benefit; and the 5% allowance accrued since issue,
+``allowance_cum_pp_init``, which the excess gain is measured against.  Its frame ends at the limiting age or at
 the first month its fund opens at or below ``depletion_threshold``, half a pence, where
 ``ULB_UK_S``'s ends at the first that opens on exactly 0 or less: a recorded departure,
 whose effect on each S point ``test_the_depletion_threshold_moves_point_3_alone`` states.
@@ -30,8 +31,9 @@ and the product's own facts:
   months straddle the product's events: the surrender bands' edges, policy year 21, where
   the allowance-exhaustion step starts, the allowance stops accruing and the GMDB of the
   anchor's pattern has run out, and each frame's last month.  Every switch that ships off
-  is on, and three variants of S's points, in a copy of S's table, add the GMDB in the
-  money, a custom withdrawal above the 7.5% cap, and the rider beside an adviser charge.
+  is on, and four variants of S's points, in a copy of S's table, add the GMDB in the
+  money, a custom withdrawal above the 7.5% cap, the rider beside an adviser charge, and
+  the cap binding net of an adviser charge.
 * T3, future new business: a point issued ``k`` months after the valuation date is S's
   projection ``k`` months on, with zeros before issue and no rate evaluated there.
 * D11's R1 and R2, and D3's and D5's chains: on the splice's grid no cell is called at a
@@ -41,23 +43,28 @@ and the product's own facts:
   runs one cell a month back to ``t_entry()``, at each shape's longest cover.
 * T4, the count algebra: the count rolls forward through new business and decrements,
   multiplying ``policy_count`` by 2.5 with every switch that ships off switched on
-  multiplies every flow and every counted cell by 2.5 and moves no per-policy value, and
-  the roll-forward, whose tolerance scales with the count, closes on a million policies.
+  multiplies every flow and every counted cell by 2.5 and moves no per-policy value, each
+  flow nonzero on some point, the rider charge among them; a point restated a month on,
+  with the count it carries there, continues its own flows, so that each is weighted by the
+  count in force; and the roll-forward, whose tolerance scales with the count, closes on a
+  million policies.
 * T5, validation: each malformed row of the table is refused as it is read, naming its
   point; each assumption table, malformed or holding a value that is not a number in its
   range, is refused before a value of it is read, and a read beyond the mortality table is
   refused naming the point; the future horizon is a Reference that bounds future business;
   a point past its cover, one the contract does not issue, one read under a Reference
   outside its domain and one whose fund is exhausted at the valuation date are refused by
-  the frame, each bound just inside it, and a surrender rate outside 0 to 1 in the month it
-  leaves; the edges of the interface and of each bound are accepted; and so is every state
+  the frame, each bound just inside it and each domain at both its edges, and a surrender
+  rate outside 0 to 1 in the month it leaves, where one of exactly 1 is accepted; the edges of the interface and of each bound are accepted; and so is every state
   ``ULB_UK_S`` reaches, on each set of inputs on which those states differ, but the
   exhausted fund it runs on past the threshold, which is set aside and shown refused.
 * T6, regeneration: the committed ``model_point_table_sec.csv`` is what the generator makes
   of ``ULB_UK_S`` and its table as they stand.
 * Then the product's own facts: the two clocks on the shipped points; the committed rows
   continuing their S points; each history column read rather than recomputed, the unit
-  fund and the withdrawals since issue, which open the GMDB (UKLIB-SEC-PLAN.md K14); the
+  fund, the withdrawals since issue, which open the GMDB, and the allowance accrued, which
+  an allowance rate changed at the valuation date does not rewrite (UKLIB-SEC-PLAN.md
+  K14); the
   depletion threshold, its effect on each S point, and its rules at the Reference's value,
   part of it and just past it; the fund chain written inline; expense inflation on the
   valuation clock; acquisition on new business alone; the cap on mortality and a NaN that
@@ -149,7 +156,7 @@ SPLICE_MTHS = (1, 11, 12, 23, 24, 37, 59, 60, 119, 120, 125, 239, 240, 241, 322,
 FUTURE_MTHS = (1, 12)
 LATE_FUTURES = ((4, 13), (6, 25))
 
-# Three more S points, in the splice's copy of S's table and never in the committed one,
+# Four more S points, in the splice's copy of S's table and never in the committed one,
 # each one of S's points changed so as to reach what S's own points cannot:
 #
 # 7, S point 4, the GMDB point, at an AMC of 4%: its fund falls faster than its guarantee,
@@ -159,7 +166,10 @@ LATE_FUTURES = ((4, 13), (6, 25))
 # 8, S point 6, the custom pattern, at 9% a year: above the 7.5% product cap, which then
 #   binds every month the fund can pay;
 # 9, S point 3, the adviser charge, with the GMDB rider beside it: both of the charges that
-#   leave the fund on a rounding where the withdrawal cap closes it.
+#   leave the fund on a rounding where the withdrawal cap closes it;
+# 10, S point 6 at 9% a year with an adviser charge of 0.5%: the 7.5% cap binding net of
+#   the charge, which counts against the same limit, so that the withdrawal is the cap's
+#   twelfth less the charge in every month but the last, which no other point reaches.
 #
 # Each variant is (the S point it changes, the columns it changes); the policy_id keeps
 # the generated ids apart.
@@ -167,15 +177,18 @@ VARIANTS = {
     7: (4, {"policy_id": "ULB-900007", "amc_rate": 0.04}),
     8: (6, {"policy_id": "ULB-900008", "wd_rate_custom": 0.09}),
     9: (3, {"policy_id": "ULB-900009", "gmdb_flag": True}),
+    10: (6, {"policy_id": "ULB-900010", "wd_rate_custom": 0.09, "oac_rate": 0.005}),
 }
-VARIANT_MTHS = {7: (1, 5, 6, 60, 120, 232), 8: (1, 12, 120, 200), 9: (12, 66, 322)}
+VARIANT_MTHS = {7: (1, 5, 6, 60, 120, 232), 8: (1, 12, 120, 200), 9: (12, 66, 322),
+                10: (1, 60, 200)}
 
 # Each point's frame from issue, in months, as this model ends it and as ULB_UK_S does.  Its
 # fund runs out at 353 on the anchor's pattern, at 323 under the adviser charge, where S
 # runs one month more on a rounding of 3.4e-15, at 233 on the GMDB in the money and at 201
-# on the custom 9%, and never on the accumulation cell or the custom 3%, whose frames run
-# to the limiting age.  test_the_depletion_threshold_moves_point_3_alone holds both.
-FRAME = {1: 353, 2: 660, 3: 323, 4: 353, 5: 353, 6: 780, 7: 233, 8: 201, 9: 323}
+# on the custom 9%, with or without the adviser charge, and never on the accumulation cell
+# or the custom 3%, whose frames run to the limiting age.
+# test_the_depletion_threshold_moves_point_3_alone holds both.
+FRAME = {1: 353, 2: 660, 3: 323, 4: 353, 5: 353, 6: 780, 7: 233, 8: 201, 9: 323, 10: 201}
 S_FRAME = {**FRAME, 3: 324, 9: 324}
 
 
@@ -236,6 +249,7 @@ CORE_SPLICES = {
     ("derived", 8, 200): "the 7.5% cap's last month, the fund exhausted",
     ("derived", 9, 66): "the rider beside the adviser charge",
     ("derived", 9, 322): "the rider and the adviser charge's last month",
+    ("derived", 10, 1): "the 7.5% cap binding net of the adviser charge",
 }
 CORE_FUTURES = {
     (1, 1): "issued a month off the valuation anniversaries",
@@ -357,7 +371,7 @@ IN_COVER_ONLY = ("age", "duration", "policy_year", "mort_rate_mth", "surr_rate_m
 
 # The opening state, in the table's order, and the cells running in force adds to
 # ULB_UK_S's, each of which the symbol map must name.
-STATE = ("av_pp_init", "wd_cum_pp_init")
+STATE = ("av_pp_init", "wd_cum_pp_init", "allowance_cum_pp_init")
 NEW_CELLS = ("policy_count", "duration_mth_init", "t_entry", "is_active", "pols_new_biz",
              *STATE, "result_pols")
 
@@ -903,17 +917,18 @@ def _scheduled(x):
 
 # What test_the_core_grid_reaches_every_branch asks of the core's rows in the model's own
 # values, which no column of the table shows: each holds of some core row, or of a core row
-# in some month of its frame.  At the valuation date, both opening-state columns in use, the
+# in some month of its frame.  At the valuation date, each opening-state column in use, the
 # withdrawals since issue past the premium, so that the GMDB opens at 0, and short of it,
 # the GMDB in the money and out of it, and an excess gain carried in.  Later in the frame,
 # every branch and both sides of each min and max the full grid reaches: the withdrawal's
-# three bounds, the cap's two bases, the GMDB in and out of the money on its charge and on
+# three bounds, the cap net of an adviser charge, the cap's two bases, the GMDB in and out of the money on its charge and on
 # its death benefit, the fund closed on 0 and on a rounding, the excess gain, the
 # surrender table's last year, the surrender cap, the allowance step, the allowance's
 # twenty years, and the frame's two ends.
 AT_VALUATION = {
     "a fund carried in": lambda x: x.duration_mth_init() > 0 and x.av_pp_init() > 0.0,
     "withdrawals carried in": lambda x: x.wd_cum_pp_init() > 0.0,
+    "an allowance carried in": lambda x: x.allowance_cum_pp_init() > 0.0,
     "the GMDB opened from what is left of it": lambda x: (
         x.gmdb_flag() and x.duration_mth_init() > 0 and x.gmdb_guarantee_pp(0) > 0.0),
     "the GMDB opened at 0, all drawn": lambda x: (
@@ -929,6 +944,12 @@ IN_FRAME = {
     "the 7.5% cap binding": lambda x, t: (
         x.wd_pp(t) < _scheduled(x) and x.wd_pp(t) == max(
             0.0, x.wd_cap_pp(t) / 12.0 - x.adviser_charge_pp(t))
+        and x.wd_pp(t) < x.av_pp_at(t, "AFT_CHARGE") - x.adviser_charge_pp(t)
+        - x.gmdb_charge_pp(t)),
+    "the 7.5% cap binding net of an adviser charge": lambda x, t: (
+        x.adviser_charge_pp(t) > 0.0
+        and 0.0 < x.wd_pp(t) == x.wd_cap_pp(t) / 12.0 - x.adviser_charge_pp(t)
+        and x.wd_pp(t) < _scheduled(x)
         and x.wd_pp(t) < x.av_pp_at(t, "AFT_CHARGE") - x.adviser_charge_pp(t)
         - x.gmdb_charge_pp(t)),
     "the fund drawn to nothing": lambda x, t: (
@@ -1214,10 +1235,12 @@ def test_the_policy_clock_is_a_closed_form_and_no_recursion_runs_backward(sec_re
 # How deep a cold call may run beyond its chain, one cell a month from its month back to
 # t_entry() (D5): the cells above the chain and those below it, the first month's rates and
 # Data's first reads of its tables.  Each chain head called cold alone, before anything else
-# on a read of its own, runs at most 10 cells beyond its chain: the fund 5 or 6, the count
-# 4, the withdrawals since issue 7, the excess gain 8, the GMDB's guarantee 7, net_cf 9 or
-# 10, the deepest call a projection makes, on every shape at its longest cover (measured at
-# M9).  Term's 16, as for uslib's Term (USLIB-SEC-PLAN.md D5).  Any chain of two cells a
+# on a read of its own, runs at most 12 cells beyond its chain: the fund 5 or 6, the count
+# 4, the withdrawals since issue 7, the excess gain 8, the GMDB's guarantee 7 and net_cf 9
+# or 10 on every shape at its longest cover, and on the GMDB's, the rider's cover to the
+# limiting age, its death strain 11 and the unit-funding residual 12, the deepest call a
+# projection makes (measured at M9).  Term's 16, as for uslib's Term (USLIB-SEC-PLAN.md
+# D5).  Any chain of two cells a
 # month runs a frame's length beyond; ULB_UK_S's fund runs four, about 5,400 levels at the
 # longest cover (UKLIB-SEC-PLAN.md §6.6).
 CHAIN_OVERHEAD = 16
@@ -1232,14 +1255,20 @@ YOUNGEST = 18
 # issue at YOUNGEST, the chain heads, each a (cell, the timing it takes, or None)).  The
 # accumulation cell, no withdrawals, runs to the limiting age; the custom 3% withdraws to
 # policy month 1,176, where its fund runs out at that age; the GMDB point withdraws 5% to
-# month 353, its guarantee reading the withdrawals' chain; the adviser charge to 323.  Each
-# is issued now and future_horizon_mth, 120 months, on.
+# month 353, its guarantee reading the withdrawals' chain; the adviser charge to 323; and
+# the GMDB point with no withdrawals keeps the rider to the limiting age, 1,224 months, its
+# death strain and its claims reading the guarantee's chain every month.  Each is issued now
+# and future_horizon_mth, 120 months, on; the last entry is the columns a shape changes in
+# its S point's twin.
 CHAIN_HEADS = (("net_cf", None), ("av_pp", None), ("av_pp_at", "AFT_WD"),
                ("pols_if_at", "BEF_NB"), ("wd_cum_pp", None), ("excess_gain_pp", None),
                ("check_pols_roll_fwd_resid", None))
-SHAPES = ((2, 1224, CHAIN_HEADS), (6, 1176, CHAIN_HEADS),
-          (4, 353, CHAIN_HEADS + (("gmdb_guarantee_pp", None), ("claims", "DEATH"))),
-          (3, 323, CHAIN_HEADS))
+GMDB_HEADS = (("net_cf", None), ("check_unit_funding_resid", None), ("death_strain", None),
+              ("gmdb_guarantee_pp", None), ("claims", "DEATH"), ("gmdb_charges", None))
+SHAPES = ((2, 1224, CHAIN_HEADS, {}), (6, 1176, CHAIN_HEADS, {}),
+          (4, 353, CHAIN_HEADS + (("gmdb_guarantee_pp", None), ("claims", "DEATH")), {}),
+          (3, 323, CHAIN_HEADS, {}),
+          (4, 1224, GMDB_HEADS, {"wd_pattern": "none"}))
 
 
 def _cold_depth(proj, cell, args):
@@ -1264,11 +1293,12 @@ def _longest_cover(tmp_path):
     committed = _committed()
     rows, frames = [], []
     top = committed.index.max()
-    for s_point, months, heads in SHAPES:
+    for s_point, months, heads, changes in SHAPES:
         twin = _label(committed, "twin", s_point, 0)
         for k in (0, 120):
             top += 1
-            row = committed.loc[[twin]].assign(age_at_entry=YOUNGEST, duration_mth=-k)
+            row = committed.loc[[twin]].assign(age_at_entry=YOUNGEST, duration_mth=-k,
+                                               **changes)
             row.index = pd.Index([top], name="point_id")
             rows.append(row)
             frames.append((top, months + k, k, heads))
@@ -1413,15 +1443,22 @@ def test_result_pols_holds_s_counts_with_the_new_business_beside_them(sec_model,
 # not be one, so that a flow which read the count as whole policies would not follow it.
 COUNT_FACTOR = 2.5
 
+# The withdrawals since issue the K14 test and T4 write at the GMDB point at 240, whose
+# pattern has drawn its whole premium: half of it, so that its guarantee opens at 50,000,
+# above its fund's 41,263 uplifted, and the rider charges from the first month.
+HALF_WITHDRAWN = 50000.0
+
 
 def test_scaling_the_count_scales_every_flow_and_no_per_policy_value(tmp_path):
     """``policy_count`` is a weight: 2.5 times the count, 2.5 times every flow, the same per
     policy.
 
-    The committed table, and a copy with every count multiplied by :data:`COUNT_FACTOR`,
-    are each read with :data:`SWITCHED_ON` set before either computes anything: the
-    switches that ship off, at the splice's values, so that the surrender rate moves with
-    the shock and binds its cap.  On every point ``result_cf``'s flows and the counts of
+    The committed table, with the GMDB point at 240 written as having withdrawn half its
+    premium, so that its guarantee is in the money and the rider charges, as the K14 test
+    writes it, and a copy of that with every count multiplied by :data:`COUNT_FACTOR`, are
+    each read with :data:`SWITCHED_ON` set before either computes anything: the switches
+    that ship off, at the splice's values, so that the surrender rate moves with the shock
+    and binds its cap.  On every point ``result_cf``'s flows and the counts of
     ``result_pols`` are 2.5 times the committed table's, element by element, to 1e-12
     relative: a scaled count is a computed float, which may come back from the CSV within
     two ulps (``uk_sec_support``'s module docstring).  ``result_cf``'s ``av_pp`` and every
@@ -1434,9 +1471,12 @@ def test_scaling_the_count_scales_every_flow_and_no_per_policy_value(tmp_path):
     clocks, the flags) agrees bit for bit at every argument that sweep cached.  So a flow
     that dropped the count, or read it as whole policies, which a table of counts of 1 hides
     from every comparison with S and a count doubled hides here, fails.  Each counted cell
-    but the residuals is nonzero on some point.
+    but the residuals is nonzero on some point, the rider charge on the GMDB point at 240
+    (USLIB-SEC-PLAN.md §5.2, T4): a rider charge weighted by the count once more, or a
+    per-policy charge weighted by it, which a table of rider charges of 0 hides, fails.
     """
-    table = _committed()
+    table = _set("wd_cum_pp_init", [_label(_committed(), "derived", 4, 240)],
+                 HALF_WITHDRAWN)(_committed())
     base = mx.read_model(_sec_inputs(tmp_path / "base", table), name=_name("counted"))
     scaled = mx.read_model(_sec_inputs(tmp_path / "scaled", table.assign(
         policy_count=COUNT_FACTOR * table["policy_count"])), name=_name("scaled"))
@@ -1476,8 +1516,69 @@ def test_scaling_the_count_scales_every_flow_and_no_per_policy_value(tmp_path):
     finally:
         scaled.close()
         base.close()
-    want = set(counted) - residuals - {"gmdb_charges"}
+    want = set(counted) - residuals
     assert want <= nonzero, f"0 on every point: {sorted(want - nonzero)}"
+
+
+def test_a_point_restated_a_month_on_continues_its_own_flows(tmp_path):
+    """The count a point carries into a month is the count that weights its flows (T4).
+
+    Scaling every count alike, as the test above does, cannot see a flow weighted by the
+    count a point opened with, ``policy_count()``, rather than the count in force in its
+    month: both move by the same factor.  So each point in force on the committed table,
+    with the GMDB point at 240 written as having withdrawn half its premium, so that the
+    rider charges, is restated a month on, opened with what this model carries into its
+    month 1: the count, ``pols_if_at(1, "BEF_NB")``; the fund, ``av_pp(1)``; the
+    withdrawals since issue, ``wd_cum_pp(0)``; and the allowance, ``allowance_cum_pp(1)``.
+    The restatement must continue the point's own frames, its row ``t`` the point's row
+    ``t + 1``, in ``result_cf``, ``result_uf`` and ``result_pols``, every flow among them,
+    to 1e-9 relative, floored at 1e-9 for what a state read back from the CSV an ulp off
+    moves about 0.  A point whose frame ends in its first month has no month 1, and is left
+    out.  Both models run at an inflation rate of 0, set on each as it is read (K7): the
+    restatement moves the valuation date a month on, and expense inflation, on the
+    valuation clock, would step a month apart by design (D7).  The restatement also shows
+    the opening state complete on this model's own states, as the splice shows it on S's.
+    """
+    gmdb = _label(_committed(), "derived", 4, 240)
+    table = _set("wd_cum_pp_init", [gmdb], HALF_WITHDRAWN)(_committed())
+    model = mx.read_model(_sec_inputs(tmp_path / "base", table), name=_name("month_on"))
+    model.Projection.inflation_rate = 0.0
+    rows, pairs = [], []
+    try:
+        top = table.index.max()
+        for label in table.index[table["duration_mth"] > 0]:
+            p = _point(model, label)
+            if p.proj_len() < 2:
+                continue
+            top += 1
+            row = table.loc[[label]].assign(
+                duration_mth=p.duration_mth(1),
+                policy_count=p.pols_if_at(1, _code(p, "BEF_NB")),
+                av_pp_init=p.av_pp(1), wd_cum_pp_init=p.wd_cum_pp(0),
+                allowance_cum_pp_init=p.allowance_cum_pp(1))
+            row.index = pd.Index([top], name="point_id")
+            rows.append(row)
+            pairs.append((label, top))
+        frames = {label: {report: _point(model, label).cells[report]()
+                          for report in (*REPORTS, "result_pols")}
+                  for label, _ in pairs}
+    finally:
+        model.close()
+    assert gmdb in frames and (frames[gmdb]["result_cf"]["gmdb_charges"] > 0.0).any()
+    restated = mx.read_model(_sec_inputs(tmp_path / "on", pd.concat([table, *rows])),
+                             name=_name("month_on"))
+    restated.Projection.inflation_rate = 0.0
+    found = []
+    try:
+        for label, moved in pairs:
+            p = _point(restated, moved)
+            for report, frame in frames[label].items():
+                found += [f"point {label} restated as {moved}, {report}: {line}"
+                          for line in frame_mismatches(frame, p.cells[report](),
+                                                       t_offset=1)]
+    finally:
+        restated.close()
+    assert not found, found[:20]
 
 
 def test_the_roll_forward_closes_on_a_million_policies(tmp_path):
@@ -1592,6 +1693,24 @@ MALFORMED = [
     ("withdrawals on future business", _set("wd_cum_pp_init", [11], 1.0),
      "{file}: wd_cum_pp_init must be 0 on a bond not yet in force, duration_mth 0 or "
      "less; it is not at point_id [11]"),
+    ("a negative allowance", _set("allowance_cum_pp_init", [7], -1.0),
+     "{file}: allowance_cum_pp_init must be a number, zero or more; it is not at "
+     "point_id [7]"),
+    ("a blank allowance", _set("allowance_cum_pp_init", [8], float("nan")),
+     "{file}: allowance_cum_pp_init must be a number, zero or more; it is not at "
+     "point_id [8]"),
+    ("a text allowance", _set("allowance_cum_pp_init", [9], "x"),
+     "{file}: allowance_cum_pp_init must be a number, zero or more; it is not at "
+     "point_id [9]"),
+    ("an infinite allowance", _set("allowance_cum_pp_init", [10], float("inf")),
+     "{file}: allowance_cum_pp_init must be a number, zero or more; it is not at "
+     "point_id [10]"),
+    ("an allowance on new business", _set("allowance_cum_pp_init", [1], 5000.0),
+     "{file}: allowance_cum_pp_init must be 0 on a bond not yet in force, duration_mth 0 "
+     "or less; it is not at point_id [1]"),
+    ("an allowance on future business", _set("allowance_cum_pp_init", [11], 1.0),
+     "{file}: allowance_cum_pp_init must be 0 on a bond not yet in force, duration_mth 0 "
+     "or less; it is not at point_id [11]"),
     ("a blank flag", _set("gmdb_flag", [3], float("nan")),
      "{file}: gmdb_flag must be True or False; it is not at point_id [3]"),
     ("a flag written yes", _set("gmdb_flag", [2], "yes"),
@@ -1759,9 +1878,8 @@ def test_a_point_past_its_cover_is_refused_by_proj_len(tmp_path):
 # one issued at or past omega_age has no cover.  Each bound is refused just inside it here,
 # and accepted at it in the edges test, and each, moved past a committed twin, refuses it,
 # which at the shipped bound projects its frame: the Reference is what refuses it.  Point 1
-# is the anchor cell, issued at 65 with a 5% withdrawal, whose fund lasts 353 months; point
-# 7 the anchor cell in force 30 months.  And each Reference S raises to a power, or reads as
-# a multiple of a rate or an amount, that is outside its domain.
+# is the anchor cell, issued at 65 with a 5% withdrawal, whose fund lasts 353 months.  The
+# References' domains are DOMAINS', below.
 NOT_ISSUED = [
     ("an issue age of 17", _set("age_at_entry", [1], 17), {}, 1,
      "point_id 1: the issue age, 17, is below issue_age_min, 18", None),
@@ -1773,26 +1891,6 @@ NOT_ISSUED = [
     ("an issue age at a limiting age lowered to 65", None, {"omega_age": 65}, 1,
      "point_id 1: the issue age, 65, is at or past omega_age, 65: the bond has no cover",
      353),
-    ("a fund_return below -1", None, {"fund_return": -1.01}, 1,
-     "point_id 1: fund_return must be a number, -1 or more, not -1.01", 353),
-    ("a fund_return of NaN", None, {"fund_return": math.nan}, 7,
-     "point_id 7: fund_return must be a number, -1 or more, not nan", 323),
-    ("an inflation_rate below -1", None, {"inflation_rate": -1.5}, 1,
-     "point_id 1: inflation_rate must be a number, -1 or more, not -1.5", 353),
-    ("a negative mort_be_factor", None, {"mort_be_factor": -0.1}, 1,
-     "point_id 1: mort_be_factor must be a number, zero or more, not -0.1", 353),
-    ("a mort_be_factor of NaN", None, {"mort_be_factor": math.nan}, 1,
-     "point_id 1: mort_be_factor must be a number, zero or more, not nan", 353),
-    ("a negative wd_allowance_rate", None, {"wd_allowance_rate": -0.01}, 1,
-     "point_id 1: wd_allowance_rate must be a number, zero or more, not -0.01", 353),
-    ("a negative allowance_years", None, {"allowance_years": -1}, 1,
-     "point_id 1: allowance_years must be a number, zero or more, not -1.0", 353),
-    ("a negative depletion_threshold", None, {"depletion_threshold": -0.001}, 1,
-     "point_id 1: depletion_threshold must be a number, zero or more, not -0.001", 353),
-    ("a depletion_threshold of NaN", None, {"depletion_threshold": math.nan}, 1,
-     "point_id 1: depletion_threshold must be a number, zero or more, not nan", 353),
-    ("an infinite depletion_threshold", None, {"depletion_threshold": math.inf}, 1,
-     "point_id 1: depletion_threshold must be a number, zero or more, not inf", 353),
 ]
 
 
@@ -1801,20 +1899,16 @@ NOT_ISSUED = [
 def test_a_point_the_contract_does_not_issue_is_refused_by_proj_len(tmp_path, case, edit,
                                                                     refs, point, message,
                                                                     frame):
-    """``proj_len()`` refuses a point outside the contract's bounds or a Reference's
-    domain, naming both (§6.6).
+    """``proj_len()`` refuses a point outside the contract's bounds, naming both (§6.6).
 
     ``ULB_UK_S`` projects a bond from any age its table holds, and so would modelx here, but
     the mortality table rates no age below 18 and the compiled model's caches will be sized
     from the contract: a frame of at most ``omega_age - issue_age_min`` years and the
-    horizon.  And under a ``fund_return`` below -1 S's monthly rate has no real value, and
-    under a negative factor, rate or count of years a mortality rate, a withdrawal or the
-    allowance accrued is negative, every check passing.  So the frame refuses such a point,
-    naming it, as it refuses a point past its cover, and every report with it
-    (:data:`NOT_ISSUED`): each bound just inside it, and each bound moved past a committed
-    point, which projects at the shipped bound, on a model read afresh.  The table reads
-    either way.  Every Reference is set on a model just read, before its projection computes
-    anything (K7).
+    horizon.  So the frame refuses such a point, naming it, as it refuses a point past its
+    cover, and every report with it (:data:`NOT_ISSUED`): each bound just inside it, and
+    each bound moved past a committed point, which projects at the shipped bound, on a model
+    read afresh.  The table reads either way.  Every Reference is set on a model just read,
+    before its projection computes anything (K7).
     """
     model = _read_edited(tmp_path, edit or (lambda t: t))
     try:
@@ -1830,6 +1924,90 @@ def test_a_point_the_contract_does_not_issue_is_refused_by_proj_len(tmp_path, ca
             assert len(_point(shipped, point).result_cf()) == frame
         finally:
             shipped.close()
+
+
+# Each Reference proj_len() holds to a domain, at both edges of it, as (Reference, value,
+# the refusal, or None where proj_len() accepts it), on the anchor cell's twin (the
+# Projection docstring of proj_len gives each domain's reason).  NaN and the infinities are
+# outside every domain: S reads several of them through a min or a max whose bound comes
+# first, where a NaN is lost.  A finite domain's upper edge is the largest float, accepted,
+# where the frame computes what it can of it: depletion_threshold there holds the fund at
+# outset exhausted, and issue_age_min there refuses the issue age, each by its own rule,
+# past the domain.  issue_age_min and allowance_years are whole numbers of years, which the
+# compiled model will type as integers, so a value below 0 is printed through int().
+BIG = 1.7976931348623157e308
+BELOW_0 = math.nextafter(0.0, -1.0)
+ABOVE_1 = math.nextafter(1.0, 2.0)
+
+
+def _domain(ref, rule, accepted, refused, printed=float):
+    """The DOMAINS cases of ``ref``: each of ``accepted`` projects, each of ``refused`` is
+    refused by the domain's ``rule``, and NaN and the infinities by it too."""
+    message = f"point_id 1: {ref} must be {rule}, not {{}}"
+    cases = [(ref, value, None) for value in accepted]
+    cases += [(ref, value, message.format(printed(value))) for value in refused]
+    return cases + [(ref, value, message.format(float(value)))
+                    for value in (math.nan, math.inf, -math.inf)]
+
+
+def _whole_domain(ref, accepted):
+    """The DOMAINS cases of an integer Reference: finite, 0 or more."""
+    cases = [(ref, value, None) for value in accepted]
+    cases.append((ref, -1, f"point_id 1: {ref} must be 0 or more, not -1"))
+    return cases + [(ref, value, f"point_id 1: {ref} must be a finite number, not "
+                     f"{float(value)}") for value in (math.nan, math.inf, -math.inf)]
+
+
+DOMAINS = [
+    *_domain("fund_return", "a finite number, -1 or more", (-1.0, BIG),
+             (math.nextafter(-1.0, -2.0),)),
+    *_domain("inflation_rate", "a finite number, -1 or more", (-1.0, BIG),
+             (math.nextafter(-1.0, -2.0),)),
+    *_domain("return_shock", "a finite number above -1", (math.nextafter(-1.0, 0.0), BIG),
+             (-1.0,)),
+    *_domain("mort_be_factor", "a finite number, 0 or more", (0.0, BIG), (BELOW_0,)),
+    *_domain("wd_allowance_rate", "a finite number, 0 or more", (0.0, BIG), (BELOW_0,)),
+    *_whole_domain("allowance_years", (0, BIG)),
+    *_domain("depletion_threshold", "a finite number, 0 or more", (0.0,), (BELOW_0,)),
+    ("depletion_threshold", BIG,
+     "point_id 1: av_pp_init, the fund at outset, is 100000.0, at or below "
+     f"depletion_threshold, {BIG}: the bond holds nothing to project from its issue month"),
+    *_domain("surr_rate_cap", "a number from 0 to 1", (0.0, 1.0), (BELOW_0, ABOVE_1)),
+    *_domain("wd_cap_rate", "a number from 0 to 1", (0.0, 1.0), (BELOW_0, ABOVE_1)),
+    *_domain("perf_factor_cap", "a finite number, 0 or more", (0.0, BIG), (BELOW_0,)),
+    *_domain("perf_factor_slope", "a finite number, 0 or more", (0.0, BIG), (BELOW_0,)),
+    *_domain("allow_step", "a finite number, 0 or more", (0.0, BIG), (BELOW_0,)),
+    *_whole_domain("issue_age_min", (0,)),
+    ("issue_age_min", BIG,
+     f"point_id 1: the issue age, 65, is below issue_age_min, {int(BIG)}"),
+]
+
+
+@pytest.mark.parametrize("ref, value, message", DOMAINS,
+                         ids=[f"{c[0]}={c[1]!r}" for c in DOMAINS])
+def test_each_reference_is_held_to_its_domain_at_both_edges(ref, value, message):
+    """``proj_len()`` holds each Reference to its domain, NaN and the infinities outside it.
+
+    :mod:`~.ULB_UK_S` reads ``perf_factor_cap`` and ``allow_step`` through a ``min`` whose
+    bound comes first, the surrender cap's, so that a NaN of either reads as the cap in every
+    month; ``return_shock`` through the shortfall's ``max(0, ...)``, so that a NaN reads as
+    no shock; ``wd_cap_rate`` through the room's, so that a NaN, or a negative rate, pays no
+    withdrawal, and the anchor cell projects 660 months where it projects 353; and
+    ``issue_age_min`` in a comparison a NaN switches off.  The frame refuses each such
+    Reference, by name, before it projects anything, and every report with it, at the
+    nearest value outside each edge of its domain, and accepts the edge itself
+    (:data:`DOMAINS`).  Each case sets its Reference on a model just read (K7).
+    """
+    model = mx.read_model(model_path(SEC), name=_name("domain"))
+    try:
+        setattr(model.Projection, ref, value)
+        p = _row(model, "twin", 1, 0)
+        if message is None:
+            assert p.proj_len() > 0
+        else:
+            _refused(p.result_cf, message)
+    finally:
+        model.close()
 
 
 def _exhausted(point, value):
@@ -1903,36 +2081,47 @@ def test_a_fund_at_or_below_the_threshold_is_exhausted(tmp_path, case, edit, ref
         model.close()
 
 
-# A surrender rate S lets leave 0 to 1, as (case, the References set, the month it first
-# leaves, on the anchor cell's twin).  The table's rates are probabilities, which Data holds
-# to 0 to 1, but the multipliers and the cap are References: a cap raised past 1, with the
-# performance multiplier past it, takes the rate past 1 at the ultimate band, where S's
-# monthly rate is complex; a negative multiple takes it below 0 from the first month.
-SURRENDER_OUT = [
-    ("past 1", {"surr_rate_cap": 2.0, "perf_factor_cap": 20.0, "return_shock": -5.0}, 120,
-     "point_id 1: the surrender rate surr_rate(120) is 1.1, outside 0 to 1, under "
-     "surr_rate_cap 2.0, perf_factor_cap 20.0, perf_factor_slope 2.0, return_shock -5.0 and "
-     "allow_step 1.5"),
+# The surrender rate at its edges, on the anchor cell's twin, as (case, the References set,
+# the month the rate first reaches the edge, the cell's refusal and every report's, or None
+# where the rate is accepted).  proj_len() holds the cap to 0 to 1 and each multiplier to a
+# finite number, 0 or more, so that no frame reaches a rate outside 0 to 1; the cell
+# refuses one itself, for a caller that reads it outside a frame.  Under multipliers that
+# take the uncapped rate past 1 from policy year 6, t = 60, a performance multiplier of 19,
+# a cap of exactly 1 is the rate there: accepted, every policy left after the month's deaths
+# surrenders.  A cap just above 1 is refused, and below 0 a multiplier's cap of -1.
+PAST_ONE = {"perf_factor_cap": 20.0, "perf_factor_slope": 20.0, "return_shock": -0.9}
+SURRENDER_EDGES = [
+    ("exactly 1", {**PAST_ONE, "surr_rate_cap": 1.0}, 60, None, None),
+    ("just above 1", {**PAST_ONE, "surr_rate_cap": ABOVE_1}, 60,
+     f"point_id 1: the surrender rate surr_rate(60) is {ABOVE_1}, outside 0 to 1, under "
+     f"surr_rate_cap {ABOVE_1}, perf_factor_cap 20.0, perf_factor_slope 20.0, return_shock "
+     f"-0.9 and allow_step 1.5",
+     f"point_id 1: surr_rate_cap must be a number from 0 to 1, not {ABOVE_1}"),
     ("below 0", {"perf_factor_cap": -1.0}, 0,
      "point_id 1: the surrender rate surr_rate(0) is -0.02, outside 0 to 1, under "
      "surr_rate_cap 0.35, perf_factor_cap -1.0, perf_factor_slope 2.0, return_shock 0.0 and "
-     "allow_step 1.5"),
+     "allow_step 1.5",
+     "point_id 1: perf_factor_cap must be a finite number, 0 or more, not -1.0"),
 ]
 
 
-@pytest.mark.parametrize("case, refs, month, message", SURRENDER_OUT,
-                         ids=[c[0] for c in SURRENDER_OUT])
-def test_a_surrender_rate_outside_0_to_1_is_refused_in_its_month(case, refs, month,
-                                                                 message):
-    """A surrender rate S lets leave 0 to 1 is refused in its cell, naming the References.
+@pytest.mark.parametrize("case, refs, month, cell_message, report_message", SURRENDER_EDGES,
+                         ids=[c[0] for c in SURRENDER_EDGES])
+def test_the_surrender_rate_is_a_probability_at_its_edges(case, refs, month, cell_message,
+                                                          report_message):
+    """A surrender rate of exactly 1 is accepted, and one just outside 0 to 1 refused.
 
     ``ULB_UK_S``'s rate is ``min(cap, table x multiplier x step)``, the bound S's own,
-    which keeps S's order: under References that take it past 1, its monthly rate,
-    ``1 - (1 - w)^(1/12)``, is complex, and below 0 its surrenders add policies, every check
-    passing.  ``surr_rate`` refuses the rate in the month it first leaves 0 to 1, naming the
-    point, the month, the rate and the References that make it (:data:`SURRENDER_OUT`), and
-    so does every report that reads it; in the months before it, the rate projects.  The
-    References are set on a model just read (K7).
+    which keeps S's order.  Past 1 its monthly rate, ``1 - (1 - w)^(1/12)``, is complex,
+    and below 0 its surrenders add policies, every check passing.  At exactly 1 the monthly
+    rate is 1, and every policy left after the month's deaths surrenders: a rate the cap
+    binds at, in its range (:data:`SURRENDER_EDGES`).  So at a cap of exactly 1 the cell is
+    1.0 from the month the uncapped rate passes it, and the frame projects whole, every
+    count 0 after that month.  Just above 1, and below 0, the cell refuses the rate in the
+    month it first leaves 0 to 1, naming the point, the month, the rate and the References
+    that make it, the month before projecting; and every report is refused by the frame,
+    which holds the cap and the multipliers to their domains.  The References are set on a
+    model just read (K7).
     """
     model = mx.read_model(model_path(SEC), name=_name("surr"))
     try:
@@ -1940,9 +2129,15 @@ def test_a_surrender_rate_outside_0_to_1_is_refused_in_its_month(case, refs, mon
             setattr(model.Projection, ref, value)
         p = _row(model, "twin", 1, 0)
         if month > 0:
-            assert 0.0 <= p.surr_rate(month - 1) <= 1.0
-        _refused(lambda: p.surr_rate(month), message)
-        _refused(p.result_cf, message)
+            assert 0.0 <= p.surr_rate(month - 1) < 1.0
+        if cell_message is None:
+            assert p.surr_rate(month) == p.surr_rate_mth(month) == 1.0
+            assert len(p.result_cf()) == FRAME[1] and p.check_pols_roll_fwd()
+            left = p.pols_if_at(month, _code(p, "BEF_SURR"))
+            assert p.pols_surr(month) == left > 0.0 and p.pols_if(month + 1) == 0.0
+        else:
+            _refused(lambda: p.surr_rate(month), cell_message)
+            _refused(p.result_cf, report_message)
     finally:
         model.close()
 
@@ -2123,11 +2318,11 @@ def test_every_state_s_reaches_is_accepted_in_force(s_model, spliced, tmp_path):
 # Data checks each table before a value of it is read, in the cell the projection takes the
 # table's extent from (UKLIB-SEC-PLAN.md §4; USLIB-SEC-PLAN.md §7.1, *Precised at M3*,
 # item 9).  Each case is the shipped tables with one fault, read from a copy, refused by its
-# Data cell alone, naming the file, the column and the rows at fault, and through a
-# projection of the anchor cell, which reads both tables.  The surrender table's refusals
-# name its lines, the header line 1: policy years 1 to 11 on lines 2 to 12.  The mortality
-# table's name its keys, sex and age: ULB_UK_S's reader sorts the table as it reads it, so
-# its lines are lost with the order.
+# Data cell alone, naming the file, the column and the lines at fault, the header line 1,
+# and through a projection of the anchor cell, which reads both tables.  The surrender
+# table holds policy years 1 to 11 on lines 2 to 12; the mortality table holds the male ages
+# 18 to 120 on lines 2 to 104 and the female on lines 105 to 207, which its check reads as
+# the file stands, where ULB_UK_S's reader sorts the table.
 
 
 def _written(column, value, where):
@@ -2144,6 +2339,11 @@ def _mort(sex, age):
     return lambda t: (t["sex"] == sex) & (t["age"] == age)
 
 
+def _mort_line(sex, age):
+    """The line of mort_table.csv that holds ``sex`` at ``age``, as shipped."""
+    return age - 16 if sex == "M" else age + 87
+
+
 def _key_is(column, value):
     return lambda t: t[column] == value
 
@@ -2157,7 +2357,7 @@ def _repeated(where):
 
 
 MORT, SURR = "mort_table.csv", "surr_table.csv"
-RATE = f"{MORT}: mort_rate must be a number from 0 to 1; it is not at (sex, age) "
+RATE = f"{MORT}: mort_rate must be a number from 0 to 1; it is not on line "
 SURR_RATE = f"{SURR}: surr_rate must be a number from 0 to 1; it is not on line "
 
 
@@ -2178,35 +2378,39 @@ YEARS = (f"{SURR}: the policy years must run from 1, one row a year, without a g
 # frame does.
 UNREADABLE = [
     ("a blank mortality rate", MORT, _written("mort_rate", float("nan"), _mort("M", 70)),
-     "mort_age_first", RATE + "[('M', 70)]"),
+     "mort_age_first", RATE + f"[{_mort_line('M', 70)}]"),
     ("a text mortality rate", MORT, _written("mort_rate", "low", _mort("M", 66)),
-     "mort_age_first", RATE + "[('M', 66)]"),
+     "mort_age_first", RATE + f"[{_mort_line('M', 66)}]"),
     ("an infinite mortality rate", MORT, _written("mort_rate", float("inf"),
                                                   _mort("M", 120)),
-     "mort_age_first", RATE + "[('M', 120)]"),
+     "mort_age_first", RATE + f"[{_mort_line('M', 120)}]"),
     ("a negative mortality rate", MORT, _written("mort_rate", -0.001, _mort("F", 18)),
-     "mort_age_first", RATE + "[('F', 18)]"),
+     "mort_age_first", RATE + f"[{_mort_line('F', 18)}]"),
     ("a mortality rate past 1", MORT, _written("mort_rate", 1.5, _mort("M", 80)),
-     "mort_age_first", RATE + "[('M', 80)]"),
+     "mort_age_first", RATE + f"[{_mort_line('M', 80)}]"),
     ("two rows at fault", MORT, _then(_written("mort_rate", float("nan"), _mort("M", 18)),
                                       _written("mort_rate", float("nan"), _mort("F", 90))),
-     "mort_age_first", RATE + "[('F', 90), ('M', 18)]"),
+     "mort_age_first", RATE + f"[{_mort_line('M', 18)}, {_mort_line('F', 90)}]"),
     ("an age not whole", MORT, _written("age", 65.5, _mort("M", 65)),
      "mort_age_first",
-     f"{MORT}: age must be a whole number; it is not at (sex, age) [('M', 65.5)]"),
+     f"{MORT}: age must be a whole number; it is not on line [{_mort_line('M', 65)}]"),
     ("an age written as text", MORT, _written("age", "x", _mort("F", 18)),
      "mort_age_first",
-     f"{MORT}: age must be a whole number; it is not at (sex, age) [('F', 'x')]"),
+     f"{MORT}: age must be a whole number; it is not on line [{_mort_line('F', 18)}]"),
+    ("two blank male ages", MORT, _then(_written("age", float("nan"), _mort("M", 40)),
+                                        _written("age", float("nan"), _mort("M", 90))),
+     "mort_age_first", f"{MORT}: age must be a whole number; it is not on line [24, 74]"),
     ("an unknown sex", MORT, _written("sex", "X", _mort("F", 18)),
-     "mort_age_first", f"{MORT}: sex must be M or F; it is not at (sex, age) [('X', 18)]"),
+     "mort_age_first",
+     f"{MORT}: sex must be M or F; it is not on line [{_mort_line('F', 18)}]"),
     ("an age missing", MORT, _dropped(_mort("M", 70)), "mort_age_first",
-     _ages_apart("no row holds sex M, age 70")),
+     _ages_apart("no line holds sex M, age 70")),
     ("an age twice", MORT, _repeated(_mort("F", 40)), "mort_age_first",
-     _ages_apart("sex F, age 40 appears 2 times")),
+     _ages_apart(f"sex F, age 40 repeats on lines [{_mort_line('F', 40)}, 208]")),
     ("a sex missing", MORT, _dropped(lambda t: t["sex"] == "F"), "mort_age_first",
-     _ages_apart("no row holds sex F, ages 18 to 120")),
+     _ages_apart("no line holds sex F, ages 18 to 120")),
     ("a sex shorter", MORT, _dropped(_mort("F", 120)), "mort_age_first",
-     _ages_apart("no row holds sex F, age 120")),
+     _ages_apart("no line holds sex F, age 120")),
     ("a blank surrender rate", SURR, _written("surr_rate", float("nan"),
                                               _key_is("policy_year", 3)),
      "surr_last_year", SURR_RATE + "[4]"),
@@ -2513,7 +2717,7 @@ def test_the_withdrawals_since_issue_are_read_from_the_model_point(sec_model, tm
     gmdb = _label(_committed(), "derived", 4, 240)
     adviser = _label(_committed(), "derived", 3, 66)
     more = _committed().at[adviser, "wd_cum_pp_init"] + 10000.0
-    model = _read_edited(tmp_path, _then(_set("wd_cum_pp_init", [gmdb], 50000.0),
+    model = _read_edited(tmp_path, _then(_set("wd_cum_pp_init", [gmdb], HALF_WITHDRAWN),
                                          _set("wd_cum_pp_init", [adviser], more)))
     try:
         g, base = _point(model, gmdb), _point(sec_model, gmdb)
@@ -2537,6 +2741,60 @@ def test_the_withdrawals_since_issue_are_read_from_the_model_point(sec_model, tm
             if abase.excess_gain_pp(t) == 0.0 < a.excess_gain_pp(t):
                 gained.append(t)
         assert gained, "the 10,000 moves no month's excess gain off 0"
+    finally:
+        model.close()
+
+
+def test_the_allowance_accrued_is_read_from_the_model_point(sec_model, tmp_path):
+    """The allowance a bond has accrued since issue is the point's, not today's (K14; D6).
+
+    ``ULB_UK_S`` rebuilds the 5% allowance from ``wd_allowance_rate`` and
+    ``allowance_years``, every policy year from issue at the References of the day, so a
+    model that dropped ``allowance_cum_pp_init`` and did the same would pass the splice,
+    which runs S and this model at one rate.  Two edits show the column read:
+
+    * ``wd_allowance_rate`` set to 4% at the valuation date.  The adviser-charge point at
+      66 keeps the 30,000 it accrued through policy year 6 and accrues 4,000 a year from
+      policy year 7, ``t = 6``; its excess gain at ``t = 0`` is what it has withdrawn,
+      month 0's withdrawal at the new rate among it, less 30,000, about 415, where the
+      allowance rebuilt at 4% from issue would make it about 6,415.  The GMDB point at 240,
+      past the allowance's twenty years, keeps its 100,000 and accrues no more: about 333,
+      where the rebuild would make it about 20,333.  The withdrawals since issue move on
+      neither; the anchor pattern's withdrawals move from the valuation date on, the
+      Reference being that pattern's rate too (``model-sec.md``).
+    * The GMDB point's allowance written at 95,000, history no rate gives: its allowance is
+      95,000 in every month, its excess gain 5,000 above the committed row's, and its fund,
+      its withdrawals and its frame the committed row's: the allowance moves the tax
+      machinery alone.
+    """
+    adviser = _label(_committed(), "derived", 3, 66)
+    gmdb = _label(_committed(), "derived", 4, 240)
+    accrued = {adviser: 30000.0, gmdb: 100000.0}
+    model = mx.read_model(model_path(SEC), name=_name("allowance"))
+    try:
+        model.Projection.wd_allowance_rate = 0.04
+        for label, held in accrued.items():
+            p = _point(model, label)
+            assert p.allowance_cum_pp_init() == p.allowance_cum_pp(0) == held, label
+            assert p.wd_cum_pp_init() == _point(sec_model, label).wd_cum_pp_init(), label
+            assert p.wd_pp(0) == pytest.approx(0.04 * p.premium() / 12.0, rel=1e-12)
+            assert p.excess_gain_pp(0) == pytest.approx(p.wd_cum_pp(0) - held, rel=1e-12)
+            assert 0.0 < p.excess_gain_pp(0) < 1000.0, label
+        a, g = _point(model, adviser), _point(model, gmdb)
+        assert [a.allowance_cum_pp(t) for t in (0, 5, 6, 17, 18)] == pytest.approx(
+            [30000.0, 30000.0, 34000.0, 34000.0, 38000.0], rel=1e-12)
+        assert [g.allowance_cum_pp(t) for t in (0, 12, 100)] == [100000.0] * 3
+    finally:
+        model.close()
+    model = _read_edited(tmp_path, _set("allowance_cum_pp_init", [gmdb], 95000.0))
+    try:
+        p, base = _point(model, gmdb), _point(sec_model, gmdb)
+        assert p.proj_len() == base.proj_len()
+        for t in range(p.proj_len()):
+            assert p.allowance_cum_pp(t) == 95000.0, t
+            assert p.av_pp(t) == base.av_pp(t) and p.wd_cum_pp(t) == base.wd_cum_pp(t), t
+            assert p.excess_gain_pp(t) == pytest.approx(base.excess_gain_pp(t) + 5000.0,
+                                                        rel=1e-12), t
     finally:
         model.close()
 

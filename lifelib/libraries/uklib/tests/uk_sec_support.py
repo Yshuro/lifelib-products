@@ -1294,15 +1294,27 @@ def _ulb_withdrawn(s, d):
     return s.wd_cum_pp(d - 1) if d > 0 else 0.0
 
 
+def _ulb_allowed(s, d):
+    """``ULB_UK_S``'s 5% allowance accrued in month ``d``, per policy.
+
+    S's ``allowance_cum_pp(d)``: the allowable element of every policy year to the one
+    month ``d`` falls in, each accrued at its start.  0 at issue, where that year's accrual
+    is month 0's own event, which the opening state is measured before.
+    """
+    return s.allowance_cum_pp(d) if d > 0 else 0.0
+
+
 # ULB_UK_SEC's opening state (D6; UKLIB-SEC-PLAN.md §6.6): what ULB_UK_S carries into month
 # d, each per policy, so that policy_count is the one weight.  The unit fund at the start of
-# month d, S's av_pp(d), the column S calls uf_init, renamed; and the withdrawals and adviser
-# charges since issue, S's wd_cum_pp(d - 1) (_ulb_withdrawn), which open the GMDB.  At a
-# twin's source_mth, 0 on every S point, these are what S itself assumes at issue: the fund
-# at outset, S's uf_init, and nothing withdrawn.
+# month d, S's av_pp(d), the column S calls uf_init, renamed; the withdrawals and adviser
+# charges since issue, S's wd_cum_pp(d - 1) (_ulb_withdrawn), which open the GMDB; and the
+# allowance accrued, S's allowance_cum_pp(d) (_ulb_allowed), which the excess gain is
+# measured against.  At a twin's source_mth, 0 on every S point, these are what S itself
+# assumes at issue: the fund at outset, S's uf_init, nothing withdrawn and nothing accrued.
 _ULB_STATE = {
     "av_pp_init": lambda s, d: s.av_pp(d),
     "wd_cum_pp_init": _ulb_withdrawn,
+    "allowance_cum_pp_init": _ulb_allowed,
 }
 
 
@@ -1404,17 +1416,20 @@ SEC_SPECS: dict[str, SecSpec] = {
         exempt=frozenset({"result_pols"}),
         derived_refs={(3, 124): {"review_prem_shock": 0.10}},
     ),
-    # ULB's state is two columns (_ULB_STATE above): the unit fund, S's uf_init renamed
-    # av_pp_init, and the withdrawals and adviser charges since issue, wd_cum_pp_init, which
-    # open the GMDB.  pols_if_init becomes policy_count (the default).  Every S point is new
+    # ULB's state is three columns (_ULB_STATE above): the unit fund, S's uf_init renamed
+    # av_pp_init; the withdrawals and adviser charges since issue, wd_cum_pp_init, which
+    # open the GMDB; and the allowance accrued, allowance_cum_pp_init.  pols_if_init
+    # becomes policy_count (the default).  Every S point is new
     # business.  The derived rows are the anchor cell at 30, mid-year in the 5% surrender
     # band; the adviser-charge point at 66, mid-year in the 8% band, its excess gain already
     # above 0, since its charges consume the allowance beside its withdrawals; the GMDB
     # point at 240, the first month of policy year 21, where the allowance-exhaustion step
     # applies and the guarantee has just run out; and the anchor cell at 352, the last month
     # before its fund is exhausted, a one-row frame.  At S's References no committed row has
-    # the GMDB in the money: S point 4's is in it in its issue month alone, on the death
-    # strain, which the splice's variants reach.  The future row is the GMDB point issued 13
+    # a positive rider charge: S point 4's guarantee is in the money in its issue month
+    # alone, by 82.88 pounds on the death benefit and never on the charge, which reads the
+    # fund before the month's withdrawal, so the twin of point 4 at t = 0 and the future row
+    # at t = 13 are in it there, and no row after; the splice's variants reach the charge.  The future row is the GMDB point issued 13
     # months after the valuation date: more than a year on and off a valuation anniversary,
     # so that the months before issue read policy years -1 and 0, where a missing guard
     # would show.  T2's splice grid is built from this spec in a temporary table, not

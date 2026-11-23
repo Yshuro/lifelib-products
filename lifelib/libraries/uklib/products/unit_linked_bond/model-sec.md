@@ -118,7 +118,7 @@ the months both frames run alike. `ULB_UK_S` charges acquisition on the count in
 
 The model point table is `model_point_table_sec.csv`. It carries `ULB_UK_S`'s columns, its
 count restated as the in-force interface under `basiclife/BasicTerm_SE`'s names, its fund
-at outset under the name of the cell that reads it, and one column of opening state more.
+at outset under the name of the cell that reads it, and two columns of opening state more.
 Each state column is per policy in force, so that `policy_count` is the one weight on
 every flow, and each is measured at the valuation instant, the start of month 0, before
 any month-0 event (USLIB-SEC-PLAN.md D6). Each is history: what the bond has earned, borne
@@ -132,8 +132,9 @@ already run (UKLIB-SEC-PLAN.md K14, §9 item 5):
 | `duration_mth` | whole months | the valuation date | the bond's age in months: positive in force, 0 for a bond issued at the valuation date, `−k` for one to be issued `k` months later, with `k` at most 120 as shipped |
 | `av_pp_init` | pounds per bond, above 0 | for a point in force, the start of month 0, before the month's growth, charges and cancellations; for any other, its issue month | the unit fund, the bid value of units the frame opens with: `av_pp(0)` in force, the fund at outset otherwise, the premium on every shipped point |
 | `wd_cum_pp_init` | pounds per bond, 0 or more | the end of month −1, after its cancellations: the start of month 0 | the withdrawals and adviser charges cancelled since issue, the total the 5% allowance is measured against and the guaranteed minimum death benefit is net of; 0 on a point not yet in force |
+| `allowance_cum_pp_init` | pounds per bond, 0 or more | the start of month 0, after the allowance of the policy year it falls in has accrued, at that year's start | the 5% allowance accrued since issue, through the policy year under way, which the excess gain is measured against; 0 on a point not yet in force |
 
-`ULB_UK_S` re-derives both from References where its frame opens, which a Reference
+`ULB_UK_S` re-derives all three from References where its frame opens, which a Reference
 changed at the valuation date would rewrite back to issue. Its fund is the premium grown
 at `fund_return` and charged at the bond's rates from issue, so a market that has fallen
 since issue, which no flat return set at the valuation date gives, is in the column and
@@ -142,15 +143,32 @@ years earlier. And its withdrawals since issue are its pattern run from issue, s
 withdrawal taken once, or a pattern changed since, is in the column and not in S: the
 guarantee opens from it, `max(0, P − wd_cum_pp_init)`, so a test opens point 9, whose
 pattern has drawn its whole premium, at half of it withdrawn, and the guarantee is in the
-money from its first month.
+money from its first month. And its allowance is `P × min(y, 20) × 5%` from issue, the
+rate and the twenty years Projection References, so that an allowance rate changed at the
+valuation date would rewrite every year already accrued, and the excess gain with it: at
+4%, point 8's excess gain at `t = 0` would be 6,415.35 and point 9's 20,333.33, where the
+history makes them 415.35 and 333.33. Here the years through the one under way are the
+column, and each later year accrues at the References,
+`CumAllow(t) = CumAllow₀ + P × (min(y, 20) − min(y₀, 20)) × r`; a test changes the rate at
+the valuation date and writes the column off any path of it.
 
-Nothing else of the contract is rebuilt from the References of the day. The allowance
-accrued is a closed form on the policy year from issue, `P × min(y, 20) × 5%`, and the
-excess gain the withdrawals since issue less it. The allowance-exhaustion step reads the
-policy year. The withdrawal cap is a twelfth of `7.5% × max(UF′, P)` each month, which
+Nothing else of the contract is rebuilt from the References of the day. The excess gain
+is the withdrawals since issue less the allowance, and the allowance-exhaustion step reads
+the policy year. The withdrawal cap is a twelfth of `7.5% × max(UF′, P)` each month, which
 reads no withdrawal of the twelve months before. The trailing return that drives the
 performance multiplier is `fund_return + return_shock`, two flat References; a projection
 that drew it from a path of returns would carry the last twelve months' as state.
+
+`wd_allowance_rate` is one Reference with two uses, as in `ULB_UK_S`: the statutory 5%
+allowance, a share of the premium a year, and the rate the `allowance_5pct` pattern
+withdraws at, the pattern being "withdraw what the allowance allows". So a rate changed at
+the valuation date moves that pattern's withdrawals from the valuation date on and the
+allowance from the next policy year on, together, and moves neither the withdrawals since
+issue nor the allowance accrued, which are columns. A bond on that pattern then withdraws
+the new rate against an allowance that is the old one's to date and the new one's after: a
+change of the tax rule and of the policyholder's election at once. A custom pattern reads
+`wd_rate_custom` and only the allowance moves; to change the election alone, a point is
+moved onto it.
 
 | `ULB_UK_S` | `ULB_UK_SEC` | Why |
 |---|---|---|
@@ -158,6 +176,7 @@ that drew it from a path of returns would carry the last twelve months' as state
 | — | `duration_mth` | The policy clock, in months, any month of a policy year |
 | `uf_init` | `av_pp_init` | The fund the frame opens with, under the name of the cell that reads it; S's accessor, `av_init_pp`, is gone |
 | — | `wd_cum_pp_init` | `ULB_UK_S` restarts the withdrawals since issue at 0 where its frame opens, and so the guarantee at the premium |
+| — | `allowance_cum_pp_init` | `ULB_UK_S` rebuilds the allowance from issue at the References of the day |
 
 The columns carried over are read as `ULB_UK_S` reads them. For a bond in force, the
 facts they record are still those at issue, or the elections that run from the valuation
@@ -182,12 +201,13 @@ extract need not carry them: without them the model projects the same numbers, a
 
 `Data.model_point_table()` checks the table as it reads it, over all rows at once. The
 first check that fails raises `ValueError`, naming the missing column or every point that
-fails it: the four in-force columns are present; no `point_id` appears twice;
+fails it: the five in-force columns are present; no `point_id` appears twice;
 `policy_count` is a number, zero or more; `duration_mth` is a whole number of months,
 below `2**53`, and −120 or more, future new business being written over a horizon,
 `Data.future_horizon_mth`, 120 months as shipped, which set to 0 refuses future new
-business altogether; `av_pp_init` is a number above 0, and `wd_cum_pp_init` a number,
-zero or more, and 0 on a point not yet in force; the flag is True or False; each code is
+business altogether; `av_pp_init` is a number above 0, and `wd_cum_pp_init` and
+`allowance_cum_pp_init` numbers, zero or more, and 0 on a point not yet in force; the flag
+is True or False; each code is
 one `ULB_UK_S` knows; the issue age is a finite number, the premium and the custom rate
 amounts zero or more, the uplift 1 or more, the four charge rates from 0 to 1, and the
 segments a whole number, 1 or more. `ULB_UK_S` meets most of these only when a projection
@@ -202,30 +222,45 @@ the youngest age the mortality table rates, though the product admits issue from
 months, or at or past `omega_age`. Each bound is a lower-case Reference, the contract a
 compiled model's caches will be sized from: a frame of at most 1,224 months and the
 horizon, and ages from 18 to `omega_age` on the mortality table. So does a point read
-under a Reference outside its domain, each named: `fund_return` or `inflation_rate` below
-−1, under which S's monthly rate has no real value or the inflation factor changes sign
-each year; `mort_be_factor`, `wd_allowance_rate` or `allowance_years` below 0, under which
-a mortality rate, a withdrawal or the allowance accrued is negative; and a
-`depletion_threshold` that is not a finite number, zero or more. And so does a bond whose
-opening fund is at or below the threshold (*Where the fund runs out*). A loop over the
+under a Reference outside its domain, each named, NaN and the infinities outside every
+one, since `ULB_UK_S` reads several of them through a `min` or a `max` whose bound comes
+first, which keeps the bound where a NaN meets it:
+
+| Reference | Domain | Outside it |
+|---|---|---|
+| `issue_age_min` | finite, 0 or more, years, printed through `int()` | a NaN switches the bound off, every comparison with it failing |
+| `fund_return`, `inflation_rate` | finite, −1 or more | the monthly return `(1 + g)^(1/12) − 1` has no real value, and the inflation factor changes sign each year |
+| `return_shock` | finite, above −1 | a trailing year 100 points or more below the fund's is a fund lost whole; a NaN reads as no shock |
+| `mort_be_factor` | finite, 0 or more | a mortality rate is negative |
+| `wd_allowance_rate` | finite, 0 or more | the allowance and the anchor pattern's withdrawal are negative |
+| `allowance_years` | finite, 0 or more, years, printed through `int()` | the allowance is negative, and a NaN lets it accrue without end |
+| `depletion_threshold` | finite, 0 or more | no fund, floored at 0, would count as exhausted |
+| `surr_rate_cap`, `wd_cap_rate` | 0 to 1 | no probability, and no share of the fund or the premium; a NaN or negative withdrawal cap pays no withdrawal, so the anchor cell projects 660 months, not 353 |
+| `perf_factor_cap`, `perf_factor_slope`, `allow_step` | finite, 0 or more | a negative surrender rate; a NaN is lost in the bound-first `min`, and the surrender rate reads the cap in every month |
+
+Each check is a comparison written out, a finite bound the largest float, so that the
+compiled model runs it in C. And so does a bond whose opening fund is at or below the
+threshold (*Where the fund runs out*). A loop over the
 block meets such a row only when it reaches it, after projecting the points before it,
 so `run_sec.py --block` asks every point for its frame before it projects any, and stops
 before it prints anything.
 
-`surr_rate` keeps `ULB_UK_S`'s `min(surr_rate_cap, w_base × M_perf × M_allow)`, and refuses
-a rate outside 0 to 1, or NaN, in the month it first leaves, naming the point, the month,
-the rate and the References that make it: the table's rates are probabilities, which
-`Data` holds to 0 to 1, but the multipliers and the cap are References, and past 1 S's
-monthly rate is a complex number, below 0 its surrenders add policies.
+`surr_rate` keeps `ULB_UK_S`'s `min(surr_rate_cap, w_base × M_perf × M_allow)`. With the
+table's rates held to 0 to 1 by `Data`, and the cap and the multipliers to their domains by
+`proj_len()`, no frame reaches a rate outside 0 to 1, where S's monthly rate is a complex
+number past 1 and its surrenders add policies below 0; the cell still refuses one, or NaN,
+in the month it first leaves, naming the point, the month, the rate and the References
+that make it, for a caller that reads it outside a frame. A rate of exactly 1, the cap at 1
+binding, is in range: every bond left after the month's deaths surrenders.
 
 The assumption tables are checked before a value of them is read, each in the cell the
 projection takes its extent from: `Data.mort_age_first` and `mort_age_last` for the
 mortality table, whose two sexes must run over the same ages, one row an age, without a
 gap or a repeat, each rate a number from 0 to 1; and `Data.surr_last_year` for the
 surrender table, policy years from 1 without a gap, each rate from 0 to 1. A key is read
-by its value, so an age written `35.0` is 35. Each refusal names the file and the column;
-the surrender table's names its lines, and the mortality table's its keys, sex and age,
-because `ULB_UK_S`'s reader sorts the table as it reads it. A read at an attained age
+by its value, so an age written `35.0` is 35. Each refusal names the file, the column and
+the lines at fault: the mortality table's check reads the file as it stands, one read
+that `ULB_UK_S`'s reader then sorts. A read at an attained age
 outside the mortality table is refused by the one cell that reads it, naming the point,
 where `ULB_UK_S`'s lookup raised `KeyError`; the surrender table takes its last year for
 every later one, as `ULB_UK_S` does, so no read is beyond it.
@@ -241,7 +276,7 @@ reaches it or fails the suite. In the source repository,
 | Point | Kind | From | At the valuation date |
 |---|---|---|---|
 | 1 to 6 | twin | S points 1 to 6 | issued at `t = 0`: `ULB_UK_S`'s anchor cell and its variants, the accumulation cell, the adviser charge, the GMDB, the 101% uplift and the custom 3% |
-| 7 | derived | S point 1 at S month 30 | the anchor cell mid-way through policy year 3, 12,500.00 withdrawn |
+| 7 | derived | S point 1 at S month 30 | the anchor cell mid-way through policy year 3, 12,500.00 withdrawn and 15,000.00 of allowance accrued |
 | 8 | derived | S point 3 at S month 66 | the adviser charge mid-way through policy year 6, its withdrawals and charges since issue 498.69 past the allowance |
 | 9 | derived | S point 4 at S month 240 | the GMDB point in policy year 21, its whole premium withdrawn and its guarantee 0, the step on and the allowance spent |
 | 10 | derived | S point 1 at S month 352 | in the last month before its fund is exhausted: a one-row frame |
@@ -261,7 +296,7 @@ its 5% withdrawals erode the guarantee, and in its issue month the guarantee exc
 uplifted fund after the month's withdrawal by £82.88, on the death benefit alone; the
 rider charge, on the fund before the withdrawal, is 0 throughout. So the tests reach it
 otherwise: the splice adds the GMDB point at a 4% AMC, in the money from its sixth month,
-and a test writes point 9's withdrawals since issue at half its premium.
+and a test writes point 9's withdrawals since issue at half its premium, as does T4's table.
 
 ## Counts and timings
 
@@ -288,7 +323,9 @@ On a model just read, a cold `net_cf` in the frame's last month runs at most 10 
 deeper than one a month, at each shape's longest cover, issued at 18 now and 120 months
 on: 1,224 months on the accumulation cell, whose cold `net_cf` runs 1,232 deep, where
 `ULB_UK_S`'s fund alone would run about 4,900; each other chain, the withdrawals since
-issue, the excess gain and the guarantee, is one cell a month too.
+issue, the excess gain and the guarantee, is one cell a month too. The deepest is the GMDB
+point's with no withdrawals, the rider to the limiting age: its unit-funding residual 12
+cells beyond, its death strain 11 and its `net_cf` 10.
 
 The roll-forward closes as
 
@@ -348,15 +385,18 @@ On point 3 every cell agrees with `ULB_UK_S`'s in each of the 322 months before 
 frame's last; in its last, every cell but where its survivors go, which leave here as
 `pols_maturity(322)` and in S carry on into month 323; and the frame's net cash flow moves
 by S's month 323 alone, −£0.18. The twin identity, in `tests/test_model_conventions_uk.py`,
-holds the months before the last on point 3 and leaves the frame's end to that test
-(`TWIN_FRAME_ENDS`).
+names point 3 alone, with its two frames, 323 and 324 (`TWIN_FRAME_ENDS`, beside
+`TWIN_FLOORS`): it asserts them, and that S's month 323 opens on a fund above 0 and at or
+below the threshold, compares the months before the last, and leaves the frame's end to
+that test. Every other twin's frames must end together, so a frame cut short on any other
+point fails there.
 
 ## Departures from ULB_UK_S
 
 Each formula that tested `t` against a contractual event now tests the policy clock, each
 read at a month passed as `t` is a read at the policy month or year, and each recursion
 opens at `t_entry()` from the opening state. Where `ULB_UK_S`'s test would have stayed
-correct on the valuation clock, it moved anyway, so that cover has one definition. Eight
+correct on the valuation clock, it moved anyway, so that cover has one definition. Nine
 cells are new, and one of `ULB_UK_S`'s, `av_init_pp`, is gone, `av_pp_init` replacing it;
 the twin identity names it as dropped, and a cell of `ULB_UK_S`'s that this model lacked
 without saying so would fail it.
@@ -366,19 +406,20 @@ without saying so would fail it.
 | `duration_mth`, `duration` | `t`, `t // 12` | `duration_mth_init() + t`, `duration_mth(t) // 12` | The policy clock, opened from the model point |
 | `t_entry`, `is_active`, new | — | `max(0, −duration_mth_init())`; `0 ≤ duration_mth(t) < horizon_mths()` | The first month on the books, and cover, read from the limiting age alone |
 | `fund_exhaust_mth` | the first `t` from 0 whose fund is 0 or less | the first month from `t_entry()` whose fund is at or below `depletion_threshold`, as a policy month | *Where the fund runs out* |
-| `proj_len` | `min(horizon_mths(), fund_exhaust_mth())`, from issue | the same less `duration_mth_init()`, from the valuation date; raises past cover, outside the contract's bounds, under a Reference outside its domain, and on an opening fund at or below the threshold | The frame starts at the valuation date |
+| `proj_len` | `min(horizon_mths(), fund_exhaust_mth())`, from issue | the same less `duration_mth_init()`, from the valuation date; raises past cover, outside the contract's bounds, under any of thirteen References outside its domain, and on an opening fund at or below the threshold | The frame starts at the valuation date |
 | `av_pp`, `av_pp_at` | `av_pp(t) = av_pp_at(t − 1, "AFT_WD")`, four cells a month, from `uf_init` at 0 | `av_pp_init()` at `t_entry()`, then month `t − 1`'s growth, tax provision, charges and cancellations inline, in `av_pp_at`'s order and floats, one cell a month; `av_pp_at` reads `av_pp`; 0 outside cover | One cell a month (D5); the same float as S's in every month |
 | `wd_cum_pp`, `gmdb_guarantee_pp` | 0 before `t = 0` | `wd_cum_pp_init()` before `t_entry()` | The withdrawals since issue are history, and the guarantee opens from them |
+| `allowance_cum_pp` | `P × min(y, n) × r`, every year from issue | `allowance_cum_pp_init()`, then `P × (min(y, n) − min(y₀, n)) × r` for the years after the one under way at the valuation instant | The allowance accrued is history; the same float on a point not yet in force |
 | `pols_if`, `pols_if_at`, `pols_if_init` | a recursion through `"AFT_DECR"`, three cells a month, from the column's 1.0 at 0 | `"BEF_DECR"`, one cell a month from `t_entry()` through `"BEF_NB"`; `pols_if_init()` is 0 unless in force | Bonds in force at the valuation date open the count; new business joins it in its issue month |
 | `pols_death`, `pols_surr`, `"BEF_SURR"` | unguarded | zero outside cover and the frame, before a rate is read | No count evaluates a rate outside cover |
 | `mort_rate`, `surr_rate_base`, `allow_factor`, `allowance_cum_pp`, `wd_cap_pp`, `wd_pp`, `gmdb_charge_pp` | unguarded: no `ULB_UK_S` frame has a month outside cover | zero outside cover, before any table or rate is read; the tables' extents from `Data`, a read past the mortality table refused by name | Before issue S's tables raise `KeyError`, and its allowance is negative |
-| `surr_rate` | `min(cap, w_base × M_perf × M_allow)` | the same, and a rate outside 0 to 1, or NaN, refused in its month | Past 1 S's monthly rate is complex; below 0 its surrenders add policies |
+| `surr_rate` | `min(cap, w_base × M_perf × M_allow)` | the same, and a rate outside 0 to 1, or NaN, refused in its month, which with the domains no frame reaches | Past 1 S's monthly rate is complex; below 0 its surrenders add policies |
 | `inflation_factor` | `1.025^duration(t)`, from issue | `1.025^(t // 12)`, from the valuation date | Unit costs in valuation-date pounds (D7) |
 | `expenses` | acquisition on `pols_if(t)` at `t = 0` | on `pols_new_biz(t)` | A bond in force bears no acquisition, one issued later bears it in its issue month, per bond issued and not inflated, as in `basiclife/BasicTerm_SE` |
 | `check_pols_roll_fwd_resid` | `pols_if(t + 1)` | `pols_if_at(t + 1, "BEF_NB")` | The next month's new business is no part of month `t`'s movement |
 | `check_pols_roll_fwd` | tolerance on `pols_if_init()` | tolerance on `policy_count()` | S's `pols_if_init` is 0 on new business here |
 | `result_pols`, new | — | `pols_if`, `pols_new_biz`, `pols_death`, `pols_surr`, `pols_maturity` | The counts behind `result_cf()`, after `basiclife/BasicTerm_SE`'s `result_pols()` |
-| `policy_count`, `duration_mth_init`, `av_pp_init`, `wd_cum_pp_init`, `pols_new_biz`, new | — | the interface's columns, and the new business of each month | *The in-force interface*; *Counts and timings* |
+| `policy_count`, `duration_mth_init`, `av_pp_init`, `wd_cum_pp_init`, `allowance_cum_pp_init`, `pols_new_biz`, new | — | the interface's columns, and the new business of each month | *The in-force interface*; *Counts and timings* |
 
 Of the cash flows, the change of clock moves the maintenance expense alone, and `net_cf`
 with it. Point 7 carries that expense in valuation-date pounds, so its `expenses(t)` is
@@ -403,8 +444,9 @@ attained age 111 at 1.25, which a test shows. The surrender rate's bound keeps
   cell of `ULB_UK_S`'s agrees at every argument `ULB_UK_S` evaluates in its own sweep, to
   1e-9 relative with no absolute floor, but for `pols_if_init` and `model_point`, and
   `av_init_pp`, which the spec names with its reason; a cell this model lacked would fail
-  it. On point 3 it holds every month but the SEC frame's last, which the threshold's
-  test holds. So `ULB_UK_S`'s worked example, which `tests/test_unit_linked_bond_uk.py`
+  it. On point 3 it holds the two frames, 323 and 324, S's month 323 opening on a fund
+  above 0 and at or below the threshold, and every month but the SEC frame's last, which
+  the threshold's test holds; on every other twin the frames end together. So `ULB_UK_S`'s worked example, which `tests/test_unit_linked_bond_uk.py`
   asserts to the penny, holds here with no number restated. The same suite holds the
   model to the conventions every `_SEC` model meets: every frame starts at `t = 0`,
   `pols_if` is the `"BEF_DECR"` count, new business enters once at its `policy_count`,
@@ -419,10 +461,11 @@ attained age 111 at 1.25, which a test shows. The surrender rate's bound keeps
   whose exact value is 0, at a floor of 1e-9. Every switch that ships off is on in both
   models: a return shock of −0.75, which takes the performance multiplier to its cap of 2,
   and a surrender cap of 0.25, which binds from policy year 21; inflation, the one input on
-  the valuation clock, is 0 in both. Three variants of S's points, in a copy of S's table
+  the valuation clock, is 0 in both. Four variants of S's points, in a copy of S's table
   that is never committed, reach what S's own cannot: the GMDB point at a 4% AMC, in the
-  money; the custom pattern at 9%, above the 7.5% cap; and the adviser charge with the
-  GMDB beside it. A core of 28 of the 111 splice cases and 7 of the 17 future ones runs by
+  money; the custom pattern at 9%, above the 7.5% cap; the adviser charge with the GMDB
+  beside it; and the custom 9% with a 0.5% adviser charge, the cap binding net of the
+  charge. A core of 29 of the 114 splice cases and 7 of the 18 future ones runs by
   default, and the full grid with `UKLIB_SEC_FULL=1`; a test asserts the core reaches every
   branch, opening-state column, kind of valuation month and side of every `min` and `max`
   the full grid reaches.
@@ -442,17 +485,23 @@ attained age 111 at 1.25, which a test shows. The surrender rate's bound keeps
 - **Counts**: the roll-forward closes; `result_pols()` is S's counts with `pols_new_biz`
   beside them; multiplying `policy_count` by 2.5, with every switch that ships off on,
   multiplies every flow and counted cell and moves no per-policy value, the fund at each
-  timing, the withdrawals since issue and the guarantee among them; and the check, its
-  tolerance scaled by the count, closes on a million bonds.
-- **Validation and regeneration**: each malformed row of the table, 51 cases, is refused
-  naming its point; the horizon is a Reference; a point past its cover, outside the
-  contract's bounds or under a Reference outside its domain, 15 cases, is refused by
-  `proj_len()`, each bound just inside it and each moved past a committed point, and
-  `run_sec.py --block` refuses such a point before printing anything; so is a fund at or
-  below the threshold, at exactly it, part of it and a rounding above 0, where the least
-  fund past it projects; a surrender rate outside 0 to 1 is refused in its month; each
-  assumption table a reader cannot read, 21 cases, is refused naming its lines or its
-  keys, and a read beyond the mortality table naming the point; keys written as floats
+  timing, the withdrawals since issue and the guarantee among them, on a table where every
+  flow is nonzero on some point, the rider charge on point 9 written at half its premium
+  withdrawn; each point in force, restated a month on with the count and the state it
+  carries there, continues its own flows, each weighted by the count in force, not the
+  count the point opened with; and the check, its tolerance scaled by the count, closes on
+  a million bonds.
+- **Validation and regeneration**: each malformed row of the table, 58 cases, is refused
+  naming its point; the horizon is a Reference; a point past its cover or outside the
+  contract's bounds, 5 cases, is refused by `proj_len()`, each bound just inside it and
+  each moved past a committed point, and `run_sec.py --block` refuses such a point before
+  printing anything; each of thirteen References is held to its domain, 80 cases, each
+  edge accepted and the nearest value past it refused, NaN and the infinities too; so is a
+  fund at or below the threshold, at exactly it, part of it and a rounding above 0, where
+  the least fund past it projects; a surrender rate of exactly 1 is accepted, and one just
+  above 1 or below 0 refused in its month and by the frame; each assumption table a reader
+  cannot read, 22 cases, is refused naming its lines, and a read beyond the mortality
+  table naming the point; keys written as floats
   read as `ULB_UK_S` reads them; the edges of the interface and of each bound are
   accepted; every state `ULB_UK_S` reaches, as shipped and under the splice's switches, is
   accepted in force, but the fund S runs on at 3.39e-15, which is refused as exhausted;
@@ -461,7 +510,9 @@ attained age 111 at 1.25, which a test shows. The surrender rate's bound keeps
   in force and issued later, continuing their S points at the shipped assumptions but for
   inflation; each history column read, not recomputed, the fund written at 60% of S's and
   the withdrawals since issue at half the premium and at 10,000 more, each projected
-  through (UKLIB-SEC-PLAN.md K14); the threshold's effect on each S point, and a fund that
+  through, and the allowance accrued kept at its history under an allowance rate changed
+  at the valuation date and written off its path (UKLIB-SEC-PLAN.md K14); the threshold's
+  effect on each S point, and a fund that
   reaches the threshold exactly exhausted there; the surrender bands, the step and the
   allowance on the policy clock; expense inflation on the valuation clock at the shipped
   2.5%, which only this test sees; acquisition on new business alone; every guarded cell's

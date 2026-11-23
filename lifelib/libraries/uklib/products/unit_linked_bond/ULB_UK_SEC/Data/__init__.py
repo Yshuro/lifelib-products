@@ -41,9 +41,10 @@ mort_table_file         mort_table()                mort_table.csv
 surr_table_file         surr_table()                surr_table.csv
 ======================  ==========================  ==============================
 
-**The model point table is checked as it is read.** Four of its columns are the in-force
+**The model point table is checked as it is read.** Five of its columns are the in-force
 interface: ``policy_count`` and ``duration_mth``, as in ``basiclife.BasicTerm_SE``, and the
-opening state of a bond in force, ``av_pp_init`` and ``wd_cum_pp_init``.
+opening state of a bond in force, ``av_pp_init``, ``wd_cum_pp_init`` and
+``allowance_cum_pp_init``.
 :func:`model_point_table` refuses a table that lacks one, repeats a ``point_id``, holds a
 count, a duration or a state no bond can have, or a bond to be issued more than
 ``future_horizon_mth`` months after the valuation date, 120 as shipped: future new
@@ -69,9 +70,10 @@ holds, so the cap is written with its bound second and a NaN would stay NaN; but
 infinity is a number, which the cap reads as 1, certain death. The check of each table is
 in the cell the projection takes the table's extent from, which it asks before it reads
 the table: :func:`mort_age_first` and :func:`mort_age_last` for the mortality table, and
-:func:`surr_last_year` for the surrender table. The surrender table's refusals name its
-lines. The mortality table's name its keys, sex and age, because :mod:`~.ULB_UK_S`'s reader
-sorts the table as it reads it, and its lines are lost with the order. A read beyond the
+:func:`surr_last_year` for the surrender table. Each refusal names the table's lines, the
+header line 1: the check reads the file as it stands, where :mod:`~.ULB_UK_S`'s reader,
+:func:`mort_table`, sorts the mortality table, and with the order would lose the lines. A
+read beyond the
 mortality table's ages is refused by the one ``Projection`` cell that reads it, naming the
 point, where :mod:`~.ULB_UK_S`'s lookup raised ``KeyError``.
 
@@ -113,10 +115,10 @@ def input_dir():
 def model_point_table():
     """The model point table, read from *model_point_table_sec.csv* and checked.
 
-    Indexed by ``point_id``. Four columns are the in-force interface: ``policy_count``
+    Indexed by ``point_id``. Five columns are the in-force interface: ``policy_count``
     and ``duration_mth``, the completed policy months at the valuation date, as in
-    ``basiclife.BasicTerm_SE``, and the two of a bond's opening state, ``av_pp_init`` and
-    ``wd_cum_pp_init``. The rest are :mod:`~.ULB_UK_S`'s, but ``pols_if_init``, which
+    ``basiclife.BasicTerm_SE``, and the three of a bond's opening state, ``av_pp_init``,
+    ``wd_cum_pp_init`` and ``allowance_cum_pp_init``. The rest are :mod:`~.ULB_UK_S`'s, but ``pols_if_init``, which
     ``policy_count`` replaces, ``uf_init``, which is ``av_pp_init`` renamed, and
     ``row_kind``, ``source_policy_id`` and ``source_mth``, which record where the generator
     took each shipped row from and which no formula reads.
@@ -124,7 +126,7 @@ def model_point_table():
     The checks run over the whole table at once, and the first that fails raises
     ``ValueError``, naming the missing column or every point it fails on:
 
-    1. the four in-force columns are present;
+    1. the five in-force columns are present;
     2. no ``point_id`` appears twice;
     3. ``policy_count`` is a number, zero or more;
     4. ``duration_mth`` is a whole number of months, below ``2**53`` in size, which numpy
@@ -135,10 +137,12 @@ def model_point_table():
        no future new business, and the message says so; a negative horizon is itself
        refused;
     6. the opening state is a number in its range: ``av_pp_init``, the unit fund per
-       policy, above 0, a bond with no units having nothing to project; and
-       ``wd_cum_pp_init``, an amount withdrawn, 0 or more;
-    7. a bond not yet in force, ``duration_mth`` 0 or less, has withdrawn nothing:
-       ``wd_cum_pp_init`` is 0. Its ``av_pp_init`` keeps :mod:`~.ULB_UK_S`'s meaning, the
+       policy, above 0, a bond with no units having nothing to project;
+       ``wd_cum_pp_init``, an amount withdrawn, 0 or more; and ``allowance_cum_pp_init``,
+       an allowance accrued, 0 or more;
+    7. a bond not yet in force, ``duration_mth`` 0 or less, has withdrawn nothing and
+       accrued no allowance: ``wd_cum_pp_init`` and ``allowance_cum_pp_init`` are 0. Its
+       ``av_pp_init`` keeps :mod:`~.ULB_UK_S`'s meaning, the
        fund at outset, its premium as shipped, as an S column that is a value at issue does
        (USLIB-SEC-PLAN.md D6, precised at M7), so this rule leaves it;
     8. ``gmdb_flag`` is True or False. pandas reads a column of them as booleans, but one
@@ -155,7 +159,8 @@ def model_point_table():
     """
     name = model_point_file                                          # noqa: F821
     table = pd.read_csv(input_dir() / name, index_col="point_id")    # noqa: F821
-    for column in ("policy_count", "duration_mth", "av_pp_init", "wd_cum_pp_init"):
+    for column in ("policy_count", "duration_mth", "av_pp_init", "wd_cum_pp_init",
+                   "allowance_cum_pp_init"):
         if column not in table.columns:
             raise ValueError(f"{name} has no {column} column")
     repeated = table.index[table.index.duplicated()].unique().tolist()
@@ -197,10 +202,16 @@ def model_point_table():
     if bad:
         raise ValueError(f"{name}: wd_cum_pp_init must be a number, zero or more; it is "
                          f"not at point_id {bad}")
-    bad = table.index[(months <= 0) & (drawn != 0)].tolist()
+    allowed = pd.to_numeric(table["allowance_cum_pp_init"], errors="coerce")  # noqa: F821
+    bad = table.index[~((allowed >= 0) & (allowed < float("inf")))].tolist()
     if bad:
-        raise ValueError(f"{name}: wd_cum_pp_init must be 0 on a bond not yet in force, "
-                         f"duration_mth 0 or less; it is not at point_id {bad}")
+        raise ValueError(f"{name}: allowance_cum_pp_init must be a number, zero or more; "
+                         f"it is not at point_id {bad}")
+    for column, held in (("wd_cum_pp_init", drawn), ("allowance_cum_pp_init", allowed)):
+        bad = table.index[(months <= 0) & (held != 0)].tolist()
+        if bad:
+            raise ValueError(f"{name}: {column} must be 0 on a bond not yet in force, "
+                             f"duration_mth 0 or less; it is not at point_id {bad}")
     flag = table["gmdb_flag"]
     bad = table.index[~flag.map(lambda v: str(v).lower() in ("true", "false"))].tolist()
     if bad:
@@ -247,10 +258,20 @@ def mort_table():
     of a percent of the unit fund - unless the guaranteed minimum death benefit rider is
     enabled, which is why a proxy of this quality is tolerable here and would not be
     elsewhere.  Sorted on read, because ``Projection.mort_rate`` indexes into it.
-    :mod:`~.ULB_UK_S`'s reader, unchanged; :func:`mort_age_first` checks the table.
+    :mod:`~.ULB_UK_S`'s reader, indexed and sorted as it is, from the one read of the file,
+    :func:`mort_table_rows`; :func:`mort_age_first` checks the table.
     """
-    return pd.read_csv(                                              # noqa: F821
-        input_dir() / mort_table_file, index_col=["sex", "age"]).sort_index()  # noqa: F821
+    return mort_table_rows().set_index(["sex", "age"]).sort_index()
+
+
+def mort_table_rows():
+    """*mort_table.csv* as the file holds it: one row a line, in the file's order.
+
+    The one read of the file.  :func:`mort_age_first` checks it here, so that each refusal
+    names the lines at fault, the header line 1, which the sort of :func:`mort_table`, the
+    reader the projection indexes into, would lose.
+    """
+    return pd.read_csv(input_dir() / mort_table_file)                # noqa: F821
 
 
 def surr_table():
@@ -272,44 +293,44 @@ def mort_age_first():
     """The first attained age *mort_table.csv* gives a rate for, the table checked first.
 
     ``Projection.mort_rate`` asks it, and :func:`mort_age_last`, before it reads the
-    table, so a table it cannot read is refused before any value of it is.  The rules,
-    each over the whole table, the first that fails raising ``ValueError`` and naming the
-    rows at fault by their keys, sex and age, since :func:`mort_table` sorts the table as
-    it reads it:
+    table, so a table it cannot read is refused before any value of it is.  The check
+    reads the file as it stands, :func:`mort_table_rows`, not :func:`mort_table`, which
+    sorts it, so that each refusal names the lines at fault, the header line 1.  The
+    rules, each over the whole table, the first that fails raising ``ValueError``:
 
     1. each age is a whole number, read by its value, so ``35.0`` is 35;
     2. each sex is M or F, the codes the model point table holds;
     3. each sex runs over the table's ages from the first to the last, one row an age,
        none below 0: the projection reads a rate at each attained age a bond reaches.
        Every fault is named in one message: an age below 0 and an age a sex repeats each
-       with how often it appears, and each span of ages a sex lacks;
+       with its lines, and each span of ages a sex lacks;
     4. each ``mort_rate`` is a number from 0 to 1, a probability, read by the cap.
     """
     name = mort_table_file                                           # noqa: F821
-    tbl = mort_table().reset_index()
-    keys = list(zip(tbl["sex"].tolist(), tbl["age"].tolist()))
+    tbl = mort_table_rows()
+    lines = tbl.index + 2
     ages = pd.to_numeric(tbl["age"], errors="coerce")                # noqa: F821
-    bad = (~(ages % 1 == 0)).to_numpy()
-    if bad.any():
-        raise ValueError(f"{name}: age must be a whole number; it is not at (sex, age) "
-                         f"{[k for k, b in zip(keys, bad) if b]}")
-    bad = (~tbl["sex"].isin(["M", "F"])).to_numpy()
-    if bad.any():
-        raise ValueError(f"{name}: sex must be M or F; it is not at (sex, age) "
-                         f"{[k for k, b in zip(keys, bad) if b]}")
+    bad = lines[(~(ages % 1 == 0)).to_numpy()].tolist()
+    if bad:
+        raise ValueError(f"{name}: age must be a whole number; it is not on line {bad}")
+    bad = lines[(~tbl["sex"].isin(["M", "F"])).to_numpy()].tolist()
+    if bad:
+        raise ValueError(f"{name}: sex must be M or F; it is not on line {bad}")
     ages = ages.astype("int64")
     faults = []
     for a in sorted(set(ages[ages < 0])):
-        faults.append(f"age {a}, below 0, appears {int((ages == a).sum())} times")
+        faults.append(f"age {a}, below 0, is on lines "
+                      f"{lines[(ages == a).to_numpy()].tolist()}")
     kept = ages[ages >= 0]
     if kept.empty:
-        raise ValueError(f"{name}: no row holds an age of 0 or more")
+        raise ValueError(f"{name}: no line holds an age of 0 or more")
     first, last = int(kept.min()), int(kept.max())
     for s in ("M", "F"):
         group = ((tbl["sex"] == s) & (ages >= 0)).to_numpy()
         run = ages[group]
         for a in sorted(set(run[run.duplicated()])):
-            faults.append(f"sex {s}, age {a} appears {int((run == a).sum())} times")
+            faults.append(f"sex {s}, age {a} repeats on lines "
+                          f"{lines[group & (ages == a).to_numpy()].tolist()}")
         spans = []
         for a in sorted(set(range(first, last + 1)) - set(run)):
             if spans and spans[-1][1] == a - 1:
@@ -317,17 +338,17 @@ def mort_age_first():
             else:
                 spans.append([a, a])
         for low, high in spans:
-            faults.append(f"no row holds sex {s}, "
+            faults.append(f"no line holds sex {s}, "
                           + (f"ages {low} to {high}" if high > low else f"age {low}"))
     if faults:
         raise ValueError(f"{name}: the ages of each sex must run from {first} to {last}, "
                          f"the table's first and last, one row an age, none below 0; "
                          + "; ".join(faults))
     rates = pd.to_numeric(tbl["mort_rate"], errors="coerce")         # noqa: F821
-    bad = (~((rates >= 0) & (rates <= 1))).to_numpy()
-    if bad.any():
-        raise ValueError(f"{name}: mort_rate must be a number from 0 to 1; it is not at "
-                         f"(sex, age) {[k for k, b in zip(keys, bad) if b]}")
+    bad = lines[(~((rates >= 0) & (rates <= 1))).to_numpy()].tolist()
+    if bad:
+        raise ValueError(f"{name}: mort_rate must be a number from 0 to 1; it is not on "
+                         f"line {bad}")
     return first
 
 

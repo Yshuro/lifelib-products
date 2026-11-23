@@ -965,22 +965,53 @@ TWIN_FLOORS = {
     "Term_UK_SEC": {"check_fib_ledger_resid": 1e-9},
 }
 
-# The SEC models whose frame may end before their S twin's on a new-business twin, by
-# design, each with the cells that hold where a frame ends, and its reason.  Where it does,
-# T1 compares the twin, cell by cell, at every argument S cached before the SEC frame's
-# last month, the months the two frames run alike, and leaves those cells, and the months
-# from that one on, to the product module, which compares them and states the departure on
-# each S point.  Where the two frames end together, as on every other twin, T1 compares the
-# whole frame and every cell, as it does for every other model.
+# The new-business twins whose SEC frame ends before their S twin's, by design, each keyed
+# by its point_id with the two frames it must have, (SEC's, S's), and by model the cells
+# that hold where a frame ends, the cell of the fund that runs out, and the Reference of
+# the threshold it is exhausted at.  On such a twin T1 asserts the two frames, and that
+# S's first month past the SEC frame opens on a fund above 0 and at or below the threshold,
+# the departure's one cause; then compares the twin, cell by cell, at every argument S
+# cached before the SEC frame's last month, the months the two frames run alike, and leaves
+# those cells, and the months from that one on, to the product module, which compares them
+# and states the departure on each S point.  Every other twin, of the same model or
+# another, is compared whole, its frames ending together, so a frame cut short anywhere
+# else fails here.
 #
 # ULB_UK_SEC ends a bond's frame at the first month its fund opens at or below
 # depletion_threshold, where ULB_UK_S ends it at the first that opens on exactly 0 or less
 # (UKLIB-SEC-PLAN.md §6.6, §9 item 10).  ULB_UK_S's point 3 closes its fund on a rounding of
 # 3.4e-15 at the end of month 322, and projects month 323 on it, which ULB_UK_SEC does not;
-# so in month 322 its survivors leave the SEC frame, and carry on in S's.
+# so in month 322 its survivors leave the SEC frame, and carry on in S's.  Its points 1, 4
+# and 5 close their funds on 0 exactly, and 2 and 6 never exhaust them.
 TWIN_FRAME_ENDS = {
-    "ULB_UK_SEC": frozenset({"fund_exhaust_mth", "proj_len", "result_cf", "result_uf"}),
+    "ULB_UK_SEC": {
+        "points": {3: (323, 324)},
+        "cells": frozenset({"fund_exhaust_mth", "proj_len", "result_cf", "result_uf"}),
+        "fund": "av_pp",
+        "threshold": "depletion_threshold",
+    },
 }
+
+
+def _frame_end_faults(name, point_id, s_proj, sec_proj):
+    """Where a twin :data:`TWIN_FRAME_ENDS` names departs from the frames it names.
+
+    Its two frames, ``(SEC's proj_len(), S's)``, must be the entry's, and S's first month
+    past the SEC frame must open on a fund above 0 and at or below the SEC model's
+    threshold: on a new-business twin that month is the SEC frame's length.
+    """
+    ends = TWIN_FRAME_ENDS[name]
+    frames = (sec_proj.proj_len(), s_proj.proj_len())
+    want = ends["points"][point_id]
+    if frames != want:
+        return [f"the frames are {frames}, (SEC's, S's), not {want}"]
+    opened = s_proj.cells[ends["fund"]](frames[0])
+    threshold = getattr(sec_proj, ends["threshold"])
+    if not 0.0 < opened <= threshold:
+        return [f"S's month {frames[0]}, past the SEC frame, opens on {ends['fund']} "
+                f"{opened!r}, which is not above 0 and at or below {ends['threshold']}, "
+                f"{threshold}"]
+    return []
 
 
 def _before_month(s_proj, last, arg_map):
@@ -1028,7 +1059,8 @@ def test_new_business_twins_agree_with_s_cell_by_cell(name, model, twin_model, r
     Every cell is compared to 1e-9 relative with no absolute floor, so that an error in a
     count below 1e-9, which late in a long frame is most of what is in force, fails: but
     for :data:`TWIN_FLOORS`, the cells a product names with its floor and its reason.  And
-    a twin whose SEC frame ends before S's, by a design :data:`TWIN_FRAME_ENDS` names, is
+    a twin whose SEC frame ends before S's, by a design :data:`TWIN_FRAME_ENDS` names point
+    by point, is held to the two frames it names and to the cause of the departure, and
     compared over the months before the SEC frame's last, where the two run alike, its
     product module holding the rest.
 
@@ -1074,12 +1106,13 @@ def test_new_business_twins_agree_with_s_cell_by_cell(name, model, twin_model, r
             s_proj = projection(twin_model, s_key)
             sweep(s_proj)
             sec_proj = projection(model, sec_key)
-            pair_map, pair_exempt = arg_map, exempt
-            if name in TWIN_FRAME_ENDS and sec_proj.proj_len() < s_proj.proj_len():
+            pair_map, pair_exempt, found = arg_map, exempt, []
+            if point_id in TWIN_FRAME_ENDS.get(name, {}).get("points", {}):
+                found += _frame_end_faults(name, point_id, s_proj, sec_proj)
                 pair_map = _before_month(s_proj, sec_proj.proj_len() - 1, arg_map)
-                pair_exempt = exempt | TWIN_FRAME_ENDS[name]
-            found = twin_mismatches(s_proj, sec_proj, exempt=pair_exempt | set(floors),
-                                    arg_map=pair_map, codes=codes(sec_proj), atol=0.0)
+                pair_exempt = exempt | TWIN_FRAME_ENDS[name]["cells"]
+            found += twin_mismatches(s_proj, sec_proj, exempt=pair_exempt | set(floors),
+                                     arg_map=pair_map, codes=codes(sec_proj), atol=0.0)
             for cell, floor in floors.items():
                 others = set(s_proj.cells) - {cell}
                 found += twin_mismatches(s_proj, sec_proj, exempt=others, arg_map=pair_map,

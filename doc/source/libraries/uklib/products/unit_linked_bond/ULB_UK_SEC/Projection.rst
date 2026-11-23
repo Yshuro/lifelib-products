@@ -44,6 +44,8 @@ Cells Descriptions
 
 .. autofunction:: wd_cum_pp_init
 
+.. autofunction:: allowance_cum_pp_init
+
 .. autofunction:: t_entry
 
 .. autofunction:: is_active
