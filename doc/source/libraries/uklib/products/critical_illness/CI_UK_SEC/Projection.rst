@@ -8,7 +8,11 @@ Cells Descriptions
 
 .. autofunction:: model_point
 
+.. autofunction:: point_id
+
 .. autofunction:: contract_type
+
+.. autofunction:: is_accelerated
 
 .. autofunction:: life_basis
 
@@ -20,6 +24,8 @@ Cells Descriptions
 
 .. autofunction:: smoker
 
+.. autofunction:: rate_group
+
 .. autofunction:: sum_assured
 
 .. autofunction:: policy_term
@@ -27,6 +33,8 @@ Cells Descriptions
 .. autofunction:: cover_basis
 
 .. autofunction:: premium_guarantee
+
+.. autofunction:: is_reviewable
 
 .. autofunction:: premium_mth_pp
 
@@ -69,8 +77,6 @@ Cells Descriptions
 .. autofunction:: policy_year
 
 .. autofunction:: age
-
-.. autofunction:: pivot_interp
 
 .. autofunction:: ci_rate_base
 

@@ -109,7 +109,12 @@ MODELS = {
                                            "smoker": {1: "smoker", 2: "joint_smoker"}}}),
     "CI_UK_S": ("products/critical_illness/CI_UK_S", {**MONTHLY, "age_basis": ANB}),
     "CI_UK_SEC": ("products/critical_illness/CI_UK_SEC",
-                  {**MONTHLY, "age_basis": ANB, "twin": "CI_UK_S", "stage": "E"}),
+                  {**MONTHLY, "age_basis": ANB, "twin": "CI_UK_S", "stage": "EC",
+                   "param": "idx",
+                   "reporting": ("contract_type", "cover_basis", "life_basis",
+                                 "premium_guarantee", "premium_mode", "sex", "smoker"),
+                   "reporting_columns": {"sex": {1: "sex", 2: "joint_sex"},
+                                         "smoker": {1: "smoker", 2: "joint_smoker"}}}),
     "IP_UK_S": ("products/income_protection/IP_UK_S", {**MONTHLY, "age_basis": ANB}),
     "WOL_UK_S": ("products/whole_of_life/WOL_UK_S", {**MONTHLY, "age_basis": ALB}),
     # Savings

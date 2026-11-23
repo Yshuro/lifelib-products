@@ -174,14 +174,15 @@ jobs:
     # module's compile tests with its cases of test_compiled_conventions_uk.py, in one
     # session. A product's C step adds its shard here, and test_compiled_conventions_uk.py,
     # in the `test` job, fails until the list is exactly uklib's registry's: term
-    # assurance's, Term_UK_SEC's, first (M2).
+    # assurance's, Term_UK_SEC's, first (M2), then critical illness's, CI_UK_SEC's
+    # (M4).
     name: Compile uklib ${{ matrix.shard }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        shard: [toolchain, term_assurance]
+        shard: [toolchain, term_assurance, critical_illness]
         os: [ubuntu-latest, windows-latest]
         python-version: ['3.13']
     env:

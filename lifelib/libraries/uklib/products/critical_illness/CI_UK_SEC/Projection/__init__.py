@@ -5,22 +5,42 @@
 
 """The by-policy projection of the :mod:`~.CI_UK_SEC` model; holds all formulas.
 
-The Space is parameterized by ``point_id``, so ``Projection[1]`` is an ItemSpace
-projecting model point 1, the twin of :mod:`~.CI_UK_S`'s anchor cell, issued at the
-valuation date::
+The Space is parameterized by ``idx``, the position of a model point in the table and in
+every :mod:`~.CI_UK_SEC.Data` vector, as ``basiclife.BasicTerm_SC`` is: ``Projection[8]``
+is an ItemSpace projecting the table's ninth row, model point 9, the reviewable point
+valued on its first review, and :func:`point_id` is its label::
 
-    >>> Projection[1].result_cf()          # one row per month from the valuation date
-    >>> Projection[1].result_pols()        # the counts behind it
-    >>> Projection.point_id = 9            # or switch the default
+    >>> Projection[8].result_cf()          # one row per month from the valuation date
+    >>> Projection[8].result_pols()        # the counts behind it
+    >>> Projection[8].point_id()           # 9, the row's point_id
+    >>> Projection.idx = 1                 # or switch the default, before it computes
+
+Compiled, no cache is ever cleared: set ``idx``, like every Reference, on a model just
+imported, before anything is computed, or project through ``Projection[i]``. modelx
+recomputes what a Reference reaches when it is set; a compiled ItemSpace takes the
+References when it is made and keeps every value it has computed until it is deleted,
+and the base ``Projection`` and ``Data`` keep theirs for good.
+
+Any ``idx`` makes an ItemSpace, and none is refused here. ``Projection[-1]`` reads every
+vector at its last element, as numpy and a compiled memoryview both do, so it is the
+table's last point, under that point's own :func:`point_id`; an ``idx`` past the last
+row raises ``IndexError`` at its first read of a vector, which modelx reports inside its
+``FormulaError``.
 
 This is :mod:`~.CI_UK_S` taught to run in force at a valuation date, as lifelib's
-``basiclife.BasicTerm_SE`` extends ``basiclife.BasicTerm_S``. A formula of
+``basiclife.BasicTerm_SE`` extends ``basiclife.BasicTerm_S``, and then made to compile, as
+``basiclife.BasicTerm_SC`` is made from ``basiclife.BasicTerm_S``. A formula of
 :mod:`~.CI_UK_S` is rewritten where it depends on where the projection starts, where it
 must answer for a month outside cover, or where it read a policy month as ``t``; every
 other formula is :mod:`~.CI_UK_S`'s own, its caps on the diagnosis rate, on each life's
 claim rate, on the policy's and on the standalone paid rate, each ``min(q, 1.0)``, among
 them. ``products/critical_illness/model-sec.md`` lists the rewritten cells with the reason
-for each.
+for each. Making it compile changed how each cell reads its inputs and spells its codes,
+and no number: every model point attribute a projection cell uses is read as a number from
+a ``Data`` vector, every table as an array indexed by integers, the pivot interpolation
+made once in ``Data`` at every attained age the contract admits, every timing and kind is
+an int code (*Codes*, below), and every text column is decoded into the number a formula
+branches on.
 
 .. rubric:: Input data
 
@@ -49,6 +69,15 @@ model_point_file        data.model_point_table()        model_point_table_sec.cs
 ci_rate_file            data.ci_rate_table()            ci_rate_table.csv
 lapse_table_file        data.lapse_table()              lapse_table.csv
 ======================  ==============================  ==========================
+
+No cell here but :func:`model_point`, a reporting cell, reads the readers' DataFrames,
+and the label accessors read through it. Every other reads :mod:`~.CI_UK_SEC.Data`'s
+vectors and arrays, one element at a time: a model point's attribute at its position,
+``data.age_at_entry()[idx]``, decoded already into the number the formula needs; the pivot
+rates at a life's row and attained age,
+``data.i_ci_array()[rate_group(life), age(t, life)]``, interpolated in ``Data`` by
+:mod:`~.CI_UK_S`'s own rule; and the lapse table at the policy year. ``Data``'s docstring
+lists them.
 
 .. rubric:: Two clocks
 
@@ -89,15 +118,15 @@ cell by cell.
 
 .. rubric:: Counts
 
-``pols_if(t)`` is the count that weights row ``t``: ``pols_if_at(t, "BEF_DECR")``, the
-count carried in from ``t - 1`` (``"BEF_NB"``) plus the month's new business,
+``pols_if(t)`` is the count that weights row ``t``: ``pols_if_at(t, BEF_DECR)``, the
+count carried in from ``t - 1`` (``BEF_NB``) plus the month's new business,
 :func:`pols_new_biz`, before the month's decrements. A point in force at the valuation
 date opens with :func:`pols_if_init`, its ``policy_count``; one issued at or after the
 valuation date opens with none, and takes its ``policy_count`` as new business in its
 issue month. The recursion's base is :func:`t_entry`, the first month on the books, and
 nothing is counted outside cover (:func:`is_active`): before issue every count, and so
-every cash flow, is zero. :mod:`~.CI_UK_S`'s three timings are kept, ``"BEF_DECR"``,
-``"BEF_LAPSE"`` and ``"AFT_DECR"``, and ``"BEF_NB"`` is the one running in force adds.
+every cash flow, is zero. :mod:`~.CI_UK_S`'s three timings are kept, ``BEF_DECR``,
+``BEF_LAPSE`` and ``AFT_DECR``, and ``BEF_NB`` is the one running in force adds.
 
 .. rubric:: The opening state
 
@@ -124,27 +153,80 @@ are those of the year it opens. Each is read from the model point, never recompu
 Reference, which is an assumption from the valuation date on: ``review_prem_shock`` is the
 premium change at each review after the valuation date, and ``rpi_rate`` the RPI from it.
 
+.. rubric:: Codes
+
+What :mod:`~.CI_UK_S` spells as text, a timing or a kind, is here an int Reference
+named as the text it replaces, so that every cell takes and returns C numbers. A call
+site reads as it did, less the quotes: ``pols_if_at(t, BEF_DECR)``, ``claims(t, AP)``.
+
+=============  =====  ===========================================================
+Reference      Value  Meaning
+=============  =====  ===========================================================
+BEF_NB         0      :func:`pols_if_at`: the count carried in from month t - 1
+BEF_DECR       1      :func:`pols_if_at`: that count plus month t's new business
+BEF_LAPSE      2      :func:`pols_if_at`: after the month's main claims, before its
+                      lapses
+AFT_DECR       3      :func:`pols_if_at`: the end of the month, after its decrements
+MAIN           0      :func:`benefit_pp`, :func:`claims`: the main, terminating benefit
+AP             1      :func:`benefit_pp`, :func:`claims`: the additional payment
+CHILD          2      :func:`benefit_pp`, :func:`claims`: children's cover
+LAPSE          3      :func:`claims`: the lapse benefit, nil by product design
+ALL            4      :func:`claims`: the four kinds' total
+=============  =====  ===========================================================
+
+A code a cell takes indexes that cell's cache, a C array of four timings a month for
+:func:`pols_if_at` and five kinds a month for :func:`benefit_pp` and :func:`claims`, so
+codes are numbered densely from 0. Timings are numbered in the order of their instants
+within the month, ``BEF_NB`` before ``BEF_DECR``, as in every SEC model, then
+:mod:`~.CI_UK_S`'s two others in its processing order; kinds in :func:`result_cf`'s
+order, the order :mod:`~.CI_UK_S` adds them in its total, and then ``ALL``, which is
+:mod:`~.CI_UK_S`'s ``kind=None``. :func:`benefit_pp` takes the three benefits alone,
+``MAIN`` to ``CHILD``. A code a cell does not take raises, ``invalid timing`` or
+``invalid kind``. They are References, not cells, so the symbol map below does not list
+them.
+
+.. rubric:: Reporting cells
+
+:func:`model_point`, the label accessors :func:`contract_type`, :func:`life_basis`,
+:func:`cover_basis`, :func:`premium_guarantee`, :func:`premium_mode`, :func:`sex` and
+:func:`smoker`, and the reports :func:`result_cf` and :func:`result_pols` return Python
+values, a table row, text and DataFrames, for a reader and for the comparison with
+:mod:`~.CI_UK_S`, which has every one of them but :func:`result_pols`. No cell but these
+calls a label accessor or a report: every other reads the number ``Data`` decoded from the
+same column instead, the contract's, the life basis's and the guarantee's flags and each
+life's row of the pivot rates. So they stay Python when the model compiles, and every
+other cell returns a C ``bint``, ``long long`` or ``double``. The two checks,
+:func:`check_pols_roll_fwd` and :func:`check_claim_split`, are reporting cells too, which
+no cell calls, and each compiles to a ``bint``, a verdict over residual cells that
+compile.
+
 .. rubric:: Naming
 
 Cells names follow lifelib's ``basiclife.BasicTerm_S`` and ``savings.CashValue_SE``
 wherever those models have an analogue — ``pols_*`` for policy counts, plural nouns for
 cash flows, ``*_rate`` for annual rates and ``*_rate_mth`` for monthly ones, ``*_pp``
-for per-policy amounts, ``claims(t, kind)`` and ``benefit_pp(t, kind)`` with an
-uppercase ``kind`` string, ``pols_if_at(t, timing)`` for the within-month in-force
-reads. What running in force adds is named as ``basiclife.BasicTerm_SE`` names it:
-``duration_mth`` read from the model point, ``policy_count``, ``pols_new_biz``,
-``pols_if_at``'s ``"BEF_NB"`` timing, ``is_active`` and ``result_pols``.
+for per-policy amounts, ``claims(t, kind)`` and ``benefit_pp(t, kind)`` with a
+``kind`` code, ``pols_if_at(t, timing)`` for the within-month in-force reads. What
+running in force adds is named as ``basiclife.BasicTerm_SE`` names it: ``duration_mth``
+read from the model point, ``policy_count``, ``pols_new_biz``, ``pols_if_at``'s
+``BEF_NB`` timing, ``is_active`` and ``result_pols``.
 ``duration_mth_init``, the policy months completed at the valuation date, takes
 ``UL_US_S``'s name; ``t_entry``, ``expiry_mth``, ``review_prem_factor`` and
 ``review_prem_change`` are this model's own, and each opening-state cell is the cell it
 opens with ``_init`` added, ``review_prem_shock_init`` the Reference's and
-``ci_sel_latched_init`` the latch's. The technical notes use compact actuarial symbols
-instead. The mapping is:
+``ci_sel_latched_init`` the latch's. What compiling adds is named as
+``basiclife.BasicTerm_SC`` names it: ``idx``, ``point_id`` and the ``Data`` vectors under
+their columns' names; a decoded text column is the number it selects, ``is_accelerated``,
+``is_joint`` and ``is_reviewable`` its flags, and ``rate_group(life)`` a life's row of the
+pivot rates. The technical notes use compact actuarial symbols instead. The mapping is:
 
 ===================  ===============================  ================================
 Notes symbol         Cells                            Meaning
 ===================  ===============================  ================================
+(none)               point_id()                       The model point's label
 contract_type        contract_type()                  accelerated or standalone
+(type decoded)       is_accelerated()                 The accelerated contract's flag
+(basis decoded)      is_joint()                       The joint first event's flag
 issue_age            age_at_entry(life)               Issue age (ANB), life 1 or 2
 a                    age(t, life)                     Attained age (ANB) in month t
 y                    policy_year(t)                   Policy year containing month t
@@ -158,12 +240,13 @@ n                    policy_term()                    Term in years
 (frame)              proj_len()                       Months to the end of cover
 (none)               policy_count()                   Policies the point stands for
 SA                   sum_assured()                    Sum assured at outset
-SA(t)                benefit_pp(t, "MAIN")            Sum assured in month t, indexed
-B_AP                 benefit_pp(t, "AP")              Additional-payment benefit
-B_ch                 benefit_pp(t, "CHILD")           Children's-cover benefit
+SA(t)                benefit_pp(t, MAIN)              Sum assured in month t, indexed
+B_AP                 benefit_pp(t, AP)                Additional-payment benefit
+B_ch                 benefit_pp(t, CHILD)             Children's-cover benefit
 P                    premium_mth_pp()                 Monthly premium at outset
+(guarantee decoded)  is_reviewable()                  The reviewable premium's flag
 P(t)                 premium_pp(t)                    Monthly premium in month t
-(pivot table)        pivot_interp(x, sex, smoker, c)  Log-linear pivot lookup
+(rating decoded)     rate_group(life)                 The life's row of the rates
 i_ci(a)              ci_rate_base(t, life)            Table CI diagnosis rate
 (1 + tau)^(t//12)    ci_trend_factor(t)               CI trend, valuation clock
 eta                  sel_lapse_ci_loading             Anti-selection loading on i_ci
@@ -198,7 +281,7 @@ rho_review           review_prem_shock                Premium change at a review
 l(t)                 pols_if(t)                       In force at the start of month t
 (l(0))               pols_if_init()                   Count in force at t = 0
 (none)               pols_new_biz(t)                  Policies issued in month t
-l(t+1)               pols_if_at(t, "AFT_DECR")        In force at the end of month t
+l(t+1)               pols_if_at(t, AFT_DECR)          In force at the end of month t
 (none)               pols_if_at(t, timing)            The within-month counts
 (none)               pols_claim(t)                    Main-benefit claims in month t
 (none)               pols_lapse(t)                    Lapses at the end of month t
@@ -208,10 +291,11 @@ idx(t)               idx_factor(t)                    Cover indexation factor
 idx_p(t)             idx_prem_factor(t)               Premium indexation factor
 (idx_p at t = 0)     idx_prem_factor_init()           Premium factor to date
 P x l                premiums(t)                      Premium income
-SA x q_m x l         claims(t, "MAIN")                Main-benefit outgo
-B_AP x a_m x l       claims(t, "AP")                  Additional-payment outgo
-B_ch x lambda_m x l  claims(t, "CHILD")               Children's-cover outgo
-0                    claims(t, "LAPSE")               Surrender outgo; always zero
+SA x q_m x l         claims(t, MAIN)                  Main-benefit outgo
+B_AP x a_m x l       claims(t, AP)                    Additional-payment outgo
+B_ch x lambda_m x l  claims(t, CHILD)                 Children's-cover outgo
+0                    claims(t, LAPSE)                 Surrender outgo; always zero
+(sum)                claims(t, ALL)                   The four kinds' total
 E_cl x q_m x l       claim_expenses(t)                Claim handling expense
 E0, E_m(y)           expenses(t)                      Initial + maintenance expense
 (none)               inflation_factor(t)              Expense inflation factor
@@ -231,7 +315,7 @@ its own: it enters only through :func:`claim_rate`, net of the overlap. Keeping 
 name makes the input visible where a reader looks for it.
 
 ``SA`` is a constant in the notes and a function of ``t`` here, because the indexation
-option moves it. ``benefit_pp(t, "MAIN")`` is that quantity; :func:`sum_assured` is the
+option moves it. ``benefit_pp(t, MAIN)`` is that quantity; :func:`sum_assured` is the
 outset value the model point carries. The additional-payment and children's benefits
 are derived from the *indexed* sum assured **[std]** — the notes state their caps
 against ``SA`` without saying which ``SA``, and applying the cap to a frozen outset
@@ -304,13 +388,17 @@ which no point in force carries either.
 .. rubric:: The rate basis is interpolated, not tabulated
 
 ``ci_rate_table.csv`` holds six pivot ages and the notes' rule is to interpolate
-log-linearly between them, so :func:`pivot_interp` does exactly that: geometric in the
-rate, linear in age. Outside the pivot range it continues the nearest end segment's
+log-linearly between them, which :mod:`~.CI_UK_S`'s ``pivot_interp`` does: geometric in
+the rate, linear in age. Outside the pivot range it continues the nearest end segment's
 gradient, which is the same expression with the exponent out of [0, 1] — an
 extrapolation, and flagged as one, because a 25-year policy issued at 40 stays inside
-the pivots but a longer or younger one does not. It is read at the attained ages of
-cover alone: outside cover the two cells that read it, :func:`ci_rate_base` and
-:func:`mort_rate`, are 0 before they call it.
+the pivots but a longer or younger one does not. ``Data`` makes the interpolation once,
+by :mod:`~.CI_UK_S`'s own formula, element by element, for each sex and smoker group at
+every attained age the contract admits, 18 to 74: ``Data.i_ci_array`` and
+``Data.q_d_array``, tabled by the group's row and the age. Two cells read them, each at
+the life's row, :func:`rate_group`, and its attained age, in cover alone:
+:func:`ci_rate_base` and :func:`mort_rate`, which are 0 outside cover before they read
+them, and refuse an age outside the arrays, naming the point.
 
 Both rate sets are **[std]** placeholders shaped like the tables the notes name — AC04
 and the "16" Series for diagnosis, a scaled population table for mortality — and must
@@ -364,7 +452,7 @@ value reduction, and no commission line — the notes fold acquisition cost into
 initial expense rather than carrying commission separately as the term assurance
 chassis does. There is likewise no interest-sensitive dynamic lapse: with no cash value
 and no credited rate there is nothing to arbitrage, so the machinery the accumulation
-products in this library carry is deliberately absent. ``claims(t, "LAPSE")`` exists and
+products in this library carry is deliberately absent. ``claims(t, LAPSE)`` exists and
 returns zero so that the absence of a surrender value is stated rather than inferred.
 
 .. rubric:: Sign convention
@@ -380,7 +468,7 @@ the £200 initial expense noted separately as taking the month to -168.12.
 
 from modelx.serialize.jsonvalues import *
 
-_formula = lambda point_id: None
+_formula = lambda idx: None
 
 _bases = []
 
@@ -394,10 +482,21 @@ _spaces = []
 def model_point():
     """The selected model point, its row of ``model_point_table_sec.csv``, as a Series.
 
-    A row of this model's own table, which carries the in-force interface beside
-    :mod:`~.CI_UK_S`'s columns. Each attribute a formula reads has an accessor below.
+    Row ``idx`` of this model's own table, which carries the in-force interface beside
+    :mod:`~.CI_UK_S`'s columns, for a reader who wants every column at once: a reporting
+    cell (the Space docstring), which no projection cell reads. Each attribute a formula
+    reads has an accessor below, which reads its own ``Data`` vector instead.
     """
-    return data.model_point_table().loc[point_id]                    # noqa: F821
+    return data.model_point_table().iloc[idx]                        # noqa: F821
+
+
+def point_id():
+    """The label of the selected model point, its ``point_id``, from ``Data.point_id``.
+
+    ``Projection`` is indexed by position, ``idx``, as ``basiclife.BasicTerm_SC`` is; the
+    label is what a reader finds in the table, so every refusal names it.
+    """
+    return int(data.point_id()[idx])                                 # noqa: F821
 
 
 def contract_type():
@@ -406,11 +505,25 @@ def contract_type():
     On the standalone variant death pays nothing and simply terminates the policy
     [S4][S11]; a premium-refund-on-death feature exists in some designs and is excluded
     **[std]**.
+
+    A reporting cell (the Space docstring), :mod:`~.CI_UK_S`'s, which returns the column
+    as read, refusing any other value: no projection cell reads it here, and each branches
+    on ``Data``'s decode of the same column instead, :func:`is_accelerated`.
     """
     v = model_point()["contract_type"]
     if v not in ("accelerated", "standalone"):
         raise ValueError("invalid contract_type")
     return v
+
+
+def is_accelerated():
+    """Whether the contract is ``accelerated``, from ``Data.is_accelerated``.
+
+    ``Data`` decodes the ``contract_type`` column as :mod:`~.CI_UK_S`'s ``contract_type()
+    == "accelerated"`` compares it, and refuses a type other than the two, so False is the
+    standalone contract.
+    """
+    return bool(data.is_accelerated()[idx])                          # noqa: F821
 
 
 def life_basis():
@@ -421,6 +534,11 @@ def life_basis():
     notes write the standalone decrement split for one life only, and there is no
     published basis for splitting a joint first-event decrement into paying and
     non-paying parts, so the combination raises rather than inventing one.
+
+    A reporting cell (the Space docstring), :mod:`~.CI_UK_S`'s, which returns the column
+    as read, refusing any other value and the combination: no projection cell reads it
+    here, and each branches on ``Data``'s decode of the same column instead,
+    :func:`is_joint`.  ``Data`` refuses the combination too, when it reads the table.
     """
     v = model_point()["life_basis"]
     if v not in ("single", "joint_first_event"):
@@ -431,8 +549,12 @@ def life_basis():
 
 
 def is_joint():
-    """True when the policy covers two lives on a first-event basis."""
-    return life_basis() == "joint_first_event"
+    """True when the policy covers two lives on a first-event basis, from ``Data.is_joint``.
+
+    ``Data`` decodes the ``life_basis`` column as :mod:`~.CI_UK_S`'s ``life_basis() ==
+    "joint_first_event"`` compares it, and refuses a basis other than the two.
+    """
+    return bool(data.is_joint()[idx])                                # noqa: F821
 
 
 def age_at_entry(life):
@@ -449,41 +571,71 @@ def age_at_entry(life):
     and :func:`claim_rate_life`, where :mod:`~.CI_UK_S` defaults it to 1: every call passes
     1 or 2, so that a compiled model declares each a plain parameter.  modelx keys
     :mod:`~.CI_UK_S`'s calls by the arguments bound, ``age(t)`` as ``(t, 1)``, so the two
-    models' cells pair as before.
+    models' cells pair as before.  Read from ``Data.age_at_entry`` and, on a joint point,
+    ``Data.joint_age``, ``int`` of each as :mod:`~.CI_UK_S` reads it.
     """
     if life == 1:
-        return int(model_point()["age_at_entry"])
+        return int(data.age_at_entry()[idx])                         # noqa: F821
     if life == 2 and is_joint():
-        return int(model_point()["joint_age"])
+        return int(data.joint_age()[idx])                            # noqa: F821
     raise ValueError("invalid life")
 
 
 def sex(life):
-    """The sex (M / F) of the first or second life."""
+    """The sex (M / F) of the first or second life, as the table spells it.
+
+    A reporting cell (the Space docstring), which returns the ``sex`` or ``joint_sex``
+    column as read, a single-life point's blank second life as NaN, which
+    :mod:`~.CI_UK_S` refuses as ``invalid life``: no projection cell reads it here, and
+    :func:`ci_rate_base` and :func:`mort_rate` read each life's row of the pivot rates,
+    :func:`rate_group`, instead.
+    """
     if life == 1:
         return model_point()["sex"]
-    if life == 2 and is_joint():
+    if life == 2:
         return model_point()["joint_sex"]
     raise ValueError("invalid life")
 
 
 def smoker(life):
-    """The smoker status (NS / S) of the first or second life."""
+    """The smoker status (NS / S) of the first or second life, as the table spells it.
+
+    A reporting cell, as :func:`sex` is: the ``smoker`` or ``joint_smoker`` column as
+    read, a single-life point's blank second life as NaN.
+    """
     if life == 1:
         return model_point()["smoker"]
-    if life == 2 and is_joint():
+    if life == 2:
         return model_point()["joint_smoker"]
+    raise ValueError("invalid life")
+
+
+def rate_group(life):
+    """The row of ``Data.i_ci_array`` and ``Data.q_d_array`` of the first (``life = 1``) or
+    second life.
+
+    The life's sex and smoker status, the key :mod:`~.CI_UK_S`'s ``pivot_interp`` reads
+    *ci_rate_table.csv* by, decoded in ``Data`` into the row they select: M NS 0, M S 1,
+    F NS 2 and F S 3, from ``Data.rate_group`` and, on a joint point,
+    ``Data.joint_rate_group``.  Like :func:`age_at_entry`, it refuses a second life on a
+    single-life point.
+    """
+    if life == 1:
+        return int(data.rate_group()[idx])                           # noqa: F821
+    if life == 2 and is_joint():
+        return int(data.joint_rate_group()[idx])                     # noqa: F821
     raise ValueError("invalid life")
 
 
 def sum_assured():
     """SA: the sum assured at outset **[std]**, £100,000 on the anchor cell.
 
-    :func:`benefit_pp` ``(t, "MAIN")`` is the amount actually at risk in month t, which
+    :func:`benefit_pp` ``(t, MAIN)`` is the amount actually at risk in month t, which
     differs from this once the indexation option is elected: on an indexed point in force,
-    the cover of the year under way is this times :func:`idx_factor_init`.
+    the cover of the year under way is this times :func:`idx_factor_init`.  From
+    ``Data.sum_assured``.
     """
-    return float(model_point()["sum_assured"])
+    return float(data.sum_assured()[idx])                            # noqa: F821
 
 
 def policy_term():
@@ -491,8 +643,9 @@ def policy_term():
 
     :func:`proj_len` refuses a term below ``policy_term_min``, 5 years, or above
     ``policy_term_max``, 50, and a life whose cover runs past ``expiry_age_max``, 75.
+    From ``Data.policy_term``.
     """
-    return int(model_point()["policy_term"])
+    return int(data.policy_term()[idx])                              # noqa: F821
 
 
 def cover_basis():
@@ -500,6 +653,10 @@ def cover_basis():
 
     Both exist on the term assurance chassis this product sits on and are implemented
     in ``Term_UK_S``; these notes scope them out **[std scope]**.
+
+    A reporting cell (the Space docstring), :mod:`~.CI_UK_S`'s, which returns the column
+    as read, refusing any other value: no projection cell reads it, the cover being level
+    on every point ``Data`` admits.
     """
     v = model_point()["cover_basis"]
     if v != "level":
@@ -508,11 +665,26 @@ def cover_basis():
 
 
 def premium_guarantee():
-    """``guaranteed`` [S1] or ``reviewable``, which turns on the 5-yearly review cycle."""
+    """``guaranteed`` [S1] or ``reviewable``, which turns on the 5-yearly review cycle.
+
+    A reporting cell (the Space docstring), :mod:`~.CI_UK_S`'s, which returns the column
+    as read, refusing any other value: no projection cell reads it here, and each branches
+    on ``Data``'s decode of the same column instead, :func:`is_reviewable`.
+    """
     v = model_point()["premium_guarantee"]
     if v not in ("guaranteed", "reviewable"):
         raise ValueError("invalid premium_guarantee")
     return v
+
+
+def is_reviewable():
+    """Whether the premium is ``reviewable``, from ``Data.is_reviewable``.
+
+    ``Data`` decodes the ``premium_guarantee`` column as :mod:`~.CI_UK_S`'s
+    ``premium_guarantee() == "reviewable"`` compares it, and refuses a guarantee other than
+    the two, so False is the guaranteed premium, which no review changes.
+    """
+    return bool(data.is_reviewable()[idx])                           # noqa: F821
 
 
 def premium_mth_pp():
@@ -522,9 +694,9 @@ def premium_mth_pp():
     reference premium is constructed.  Profitability conclusions drawn from the worked
     example are meaningless.  On a point in force, the premium of the month is this times
     the indexation factor and the review factor, each from its history at the valuation
-    date (:func:`premium_pp`).
+    date (:func:`premium_pp`).  From ``Data.premium_mth``.
     """
-    return float(model_point()["premium_mth"])
+    return float(data.premium_mth()[idx])                            # noqa: F821
 
 
 def premium_mode():
@@ -532,13 +704,26 @@ def premium_mode():
 
     Inert: the grid is monthly and the notes carry the premium as a monthly amount
     either way.  Carried because the model point attribute table names it.
+
+    A reporting cell (the Space docstring), which returns the column as read, refusing
+    any other value, as ``Term_UK_SEC``'s does: no projection cell reads it.
+    :mod:`~.CI_UK_S`'s returns the column unchecked, and ``Data`` has refused any other
+    mode since the in-force step, so it returns the same text on every point ``Data``
+    admits.
     """
-    return model_point()["premium_mode"]
+    v = model_point()["premium_mode"]
+    if v not in ("monthly", "annual"):
+        raise ValueError("invalid premium_mode")
+    return v
 
 
 def children_cover():
-    """Whether children's cover is active; automatic on the composite product [S1]."""
-    return bool(model_point()["children_cover"])
+    """Whether children's cover is active; automatic on the composite product [S1].
+
+    From ``Data.children_cover``, which decodes the column as :mod:`~.CI_UK_S`'s ``bool``
+    reads it.
+    """
+    return bool(data.children_cover()[idx])                          # noqa: F821
 
 
 def indexation():
@@ -546,9 +731,10 @@ def indexation():
 
     Declining an increase three years running removes the option [S1][S4]; the base
     model assumes full take-up while the option is active, so that rule is never
-    reached and is not implemented.
+    reached and is not implemented.  From ``Data.indexation``, decoded as
+    :func:`children_cover`'s column is.
     """
-    return bool(model_point()["indexation"])
+    return bool(data.indexation()[idx])                              # noqa: F821
 
 
 def policy_count():
@@ -558,9 +744,9 @@ def policy_count():
     month-0 event; any other point counts the policies it issues. Either way the count
     enters the projection once: as :func:`pols_if_init` for the first, as
     :func:`pols_new_biz` in the issue month for the second. It is the one weight on every
-    flow: every opening-state column is a factor or a rate.
+    flow: every opening-state column is a factor or a rate.  From ``Data.policy_count``.
     """
-    return float(model_point()["policy_count"])
+    return float(data.policy_count()[idx])                           # noqa: F821
 
 
 def pols_if_init():
@@ -582,9 +768,10 @@ def duration_mth_init():
     review, 0 for one issued at the valuation date, and -13 for one to be issued 13 months
     after it, which ``Data`` admits up to ``future_horizon_mth`` months ahead. It is read
     as ``basiclife.BasicTerm_SE`` reads it, and is the one fact the policy clock takes from
-    the model point; a point may be valued in any month of its policy year.
+    the model point; a point may be valued in any month of its policy year.  Its element of
+    ``Data.duration_mth``.
     """
-    return int(model_point()["duration_mth"])
+    return int(data.duration_mth()[idx])                             # noqa: F821
 
 
 def idx_factor_init():
@@ -594,9 +781,10 @@ def idx_factor_init():
     :func:`sum_assured`, the sum assured at issue: on a valuation on an anniversary, the
     factor of the policy year it opens. History, read from the model point, not
     recomputed from ``rpi_rate``, which is the assumed rate from the valuation date on.
-    1 on a point not yet in force or without the option, which ``Data`` requires.
+    1 on a point not yet in force or without the option, which ``Data`` requires.  From
+    ``Data.idx_factor_init``.
     """
-    return float(model_point()["idx_factor_init"])
+    return float(data.idx_factor_init()[idx])                        # noqa: F821
 
 
 def idx_prem_factor_init():
@@ -604,9 +792,9 @@ def idx_prem_factor_init():
 
     :func:`idx_factor_init`'s counterpart on the premium, :func:`premium_mth_pp` the
     premium at issue.  History, as the cover factor is.  1 on a point not yet in force or
-    without the option, which ``Data`` requires.
+    without the option, which ``Data`` requires.  From ``Data.idx_prem_factor_init``.
     """
-    return float(model_point()["idx_prem_factor_init"])
+    return float(data.idx_prem_factor_init()[idx])                   # noqa: F821
 
 
 def review_prem_factor_init():
@@ -620,9 +808,9 @@ def review_prem_factor_init():
     reach back over every review already made, repricing premiums long collected.  At a
     change that never moved, it is that.  1 on a point not yet in force, on a guaranteed
     point, which ``Data`` requires, and on a reviewable point in force before its first
-    review, which :func:`proj_len` requires.
+    review, which :func:`proj_len` requires.  From ``Data.review_prem_factor_init``.
     """
-    return float(model_point()["review_prem_factor_init"])
+    return float(data.review_prem_factor_init()[idx])                # noqa: F821
 
 
 def ci_sel_latched_init():
@@ -637,9 +825,9 @@ def ci_sel_latched_init():
     re-derives the latch from ``review_prem_shock``, so a change set at the valuation date
     would open or close it at reviews long past.  0 on a point not yet in force and on a
     guaranteed point, which ``Data`` requires, and on a reviewable point in force before
-    its first review, which :func:`proj_len` requires.
+    its first review, which :func:`proj_len` requires.  From ``Data.ci_sel_latched_init``.
     """
-    return int(model_point()["ci_sel_latched_init"])
+    return int(data.ci_sel_latched_init()[idx])                      # noqa: F821
 
 
 def ci_sel_factor_init():
@@ -652,9 +840,10 @@ def ci_sel_factor_init():
     0 for a latch closed at a loading of -1, which :func:`proj_len` admits; and 1 on an
     open latch, on a point not yet in force, on a guaranteed point, and on a reviewable
     point in force before its first review.  While the latch is open a review after the
-    valuation date closes it at ``1 + sel_lapse_ci_loading``.
+    valuation date closes it at ``1 + sel_lapse_ci_loading``.  From
+    ``Data.ci_sel_factor_init``.
     """
-    return float(model_point()["ci_sel_factor_init"])
+    return float(data.ci_sel_factor_init()[idx])                     # noqa: F821
 
 
 def review_prem_shock_init():
@@ -667,8 +856,9 @@ def review_prem_shock_init():
     point, where :mod:`~.CI_UK_S` reads today's ``review_prem_shock`` at every review.
     0 on a point not yet in force, on a guaranteed point, which ``Data`` requires, and on a
     reviewable point in force before its first review, which :func:`proj_len` requires.
+    From ``Data.review_prem_shock_init``.
     """
-    return float(model_point()["review_prem_shock_init"])
+    return float(data.review_prem_shock_init()[idx])                 # noqa: F821
 
 
 def proj_len():
@@ -740,190 +930,207 @@ def proj_len():
     of, which an infinity fails too, an infinity less itself being NaN, and a whole number
     one that ``x % 1 == 0`` holds of, which an infinity fails, its remainder being NaN.
     All but the first read this Space's References, which ``Data`` cannot see, so they are
-    checked here.  The bounds are the product's limits (``product-spec.md``), the contract a
-    compiled model's caches will be sized from: a frame of at most 50 years and the future
-    horizon, and attained ages from 18 to 74 on the pivot table.  Every report reads this
-    cell first, so no point outside them is projected.  A guaranteed point reads no review
-    Reference, and projects whatever they are.
+    checked here.  The bounds are the product's limits (``product-spec.md``), the contract
+    the compiled model's caches are sized from (``spec_sec.py``): a frame of at most
+    ``policy_term_max``, 50 years, and ``Data.future_horizon_mth``, 120 months, so 720
+    months; and attained ages from ``issue_age_min``, 18, to ``expiry_age_max`` less one,
+    74, the ages ``Data`` interpolates the pivot rates at.  Every report reads this cell
+    first, so no point outside them is projected, in modelx as compiled.  Raising
+    ``policy_term_max`` or the horizon needs the spec's ``t`` raised and the model rebuilt,
+    or a report runs past the caches in the compiled model alone, raising ``IndexError``
+    where modelx projects; and raising ``expiry_age_max`` or lowering ``issue_age_min``
+    needs ``Data.rate_age_max`` or ``rate_age_min`` moved with it, or the cell that reads
+    the rates refuses the age.  A guaranteed point reads no review Reference, and projects
+    whatever they are.
+
+    A message prints each Reference as the compiled model holds it: a rate through
+    ``float``, and a term, an age or a count of months through ``int``, a whole number as
+    an int where a domain is refused.  So a Reference set as an int or as a float gives one
+    message in both engines.
     """
     n = expiry_mth() - duration_mth_init()
     if n <= 0:
         raise ValueError(
-            f"point_id {point_id}: duration_mth {duration_mth_init()} "  # noqa: F821
+            f"point_id {point_id()}: duration_mth {duration_mth_init()} "
             f"is at or past the end of cover, policy month {expiry_mth()}")
     if not (policy_term_min >= 0 and policy_term_min % 1 == 0):      # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: policy_term_min must be a whole number, 0 "  # noqa: F821
-            f"or more, not {policy_term_min}")                       # noqa: F821
+            f"point_id {point_id()}: policy_term_min must be a whole number, 0 or more, "
+            f"not {int(policy_term_min) if policy_term_min % 1 == 0 else policy_term_min}")
     if not (policy_term_max >= 0 and policy_term_max % 1 == 0):      # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: policy_term_max must be a whole number, 0 "  # noqa: F821
-            f"or more, not {policy_term_max}")                       # noqa: F821
+            f"point_id {point_id()}: policy_term_max must be a whole number, 0 or more, "
+            f"not {int(policy_term_max) if policy_term_max % 1 == 0 else policy_term_max}")
     if not (issue_age_min >= 0 and issue_age_min % 1 == 0):          # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: issue_age_min must be a whole number, "  # noqa: F821
-            f"0 or more, not {issue_age_min}")                       # noqa: F821
+            f"point_id {point_id()}: issue_age_min must be a whole number, 0 or more, "
+            f"not {int(issue_age_min) if issue_age_min % 1 == 0 else issue_age_min}")
     if not (issue_age_max >= 0 and issue_age_max % 1 == 0):          # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: issue_age_max must be a whole number, "  # noqa: F821
-            f"0 or more, not {issue_age_max}")                       # noqa: F821
+            f"point_id {point_id()}: issue_age_max must be a whole number, 0 or more, "
+            f"not {int(issue_age_max) if issue_age_max % 1 == 0 else issue_age_max}")
     if not (expiry_age_max >= 0 and expiry_age_max % 1 == 0):        # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: expiry_age_max must be a whole number, 0 "  # noqa: F821
-            f"or more, not {expiry_age_max}")                        # noqa: F821
+            f"point_id {point_id()}: expiry_age_max must be a whole number, 0 or more, "
+            f"not {int(expiry_age_max) if expiry_age_max % 1 == 0 else expiry_age_max}")
     if policy_term() < policy_term_min:                              # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: the term, {policy_term()} years, is below "  # noqa: F821
-            f"policy_term_min, {policy_term_min}")                   # noqa: F821
+            f"point_id {point_id()}: the term, {policy_term()} years, is below "
+            f"policy_term_min, {int(policy_term_min)}")              # noqa: F821
     if policy_term() > policy_term_max:                              # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: the term, {policy_term()} years, is above "  # noqa: F821
-            f"policy_term_max, {policy_term_max}")                   # noqa: F821
+            f"point_id {point_id()}: the term, {policy_term()} years, is above "
+            f"policy_term_max, {int(policy_term_max)}")              # noqa: F821
     for life in range(1, 3 if is_joint() else 2):
         if age_at_entry(life) < issue_age_min:                       # noqa: F821
             raise ValueError(
-                f"point_id {point_id}: life {life}'s issue age, "    # noqa: F821
-                f"{age_at_entry(life)}, is below issue_age_min, {issue_age_min}")  # noqa: F821
+                f"point_id {point_id()}: life {life}'s issue age, "
+                f"{age_at_entry(life)}, is below issue_age_min, "
+                f"{int(issue_age_min)}")                             # noqa: F821
         if age_at_entry(life) > issue_age_max:                       # noqa: F821
             raise ValueError(
-                f"point_id {point_id}: life {life}'s issue age, "    # noqa: F821
-                f"{age_at_entry(life)}, is above issue_age_max, {issue_age_max}")  # noqa: F821
+                f"point_id {point_id()}: life {life}'s issue age, "
+                f"{age_at_entry(life)}, is above issue_age_max, "
+                f"{int(issue_age_max)}")                             # noqa: F821
         if age_at_entry(life) + policy_term() > expiry_age_max:      # noqa: F821
             raise ValueError(
-                f"point_id {point_id}: life {life}'s cover runs to attained age "  # noqa: F821
+                f"point_id {point_id()}: life {life}'s cover runs to attained age "
                 f"{age_at_entry(life) + policy_term()}, issue age "
                 f"{age_at_entry(life)} and a {policy_term()}-year term, past "
-                f"expiry_age_max, {expiry_age_max}")                 # noqa: F821
+                f"expiry_age_max, {int(expiry_age_max)}")            # noqa: F821
     if not (ci_trend >= -1.0 and ci_trend - ci_trend == 0.0):        # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: ci_trend must be a finite number, -1 or "  # noqa: F821
-            f"more, not {ci_trend}")                                 # noqa: F821
+            f"point_id {point_id()}: ci_trend must be a finite number, -1 or "
+            f"more, not {float(ci_trend)}")                          # noqa: F821
     if not (inflation_rate >= -1.0                                   # noqa: F821
             and inflation_rate - inflation_rate == 0.0):             # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: inflation_rate must be a finite number, "  # noqa: F821
-            f"-1 or more, not {inflation_rate}")                     # noqa: F821
+            f"point_id {point_id()}: inflation_rate must be a finite number, "
+            f"-1 or more, not {float(inflation_rate)}")              # noqa: F821
     if not (sel_lapse_ci_loading >= -1.0                             # noqa: F821
             and sel_lapse_ci_loading - sel_lapse_ci_loading == 0.0):  # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: sel_lapse_ci_loading must be a finite "  # noqa: F821
-            f"number, -1 or more, not {sel_lapse_ci_loading}")       # noqa: F821
+            f"point_id {point_id()}: sel_lapse_ci_loading must be a finite "
+            f"number, -1 or more, not {float(sel_lapse_ci_loading)}")  # noqa: F821
     if not (overlap_k >= 0.0 and overlap_k <= 1.0):                  # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: overlap_k must be a number from 0 to 1, "  # noqa: F821
-            f"not {overlap_k}")                                      # noqa: F821
+            f"point_id {point_id()}: overlap_k must be a number from 0 to 1, "
+            f"not {float(overlap_k)}")                               # noqa: F821
     if not (survival_slip >= 0.0 and survival_slip <= 1.0):          # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: survival_slip must be a number from 0 to "  # noqa: F821
-            f"1, not {survival_slip}")                               # noqa: F821
+            f"point_id {point_id()}: survival_slip must be a number from 0 to "
+            f"1, not {float(survival_slip)}")                        # noqa: F821
     if not (ap_freq_factor >= 0.0 and ap_freq_factor <= 12.0):       # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: ap_freq_factor must be a number from 0 to "  # noqa: F821
-            f"12, not {ap_freq_factor}")                             # noqa: F821
+            f"point_id {point_id()}: ap_freq_factor must be a number from 0 to "
+            f"12, not {float(ap_freq_factor)}")                      # noqa: F821
     if not (child_freq >= 0.0 and child_freq <= 12.0):               # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: child_freq must be a number from 0 to 12, "  # noqa: F821
-            f"not {child_freq}")                                     # noqa: F821
+            f"point_id {point_id()}: child_freq must be a number from 0 to 12, "
+            f"not {float(child_freq)}")                              # noqa: F821
     if not rpi_rate - rpi_rate == 0.0:                               # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: rpi_rate must be a finite number, not "  # noqa: F821
-            f"{rpi_rate}")                                           # noqa: F821
+            f"point_id {point_id()}: rpi_rate must be a finite number, not "
+            f"{float(rpi_rate)}")                                    # noqa: F821
     if not (idx_cover_cap >= 0.0 and idx_cover_cap - idx_cover_cap == 0.0):  # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: idx_cover_cap must be a finite number, 0 "  # noqa: F821
-            f"or more, not {idx_cover_cap}")                         # noqa: F821
+            f"point_id {point_id()}: idx_cover_cap must be a finite number, 0 "
+            f"or more, not {float(idx_cover_cap)}")                  # noqa: F821
     if not (idx_prem_mult >= 0.0 and idx_prem_mult - idx_prem_mult == 0.0):  # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: idx_prem_mult must be a finite number, 0 "  # noqa: F821
-            f"or more, not {idx_prem_mult}")                         # noqa: F821
+            f"point_id {point_id()}: idx_prem_mult must be a finite number, 0 "
+            f"or more, not {float(idx_prem_mult)}")                  # noqa: F821
     if not (idx_prem_cap >= 0.0 and idx_prem_cap - idx_prem_cap == 0.0):  # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: idx_prem_cap must be a finite number, "  # noqa: F821
-            f"0 or more, not {idx_prem_cap}")                        # noqa: F821
+            f"point_id {point_id()}: idx_prem_cap must be a finite number, "
+            f"0 or more, not {float(idx_prem_cap)}")                 # noqa: F821
     if not (ap_share >= 0.0 and ap_share <= 1.0):                    # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: ap_share must be a number from 0 to 1, "  # noqa: F821
-            f"not {ap_share}")                                       # noqa: F821
+            f"point_id {point_id()}: ap_share must be a number from 0 to 1, "
+            f"not {float(ap_share)}")                                # noqa: F821
     if not (ap_cap >= 0.0 and ap_cap - ap_cap == 0.0):               # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: ap_cap must be a finite number, 0 or "  # noqa: F821
-            f"more, not {ap_cap}")                                   # noqa: F821
+            f"point_id {point_id()}: ap_cap must be a finite number, 0 or "
+            f"more, not {float(ap_cap)}")                            # noqa: F821
     if not (child_share >= 0.0 and child_share <= 1.0):              # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: child_share must be a number from 0 to 1, "  # noqa: F821
-            f"not {child_share}")                                    # noqa: F821
+            f"point_id {point_id()}: child_share must be a number from 0 to 1, "
+            f"not {float(child_share)}")                             # noqa: F821
     if not (child_cap >= 0.0 and child_cap - child_cap == 0.0):      # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: child_cap must be a finite number, 0 or "  # noqa: F821
-            f"more, not {child_cap}")                                # noqa: F821
+            f"point_id {point_id()}: child_cap must be a finite number, 0 or "
+            f"more, not {float(child_cap)}")                         # noqa: F821
     if not (expense_acq >= 0.0 and expense_acq - expense_acq == 0.0):  # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: expense_acq must be a finite number, 0 or "  # noqa: F821
-            f"more, not {expense_acq}")                              # noqa: F821
+            f"point_id {point_id()}: expense_acq must be a finite number, 0 or "
+            f"more, not {float(expense_acq)}")                       # noqa: F821
     if not (expense_maint >= 0.0 and expense_maint - expense_maint == 0.0):  # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: expense_maint must be a finite number, 0 "  # noqa: F821
-            f"or more, not {expense_maint}")                         # noqa: F821
+            f"point_id {point_id()}: expense_maint must be a finite number, 0 "
+            f"or more, not {float(expense_maint)}")                  # noqa: F821
     if not (expense_claim >= 0.0 and expense_claim - expense_claim == 0.0):  # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: expense_claim must be a finite number, 0 "  # noqa: F821
-            f"or more, not {expense_claim}")                         # noqa: F821
+            f"point_id {point_id()}: expense_claim must be a finite number, 0 "
+            f"or more, not {float(expense_claim)}")                  # noqa: F821
     if not (claim_split_tol >= 0.0                                   # noqa: F821
             and claim_split_tol - claim_split_tol == 0.0):           # noqa: F821
         raise ValueError(
-            f"point_id {point_id}: claim_split_tol must be a finite "  # noqa: F821
-            f"number, 0 or more, not {claim_split_tol}")             # noqa: F821
-    if premium_guarantee() == "reviewable":
+            f"point_id {point_id()}: claim_split_tol must be a finite "
+            f"number, 0 or more, not {float(claim_split_tol)}")      # noqa: F821
+    if is_reviewable():
         if not (review_period_mths >= 1 and review_period_mths % 1 == 0):  # noqa: F821
             raise ValueError(
-                f"point_id {point_id}: review_period_mths must be a whole "  # noqa: F821
-                f"number of months, 1 or more, not {review_period_mths}")  # noqa: F821
+                f"point_id {point_id()}: review_period_mths must be a whole number of "
+                f"months, 1 or more, not {int(review_period_mths)}"
+                if review_period_mths % 1 == 0 else                  # noqa: F821
+                f"point_id {point_id()}: review_period_mths must be a whole number of "
+                f"months, 1 or more, not {review_period_mths}")      # noqa: F821
         if not (review_lapse_cap >= 0.0 and review_lapse_cap <= 1.0):  # noqa: F821
             raise ValueError(
-                f"point_id {point_id}: review_lapse_cap must be a number "  # noqa: F821
-                f"from 0 to 1, not {review_lapse_cap}")              # noqa: F821
+                f"point_id {point_id()}: review_lapse_cap must be a number "
+                f"from 0 to 1, not {float(review_lapse_cap)}")       # noqa: F821
         if not (review_prem_shock >= -1.0                            # noqa: F821
                 and review_prem_shock - review_prem_shock == 0.0):   # noqa: F821
             raise ValueError(
-                f"point_id {point_id}: review_prem_shock must be a finite "  # noqa: F821
-                f"number, -1 or more, not {review_prem_shock}")      # noqa: F821
+                f"point_id {point_id()}: review_prem_shock must be a finite "
+                f"number, -1 or more, not {float(review_prem_shock)}")  # noqa: F821
         if not review_lapse_threshold - review_lapse_threshold == 0.0:  # noqa: F821
             raise ValueError(
-                f"point_id {point_id}: review_lapse_threshold must be a "  # noqa: F821
-                f"finite number, not {review_lapse_threshold}")      # noqa: F821
+                f"point_id {point_id()}: review_lapse_threshold must be a "
+                f"finite number, not {float(review_lapse_threshold)}")  # noqa: F821
         if not (review_lapse_slope >= 0.0                            # noqa: F821
                 and review_lapse_slope - review_lapse_slope == 0.0):  # noqa: F821
             raise ValueError(
-                f"point_id {point_id}: review_lapse_slope must be a finite "  # noqa: F821
-                f"number, 0 or more, not {review_lapse_slope}")      # noqa: F821
+                f"point_id {point_id()}: review_lapse_slope must be a finite "
+                f"number, 0 or more, not {float(review_lapse_slope)}")  # noqa: F821
         d = duration_mth_init()
         if 0 < d < review_period_mths:                               # noqa: F821
             if review_prem_factor_init() != 1.0:
                 raise ValueError(
-                    f"point_id {point_id}: review_prem_factor_init is "  # noqa: F821
+                    f"point_id {point_id()}: review_prem_factor_init is "
                     f"{review_prem_factor_init()}, where a reviewable point in force {d} "
                     f"months, fewer than review_period_mths, "
-                    f"{review_period_mths}, has had no review yet: 1")  # noqa: F821
+                    f"{int(review_period_mths)}, has had no review yet: 1")  # noqa: F821
             if ci_sel_latched_init() != 0:
                 raise ValueError(
-                    f"point_id {point_id}: ci_sel_latched_init is "  # noqa: F821
+                    f"point_id {point_id()}: ci_sel_latched_init is "
                     f"{ci_sel_latched_init()}, where a reviewable point in force {d} "
                     f"months, fewer than review_period_mths, "
-                    f"{review_period_mths}, has had no review yet: 0")  # noqa: F821
+                    f"{int(review_period_mths)}, has had no review yet: 0")  # noqa: F821
             if review_prem_shock_init() != 0.0:
                 raise ValueError(
-                    f"point_id {point_id}: review_prem_shock_init is "  # noqa: F821
+                    f"point_id {point_id()}: review_prem_shock_init is "
                     f"{review_prem_shock_init()}, where a reviewable point in force {d} "
                     f"months, fewer than review_period_mths, "
-                    f"{review_period_mths}, has had no review yet: 0")  # noqa: F821
+                    f"{int(review_period_mths)}, has had no review yet: 0")  # noqa: F821
         if review_period_mths <= d < 2 * review_period_mths:         # noqa: F821
             once = 1.0 + review_prem_shock_init()
             if not abs(review_prem_factor_init() - once) <= 1e-12 * abs(once):
                 raise ValueError(
-                    f"point_id {point_id}: review_prem_factor_init is "  # noqa: F821
+                    f"point_id {point_id()}: review_prem_factor_init is "
                     f"{review_prem_factor_init()}, where a reviewable point in force {d} "
-                    f"months, review_period_mths {review_period_mths}, has "  # noqa: F821
-                    f"had one review, whose change, review_prem_shock_init, is "
+                    f"months, review_period_mths {int(review_period_mths)}, "  # noqa: F821
+                    f"has had one review, whose change, review_prem_shock_init, is "
                     f"{review_prem_shock_init()}: {once}")
     return n
 
@@ -996,39 +1203,6 @@ def age(t, life):
     return age_at_entry(life) + duration(t)
 
 
-def pivot_interp(x, sex_, smoker_, column):
-    """Log-linear interpolation of ``column`` at age x from the pivot table.
-
-    Geometric in the rate and linear in age::
-
-        r(x) = r0 (r1/r0)^((x - x0)/(x1 - x0))
-
-    which is the notes' "interpolate log-linearly between pivot ages" **[std]** written
-    without a logarithm.  Outside the pivot range the nearest end segment's gradient is
-    continued - the same expression with the exponent outside [0, 1] - which is an
-    **extrapolation** and should be read as one: the shipped pivots run 40 to 65, so a
-    policy issued young or running long leaves the tabulated region.
-
-    :mod:`~.CI_UK_S`'s formula, read only at the attained ages of cover: its two callers
-    return 0 outside cover before they call it.  ``Data.ci_rate_table`` checks the table as
-    it reads it, so each rate is a number above 0 and at most 1, and each group of sex and
-    smoker status holds two pivot ages or more, each once: the ratio of two rates is then
-    above 0, and its power real.
-    """
-    sub = data.ci_rate_table().loc[(sex_, smoker_)]                  # noqa: F821
-    ages = sorted(int(a) for a in sub.index)
-    if x <= ages[0]:
-        lo, hi = ages[0], ages[1]
-    elif x >= ages[-1]:
-        lo, hi = ages[-2], ages[-1]
-    else:
-        lo = max(a for a in ages if a <= x)
-        hi = min(a for a in ages if a > x)
-    r_lo = float(sub.loc[lo, column])
-    r_hi = float(sub.loc[hi, column])
-    return r_lo * (r_hi / r_lo) ** ((x - lo) / (hi - lo))
-
-
 def ci_rate_base(t, life):
     """i_ci(a): the table CI diagnosis rate for ``life`` in the year containing month t.
 
@@ -1037,11 +1211,24 @@ def ci_rate_base(t, life):
     the AC04 and "16" Series values are subscriber-restricted - and not to be presented
     as a CMI rate.  The basis at the valuation date: :func:`ci_trend_factor` trends it
     from there.  Zero outside cover, where ``age(t, life)`` is not an age the policy reaches
-    in force, before the pivot table is read.
+    in force, before the rates are read.
+
+    Inside it, this is the one cell that reads ``Data.i_ci_array``, :mod:`~.CI_UK_S`'s
+    ``pivot_interp(age, sex, smoker, "i_ci")`` at every attained age the contract admits,
+    made once in ``Data`` by S's own formula: at the life's row, :func:`rate_group`, and its
+    attained age, the array's index.  An age outside the array's, ``Data.rate_age_first``
+    to ``Data.rate_age_last``, 18 to 74, raises ``ValueError``, naming the point and the
+    age, rather than reading the array's padding below the first or past its end.
     """
     if not is_active(t):
         return 0.0
-    return pivot_interp(age(t, life), sex(life), smoker(life), "i_ci")
+    a = age(t, life)
+    if a < data.rate_age_first() or a > data.rate_age_last():        # noqa: F821
+        raise ValueError(
+            f"point_id {point_id()}: ci_rate_table.csv is interpolated at attained "
+            f"ages {data.rate_age_first()} to {data.rate_age_last()}, Data's "  # noqa: F821
+            f"rate_age_min to rate_age_max, not at {a}")
+    return float(data.i_ci_array()[rate_group(life), a])             # noqa: F821
 
 
 def mort_rate(t, life):
@@ -1049,16 +1236,27 @@ def mort_rate(t, life):
 
     Never a decrement on its own: on this product mortality enters only through
     :func:`claim_rate`, net of the overlap factor.  A **[std]** proxy shaped like a
-    scaled population table, not an ONS value.  Zero outside cover, before the pivot
-    table is read.
+    scaled population table, not an ONS value.  Zero outside cover, before the rates are
+    read.
+
+    Inside it, this is the one cell that reads ``Data.q_d_array``, :mod:`~.CI_UK_S`'s
+    ``pivot_interp(age, sex, smoker, "q_d")`` at every attained age the contract admits, at
+    the life's row and attained age, and an age outside the array's raises ``ValueError``,
+    naming the point and the age, as :func:`ci_rate_base` does.
     """
     if not is_active(t):
         return 0.0
-    return pivot_interp(age(t, life), sex(life), smoker(life), "q_d")
+    a = age(t, life)
+    if a < data.rate_age_first() or a > data.rate_age_last():        # noqa: F821
+        raise ValueError(
+            f"point_id {point_id()}: ci_rate_table.csv is interpolated at attained "
+            f"ages {data.rate_age_first()} to {data.rate_age_last()}, Data's "  # noqa: F821
+            f"rate_age_min to rate_age_max, not at {a}")
+    return float(data.q_d_array()[rate_group(life), a])              # noqa: F821
 
 
 def ci_trend_factor(t):
-    """(1 + tau)^(t // 12): the CI trend factor in month t **[std]**, on the valuation clock.
+    """(1 + tau)^(t // 12): the CI trend factor in month t **[std]**, valuation clock.
 
     Zero trend in the base run.  It is the notes' *first*-listed sensitivity anyway:
     diagnosis rates move with medical practice, and the covered event itself moves when
@@ -1076,8 +1274,20 @@ def ci_trend_factor(t):
     exponent is a whole number of years, 0 or more, in every month of the frame, and
     :func:`proj_len` holds ``ci_trend`` to a finite number, -1 or more, so the factor is
     a number, 0 or more.
+
+    It passes the largest float within the longest frame only where ``ci_trend`` is above
+    about 140,000 a year.  Python's float power raises ``OverflowError`` past the largest
+    float, where C's ``pow`` gives an infinity, so where the power is infinite from a
+    finite base the cell calls Python's own, which raises the platform's message in the
+    compiled model as in modelx (USLIB-SEC-PLAN.md, *Record -- M22*); modelx never reaches
+    the call, its own power raising first.
     """
-    return (1.0 + ci_trend) ** (t // 12)                             # noqa: F821
+    base = 1.0 + ci_trend                                            # noqa: F821
+    n = t // 12
+    factor = base ** n
+    if factor - factor != 0.0 and base - base == 0.0:
+        raise float.__pow__(base, n)
+    return factor
 
 
 def ci_sel_factor(t):
@@ -1099,7 +1309,7 @@ def ci_sel_factor(t):
     """
     if not is_active(t):
         return 0.0
-    if premium_guarantee() != "reviewable":
+    if not is_reviewable():
         return 1.0
     if ci_sel_latched_init() == 1:
         return ci_sel_factor_init()
@@ -1161,8 +1371,9 @@ def claim_rate_paid(t):
     double-counting pitfall.  The standalone rate is capped at 1, the bound second, as
     :func:`claim_rate` is, and ``delta``, the share of the diagnoses that do not pay, is
     held to 0 to 1 by :func:`proj_len`, off which the paid or the exit rate is negative.
+    The contract is read from its flag, :func:`is_accelerated`.
     """
-    if contract_type() == "accelerated":
+    if is_accelerated():
         return claim_rate(t)
     return min(ci_rate(t, 1) * (1.0 - survival_slip), 1.0)           # noqa: F821
 
@@ -1257,7 +1468,7 @@ def reviews_passed(t):
     """
     if not is_active(t):
         return 0
-    if premium_guarantee() != "reviewable":
+    if not is_reviewable():
         return 0
     return duration_mth(t) // int(review_period_mths)                # noqa: F821
 
@@ -1319,12 +1530,22 @@ def idx_factor(t):
     ``duration(t) - duration(t_entry())``.  The increases before the valuation date are
     history, carried in, and those after it are projected at ``rpi_rate``.  1 throughout
     if the option is not elected, and 0 outside cover, where there is no cover to index.
+
+    The exponent is a whole number of years, 0 or more, so the power is real whatever the
+    base.  It passes the largest float only where the References put the increase above
+    about 2 million a year, which the shipped cap, 10%, does not; there the cell raises
+    Python's ``OverflowError`` in both engines, as :func:`ci_trend_factor` does.
     """
     if not is_active(t):
         return 0.0
     if not indexation():
         return 1.0
-    return idx_factor_init() * (1.0 + idx_increase()) ** (duration(t) - duration(t_entry()))
+    base = 1.0 + idx_increase()
+    n = duration(t) - duration(t_entry())
+    factor = base ** n
+    if factor - factor != 0.0 and base - base == 0.0:
+        raise float.__pow__(base, n)
+    return idx_factor_init() * factor
 
 
 def idx_prem_factor(t):
@@ -1334,13 +1555,23 @@ def idx_prem_factor(t):
     ``increase`` [S1][S4] - the same x1.5 factor the term assurance chassis carries - on
     the same anniversary step as the cover factor, from :func:`idx_prem_factor_init`.  1
     if the option is not elected, and 0 outside cover.
+
+    The exponent is a whole number of years, as :func:`idx_factor`'s is, and the power
+    passes the largest float only where the References put the step above about 2 million
+    a year, which the shipped cap, 15%, does not; there the cell raises Python's
+    ``OverflowError`` in both engines, as :func:`ci_trend_factor` does.
     """
     if not is_active(t):
         return 0.0
     if not indexation():
         return 1.0
     step = min(idx_prem_mult * idx_increase(), idx_prem_cap)         # noqa: F821
-    return idx_prem_factor_init() * (1.0 + step) ** (duration(t) - duration(t_entry()))
+    base = 1.0 + step
+    n = duration(t) - duration(t_entry())
+    factor = base ** n
+    if factor - factor != 0.0 and base - base == 0.0:
+        raise float.__pow__(base, n)
+    return idx_prem_factor_init() * factor
 
 
 def review_prem_factor(t):
@@ -1353,13 +1584,24 @@ def review_prem_factor(t):
     ``review_prem_shock``.  :mod:`~.CI_UK_S` has no such cell: it multiplies the premium by
     ``(1 + review_prem_shock)`` to the power of every review passed since issue, the same
     number on a point issued at ``t = 0``.  1 on a guaranteed point, and 0 outside cover.
+
+    The exponent is a whole number of reviews, 0 or more, so the power is real whatever
+    the base, which :func:`proj_len` holds to 0 or more.  It passes the largest float only
+    where ``review_prem_shock`` is far outside the product: above about 1.8e34 at the
+    shipped 60-month period, nine reviews in the longest cover, and above about 2.3 at a
+    period of one month, 600; there the cell raises Python's ``OverflowError`` in both
+    engines, as :func:`ci_trend_factor` does.
     """
     if not is_active(t):
         return 0.0
-    if premium_guarantee() != "reviewable":
+    if not is_reviewable():
         return 1.0
-    return review_prem_factor_init() * (1.0 + review_prem_shock) ** (  # noqa: F821
-        reviews_passed(t) - reviews_passed(t_entry()))
+    base = 1.0 + review_prem_shock                                   # noqa: F821
+    n = reviews_passed(t) - reviews_passed(t_entry())
+    factor = base ** n
+    if factor - factor != 0.0 and base - base == 0.0:
+        raise float.__pow__(base, n)
+    return review_prem_factor_init() * factor
 
 
 def premium_pp(t):
@@ -1396,11 +1638,15 @@ def lapse_rate_base(t):
 
     Zero outside cover, where the month has no policy year: before issue
     :func:`policy_year` is 0 or less, where :mod:`~.CI_UK_S`'s lookup raised ``KeyError``.
+    Inside it, this is the one cell that reads ``Data.lapse_table_array``, indexed by the
+    policy year, which is 1 or more in cover and at most the table's last, since every
+    later year is read at it: so both ends of the table hold the key, and no read meets the
+    array's padding at index 0.
     """
     if not is_active(t):
         return 0.0
     y = min(policy_year(t), data.lapse_last_year())                  # noqa: F821
-    return float(data.lapse_table().loc[y, "lapse_rate"])            # noqa: F821
+    return float(data.lapse_table_array()[y])                        # noqa: F821
 
 
 def lapse_rate(t):
@@ -1436,68 +1682,70 @@ def lapse_rate_mth(t):
 def pols_if(t):
     """l(t): the number of policies in force at time t, the count that weights row t.
 
-    ``pols_if_at(t, "BEF_DECR")``: the count carried in from month t - 1, plus month t's
+    ``pols_if_at(t, BEF_DECR)``: the count carried in from month t - 1, plus month t's
     new business, before month t's decrements.  On a point issued at ``t = 0`` that is
     exactly :mod:`~.CI_UK_S`'s ``pols_if``, the notes' ``l(t)``, which follows the notes'
     recursion ``l(t + 1) = l(t)(1 - q_m(t))(1 - w_m(t))``.  It is
     ``basiclife.BasicTerm_SE``'s ``BEF_DECR`` count, not its ``pols_if``.  Zero outside
     cover: before issue, and from ``t = proj_len()`` on, when the term has ended.
     """
-    return pols_if_at(t, "BEF_DECR")
+    return pols_if_at(t, BEF_DECR)                                   # noqa: F821
 
 
 def pols_if_at(t, timing):
     """The number of policies in force at a point inside month t.
 
-    ``"BEF_NB"``
+    ``BEF_NB``
         The count carried in from month t - 1, before month t's new business: the
         survivors of month t - 1's claims and lapses, out of month t - 1's
-        ``"BEF_DECR"`` count.  At :func:`t_entry`, the first month on the books, it is
+        ``BEF_DECR`` count.  At :func:`t_entry`, the first month on the books, it is
         :func:`pols_if_init`, the count in force at the valuation date (0 for a point
         issued at or after it), and the recursion reads no earlier month.  Zero outside
         cover, so the survivors of the last covered month leave as
         :func:`pols_maturity`.
 
-    ``"BEF_DECR"``
-        ``"BEF_NB"`` plus :func:`pols_new_biz`: l(t), the count that weights month t,
+    ``BEF_DECR``
+        ``BEF_NB`` plus :func:`pols_new_biz`: l(t), the count that weights month t,
         which :func:`pols_if` returns.
 
-    ``"BEF_LAPSE"``
+    ``BEF_LAPSE``
         after main-benefit claims, before lapses - the notes' processing order is
         **claim before lapse** **[std order]**, so this is the population lapses are
         taken from.
 
-    ``"AFT_DECR"``
+    ``AFT_DECR``
         the notes' ``l(t + 1)``, the end-of-month state, and zero from the last covered
-        month on, because the cover expires at its end.  It is ``"BEF_NB"`` at t + 1
+        month on, because the cover expires at its end.  It is ``BEF_NB`` at t + 1
         exactly, one product in one order.
 
     The additional-payment and children's-cover claims appear at none of these points.
-    They are non-terminating: only the main benefit ends the policy.  ``"BEF_NB"`` is the
-    one timing running in force adds, as ``basiclife.BasicTerm_SE`` names it; the other
-    three are :mod:`~.CI_UK_S`'s, and any other raises.  ``"BEF_NB"`` forms month t - 1's
-    ``"BEF_DECR"`` count itself, as ``"BEF_NB"`` plus :func:`pols_new_biz` at t - 1, the
-    same sum in the same order, rather than calling for it.  So the chain of calls from
+    They are non-terminating: only the main benefit ends the policy.  These are int
+    References, 0 to 3, named as :mod:`~.CI_UK_S`'s strings (the Space docstring's
+    *Codes*).  ``BEF_NB`` is the one timing running in force adds, as
+    ``basiclife.BasicTerm_SE`` names it; the other three are :mod:`~.CI_UK_S`'s, and any
+    other raises.  ``BEF_NB`` forms month t - 1's ``BEF_DECR`` count itself, as ``BEF_NB``
+    plus :func:`pols_new_biz` at t - 1, the same sum in the same order, rather than calling
+    for it.  So the chain of calls from
     month t back to :func:`t_entry` is one cell a month, where :mod:`~.CI_UK_S`'s
     ``pols_if`` chain runs three: a compiled model runs that chain on the C stack.
     """
-    if timing == "BEF_NB":
+    if timing == BEF_NB:                                             # noqa: F821
         if not is_active(t):
             return 0.0
         if t == t_entry():
             return pols_if_init()
-        return ((pols_if_at(t - 1, "BEF_NB") + pols_new_biz(t - 1))
+        return ((pols_if_at(t - 1, BEF_NB) + pols_new_biz(t - 1))       # noqa: F821
                 * (1.0 - claim_rate_mth(t - 1)) * (1.0 - lapse_rate_mth(t - 1)))
-    if timing == "BEF_DECR":
-        return pols_if_at(t, "BEF_NB") + pols_new_biz(t)
-    if timing == "BEF_LAPSE":
+    if timing == BEF_DECR:                                           # noqa: F821
+        return pols_if_at(t, BEF_NB) + pols_new_biz(t)                 # noqa: F821
+    if timing == BEF_LAPSE:                                          # noqa: F821
         if not is_active(t):
             return 0.0
         return pols_if(t) * (1.0 - claim_rate_mth(t))
-    if timing == "AFT_DECR":
+    if timing == AFT_DECR:                                           # noqa: F821
         if not is_active(t) or duration_mth(t) >= expiry_mth() - 1:
             return 0.0
-        return pols_if_at(t, "BEF_LAPSE") * (1.0 - lapse_rate_mth(t))
+        return pols_if_at(t, BEF_LAPSE) * (1.0 - lapse_rate_mth(t))    # noqa: F821
     raise ValueError("invalid timing")
 
 
@@ -1516,7 +1764,7 @@ def pols_claim(t):
 
     The whole combined decrement, including the standalone contract's non-paying
     deaths - they terminate the policy just the same.  What is *paid* on them is
-    :func:`claims` ``(t, "MAIN")``.  Zero outside cover, before any rate is read.
+    :func:`claims` ``(t, MAIN)``.  Zero outside cover, before any rate is read.
     """
     return pols_if(t) * claim_rate_mth(t) if is_active(t) else 0.0
 
@@ -1530,7 +1778,7 @@ def pols_lapse(t):
     """
     if not is_active(t):
         return 0.0
-    return pols_if_at(t, "BEF_LAPSE") * lapse_rate_mth(t)
+    return pols_if_at(t, BEF_LAPSE) * lapse_rate_mth(t)                # noqa: F821
 
 
 def pols_maturity(t):
@@ -1543,23 +1791,23 @@ def pols_maturity(t):
     """
     if duration_mth(t) != expiry_mth() - 1:
         return 0.0
-    return pols_if_at(t, "BEF_LAPSE") * (1.0 - lapse_rate_mth(t))
+    return pols_if_at(t, BEF_LAPSE) * (1.0 - lapse_rate_mth(t))        # noqa: F821
 
 
 def benefit_pp(t, kind):
     """The benefit amount per policy in month t, by kind.
 
-    ``"MAIN"``
+    ``MAIN``
         SA(t), the sum assured, indexed if the option is elected: on a point in force, the
         sum assured at issue times the factor given to date, :func:`idx_factor_init`, and
         each increase after.
 
-    ``"AP"``
+    ``AP``
         the additional-payment benefit ``min(25% of SA(t), £25,000)``
         [S1][S4][S11] - £25,000 at the anchor cell, and **non-depleting**: it
         does not reduce the main benefit.
 
-    ``"CHILD"``
+    ``CHILD``
         children's cover ``min(50% of SA(t), £25,000)`` [S1], also
         non-depleting, and zero if the cover is not active.  The £4,000 child
         funeral benefit is excluded as de minimis **[std]**.
@@ -1570,57 +1818,106 @@ def benefit_pp(t, kind):
     In practice the cash cap binds at the anchor cell either way.  Each is written with
     its bound second, as :mod:`~.CI_UK_S` writes it, so a NaN share stays NaN.  Zero
     outside cover.
+
+    These are int References, 0 to 2, named as :mod:`~.CI_UK_S`'s strings (the Space
+    docstring's *Codes*), the codes of :func:`claims`' first three kinds, and any other
+    raises, ``LAPSE`` and ``ALL`` among them.
     """
-    if kind == "MAIN":
+    if kind == MAIN:                                                 # noqa: F821
         return sum_assured() * idx_factor(t) if is_active(t) else 0.0
-    if kind == "AP":
+    if kind == AP:                                                   # noqa: F821
         if not is_active(t):
             return 0.0
-        return min(ap_share * benefit_pp(t, "MAIN"), ap_cap)         # noqa: F821
-    if kind == "CHILD":
+        return min(ap_share * benefit_pp(t, MAIN), ap_cap)           # noqa: F821
+    if kind == CHILD:                                                # noqa: F821
         if not children_cover() or not is_active(t):
             return 0.0
-        return min(child_share * benefit_pp(t, "MAIN"), child_cap)   # noqa: F821
+        return min(child_share * benefit_pp(t, MAIN), child_cap)     # noqa: F821
     raise ValueError("invalid kind")
 
 
-def claims(t, kind=None):
-    """Benefit outgo in month t, by kind; the total when kind is omitted.
+def claims(t, kind):
+    """Benefit outgo in month t, by kind, and the four kinds' total.
 
-    ``"MAIN"``
+    ``MAIN``
         ``SA(t) x q_pay_m(t) x l``, the terminating benefit.  On the
         accelerated contract every claim pays; on the standalone one only
         diagnoses surviving the 14-day period do.
 
-    ``"AP"``
+    ``AP``
         ``B_AP x a_m(t) x l``, non-terminating and non-depleting.
 
-    ``"CHILD"``
+    ``CHILD``
         ``B_ch x lambda_m x l``, likewise.
 
-    ``"LAPSE"``
+    ``LAPSE``
         zero, always.  There is no surrender or paid-up value [S1][S4][S5];
         the kind exists so that the zero is stated rather than inferred.
 
-    Each kind is zero outside cover, before any rate is read.  The total is
-    :mod:`~.CI_UK_S`'s ``sum`` over the four kinds.
+    ``ALL``
+        the four kinds' total, :mod:`~.CI_UK_S`'s ``claims(t)``, whose ``kind=None``
+        sums the four with Python's ``sum``, which compiles to no C.  ``sum`` of floats
+        is compensated since Python 3.12: it carries the rounding error of each
+        addition, Neumaier's way, and adds it back once at the end, where it is finite
+        and not 0.  The main claim, the additional payment and the children's claim are
+        non-zero together in most months of cover, and there a total written left to
+        right, ``0.0 + MAIN + AP + CHILD + LAPSE``, differs from ``sum``'s in the last
+        bit.  So each addition is written as ``sum`` makes it, in explicit statements,
+        with no tuple and no loop, which would not compile to C: ``0.0 +`` the first
+        kind is ``sum``'s start, the int 0, which turns a negative zero to ``0.0``; each
+        later kind is added with its rounding error carried, the larger of the two in
+        size first; and the final test, ``abs(c) <= 1.7976931348623157e308``, the
+        largest double, is ``sum``'s test that the carried error is finite, false for an
+        infinity or a NaN, without a subtraction a compiler might fold.  So the total is
+        :mod:`~.CI_UK_S`'s float in every month, and each step is one IEEE operation in
+        both engines, since nothing in the build lets the compiler reassociate or fuse a
+        multiply and an add (``-ffp-contract=off``).
+
+    Each kind is zero outside cover, before any rate is read.  These are int References,
+    0 to 4, named as :mod:`~.CI_UK_S`'s strings (the Space docstring's *Codes*), and any
+    other raises.
     """
-    if kind is None:
-        return sum(claims(t, k) for k in ("MAIN", "AP", "CHILD", "LAPSE"))
-    if kind == "MAIN":
+    if kind == MAIN:                                                 # noqa: F821
         if not is_active(t):
             return 0.0
-        return benefit_pp(t, "MAIN") * claim_rate_paid_mth(t) * pols_if(t)
-    if kind == "AP":
+        return benefit_pp(t, MAIN) * claim_rate_paid_mth(t) * pols_if(t)  # noqa: F821
+    if kind == AP:                                                   # noqa: F821
         if not is_active(t):
             return 0.0
-        return benefit_pp(t, "AP") * ap_rate_mth(t) * pols_if(t)
-    if kind == "CHILD":
+        return benefit_pp(t, AP) * ap_rate_mth(t) * pols_if(t)       # noqa: F821
+    if kind == CHILD:                                                # noqa: F821
         if not is_active(t):
             return 0.0
-        return benefit_pp(t, "CHILD") * child_rate_mth() * pols_if(t)
-    if kind == "LAPSE":
+        return benefit_pp(t, CHILD) * child_rate_mth() * pols_if(t)  # noqa: F821
+    if kind == LAPSE:                                                # noqa: F821
         return 0.0
+    if kind == ALL:                                                  # noqa: F821
+        f = 0.0 + claims(t, MAIN)                                    # noqa: F821
+        c = 0.0
+        x = claims(t, AP)                                            # noqa: F821
+        s = f + x
+        if abs(f) >= abs(x):
+            c = c + ((f - s) + x)
+        else:
+            c = c + ((x - s) + f)
+        f = s
+        x = claims(t, CHILD)                                         # noqa: F821
+        s = f + x
+        if abs(f) >= abs(x):
+            c = c + ((f - s) + x)
+        else:
+            c = c + ((x - s) + f)
+        f = s
+        x = claims(t, LAPSE)                                         # noqa: F821
+        s = f + x
+        if abs(f) >= abs(x):
+            c = c + ((f - s) + x)
+        else:
+            c = c + ((x - s) + f)
+        f = s
+        if c != 0.0 and abs(c) <= 1.7976931348623157e308:
+            f = f + c
+        return f
     raise ValueError("invalid kind")
 
 
@@ -1648,8 +1945,18 @@ def inflation_factor(t):
     notes write it; on a point issued at ``t = 0`` the two are the same.  The initial
     expense is not inflated (see :func:`expenses`).  :func:`proj_len` holds
     ``inflation_rate`` to a finite number, -1 or more, so the factor is a number, 0 or more.
+
+    The exponent is a whole number of years, so the power is real whatever the base.  It
+    passes the largest float within the longest frame only where ``inflation_rate`` is
+    above about 140,000 a year; there the cell raises Python's ``OverflowError`` in both
+    engines, as :func:`ci_trend_factor` does.
     """
-    return (1.0 + inflation_rate) ** (t // 12)                       # noqa: F821
+    base = 1.0 + inflation_rate                                      # noqa: F821
+    n = t // 12
+    factor = base ** n
+    if factor - factor != 0.0 and base - base == 0.0:
+        raise float.__pow__(base, n)
+    return factor
 
 
 def expenses(t):
@@ -1679,22 +1986,23 @@ def net_cf(t):
     column **excludes the initial expense**, showing 31.88 in the anchor cell's issue
     month and noting the £200 separately as taking the month to -168.12.  This cells is
     the total, so on the twin issued at the valuation date ``net_cf(0)`` is -168.12 and the
-    notes' column is ``net_cf(0) + 200``.
+    notes' column is ``net_cf(0) + 200``.  The claims are the four kinds' total,
+    ``claims(t, ALL)``.
     """
-    return premiums(t) - claims(t) - claim_expenses(t) - expenses(t)
+    return premiums(t) - claims(t, ALL) - claim_expenses(t) - expenses(t)  # noqa: F821
 
 
 def check_pols_roll_fwd_resid(t):
     """The in-force roll-forward residual in month t; zero everywhere.
 
-    ``pols_if(t) - pols_if_at(t + 1, "BEF_NB") - main claims - lapses - expiries``, where
+    ``pols_if(t) - pols_if_at(t + 1, BEF_NB) - main claims - lapses - expiries``, where
     the count carried into the next month is taken before its new business, which is no
     part of month t's movement.  The additional-payment and children's-cover claims are
     absent by design: they are non-terminating, and their appearance here would be the
     notes' fourth pitfall.  Expiries are non-zero only in the last covered month, where
     the survivors neither claim nor lapse - their cover runs out.
     """
-    return (pols_if(t) - pols_if_at(t + 1, "BEF_NB")
+    return (pols_if(t) - pols_if_at(t + 1, BEF_NB)                    # noqa: F821
             - pols_claim(t) - pols_lapse(t) - pols_maturity(t))
 
 
@@ -1727,18 +2035,19 @@ def check_claim_split_resid(t):
     take it past 1, where its monthly conversion has no real value and
     :mod:`~.CI_UK_S`'s residual is a complex number.  It raises ``ValueError`` there,
     naming the point, the month, the rate and the References it is made of, in the month
-    it first passes 1, rather than compare a number that is not one.
+    it first passes 1, rather than compare a number that is not one.  The contract is read
+    from its flag, :func:`is_accelerated`.
     """
-    if not is_active(t) or contract_type() == "accelerated":
+    if not is_active(t) or is_accelerated():
         return 0.0
     q_exit = (mort_rate(t, 1) * (1.0 - overlap_k)                    # noqa: F821
               + ci_rate(t, 1) * survival_slip)                       # noqa: F821
     if q_exit > 1.0:
         raise ValueError(
-            f"point_id {point_id}: the annual exit rate q_exit({t}), q_d (1 - "  # noqa: F821
+            f"point_id {point_id()}: the annual exit rate q_exit({t}), q_d (1 - "
             f"overlap_k) + i_ci survival_slip, is {q_exit}, past 1, at q_d "
             f"{mort_rate(t, 1)} and i_ci {ci_rate(t, 1)} under overlap_k "
-            f"{overlap_k} and survival_slip {survival_slip}: "  # noqa: F821
+            f"{float(overlap_k)} and survival_slip {float(survival_slip)}: "  # noqa: F821
             f"its monthly rate has no real value")
     return claim_rate_exit_mth(t) - (1.0 - (1.0 - q_exit) ** (1.0 / 12.0))
 
@@ -1772,10 +2081,10 @@ def result_cf():
         {
             "pols_if": [pols_if(t) for t in ts],
             "premiums": [premiums(t) for t in ts],
-            "claims_main": [claims(t, "MAIN") for t in ts],
-            "claims_ap": [claims(t, "AP") for t in ts],
-            "claims_child": [claims(t, "CHILD") for t in ts],
-            "claims_lapse": [claims(t, "LAPSE") for t in ts],
+            "claims_main": [claims(t, MAIN) for t in ts],              # noqa: F821
+            "claims_ap": [claims(t, AP) for t in ts],                  # noqa: F821
+            "claims_child": [claims(t, CHILD) for t in ts],            # noqa: F821
+            "claims_lapse": [claims(t, LAPSE) for t in ts],            # noqa: F821
             "claim_expenses": [claim_expenses(t) for t in ts],
             "expenses": [expenses(t) for t in ts],
             "net_cf": [net_cf(t) for t in ts],
@@ -1806,7 +2115,7 @@ def result_pols():
             "pols_claim": [pols_claim(t) for t in ts],
             "pols_lapse": [pols_lapse(t) for t in ts],
             "pols_maturity": [pols_maturity(t) for t in ts],
-            "pols_if_aft_decr": [pols_if_at(t, "AFT_DECR") for t in ts],
+            "pols_if_aft_decr": [pols_if_at(t, AFT_DECR) for t in ts],  # noqa: F821
             "ci_rate": [ci_rate(t, 1) if is_active(t) else 0.0 for t in ts],
             "mort_rate": [mort_rate(t, 1) if is_active(t) else 0.0 for t in ts],
             "claim_rate": [claim_rate(t) if is_active(t) else 0.0 for t in ts],
@@ -1822,7 +2131,25 @@ def result_pols():
 
 data = ("Interface", ("..", "Data"), "auto")
 
-point_id = 1
+idx = 0
+
+BEF_NB = 0
+
+BEF_DECR = 1
+
+BEF_LAPSE = 2
+
+AFT_DECR = 3
+
+MAIN = 0
+
+AP = 1
+
+CHILD = 2
+
+LAPSE = 3
+
+ALL = 4
 
 issue_age_min = 18
 

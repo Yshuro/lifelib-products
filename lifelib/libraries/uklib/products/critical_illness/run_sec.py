@@ -9,17 +9,17 @@
 point, so row ``t`` of one point's frame is the same month as row ``t`` of any other's, and
 a block is the frames summed row by row.  Points are named by their ``point_id``.  The
 runner takes ``Projection``'s key from the model: the label where ``Projection`` takes
-``point_id``, as an SEC model does before it compiles, as this one does at its stage
-``"E"``, and the position where it takes ``idx``, as basiclife's BasicTerm_SC is indexed,
-and as every compiled model is.
+``point_id``, as an SEC model does before it compiles, as this one did at its stage
+``"E"``, and the position where it takes ``idx``, as this one does from its C step, as
+basiclife's BasicTerm_SC is indexed, and as every compiled model is.
 
 ``--cython`` runs the compiled model instead of modelx, and prints the same lines.  It is
 ``CI_UK_SEC_nomx_cy`` beside the model, which the repository's ``tools/build_sec_cy.py``
 builds there the first time, and again whenever it is not built for this interpreter or
 the model, ``sample_sec.py``, ``spec_sec.py`` or the tool is newer than it.  The model
-compiles from its C step on (UKLIB-SEC-PLAN.md U2), which brings ``sample_sec.py`` and
-``spec_sec.py``; until then the build stops, and says why.  The build is never committed,
-and ``.gitignore`` covers everything it leaves.  A ``lifelib.create()`` copy of the library
+compiles from its C step on (UKLIB-SEC-PLAN.md U2, milestone M4), which brought
+``sample_sec.py`` and ``spec_sec.py``.  The build is never committed, and ``.gitignore``
+covers everything it leaves.  A ``lifelib.create()`` copy of the library
 carries no ``tools/``, wherever it is put, so there ``--cython`` stops, saying so, where it
 would build.  ``--build DIR`` runs the package a build put in ``DIR`` instead, on the CSVs
 the build copied there, and never builds.  Either way the runner stops, saying why, if the

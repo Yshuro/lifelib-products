@@ -1267,6 +1267,21 @@ def _ci_latched(s, d):
                and s.review_prem_shock > s.review_lapse_threshold)
 
 
+def _ci_claims_total(name, args):
+    """``CI_UK_S``'s ``claims`` keys as ``CI_UK_SEC`` takes them at stage ``"EC"`` (R9,
+    R12).
+
+    S's ``claims(t, kind=None)`` is cached under ``(t, None)`` where S asks for the total,
+    which its ``net_cf`` does: SEC's code ``ALL``, so ``None`` is mapped to ``"ALL"``, which
+    :func:`codes` then turns into the int, as it turns S's kinds and timings.  Every other
+    key, and every other cell's arguments, pass as they are, SEC's own codes among them,
+    where a comparison of two SEC models passes it SEC's keys.
+    """
+    if name == "claims" and len(args) == 2 and args[1] is None:
+        return (args[0], "ALL")
+    return args
+
+
 # CI_UK_SEC's opening state (D6; UKLIB-SEC-PLAN.md §6.2): the facts of the contract
 # CI_UK_S recomputes from flat References, each read as S's own formulas read it, each a
 # factor, a rate or a flag, so that policy_count is the one weight.  The two indexation
@@ -1407,19 +1422,45 @@ SEC_SPECS: dict[str, SecSpec] = {
     #
     # T1 holds on CI at any count: S charges the initial expense on the count in force at
     # t = 0, which on a point issued then is the count issued, as SEC charges it on
-    # pols_new_biz.  It skips one S cell besides the default three:
+    # pols_new_biz.  It skips two S cells besides the default three:
     #   result_pols: SEC's gains pols_new_biz, the count D5 puts there, so the frame has a
     #     column S's lacks and cannot agree as a whole.  Each column it shares with S is a
     #     cell T1 compares at every month, and test_critical_illness_uk_sec.py compares the
     #     report itself with S's, on every column both hold.
+    #   pivot_interp: S's interpolation of the pivot table, a .loc, a sorted generator and
+    #     text keys per call, keyed by a sex and a smoker status as text, which no C cell
+    #     takes.  From stage EC (M4) Data makes it once, by S's own formula, element by
+    #     element, at every attained age the contract admits, Data.i_ci_array and
+    #     q_d_array, which ci_rate_base and mort_rate read; T1 compares those two at every
+    #     month S evaluates, and test_critical_illness_uk_sec.py holds each array to S's
+    #     pivot_interp at every group and age, bit for bit.
+    # At stage EC (M4), S's timings and kinds are SEC's int codes, BEF_NB to AFT_DECR and
+    # MAIN to LAPSE, which codes maps, and S's claims(t, None) keys, the kind=None total its
+    # net_cf caches, are SEC's code ALL: the spec's twin_arg_map, _ci_claims_total, maps
+    # None to "ALL", and codes maps it and the rest.  S's label accessors stay S's, called
+    # by reporting and T1 alone: contract_type(), life_basis(), cover_basis(),
+    # premium_guarantee() and premium_mode() return the column of their own name, and the
+    # registry's "reporting_columns" names what the other two return, sex(life) "sex" or
+    # "joint_sex" by life and smoker(life) "smoker" or "joint_smoker".  T1 compares each at
+    # the arguments S cached.
+    #
+    # Phase 2 sizes its caches from the contract (spec_sec.py holds each derivation):
+    #   t 0..721: policy_term_max, 50 years, the longest term, issued future_horizon_mth,
+    #     120 months, after the valuation date, a frame of 720 months, its month after, and
+    #     the roll-forward's t + 1 there;
+    #   life 1..2, the lives of a joint first event.
+    # proj_len() refuses a term outside policy_term_min to policy_term_max, a life issued
+    # outside issue_age_min to issue_age_max, and cover past expiry_age_max, 75, each naming
+    # the point; the pivot arrays hold the attained ages 18 to 74 between them.
     "CI_UK_SEC": SecSpec(
         twin="CI_UK_S",
         derived=((4, 36), (3, 60), (3, 66), (3, 78), (1, 299)),
         future=((4, 13),),
         state=_CI_STATE,
         twin_state=_CI_STATE,
-        exempt=frozenset({"result_pols"}),
+        exempt=frozenset({"result_pols", "pivot_interp"}),
         derived_refs={(3, 124): {"review_prem_shock": 0.10}},
+        twin_arg_map=_ci_claims_total,
     ),
     # ULB's state is three columns (_ULB_STATE above): the unit fund, S's uf_init renamed
     # av_pp_init; the withdrawals and adviser charges since issue, wd_cum_pp_init, which
