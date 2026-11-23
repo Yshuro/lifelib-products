@@ -157,7 +157,7 @@ segment ladder by slot:
 |---|---|---|---|
 | `point_id` | a label of the model point table | — | the point the row belongs to, and the only column that names one |
 | `lag` | whole months, 1 to `min(wop_defer_mths, duration_mth)` | — | the policy month `lag` months before the valuation date in which the lives became incapacitated |
-| `wop_deferred_init` | a share of the policies in force, 0 to 1 | the start of month 0, after the recoveries of the `lag − 1` months since | the lives still in the deferred period from that month: its incidence, `inc_m (1 − u)` of the premium-paying lives, less those who have recovered since |
+| `wop_deferred_init` | a share of the policies in force, 0 to 1 | the start of month 0, after the recoveries of the `lag − 1` months since | the lives still in the deferred period from that month: its incidence, `inc_m act` of the lives active then, less those who have recovered since |
 
 That is what `Term_UK_S`'s `wop_waived_frac(t)` carries into a month a later month reads:
 the waived share itself, `u(t − 1)`, and the incidence of the month `wop_defer_mths + 1`
@@ -166,6 +166,11 @@ recovered. At the valuation date the waived share is `wop_waived_frac_init`, and
 cohorts of the six months before it are still in the deferred period: in the frame's
 first six months, the entrants of month `t` are the share at lag `7 − t`, carried through
 the `t` months of its deferred period still to run at the recovery rate, `(1 − rec_m)^t`.
+Each later month's incidence falls on the lives active then, `wop_active_frac`, which at
+the valuation date are what the waived share and the pipeline leave,
+`1 − wop_waived_frac_init − Σ wop_deferred_init`, and which follow their own chain from
+there: the three shares are one in-force, and `Data` refuses a point whose waived and
+deferred shares sum past 1.
 UKLIB-SEC-PLAN.md §6.1 names the pipeline's state "the incidence of the deferral months not
 yet waived"; it is precised here as the share still in the deferred period at the valuation
 instant. Held as the incidence, the `lag − 1` months of each deferred period already run
@@ -177,12 +182,15 @@ A cohort seven months back or more has entered the waived share already; one bef
 there is none of. A point in force with the rider holds one row for each of its last
 `min(6, duration_mth)` months, and none otherwise; `Data` refuses a row for a point the
 table lacks, without the rider, at a lag before issue, twice, or with a share that is not
-one, and `proj_len()` a point that does not hold exactly its lags, by their count and by
-its last, naming it, since the deferred period is the product's Reference. The pipeline
-and the waived share are history, read from the extract: a model that recomputed them from
-`wop_inc_rate` would pass the splice, which recomputes them alike, so a test writes them
-off the rate's path and projects through them, and another changes the recovery rate at
-the valuation date (UKLIB-SEC-PLAN.md K14).
+one, and a point whose waived share and deferred shares sum past 1, naming it, summed as
+the active share sums them, so that what it passes opens the active share at 0 or more;
+and `proj_len()` refuses a point that does not hold exactly its lags, by their count and
+by its last, naming it, since the deferred period is the product's Reference. The
+pipeline and the waived share are history, read from the extract: a model that
+recomputed them from `wop_inc_rate` would pass the splice, which recomputes them alike, so
+a test writes them off the rate's path and projects through them, another changes the
+recovery rate at the valuation date (UKLIB-SEC-PLAN.md K14), and a third holds the
+committed ones to a three-state ladder rebuilt month by month from the rates.
 
 `lapse_cum_init` is the selective-lapse ratio as `Term_UK_S` defines it, a share of the
 policies issued, so the count does not move it. Its increments are a share of the issued
@@ -318,7 +326,8 @@ month `t` back to `t_entry()` is one cell a month, where `Term_UK_S`'s `pols_if`
 runs three. On a model just read, a cold `net_cf` in the last month runs 11 cells deeper
 than one a month, on every committed point and at the contract's longest cover, a 50-year
 term from issue age 18, issued now and 120 months on; each other chain, the lapse ratio,
-the cohort's share, the waived share and the deaths since issue, is one cell a month too.
+the cohort's share, the active and the waived shares and the deaths since issue, is one
+cell a month too.
 
 The roll-forward closes as
 
@@ -362,7 +371,8 @@ fail it.
 | `lapse_cum` | 0 at `proj_start()`, then lapses over the count S opened with | `lapse_cum_init()` at `t_entry()`, then `cohort_frac(t − 1)` times the month's lapse probability | The ratio carried in, and a share of the cohort issued, which no count moves |
 | `fib_cum` | 0 at `proj_start()` | `fib_cum_init() × pols_if_init()` at `t_entry()` | The deaths since issue at the valuation date |
 | `claims(t, FIB)`; `fib_streams`, new | `(1 − c) I [D(t) + FIBcum(t)]` | `I [(1 − c) D(t) + fib_streams(t)]`, the streams opening at `fib_streams_init() × pols_if_init()` | The streams in payment are history, which a take-up changed at the valuation date does not commute; S's number at a take-up that never changes |
-| `wop_waived_frac` | 0 at `proj_start()`, no entrants from before it | `wop_waived_frac_init()` at `t_entry()`; entrants from before it, `wop_deferred_init(lag) (1 − rec_m)^t`, from after issue; a share outside 0 to 1 refused | The waived share and the deferred period carried in, at the valuation instant; past an incidence of about 0.855 S's share passes 1 |
+| `wop_active_frac` | 1 at `proj_start()`, then `act(t − 1)(1 − inc_m) + (1 − act(t − 1)) rec_m` | `1 − wop_waived_frac_init() − Σ wop_deferred_init(lag)` at `t_entry()`, 1 on a point not yet in force, then the same chain; 0 outside cover | The lives active at the valuation date are what the waived share and the deferred period leave |
+| `wop_waived_frac` | 0 at `proj_start()`, no entrants from before it | `wop_waived_frac_init()` at `t_entry()`; entrants from before it, `wop_deferred_init(lag) (1 − rec_m)^t`, from after issue | The waived share and the deferred period carried in, at the valuation instant |
 | `idx_factor`, `idx_prem_factor` | a step per anniversary since `proj_start()`'s, from 1 | `idx_factor_init()` and `idx_prem_factor_init()`, then a step per anniversary since `t_entry()`'s | The increases already given are history |
 | `premium_pp` | an annual premium where `t % 12 == 0` | where `duration_mth(t) % 12 == 0` | An anniversary is a policy month |
 | `fib_commute_pp` | `I a(N − t)` | `I a(N − duration_mth(t))` | The months left to the end of the term |
@@ -419,24 +429,38 @@ by zero: 1e-17, where `1 + r` is 1, and the least float whose `1 + r` is not 1,
 power passes the largest float at the longest commutation, and S and this model raise
 Python's `OverflowError`.
 
-**A defect of the specification, kept in both models.** The waiver recursion,
-`u(t + 1) = u(t)(1 − rec_m) + inc_m (1 − u(t − 6)) (1 − rec_m)^6`, takes each month's
-incidence from `1 − u(t − 6)`, which counts the lives already in their deferred period
-among those who can fall ill. A three-state rebuild, healthy, deferred and waived, takes
-it from the healthy alone. On point 7 and the rows derived from it the entrants run up to
-0.184% high, the waived share up to 0.182% (1.38e-5 absolute, at month 239), and the
-premiums £0.07 (0.0011%) low over the frame. This model keeps `Term_UK_S`'s formula, as
-uslib's `SPIA_US_SEC` keeps `SPIA_US_S`'s installment refund trim, so that the twin
-identity and the splice hold; the fix belongs to the S model and its technical notes, and
-is not part of this step. The over-count grows with the incidence: at the shipped
-recovery rate and deferred period the share passes 1 from an annual incidence of about
-0.8552, where the premium turns negative and both checks still pass, and at an incidence
-of 1 it reaches 7.9e12. So `wop_waived_frac` refuses a share outside 0 to 1, naming the
-point, the month and the share, in the month it first leaves: at 0.855 every waiver point
-projects, at 0.856 the waiver point refuses at month 19, S's month and S's share, and at 1
-at month 8. The refusal sits in the cell, where the share is computed month by month, and
-not in `proj_len()`: the frame cannot know the share without running the recursion,
-which reads the pipeline, which asks the frame first.
+**The incidence falls on the active lives, in both models.** The waiver recursion of
+`Term_UK_S`'s technical notes took each month's incidence from `1 − u(t − 6)`, which
+counts the lives already in their deferred period among those who can fall ill, and both
+models kept it, so that the twin identity and the splice held, until the repository's
+owner decided to fix it in both (UKLIB-SEC-PLAN.md §6.1, *Record — M1*). Each life in
+force is active, deferred or waived, and a deferred life and a waived one recover to
+active alike, so the active share, `wop_active_frac`, follows a chain of its own,
+`act(t + 1) = act(t)(1 − inc_m) + (1 − act(t)) rec_m`, and the entrants of month `t + 1`
+are `inc_m act(t − 6) (1 − rec_m)^6`. Here the active share opens at what the waived
+share and the pipeline leave, and each lag of the pipeline is
+`inc_m act (1 − rec_m)^(lag − 1)` of its month, `Term_UK_S`'s fixed incidence, so the
+twin identity and the splice hold with no exemption. A three-state ladder rebuilt month by
+month from the rates, the deferred lives lag by lag, is both models' to rounding: within
+1e-15 on S's waiver point at the shipped rates and at incidences of 0.856 and 1. Against
+the old base, on the four waiver points, the twin of S's point 7, the rows restated at 66
+and at 4 and the row issued 13 months on, the waived share falls by up to 1.38e-5, 0.182%,
+and the entrants by up to 0.184%; premiums rise by £0.0702 over each frame, 0.0011%,
+renewal commission by £0.0018 and `net_cf` by £0.0684, and on the row at 66, whose frame
+is 66 months shorter, by £0.0545, £0.0014 and £0.0532. No other point moves.
+
+The waived share no longer leaves 0 to 1, and `wop_waived_frac` no longer refuses one. The
+three shares partition the in-force, so at rates from 0 to 1, which `proj_len()` holds
+them to, and from an opening state whose waived and deferred shares `Data` holds to 1 or
+less, the share stays inside 0 to 1: at an incidence of 1 and no recovery, the worst the
+rates allow, every waiver point's share reaches 1 and stays there, to the last bit, and
+no premium is collected after. On the old base the share passed 1 from an incidence of
+about 0.8552 and reached 7.9e12 at 1, and the cell refused it; now it peaks at 0.652 at an
+incidence of 0.856 and at 0.806 at 1, and the twin of S's waiver point is S's in every
+cell. Rounding alone can take the share past 1, by a few units in the last place, at an
+incidence near 1 with no recovery, 1.0000000000000002 at 0.999999 a year, in `Term_UK_S`
+too: a refusal would refuse those inputs for their last bit and reach no other, so it is
+dropped, not kept unreachable.
 
 A waived share is also refused on a point in force no longer than the deferred period, a
 state `Term_UK_S` cannot reach: its first incapacity has not yet run the six months. The
@@ -564,12 +588,12 @@ taught first (USLIB-SEC-PLAN.md R1 to R17):
 The `Data` docstring lists its 39 vectors, arrays, extents and counts, each with the
 column or file it comes from. The six readers stay Python, returning DataFrames and a
 path, and no `Projection` cell but `model_point()` reads them. Every other cell of
-`Projection`, 82 of its 90, returns a C `bint`, `long long` or `double`, and caches a single
+`Projection`, 83 of its 91, returns a C `bint`, `long long` or `double`, and caches a single
 value, or a C array the spec sizes from the contract:
 
 | Compiled to | Cells |
 |---|---|
-| a C array of 722 by `t`, of `double`, `long long` or `bint` | the 37 cells of `t` alone: every count, rate, factor, benefit, premium and cash flow; the policy clock, its years and the select duration; the checks' residuals; and the flag `is_active` |
+| a C array of 722 by `t`, of `double`, `long long` or `bint` | the 38 cells of `t` alone: every count, rate, factor, benefit, premium and cash flow; the policy clock, its years and the select duration; the checks' residuals; and the flag `is_active` |
 | a C array of 722 by 4 | `pols_if_at(t, timing)`, `claims(t, kind)`, `age(t, life)`, `mort_rate_base(t, life)` and `mort_rate_life(t, life)` |
 | a C array of 600 by policy month | `benefit_sched(k)` and `wop_deferred_init(k)` |
 | a C array of 481 by months left | `annuity_certain_factor(m)` |
@@ -649,7 +673,7 @@ would change what an `idx` outside the table reads.
 
 ### What a compiled run needs
 
-**Memory, and the release.** A compiled `Projection` ItemSpace is a C struct of 512,248
+**Memory, and the release.** A compiled `Projection` ItemSpace is a C struct of 520,912
 bytes, the type's basic size, which holds every cell's cache, and deleting it,
 `del model.Projection[idx]`, frees nothing by itself: an ItemSpace sits in reference
 cycles, and only Python's cyclic collector frees it. That is why `run_sec.py --block`
@@ -663,28 +687,32 @@ limit raised: the deepest call the contract allows runs under a limit of 26. Wha
 is stack. That call, a cold `net_cf` in the last month of the longest cover, the waiver
 point on the select basis issued at 18 on a 50-year term, now or 120 months on, runs the
 count chain back to `t_entry()`, 611 cells deep in modelx, one cell a month and 11 more,
-which a test holds, and compiled with gcc, with every switch that ships off on, it needs
-between 192 and 256 KiB: it ran on a thread of 256 KiB and not of 192. At the shipped
-References it needs between 192 and 224 KiB, and each other shape at its longest cover
-less: the level and decreasing shapes and the joint point, 50 years from 18, between 128
-and 160 KiB, and the family income benefit, 40 years from 30, which runs 491 cells deep
-in modelx, between 96 and 128. A test runs every shape at its longest cover in a thread of
-1 MiB, the stack Windows gives a program's main thread unless the program is linked for
-more, and again on the main thread, which is where `run_sec.py --cython` runs. MSVC's
-frames may be larger than gcc's, and the `cython_uk` CI job, which runs the test on
-Windows too, is the check on them. The export recurses in Python instead: the same call
-needs a recursion limit of 1,246 there, and the reports and checks, which run in
-ascending `t`, need 128, so `sample_sec.py` sets 5,000.
+which a test holds, and compiled with gcc, at the shipped References or with every switch
+that ships off on, it needs between 144 and 160 KiB: it ran on a thread of 160 KiB and not
+of 144. So do the decreasing shape and the joint point, 50 years from 18, and the family
+income benefit, 40 years from 30, which runs 491 cells deep in modelx, needs between 96
+and 128. The waiver point needed between 192 and 208 KiB until its waived share stopped
+refusing a share outside 0 to 1, with the fix of the waiver's incidence base: the
+refusal's message, built in the cell, enlarged the C frame of each month of the waived
+share's chain. The active share's chain, which the waived share reads one cell deep, after
+its own month before, adds no depth, in modelx or compiled. A test runs every shape at its
+longest cover in a thread of 1 MiB, the stack Windows gives a program's main thread unless
+the program is linked for more, and again on the main thread, which is where
+`run_sec.py --cython` runs. MSVC's frames may be larger than gcc's, and the `cython_uk` CI
+job, which runs the test on Windows too, is the check on them. The export recurses in
+Python instead: the same call needs a recursion limit of 1,246 there, and the reports and
+checks, which run in ascending `t`, need 128, so `sample_sec.py` sets 5,000.
 
 ### What it refuses
 
 The compiled model refuses what modelx refuses, with the same message. modelx raises its
 `FormulaError`, which quotes the error; compiled, the `ValueError` itself propagates. A
 test holds the in-force suite's refusals to modelx's, compiled, message for message: each
-malformed row of the table or the pipeline, each assumption table a reader cannot read,
-each point the frame refuses, each waiver rate, waived share and commutation discount
-refused, a key read beyond a table, either side, and what the vectors cannot hold, in a
-cell typed `long long` or `double` as in a Python one.
+malformed row of the table or the pipeline, each opening state whose waived and deferred
+shares sum past 1, each assumption table a reader cannot read, each point the frame
+refuses, each waiver rate and commutation discount refused, a key read beyond a table,
+either side, and what the vectors cannot hold, in a cell typed `long long` or `double` as
+in a Python one.
 
 A message prints each Reference as the compiled model holds it: a rate as a float, and a
 term, an age or a count of months as an int. So a rate written as an int, 2, or a bound
@@ -820,42 +848,47 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   lapse ratio and the cohort's share among them; and both checks, their tolerances scaled
   by the count, close on a million policies.
 - **Validation and regeneration**: each malformed row of the table, 76 cases, each `2**53`
-  bound at the bound among them, and of the pipeline, 17, is refused naming its point or
-  its line; the horizon is a Reference; a point past its cover, outside the contract's
-  bounds or with a pipeline not exactly its lags, 8 cases, among them none at all and a
-  gap, is refused by `proj_len()`, each bound just inside it and each moved past a
-  committed point, and `run_sec.py --block` refuses such a point before printing anything;
-  so is a share waived before the deferred period has run, at its last month among them; a
-  waiver point under a waiver rate a float outside 0 to 1, or NaN, is refused by the
-  frame, and under an incidence of 0.856 or 1 by the waived share in the month it passes
-  1, S's month and S's share, where at 0, at 0.855 and at a recovery of 1 the twin of S's
-  waiver point is S's in every cell; a family income benefit point under a commutation
-  discount that is not a finite number above −1 is refused by the frame, S's own outcome
-  beside it, where at 0 and −0.99 the twins of S's family income benefit points are S's in
-  every cell, at 1e-17 and 1.1e-16 the factor is `m`, and at the float above −1 S and this
-  model raise the same `OverflowError`; each assumption table a reader cannot read, 28
-  cases, is refused naming its lines, a repeated key with each of its lines, and a read
-  beyond a table naming the point; keys written as floats read as `Term_UK_S` reads them;
-  the edges of the interface and of each bound are accepted; every state `Term_UK_S`
-  reaches, as shipped, under the splice's switches and where the cap binds, is accepted in
-  force; and the committed table and pipeline are what `Term_UK_S` generates.
+  bound at the bound among them, and of the pipeline, 18, is refused naming its point or
+  its line, and so is a waiver point whose waived and deferred shares sum past 1, 4 cases
+  more, by as little as a unit in the last place, where a sum of exactly 1 opens the
+  active share at 0 and projects; the horizon is a Reference; a point past its cover,
+  outside the contract's bounds or with a pipeline not exactly its lags, 8 cases, among
+  them none at all and a gap, is refused by `proj_len()`, each bound just inside it and
+  each moved past a committed point, and `run_sec.py --block` refuses such a point before
+  printing anything; so is a share waived before the deferred period has run, at its last
+  month among them; a waiver point under a waiver rate a float outside 0 to 1, or NaN, is
+  refused by the frame, where at 0 and 1 for either rate and at incidences of 0.855 and
+  0.856 every waiver point projects its share inside 0 to 1 and the twin of S's waiver
+  point is S's in every cell, and at an incidence of 1 with no recovery, the worst, every
+  waiver point's share reaches 1 and no more; a family income benefit point under a
+  commutation discount that is not a finite number above −1 is refused by the frame, S's
+  own outcome beside it, where at 0 and −0.99 the twins of S's family income benefit
+  points are S's in every cell, at 1e-17 and 1.1e-16 the factor is `m`, and at the float
+  above −1 S and this model raise the same `OverflowError`; each assumption table a reader
+  cannot read, 28 cases, is refused naming its lines, a repeated key with each of its
+  lines, and a read beyond a table naming the point; keys written as floats read as
+  `Term_UK_S` reads them; the edges of the interface and of each bound are accepted; every
+  state `Term_UK_S` reaches, as shipped, under the splice's switches and where the cap
+  binds, is accepted in force; and the committed table and pipeline are what `Term_UK_S`
+  generates.
 - **The product's own facts**: the two clocks on the shipped points; the committed rows,
   in force and issued later, continuing their S points at the shipped assumptions but for
   inflation; the lapse ratio carried on from the issued cohort, and the deaths it loads;
   each history column read, not recomputed, the index factors, the streams in payment, the
   commission paid at issue, the waived share and the pipeline's deferred lives, each
-  written off its References' path and projected through, and the take-up, the commission
-  rate and the recovery rate each changed at the valuation date reaching back over no
-  month already run (UKLIB-SEC-PLAN.md K14); expense inflation on the valuation clock at
-  the shipped 3%, which only this test sees; acquisition and the initial commission on new
-  business alone; renewal commission and the clawback on the policy clock; an annual
-  premium on the anniversary of a point valued mid-year; every guarded cell's value outside
-  cover; the block; an extract without the generator's three columns, labelled otherwise,
-  projecting the same numbers; `run_sec.py`'s numbers, for a point, the joint life among
-  them, and for the block, and its sum, and its `--cython` stopping where no repository is
-  above it; no cell's parameter defaulted; the docstrings, read
-  through docutils as the docs build reads them where docutils is installed; and the
-  shared input tables.
+  written off its References' path and projected through, the active share opening at what
+  they leave, the committed waiver state a three-state ladder's, rebuilt month by month
+  from the rates, and the take-up, the commission rate and the recovery rate each changed
+  at the valuation date reaching back over no month already run (UKLIB-SEC-PLAN.md K14);
+  expense inflation on the valuation clock at the shipped 3%, which only this test sees;
+  acquisition and the initial commission on new business alone; renewal commission and the
+  clawback on the policy clock; an annual premium on the anniversary of a point valued
+  mid-year; every guarded cell's value outside cover; the block; an extract without the
+  generator's three columns, labelled otherwise, projecting the same numbers;
+  `run_sec.py`'s numbers, for a point, the joint life among them, and for the block, and
+  its sum, and its `--cython` stopping where no repository is above it; no cell's
+  parameter defaulted; the docstrings, read through docutils as the docs build reads them
+  where docutils is installed; and the shared input tables.
 - **The cap**: on the anchor cell with its male non-smoker rates from age 50 at 0.96, in a
   copy of the table, under the splice's References, the product of the rate and the
   selective-lapse loading passes 1 from attained age 50, policy month 180. In both models

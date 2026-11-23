@@ -68,12 +68,13 @@ point that fails it.
 **The waiver pipeline is checked as it is read.** :func:`wop_pipeline` refuses a
 companion row for a point the table lacks, for a point without the waiver rider, at a lag
 that predates issue, twice for one point and lag, or with a deferred share that is not a
-share of the policies in force. How many lags a point holds is a rule of the product,
-since it is ``Projection.wop_defer_mths``, so ``Projection.proj_len`` checks it, from
-:func:`wop_pipeline_count` and :func:`wop_pipeline_last`. Whether a point is still in
-cover at the valuation date, and whether the contract issues it, are rules of the product
-too, and ``Projection.proj_len`` checks them, against its own References, the contract the
-compiled model's caches are sized from as they are from the horizon.
+share of the policies in force, and a point whose waived share and deferred shares sum
+past 1, which would open its active share below 0. How many lags a point holds is a rule
+of the product, since it is ``Projection.wop_defer_mths``, so ``Projection.proj_len``
+checks it, from :func:`wop_pipeline_count` and :func:`wop_pipeline_last`. Whether a point
+is still in cover at the valuation date, and whether the contract issues it, are rules of
+the product too, and ``Projection.proj_len`` checks them, against its own References, the
+contract the compiled model's caches are sized from as they are from the horizon.
 
 **Each assumption table is checked before a value of it is read.** Its keys are read by
 their value, so an age written ``35.0`` is age 35, and a key that is not whole, text among
@@ -397,18 +398,18 @@ def wop_pipeline():
     the deferred period not yet waived, for each point in force with the waiver rider:
     ``lag`` ``k`` is the policy month ``k`` months before the valuation date, and
     ``wop_deferred_init`` the share of the policies in force whose life became
-    incapacitated in it, from the premium-paying lives, and is still in the deferred
-    period at the valuation instant, the start of month 0, after the recoveries of the
-    ``k - 1`` months since; ``Projection.wop_waived_frac`` takes it in once the deferred
-    period has run, less the recoveries of the months still to run.  ``point_id`` is the
-    only key to a point, and nothing else in the file names one.  A point not yet in
-    force, or without the rider, holds no row; a point in force with it holds one for each
-    of its last ``min(wop_defer_mths, duration_mth)`` months, which
-    ``Projection.proj_len`` checks, since the deferred period is
-    ``Projection.wop_defer_mths``.
+    incapacitated in it, from the active lives, and is still in the deferred period at the
+    valuation instant, the start of month 0, after the recoveries of the ``k - 1`` months
+    since; ``Projection.wop_waived_frac`` takes it in once the deferred period has run,
+    less the recoveries of the months still to run.  ``point_id`` is the only key to a
+    point, and nothing else in the file names one.  A point not yet in force, or without
+    the rider, holds no row; a point in force with it holds one for each of its last
+    ``min(wop_defer_mths, duration_mth)`` months, which ``Projection.proj_len`` checks,
+    since the deferred period is ``Projection.wop_defer_mths``.
 
-    The checks run over the whole file at once, by 7 rules in turn, and the first that
-    fails raises ``ValueError``, naming the missing column or the lines, the header line 1:
+    The checks run over the whole file at once, by 8 rules in turn, and the first that
+    fails raises ``ValueError``, naming the missing column or the lines, the header line 1,
+    or for the last the points:
 
     1. the three columns are present;
     2. each of ``point_id`` and ``lag`` is a whole number, below ``2**53`` in size;
@@ -417,7 +418,12 @@ def wop_pipeline():
     5. ``lag`` is from 1 to its point's ``duration_mth``: no incapacity predates issue,
        and a point not yet in force holds none;
     6. its point has the waiver rider in force;
-    7. ``wop_deferred_init`` is a number from 0 to 1, a share of the policies in force.
+    7. ``wop_deferred_init`` is a number from 0 to 1, a share of the policies in force;
+    8. a point's ``wop_waived_frac_init`` and its ``wop_deferred_init`` sum to 1 or less:
+       the lives waived and those still deferred are shares of one in-force, and
+       ``Projection.wop_active_frac`` opens at what they leave, the active lives.  They are
+       summed as that cell sums them, from the waived share and then the point's last lag
+       down to its first, so that what this check passes it opens at 0 or more.
     """
     name = wop_pipeline_file                                         # noqa: F821
     points = model_point_file                                        # noqa: F821
@@ -470,7 +476,21 @@ def wop_pipeline():
         raise ValueError(f"{name}: wop_deferred_init must be a number from 0 to 1; it is "
                          f"not on line {bad}")
     out = table.assign(point_id=keys["point_id"], lag=keys["lag"], wop_deferred_init=v)
-    return out.set_index(["point_id", "lag"]).sort_index()
+    out = out.set_index(["point_id", "lag"]).sort_index()
+    waived = pd.to_numeric(model_points["wop_waived_frac_init"],      # noqa: F821
+                           errors="coerce")
+    bad = []
+    for p in out.index.get_level_values("point_id").unique():
+        held = float(waived[p])
+        for share in out.loc[p, "wop_deferred_init"].iloc[::-1]:
+            held = held + float(share)
+        if held > 1.0:
+            bad.append(int(p))
+    if bad:
+        raise ValueError(f"{name}: a point's wop_waived_frac_init and its "
+                         f"wop_deferred_init must sum to 1 or less, shares of the policies "
+                         f"in force; they do not at point_id {bad}")
+    return out
 
 
 def wop_pipeline_count():

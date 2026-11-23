@@ -1194,14 +1194,16 @@ def _term_pipeline(s_model, table):
     ``duration_mth`` the row's own.  ``lag`` ``k`` is S's month ``m = d - k``, and
     ``wop_deferred_init`` the share still in the deferred period at the start of S's
     month ``d``, the valuation instant, from the incapacity of month ``m``: the incidence
-    ``Term_UK_S``'s ``wop_waived_frac`` takes in, the deferred period later,
-    ``inc_m (1 - u(m))``, S's own product in S's order, after the ``k - 1`` months of
-    recovery since, ``(1 - rec_m)^(k - 1)``.  0 where ``m`` predates S's frame, which S
-    assumes held no incapacity.  So the SEC row's entrants at ``t = wop_defer_mths + 1 -
-    k``, the share times the ``t`` months of recovery still to run, are S's to rounding.
-    A month earlier than the last ``wop_defer_mths`` has entered the waived share,
-    ``wop_waived_frac_init``, already.  The future rows hold none, nor do the
-    new-business twins.  ``point_id`` is the only key to a point.
+    ``Term_UK_S``'s ``wop_waived_frac`` takes in, the deferred period later, on the lives
+    active in month ``m``, ``inc_m act(m)``, S's ``wop_active_frac``, S's own product in
+    S's order, after the ``k - 1`` months of recovery since, ``(1 - rec_m)^(k - 1)``.  0
+    where ``m`` predates S's frame, which S assumes held no incapacity.  So the SEC row's
+    entrants at ``t = wop_defer_mths + 1 - k``, the share times the ``t`` months of
+    recovery still to run, are S's to rounding, and so is its active share at ``t = 0``,
+    what the waived share and the pipeline leave, S's ``act(d)``.  A month earlier than the
+    last ``wop_defer_mths`` has entered the waived share, ``wop_waived_frac_init``,
+    already.  The future rows hold none, nor do the new-business twins.  ``point_id`` is
+    the only key to a point.
 
     It reads only the S cells it needs, and releases nothing: the caller owns the S model,
     and one T6 passes in may be one it still compares against.
@@ -1217,7 +1219,7 @@ def _term_pipeline(s_model, table):
         d = int(row["source_mth"])
         for k in range(1, min(s.wop_defer_mths, int(row["duration_mth"])) + 1):
             m = d - k
-            incidence = (s.wop_inc_rate_mth() * (1.0 - s.wop_waived_frac(m))
+            incidence = (s.wop_inc_rate_mth() * s.wop_active_frac(m)
                          if m >= s.proj_start() else 0.0)
             rows.append({"point_id": row["point_id"], "lag": k,
                          "wop_deferred_init":

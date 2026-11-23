@@ -154,7 +154,9 @@ Each is history, read from the model point, never recomputed from a Reference, w
 an assumption from the valuation date on. From :func:`lapse_cum_init` and
 :func:`fib_cum_init`, :func:`cohort_frac` rebuilds the share of the issued cohort in
 force, which turns a month's lapse rate into the lapse ratio's increment without dividing
-by the count.
+by the count; and from :func:`wop_waived_frac_init` and :func:`wop_deferred_init`,
+:func:`wop_active_frac` opens at what they leave, the share whose life is active, on which
+the incidence falls.
 
 .. rubric:: Codes
 
@@ -283,6 +285,7 @@ D(t)                       pols_death(t)                   Death/TI claims
 inc(t)                     wop_inc_rate                    WOP annual incidence
 (recovery)                 wop_rec_rate                    WOP annual recovery
 (deferred period)          wop_defer_mths                  26 weeks, as 6 months
+act(t)                     wop_active_frac(t)              Share active, can fall ill
 u(t)                       wop_waived_frac(t)              Share with premium waived
 (u at t = 0)               wop_waived_frac_init()          Share waived at t = 0
 (deferred, lag k)          wop_deferred_init(k)            In deferral at t=0, lag k
@@ -822,8 +825,8 @@ def wop_deferred_init(k):
     """The share in the deferred period at ``t = 0``, incapacitated ``k`` months before.
 
     The policies in force whose life became incapacitated in the policy month ``k`` months
-    before the valuation date, from the premium-paying lives, ``inc_m (1 - u)``, and has
-    not recovered by the start of month 0: the incidence of that month after the
+    before the valuation date, from the lives active then, ``inc_m act``, and has not
+    recovered by the start of month 0: the incidence of that month after the
     ``k - 1`` months of recovery it has already been through, at the rates of those
     months. :func:`wop_waived_frac` takes the cohort in at ``t = wop_defer_mths + 1 - k``,
     once the deferred period has run, less the recoveries of its remaining ``t`` months,
@@ -1001,8 +1004,8 @@ def t_entry():
 
     0 for a point in force at the valuation date or issued at it, ``k`` for one issued
     ``k`` months later. It is the base of every recursion: the count, the lapse ratio and
-    the cohort's share in force, the waived share and the ledger open there, from the
-    opening state, and none reads a month before it.
+    the cohort's share in force, the active and waived shares and the ledger open there,
+    from the opening state, and none reads a month before it.
     """
     return max(0, -duration_mth_init())
 
@@ -1382,33 +1385,80 @@ def pols_maturity(t):
     return pols_if_at(t, BEF_LAPSE) * (1.0 - lapse_rate_mth(t))        # noqa: F821
 
 
+def wop_active_frac(t):
+    """act(t): the share of in-force policies active at the start of month t.
+
+    The waiver of premium rider puts the life of each policy in force in one of three
+    states **[std]**, as in :mod:`~.Term_UK_S`:
+
+    * *active*: paying premium, and able to fall incapacitated, at ``inc_m`` a month;
+    * *deferred*: incapacitated, and still paying, inside the ``wop_defer_mths`` months
+      of the deferred period [S1] since the incapacity began;
+    * *waived*: incapacitated past the deferred period, its premium waived, the share
+      :func:`wop_waived_frac`.
+
+    A deferred life and a waived one recover to active alike, at ``rec_m`` a month, and a
+    deferred life that has not recovered by the end of the deferred period enters waiver.
+    So the active share follows a two-state chain of its own, incidence out and recovery
+    in, :mod:`~.Term_UK_S`'s::
+
+        act(t+1) = act(t)(1 - inc_m) + (1 - act(t)) rec_m
+
+    At :func:`t_entry` it is what the opening state leaves, all of it measured at the
+    valuation instant: ``1 - wop_waived_frac_init() - wop_deferred_init(k)``, summed over
+    the point's lags from its last down to 1, the order :func:`wop_waived_frac` takes them
+    in.  So it is 1 on a point issued at or after the valuation date, which holds neither,
+    and ``Data`` refuses an opening state whose waived share and pipeline sum past 1, so
+    it is 0 or more; and the chain, at rates from 0 to 1, keeps it from 0 to 1.
+    :func:`wop_waived_frac` reads it at the month its entrants fell incapacitated, from
+    the valuation date on, since only an active life can.  1 unless the rider is in force,
+    and 0 outside cover.
+    """
+    if not is_active(t):
+        return 0.0
+    if not wop():
+        return 1.0
+    if t == t_entry():
+        held = wop_waived_frac_init()
+        lags = min(wop_defer_mths, max(duration_mth_init(), 0))      # noqa: F821
+        for k in range(lags, 0, -1):
+            held = held + wop_deferred_init(k)
+        return 1.0 - held
+    a = wop_active_frac(t - 1)
+    return a * (1.0 - wop_inc_rate_mth()) + (1.0 - a) * wop_rec_rate_mth()
+
+
 def wop_waived_frac(t):
     """u(t): the share of in-force policies with premiums waived at the start of month t.
 
-    A two-state incidence/recovery chain at monthly rates **[std]**, with the 26-week
-    deferred period [S1] carried explicitly as ``wop_defer_mths`` months between
-    incidence and the first waived premium::
+    The waived state of the three :func:`wop_active_frac` sets out, at monthly rates
+    **[std]**, with the 26-week deferred period [S1] carried explicitly as
+    ``wop_defer_mths`` months between incidence and the first waived premium::
 
-        u(t+1) = u(t)(1 - rec_m) + inc_m (1 - u(t - defer)) (1 - rec_m)^defer
+        u(t+1) = u(t)(1 - rec_m) + inc_m act(t - defer) (1 - rec_m)^defer
 
     The entrants of month ``t + 1`` are the lives who became incapacitated ``defer``
     months earlier, in month ``src = t - defer``, and have not recovered since.  At
     :func:`t_entry` the share is :func:`wop_waived_frac_init`, 0 on a point issued at or
-    after the valuation date.  An incidence month after the valuation date reads the share
-    waived then, as :mod:`~.Term_UK_S` reads it; one before it, in the first
-    ``wop_defer_mths`` months of the frame, is the pipeline's, :func:`wop_deferred_init`
-    at lag ``-src``, the lives still in the deferred period at the valuation date, which
-    the months of the deferred period after it, ``t`` of them, carry in at
-    ``wop_rec_rate``; and one before issue has none, as :mod:`~.Term_UK_S` assumes before
-    its frame.
+    after the valuation date.  An incidence month after the valuation date reads the
+    active share then, :func:`wop_active_frac`, as :mod:`~.Term_UK_S` reads it; one before
+    it, in the first ``wop_defer_mths`` months of the frame, is the pipeline's,
+    :func:`wop_deferred_init` at lag ``-src``, the lives still in the deferred period at
+    the valuation date, which the months of the deferred period after it, ``t`` of them,
+    carry in at ``wop_rec_rate``; and one before issue has none, as :mod:`~.Term_UK_S`
+    assumes before its frame.  The incidence falls on the active share alone: a life
+    already in its deferred period cannot fall incapacitated again.
 
-    The recursion is :mod:`~.Term_UK_S`'s, and so is a defect of its specification:
-    ``1 - u(t - defer)``, the base of each month's incidence, counts the lives already in
-    their deferred period among those who can fall ill, so the entrants run slightly high
-    (``model-sec.md``, *Departures from Term_UK_S*). Past an annual incidence of about
-    0.855, at the shipped recovery rate and deferred period, the share passes 1 and the
-    premium turns negative: a share outside 0 to 1 raises ``ValueError`` here, naming the
-    point, the month and the share, in the month it first leaves, rather than project it.
+    The share computes ``u(t - 1)`` first and reads the active share after it, at a month
+    that chain has reached already, so each read runs one cell deep and a cold call runs
+    no deeper than the waived share's own chain, as before the active share was added:
+    compiled, each chain runs on the C stack (``model-sec.md``, *What a compiled run
+    needs*).
+
+    The three shares partition the in-force, so at rates from 0 to 1, which
+    :func:`proj_len` holds the rates to, and from an opening state ``Data`` holds to 1 or
+    less, the share stays from 0 to 1; only rounding takes it past 1, by a few units in the
+    last place, at an incidence near 1 with no recovery, as in :mod:`~.Term_UK_S`.
 
     Both rates are placeholders: no public UK incidence basis for the waiver work-tasks
     definitions appears in the fetched sources.  Mortality and lapse are assumed
@@ -1423,21 +1473,13 @@ def wop_waived_frac(t):
     prev = wop_waived_frac(t - 1)
     src = t - 1 - wop_defer_mths                                     # noqa: F821
     if src >= t_entry():
-        entrants = (wop_inc_rate_mth() * (1.0 - wop_waived_frac(src))
+        entrants = (wop_inc_rate_mth() * wop_active_frac(src)
                     * (1.0 - wop_rec_rate_mth()) ** wop_defer_mths)  # noqa: F821
     elif duration_mth_init() + src >= 0:
         entrants = wop_deferred_init(-src) * (1.0 - wop_rec_rate_mth()) ** t
     else:
         entrants = 0.0
-    u = prev * (1.0 - wop_rec_rate_mth()) + entrants
-    if not (u >= 0.0 and u <= 1.0):
-        raise ValueError(
-            f"point_id {point_id()}: the waived share wop_waived_frac({t}) is {u}, "
-            f"outside 0 to 1, under wop_inc_rate {float(wop_inc_rate)}, "  # noqa: F821
-            f"wop_rec_rate {float(wop_rec_rate)} and wop_defer_mths "  # noqa: F821
-            f"{int(wop_defer_mths)}: Term_UK_S's "                   # noqa: F821
-            f"waiver recursion passes 1 at an incidence this high")
-    return u
+    return prev * (1.0 - wop_rec_rate_mth()) + entrants
 
 
 def wop_inc_rate_mth():

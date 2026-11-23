@@ -46,16 +46,17 @@ the rest of the plan's tests (its §5) and the product's own facts:
   flow and every counted cell by 2.5 and moves no per-policy value, and the checks, whose
   tolerances scale with the count, close on a million policies.
 * T5, validation: each malformed row of the table or of the pipeline is refused as it is
-  read, naming its point or its line; each assumption table, malformed or holding a value
-  that is not a number in its range, is refused before a value of it is read, naming its
+  read, naming its point or its line, and a waiver point whose waived and deferred shares
+  sum past 1, naming the point; each assumption table, malformed or holding a value that
+  is not a number in its range, is refused before a value of it is read, naming its
   lines, and a read beyond one is refused naming the point; the future horizon is a
   Reference that bounds future business; a point past its cover, one the contract does
   not issue, one whose pipeline is not exactly its lags, one with a share waived before
   the deferred period has run and a waiver point under a waiver rate outside 0 to 1 are
-  refused by the frame, each bound just inside it, and a waived share outside 0 to 1 in
-  the month it leaves; the edges of the interface and of each bound are accepted; and so
-  is every state ``Term_UK_S`` reaches, on each set of inputs on which those states
-  differ.
+  refused by the frame, each bound just inside it; at waiver rates inside 0 to 1, their
+  worst among them, the waived share stays inside 0 to 1; the edges of the interface and
+  of each bound are accepted; and so is every state ``Term_UK_S`` reaches, on each set of
+  inputs on which those states differ.
 * T6, regeneration: the committed ``model_point_table_sec.csv`` and ``wop_pipeline_sec.csv``
   are what the generator makes of ``Term_UK_S`` and its table as they stand.
 * Then the product's own facts: the two clocks on the shipped points; the committed rows
@@ -364,7 +365,8 @@ OUTSIDE_COVER = {
     "is_active": False, "select_factor": 0.0,
     "lapse_rate_base": 0.0, "lapse_cum": 0.0, "cohort_frac": 0.0, "fib_cum": 0.0,
     "fib_streams": 0.0,
-    "wop_waived_frac": 0.0, "idx_factor": 0.0, "idx_prem_factor": 0.0, "premium_pp": 0.0,
+    "wop_active_frac": 0.0, "wop_waived_frac": 0.0, "idx_factor": 0.0,
+    "idx_prem_factor": 0.0, "premium_pp": 0.0,
     "fib_commute_pp": 0.0, "benefit_pp": 0.0,
     "pols_if": 0.0, "pols_new_biz": 0.0, "pols_death": 0.0, "pols_lapse": 0.0,
     "pols_maturity": 0.0, "pols_payer": 0.0, "premiums": 0.0,
@@ -1080,8 +1082,12 @@ def test_the_policy_clock_is_a_closed_form_and_no_recursion_runs_backward(sec_re
 # and each chain head called alone at most 8 beyond: the count, the lapse ratio and the
 # cohort's share 6, the waived share 3, the ledger 8 (measured at M1).  On the family
 # income benefit's point at its longest cover, the streams in payment run 8 beyond, its
-# claims 10 and net_cf 11 (measured at M1's review).  Term's 16, as for uslib's Term
-# (USLIB-SEC-PLAN.md D5).  Any chain of two cells a month runs a frame's length beyond.
+# claims 10 and net_cf 11 (measured at M1's review).  The active share, which the waived
+# share's incidence reads since both models were fixed to take it from the active lives,
+# runs 3 beyond, and leaves the waived share at 3 and net_cf where they were: the waived
+# share reads it after its own month before, one cell deep.  Term's 16, as for uslib's
+# Term (USLIB-SEC-PLAN.md D5).  Any chain of two cells a month runs a frame's length
+# beyond.
 CHAIN_OVERHEAD = 16
 
 # The contract's longest cover (product-spec.md, held by proj_len()): a 50-year term,
@@ -1095,10 +1101,11 @@ LONGEST_FIB_TERM, OLDEST_FIB = 40, 30
 # Each chain of the model and the cell that heads it, called cold in the last month of the
 # frame, each on a read of its own: (cell, the timing it takes, or None).  The count, the
 # lapse ratio, the cohort's share in force, which the lapse ratio and the mortality it
-# loads read, the waived share and the ledger.  On the waiver point, on the select basis
-# with every switch on, every chain runs the frame's length.
+# loads read, the active and the waived shares and the ledger.  On the waiver point, on
+# the select basis with every switch on, every chain runs the frame's length.
 CHAIN_HEADS = (("net_cf", None), ("pols_if_at", "BEF_NB"), ("lapse_cum", None),
-               ("cohort_frac", None), ("wop_waived_frac", None), ("fib_cum", None))
+               ("cohort_frac", None), ("wop_active_frac", None),
+               ("wop_waived_frac", None), ("fib_cum", None))
 
 # The chains the family income benefit's point adds, which return at once on the waiver
 # point, a level shape: the streams in payment and the claims they pay, and net_cf over
@@ -1608,6 +1615,27 @@ def _extra(**row):
     return _lines(lambda table: pd.concat([table, pd.DataFrame([row])]))
 
 
+def _past_one(points):
+    """What ``Data.wop_pipeline()`` says of ``points``, whose waived and deferred shares
+    sum past 1."""
+    return (f"{PIPELINE}: a point's wop_waived_frac_init and its wop_deferred_init must "
+            f"sum to 1 or less, shares of the policies in force; they do not at point_id "
+            f"{points}")
+
+
+def _shares(point, shares):
+    """An edit of the pipeline that writes ``shares``, ``{lag: share}``, at ``point``'s
+    lags."""
+    def edit(table):
+        table = table.copy()
+        for lag, share in shares.items():
+            at = (table["point_id"] == point) & (table["lag"] == lag)
+            assert at.sum() == 1, (point, lag)
+            table.loc[at, "wop_deferred_init"] = share
+        return table
+    return edit
+
+
 MALFORMED_PIPELINE = [
     *[(f"no {column} column", _lines(lambda t, c=column: t.drop(columns=c)),
        f"{PIPELINE} has no {column} column")
@@ -1647,6 +1675,8 @@ MALFORMED_PIPELINE = [
      f"[11]"),
     ("an infinite deferred share", _cell(3, "wop_deferred_init", float("inf")),
      f"{PIPELINE}: wop_deferred_init must be a number from 0 to 1; it is not on line [5]"),
+    ("deferred shares past 1 with the waived one", _cell(0, "wop_deferred_init", 0.999),
+     _past_one([11])),
 ]
 
 
@@ -1659,6 +1689,78 @@ def test_a_malformed_pipeline_is_refused_naming_its_line(tmp_path, case, edit, m
     try:
         _refused(model.Data.wop_pipeline, message)
         _refused(_row(model, "derived", 7, 66).result_cf, message)
+    finally:
+        model.close()
+
+
+# Point 11's deferred shares written so that, with a waived share of 0.5, they sum to 1
+# exactly, from the waived share and then the last lag down, as Data and the active share
+# sum them: powers of 2, each partial sum exact.  Lag 1 then takes 2**-52 more, a unit in
+# the last place of 1, so that the sum is the float above 1.
+EXACT_ONE = {6: 0.25, 5: 0.125, 4: 0.0625, 3: 0.03125, 2: 0.015625, 1: 0.015625}
+PAST_ONE_ULP = {**EXACT_ONE, 1: 0.015625 + 2.0 ** -52}
+
+# What Data refuses of an opening state whose waived and deferred shares sum past 1, as
+# (case, the table's edit, the pipeline's edit, the points named): the deferred shares
+# alone of point 12, which waives nothing; point 11's waived share with its committed
+# pipeline; both points at once, each named; and the sum one unit in the last place past
+# 1, which no share of its own passes.
+OPENING_PAST_ONE = [
+    ("point 12's deferred shares alone", lambda t: t, _shares(12, {1: 1.0}), [12]),
+    ("point 11's waived share and its pipeline",
+     _set("wop_waived_frac_init", [11], 0.9995), None, [11]),
+    ("both points", _set("wop_waived_frac_init", [11], 0.9995), _shares(12, {1: 1.0}),
+     [11, 12]),
+    ("a unit in the last place past 1", _set("wop_waived_frac_init", [11], 0.5),
+     _shares(11, PAST_ONE_ULP), [11]),
+]
+
+
+@pytest.mark.parametrize("case, edit, pipeline_edit, points", OPENING_PAST_ONE,
+                         ids=[c[0] for c in OPENING_PAST_ONE])
+def test_an_opening_state_past_1_is_refused_naming_its_point(tmp_path, case, edit,
+                                                             pipeline_edit, points):
+    """The waived share and the deferred shares at the valuation date are shares of one
+    in-force, so ``Data.wop_pipeline()`` refuses a point whose sum passes 1, naming it, and
+    so does a projection of it (§6.1, T5).
+
+    ``wop_active_frac`` opens at what they leave, the active share, which would open below
+    0.  Each share alone may be inside 0 to 1, as rule 7 holds it, and the sum still pass
+    1 (:data:`OPENING_PAST_ONE`), by as little as a unit in the last place.  The sum is
+    taken as the active share takes it, from the waived share and then the last lag down,
+    so what ``Data`` passes opens the active share at 0 or more:
+    :func:`test_an_opening_state_of_exactly_1_projects` holds the edge.
+    """
+    model = _read_edited(tmp_path, edit, pipeline_edit)
+    try:
+        _refused(model.Data.wop_pipeline, _past_one(points))
+        _refused(_point(model, points[0]).result_cf, _past_one(points))
+    finally:
+        model.close()
+
+
+def test_an_opening_state_of_exactly_1_projects(tmp_path):
+    """A point whose waived and deferred shares sum to 1 exactly is accepted, and its
+    active share opens at 0, to the last bit (§6.1, T5).
+
+    Point 11 written with a waived share of 0.5 and deferred shares of :data:`EXACT_ONE`:
+    every life incapacitated at the valuation date.  No life can fall ill until one
+    recovers, so the active share opens at 0 and the entrants of month 7, the first from
+    the frame, are 0, and every share stays inside 0 to 1 through the frame, the deferred
+    one, what the other two leave, among them.
+    """
+    model = _read_edited(tmp_path, _set("wop_waived_frac_init", [11], 0.5),
+                         _shares(11, EXACT_ONE))
+    try:
+        model.Data.wop_pipeline()
+        p = _point(model, 11)
+        assert len(p.result_cf()) == p.proj_len()
+        assert p.wop_active_frac(0) == 0.0
+        rec = 1.0 - p.wop_rec_rate_mth()
+        assert p.wop_waived_frac(7) == p.wop_waived_frac(6) * rec
+        for t in range(p.proj_len()):
+            act, u = p.wop_active_frac(t), p.wop_waived_frac(t)
+            assert 0.0 <= act <= 1.0 and 0.0 <= u <= 1.0 and 0.0 <= 1.0 - act - u, t
     finally:
         model.close()
 
@@ -1989,22 +2091,23 @@ def test_a_waived_share_the_deferred_period_has_not_run_is_refused(tmp_path, cas
 
 
 # The waiver's two annual rates at the edges of their domain, as (case, the Reference, its
-# value, what the model does): "accepted", every waiver point projected and the twin of
-# S's waiver point S's in every cell; "rate", proj_len() refusing the Reference on every
-# waiver point; "share", wop_waived_frac refusing the share in the month it passes 1.
-# Each rate is one Reference with no factor, which Term_UK_S leaves uncapped, so that past
-# 1 its monthly rate, 1 - (1 - r)^(1/12), is complex there: 0 and 1 are in the rate's
-# range, the float next outside each and NaN are not.  And S's recursion counts the lives
-# in their deferred period among those who can fall ill, so at the shipped recovery rate
-# and deferred period an incidence of 0.856 a year takes S's waiver point's share past 1
-# at month 19, and one of 1 at month 8, while one of 0.855 keeps every point's below it.
-# A rate written as an int, which the compiled model holds as a float, is refused in the
-# same words in both.
+# value, what the model does): "accepted", every waiver point projected, its waived share
+# inside 0 to 1, and the twin of S's waiver point S's in every cell; "rate", proj_len()
+# refusing the Reference on every waiver point.  Each rate is one Reference with no
+# factor, which Term_UK_S leaves uncapped, so that past 1 its monthly rate,
+# 1 - (1 - r)^(1/12), is complex there: 0 and 1 are in the rate's range, the float next
+# outside each and NaN are not.  Inside it the share stays inside 0 to 1, the incidence
+# falling on the active lives alone: at the shipped recovery rate and deferred period an
+# incidence of 0.856 a year, which took S's waiver point's share past 1 at month 19 while
+# both models counted the deferred lives among those who can fall ill, now peaks at 0.652,
+# and one of 1 at 0.806.  A rate written as an int, which the compiled model holds as a
+# float, is refused in the same words in both.
 WAIVER_RATES = [
     *[(f"wop_inc_rate at {case}", "wop_inc_rate", value, outcome)
       for case, value, outcome in (
-          ("0", 0.0, "accepted"), ("0.855", 0.855, "accepted"), ("0.856", 0.856, "share"),
-          ("1", 1.0, "share"), ("the float below 0", math.nextafter(0.0, -1.0), "rate"),
+          ("0", 0.0, "accepted"), ("0.855", 0.855, "accepted"),
+          ("0.856", 0.856, "accepted"), ("1", 1.0, "accepted"),
+          ("the float below 0", math.nextafter(0.0, -1.0), "rate"),
           ("the float above 1", math.nextafter(1.0, 2.0), "rate"),
           ("the int 2", 2, "rate"), ("NaN", math.nan, "rate"))],
     *[(f"wop_rec_rate at {case}", "wop_rec_rate", value, outcome)
@@ -2019,8 +2122,8 @@ WAIVER_RATES = [
 @pytest.mark.parametrize("case, ref, value, outcome", WAIVER_RATES,
                          ids=[c[0] for c in WAIVER_RATES])
 def test_a_waiver_rate_outside_its_domain_is_refused(case, ref, value, outcome):
-    """A waiver rate outside 0 to 1, or one past which the waived share leaves 0 to 1, is
-    refused on a waiver point (§6.1, T5).
+    """A waiver rate outside 0 to 1 is refused on a waiver point, and inside it every
+    waiver point projects its share inside 0 to 1 (§6.1, T5).
 
     ``wop_inc_rate`` and ``wop_rec_rate`` are each one Reference, with no factor and no
     annual-rate cell, so the caps never reached them and ``Term_UK_S`` leaves them
@@ -2028,14 +2131,12 @@ def test_a_waiver_rate_outside_its_domain_is_refused(case, ref, value, outcome):
     below 0 negative.  This model keeps S's formulas, and its frame refuses such a rate on
     every waiver point, naming the point and the Reference, as it refuses a negative
     deferred period; the float next outside either edge is refused, and so is NaN, which
-    no comparison passes.  Inside it, S's recursion passes 1 at a high incidence, where S
-    projects a share above 1 and a negative premium and both its checks pass: this model
-    refuses the share in the month it first leaves 0 to 1, naming the point, the month and
-    the share, which on the twin of S's waiver point, and on the same point issued 13
-    months on, are S's month and S's share.  On the points in force each projects with its
-    share inside 0 to 1 or is refused so.  At 0, at 1 for the recovery and at an incidence
-    of 0.855, each projects, and the twin of S's waiver point is S's in every cell
-    (:data:`WAIVER_RATES`).  A point without the rider reads neither rate, and projects
+    no comparison passes.  Inside it, at 0 and 1 for either rate and at incidences of
+    0.855 and 0.856, every waiver point projects, its share inside 0 to 1, and the twin of
+    S's waiver point is S's in every cell (:data:`WAIVER_RATES`).  The incidence falls on
+    the active lives alone, in both models, so the share cannot pass 1, where on the base
+    both models once took, ``1 - u``, it passed 1 from an incidence of about 0.8552 and
+    this model refused it.  A point without the rider reads neither rate, and projects
     whatever they are.  The rate is set in both models as each is read, before either
     computes anything, the form that runs compiled unchanged (K7).
     """
@@ -2046,7 +2147,7 @@ def test_a_waiver_rate_outside_its_domain_is_refused(case, ref, value, outcome):
         setattr(s.Projection, ref, value)
         table = sec.Data.model_point_table()
         waiver = [label for label in table.index if table.at[label, "wop"]]
-        twin, later = _label(table, "twin", 7, 0), _label(table, "future", 7, -13)
+        twin = _label(table, "twin", 7, 0)
         s_proj = _point(s, 7)
         if outcome == "rate":
             for label in waiver:
@@ -2055,25 +2156,6 @@ def test_a_waiver_rate_outside_its_domain_is_refused(case, ref, value, outcome):
                          f"not {float(value)}")
             if value > 1.0:
                 assert isinstance(s_proj.cells[f"{ref}_mth"](), complex), case
-        elif outcome == "share":
-            month = next(t for t in range(s_proj.proj_len())
-                         if s_proj.wop_waived_frac(t) > 1.0)
-            share = s_proj.wop_waived_frac(month)
-            for label, at in ((twin, month), (later, month + 13)):
-                _refused(_point(sec, label).result_cf,
-                         f"point_id {label}: the waived share wop_waived_frac({at}) is "
-                         f"{share}, outside 0 to 1, under wop_inc_rate "
-                         f"{float(value)}")
-            for label in set(waiver) - {twin, later}:
-                p = _point(sec, label)
-                try:
-                    p.result_cf()
-                except Exception as err:            # refused as the share left 0 to 1
-                    assert (f"ValueError: point_id {label}: the waived share "
-                            f"wop_waived_frac(") in str(err), str(err)
-                else:
-                    assert all(0.0 <= p.wop_waived_frac(t) <= 1.0
-                               for t in range(p.proj_len())), label
         else:
             for label in waiver:
                 p = _point(sec, label)
@@ -2087,6 +2169,65 @@ def test_a_waiver_rate_outside_its_domain_is_refused(case, ref, value, outcome):
     finally:
         sec.close()
         s.close()
+
+
+def test_the_waived_share_at_its_worst_stays_inside_0_to_1(tmp_path):
+    """At an incidence of 1 and no recovery, the worst the rates allow, the waived share
+    reaches 1 and stays there, on every waiver point (§6.1).
+
+    The three shares, active, deferred and waived, partition the in-force, so the waived
+    share is at most what the other two leave.  ``wop_waived_frac`` refuses no share any
+    more: at rates from 0 to 1, which ``proj_len()`` holds them to, and from an opening
+    state whose waived and deferred shares ``Data`` holds to 1 or less, nothing takes it
+    outside 0 to 1.  The share can pass 1 only by rounding, at an incidence near 1 with no
+    recovery, by a few units in the last place, as in ``Term_UK_S``, and a refusal there
+    would refuse a valid input.  At its worst, an incidence of 1 a year with no recovery,
+    every life active in the first month on the books falls incapacitated in it and none
+    recovers, so on each waiver point every life is waived once the deferred period has
+    run, from ``t_entry() + 7``, and no premium is collected after: the share is 1 there
+    to the last bit and never more, and the active share 0 from the second month on.  On
+    the points in force it is 1 to the last bit because the active share opens at what the
+    waived and deferred shares leave, summed in the order the waived share takes them in.
+    The twin of S's waiver point is S's in every cell.  And at an incidence of 1 with the
+    shipped recovery the share of every waiver point stays below 1.
+    """
+    sec = mx.read_model(model_path(SEC), name=_name("worst"))
+    s = mx.read_model(model_path(TWIN), name=_name("worst_s"))
+    try:
+        for model in (sec, s):
+            model.Projection.wop_inc_rate = 1.0
+            model.Projection.wop_rec_rate = 0.0
+        table = sec.Data.model_point_table()
+        waiver = [label for label in table.index if table.at[label, "wop"]]
+        assert len(waiver) == 4
+        for label in waiver:
+            p = _point(sec, label)
+            assert len(p.result_cf()) == p.proj_len()
+            full = p.t_entry() + 7
+            u = [p.wop_waived_frac(t) for t in range(p.proj_len())]
+            assert all(0.0 <= x <= 1.0 for x in u), label
+            assert u[full:] == [1.0] * (p.proj_len() - full), label
+            assert all(x < 1.0 for x in u[:full]), label
+            assert all(p.wop_active_frac(t) == 0.0
+                       for t in range(full - 6, p.proj_len())), label
+            assert all(p.premiums(t) == 0.0 for t in range(full, p.proj_len())), label
+        s_proj = _point(s, 7)
+        _sweep_s(s_proj)
+        assert _compare(s_proj, _point(sec, _label(table, "twin", 7, 0)), 0,
+                        TWIN_EXEMPT_DEFAULT | SPEC.exempt) == []
+    finally:
+        sec.close()
+        s.close()
+    sec = mx.read_model(model_path(SEC), name=_name("worst_shipped"))
+    try:
+        sec.Projection.wop_inc_rate = 1.0
+        table = sec.Data.model_point_table()
+        for label in [label for label in table.index if table.at[label, "wop"]]:
+            p = _point(sec, label)
+            assert all(0.0 <= p.wop_waived_frac(t) < 1.0
+                       for t in range(p.proj_len())), label
+    finally:
+        sec.close()
 
 
 # The family income benefit's commutation discount, fib_commute_disc_rate, at the edges
@@ -2845,7 +2986,9 @@ def test_the_waiver_pipeline_brings_its_deferred_lives_in_after_the_deferred_per
     ``t = 4`` and to none before, and the recovery rate alone carries it on.  And the
     waived share is read too: written 0.1, which no incidence rate gives in six years, it
     is the share at ``t = 0``, the premium is collected from the other 90%, and it recovers
-    at the recovery rate.
+    at the recovery rate.  Either written share leaves that much fewer lives active at
+    ``t = 0``: the active share opens at what the waived share and the pipeline leave, and
+    the incidence of the frame's months falls on it.
     """
     p, s = _row(sec_model, "derived", 7, 66), _point(s_model, 7)
     rec = 1.0 - p.wop_rec_rate_mth()
@@ -2867,6 +3010,8 @@ def test_the_waiver_pipeline_brings_its_deferred_lives_in_after_the_deferred_per
         assert q.wop_waived_frac(4) - p.wop_waived_frac(4) == pytest.approx(jump, rel=1e-9)
         assert q.wop_waived_frac(5) - p.wop_waived_frac(5) == pytest.approx(jump * rec,
                                                                             rel=1e-9)
+        assert p.wop_active_frac(0) - q.wop_active_frac(0) == pytest.approx(
+            0.01 - p.wop_deferred_init(3), rel=1e-9)
     finally:
         model.close()
     model = _read_edited(tmp_path / "share", _set("wop_waived_frac_init", [row], 0.1))
@@ -2878,8 +3023,59 @@ def test_the_waiver_pipeline_brings_its_deferred_lives_in_after_the_deferred_per
         rec = 1.0 - q.wop_rec_rate_mth()
         assert q.wop_waived_frac(1) - p.wop_waived_frac(1) == pytest.approx(
             (0.1 - p.wop_waived_frac_init()) * rec, rel=1e-9)
+        assert p.wop_active_frac(0) - q.wop_active_frac(0) == pytest.approx(
+            0.1 - p.wop_waived_frac_init(), rel=1e-9)
     finally:
         model.close()
+
+
+def _waiver_ladder(inc, rec, defer, months):
+    """The waiver's three states at the start of each month from issue, rebuilt from the
+    annual rates alone: a list of ``(active, deferred, waived)``, ``deferred`` the list of
+    the deferred lives by lag, ``deferred[k - 1]`` those incapacitated ``k`` months before.
+
+    An explicit ladder, with none of either model's cells: every life is active at issue,
+    and in each month an active life becomes incapacitated at ``inc_m``, onto lag 1; every
+    incapacitated life, deferred or waived, recovers to active at ``rec_m``; and every
+    other deferred life climbs a lag, from the last into waiver.
+    """
+    inc_m = 1.0 - (1.0 - inc) ** (1.0 / 12.0)
+    rec_m = 1.0 - (1.0 - rec) ** (1.0 / 12.0)
+    active, deferred, waived = 1.0, [0.0] * defer, 0.0
+    states = []
+    for _ in range(months):
+        states.append((active, deferred, waived))
+        falling, ill = active * inc_m, sum(deferred) + waived
+        waived = (waived + deferred[-1]) * (1.0 - rec_m)
+        deferred = [falling] + [d * (1.0 - rec_m) for d in deferred[:-1]]
+        active = active * (1.0 - inc_m) + ill * rec_m
+    return states
+
+
+def test_the_committed_waiver_state_is_the_ladder_s(sec_model):
+    """The committed opening state of each waiver point in force is the three-state
+    ladder's at its month, rebuilt in the test from the rates alone (§6.1, K14).
+
+    The waiver point restated at 66 and at 4 (:func:`_waiver_ladder`, S point 7 at the
+    shipped rates): its waived share, ``wop_waived_frac_init``, is the ladder's waived
+    lives; its pipeline, each lag the ladder's lives deferred that many months, the
+    incidence on the lives active then after the recoveries since; and its active share at
+    ``t = 0``, what the two leave, the ladder's active lives.  An incidence taken from
+    ``1 - u``, which counts the deferred lives among those who can fall ill, writes each
+    lag up to 0.2% high.
+    """
+    table = _committed()
+    ladder = _waiver_ladder(0.004, 0.35, 6, 67)
+    for d in (66, 4):
+        label = _label(table, "derived", 7, d)
+        p = _point(sec_model, label)
+        active, deferred, waived = ladder[d]
+        assert p.wop_waived_frac_init() == pytest.approx(waived, rel=1e-12, abs=0.0), d
+        lags = min(6, d)
+        assert [p.wop_deferred_init(k) for k in range(1, lags + 1)] == pytest.approx(
+            deferred[:lags], rel=1e-12, abs=0.0), d
+        assert p.wop_active_frac(0) == pytest.approx(active, rel=1e-14, abs=0.0), d
+        assert sum(deferred) + waived + active == pytest.approx(1.0, rel=1e-14, abs=0.0), d
 
 
 def test_a_recovery_rate_changed_at_the_valuation_date_reaches_back_over_no_month(s_model):
@@ -2890,26 +3086,30 @@ def test_a_recovery_rate_changed_at_the_valuation_date_reaches_back_over_no_mont
     a recovery rate changed at the valuation date, from 0.35 to 0.5 a year, applies to the
     months from it on alone: on the waiver point valued at 66, each cohort's survival
     through its deferred period is the shipped rate's in the months before 66 and the new
-    one's from 66, as a rebuild of S's recursion month by month says, at every month of the
-    pipeline's reach and past it.  Held as the incidence, the months already run would be
-    run again at 0.5 (the review's ``wop_recovery_change.py``).
+    one's from 66, as a rebuild of S's recursions month by month says, at every month of
+    the pipeline's reach and past it.  The rebuild carries the active share too, on which
+    each month's incidence falls: S's to month 66, and from it on the recoveries back to it
+    at 0.5.  Held as the incidence, the months already run would be run again at 0.5 (the
+    review's ``wop_recovery_change.py``).
     """
     sec = mx.read_model(model_path(SEC), name=_name("recovery"))
     try:
         sec.Projection.wop_rec_rate = 0.5
         q, p = _row(sec, "derived", 7, 66), _point(s_model, 7)
-        d, defer = 66, p.wop_defer_mths
+        d, defer, inc = 66, p.wop_defer_mths, p.wop_inc_rate_mth()
         new = 1.0 - (1.0 - 0.5) ** (1.0 / 12.0)
         rate = {m: p.wop_rec_rate_mth() if m < d else new for m in range(d + 13)}
         u = {m: p.wop_waived_frac(m) for m in range(d + 1)}
+        act = {m: p.wop_active_frac(m) for m in range(d + 1)}
         for m in range(d + 1, d + 13):
+            act[m] = act[m - 1] * (1.0 - inc) + (1.0 - act[m - 1]) * new
             src = m - 1 - defer
             survive = 1.0
             for month in range(src + 1, src + defer + 1):
                 survive *= 1.0 - rate[month]
-            u[m] = (u[m - 1] * (1.0 - new)
-                    + p.wop_inc_rate_mth() * (1.0 - u[src]) * survive)
-        for t in range(1, 13):
+            u[m] = u[m - 1] * (1.0 - new) + inc * act[src] * survive
+        for t in range(13):
+            assert q.wop_active_frac(t) == pytest.approx(act[d + t], rel=1e-12), t
             assert q.wop_waived_frac(t) == pytest.approx(u[d + t], rel=1e-12), t
     finally:
         sec.close()
@@ -5691,14 +5891,14 @@ def _refusal_cases():
     for case, edit, refs, point, _ in WAIVED_TOO_SOON:
         cases.append((case, extract(edit), lags(), None, refs,
                       [(at(point), "result_cf", ())], ()))
+    for case, edit, pipeline_edit, points in OPENING_PAST_ONE:
+        cases.append((case, extract(edit), lags(pipeline_edit), None, {},
+                      [(at(points[0]), "result_cf", ())], ("wop_pipeline",)))
     waiver = [at(p) for p in committed.index[committed["wop"]]]
-    shared = [at(_label(committed, kind, 7, month))
-              for kind, month in (("twin", 0), ("future", -13))]
     for case, ref, value, outcome in WAIVER_RATES:
         if outcome != "accepted":
             cases.append((case, extract(), lags(), None, {ref: value},
-                          [(i, "result_cf", ()) for i in (waiver if outcome == "rate"
-                                                          else shared)], ()))
+                          [(i, "result_cf", ()) for i in waiver], ()))
     cases.append(("past its cover", extract(_set("duration_mth", [13], 300)), lags(), None,
                   {}, [(at(13), "result_cf", ()), (at(13), "proj_len", ())], ()))
     cut = {MORT: _dropped(lambda t: (t["age"] > 50) | (t["age"] < 20))}
@@ -5749,13 +5949,13 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
     projection and by the ``Data`` cell that checks the table, so that a compiled ``Data``
     cell refuses each value its modelx cell refuses; every case of :data:`NOT_ISSUED`, by
     ``result_cf`` and ``proj_len``, of :data:`SHORT_PIPELINE` and :data:`WAIVED_TOO_SOON`;
-    every waiver rate of :data:`WAIVER_RATES` that is refused, by the frame on every waiver
-    point, or by the waived share in the month it leaves 0 to 1 on S's waiver point's twin
-    and the same issued later, its message carrying the share as a float; a point past its
-    cover; an age outside the mortality table, either side; a select duration outside its
-    table, either side; a lag the pipeline does not hold; a label the vectors cannot hold,
-    by ``Data.point_id``; and each life of :data:`LIVES_IN_CACHE`, inside the caches, which
-    every cell refuses by its own formula.
+    every opening state of :data:`OPENING_PAST_ONE`, by a projection and by the pipeline's
+    reader; every waiver rate of :data:`WAIVER_RATES` that is refused, by the frame on
+    every waiver point; a point past its cover; an age outside the mortality table, either
+    side; a select duration outside its table, either side; a lag the pipeline does not
+    hold; a label the vectors cannot hold, by ``Data.point_id``; and each life of
+    :data:`LIVES_IN_CACHE`, inside the caches, which every cell refuses by its own
+    formula.
 
     And every commutation discount :data:`COMMUTE_RATES` refuses, by the frame on every
     family income benefit point, and the float above -1, whose power passes the largest
