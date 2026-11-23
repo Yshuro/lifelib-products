@@ -569,14 +569,14 @@ point on the table basis. So the module's sweeps evaluate the check's residual a
 25th time point and the frame's close, the whole check running on each splice row as it
 is scanned, released once read; the splice keeps two S points swept at a time. The
 default run peaks at 2.8 GB of memory, inside the 7 GB of the smallest CI runner, macOS's,
-and takes about five and a quarter minutes, 314 s on the shared 4-CPU machine (measured at
-M11): past the five minutes UKLIB-SEC-PLAN.md U6 budgets. Most of it is the core's 44
-splice cases, each scanned whole, and the cold-depth test, 37 s, which reads the model
-afresh for each of its 74 cold calls on frames of 1,380 and 1,500 months; then the 105
-domain cases, each on a model just read, every accepted edge projected. A cut would cost
-coverage: the core's cases are there for what the core-reach test asks of the core, and
-the depth test's table shapes alone hold the deepest chain, the one the C step measures
-its stack on.
+and takes about five minutes, from 295 s to 330 s on the shared 4-CPU machine as its load
+varied (measured at M11): at and past the five minutes UKLIB-SEC-PLAN.md U6 budgets. Half
+of it is the core's 44 splice cases, about 110 s, each scanned whole, and the cold-depth
+test, about 35 s, which reads the model afresh for each of its 74 cold calls on frames of
+1,380 and 1,500 months; then the 105 domain cases, about 25 s, each on a model just read,
+every accepted edge projected. A cut would cost coverage: the core's cases are there for
+what the core-reach test asks of the core, and the depth test's table shapes alone hold
+the deepest chain, the one the C step measures its stack on.
 
 ```bash
 python -m pytest tests/test_pension_annuity_uk_sec.py -q
