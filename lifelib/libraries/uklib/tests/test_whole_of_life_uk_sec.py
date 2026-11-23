@@ -93,7 +93,7 @@ SEC month ``t`` is S month ``t + source_mth`` throughout, the direction in which
 in-force twin.
 
 **The core grid and the full one** (UKLIB-SEC-PLAN.md U6).  T2 and T3 over every S point
-at every month, 175 cases, run by default on a core of 29, chosen so that between them they
+at every month, 179 cases, run by default on a core of 31, chosen so that between them they
 reach every branch, every opening-state column, every kind of valuation month and both
 sides of every ``min`` and ``max`` the full grid reaches, which
 ``test_the_core_grid_reaches_every_branch`` asserts.  The other cases, and the rules
@@ -192,7 +192,7 @@ SPLICE_MTHS = {1: _O50, 2: _O50, 3: _O50, 4: (*_O50, 185, 186), 5: _UW, 6: _UW,
 # date and off its anniversaries (USLIB-SEC-PLAN.md §7.1, *Record — M14*, *Splice grid*).
 FUTURE_MTHS = (1, 12, 120)
 
-# Five more S points, in the splice's copy of S's table and never in the committed one,
+# Six more S points, in the splice's copy of S's table and never in the committed one,
 # each one of S's points changed so as to reach what S's own points cannot:
 #
 # 8, S point 4 with the pro-rata paid-up value: conversions at a cover that RPI has
@@ -208,7 +208,12 @@ FUTURE_MTHS = (1, 12, 120)
 #   conversion at the end of policy month 119, when 120 of 239 payments, more than half,
 #   have been made, so that the paid-up strand is in force from 120, half of 239 rounded
 #   up, where half rounded down would be 119; with a cessation a multiple of 12 the two
-#   agree.
+#   agree;
+# 13, S point 1 with a cash sum of £7,180, which the 240th premium, its last, passes and
+#   the 239th does not: its crossover falls in policy month 239, its last premium month,
+#   so that the crossover's search, from issue and from the valuation date, finds it in
+#   its last month, where every other point's crossover, 166, 185, 222 and 642, falls
+#   short of its last premium month, or never comes.
 #
 # Each variant is (the S point it changes, the columns it changes); the policy_id keeps
 # the generated ids apart.
@@ -218,12 +223,14 @@ VARIANTS = {
     10: (1, {"policy_id": "WOL-900010", "entry_age": 80, "cessation_months": 120}),
     11: (6, {"policy_id": "WOL-900011", "sex": "F", "smoker": "S"}),
     12: (3, {"policy_id": "WOL-900012", "cessation_months": 239}),
+    13: (1, {"policy_id": "WOL-900013", "sum_assured": 7180}),
 }
 VARIANT_MTHS = {8: (118, 119, 120, 121, 185, 186, 200, 239, 240, 241),
                 9: (11, 12, 13, 119, 120, 200),
                 10: (1, 11, 12, 13, 119, 120, 121, 359, 360, 361, 479),
                 11: (12, 642, 643, 851, 852, 853, 959),
-                12: (119, 120, 121, 238, 239, 240)}
+                12: (119, 120, 121, 238, 239, 240),
+                13: (238, 239, 240)}
 LATE_FUTURES = tuple((p, 13) for p in VARIANTS)
 
 
@@ -289,6 +296,7 @@ CORE_SPLICES = {
     ("derived", 10, 360): "issued at 80, its first capped month",
     ("derived", 11, 852): "an underwritten female smoker in its first capped month",
     ("derived", 12, 120): "an odd cessation, its strand in force from half of 239 up",
+    ("derived", 13, 239): "a crossover in the last premium month, the valuation month",
 }
 CORE_FUTURES = {
     (1, 1): "issued a month off the valuation anniversaries",
@@ -296,6 +304,7 @@ CORE_FUTURES = {
     (4, 1): "the RPI increases a month off the valuation anniversaries",
     (6, 12): "underwritten increasing, a year on",
     (8, 13): "RPI and paid-up, more than a year on",
+    (13, 13): "a crossover in the last premium month, searched from issue",
 }
 
 SEC_FULL = os.environ.get("UKLIB_SEC_FULL") == "1"
@@ -2450,8 +2459,27 @@ def test_the_crossover_asks_for_the_frame_first(refs, message):
 # of 1e308, from the first anniversary.  Each is refused in the cell where it first is,
 # naming the point, the month and what makes it, and a kind by its code, which the C step
 # makes an int in both engines: the claims' DEATH 0 and the accidental benefit's ACC 2,
-# which the spec test holds.
+# which the spec test holds.  And each of the two chains whose refusal is a cell of its own
+# (REFUSAL_CELLS) leaves the floats in each of its branches, which its refusal cell
+# repeats: the opening month, above, a month within a policy year and a year's first
+# month, which reads the year's opening.  The premiums paid on the RPI row at 186, whose
+# anniversary is at t = 6, opened 2.5 and 6.5 premiums of 1e306 short of the largest
+# float; the paid-up cover on the paid-up row at 200, whose anniversary is at t = 4, on a
+# million policies on full cover with a cover of 2e303, whose conversions add about 1.3e306
+# a month, opened on 113,000 and 110,000 paid-up policies at 1.5e303 each.
 NET = 1.7e308
+
+
+def _paid_up_near_the_floats(policies):
+    """An edit of the paid-up row at 200 whose summed paid-up cover opens near the largest
+    float on ``policies`` paid-up policies and grows past it by its conversions: a million
+    policies on full cover with a cover and a sum assured of 2e303, so no crossover, each
+    paid-up policy carrying 1.5e303, between the share of the sum assured at the first
+    conversion and today's cover's share of the payments made."""
+    return _then(_set("policy_count", [10], 1e6), _set("sum_assured", [10], 2e303),
+                 _set("cover_pp_init", [10], 2e303), _set("crossover_mth_init", [10], -1),
+                 _set("pols_pu_init", [10], policies),
+                 _set("pu_benefit_pp_init", [10], 1.5e303))
 PAST_THE_FLOATS = [
     ("a cover", _set("cover_pp_init", [11], 1.79e308), {}, 11, ("cover_pp", 6),
      "result_cf",
@@ -2466,6 +2494,16 @@ PAST_THE_FLOATS = [
      11, ("prem_cum_pp", 0), "result_pols",
      "point_id 11: the premiums paid prem_cum_pp(0) are inf, not a finite number, from "
      "prem_cum_pp_init 1.7976931348623157e+308"),
+    ("premiums paid within a policy year",
+     _then(_set("prem_cum_pp_init", [11], BIG - 2.5e306), _set("premium_pp_init", [11], 1e306)),
+     {}, 11, ("prem_cum_pp", 2), "result_pols",
+     "point_id 11: the premiums paid prem_cum_pp(2) are inf, not a finite number, from "
+     "prem_cum_pp_init 1.7726931348623157e+308"),
+    ("premiums paid on an anniversary",
+     _then(_set("prem_cum_pp_init", [11], BIG - 6.5e306), _set("premium_pp_init", [11], 1e306)),
+     {}, 11, ("prem_cum_pp", 6), "result_pols",
+     "point_id 11: the premiums paid prem_cum_pp(6) are inf, not a finite number, from "
+     "prem_cum_pp_init 1.7326931348623157e+308"),
     ("the expenses", None, {"expense_maint_o50": NET, "inflation_rate": 1.0}, 1,
      ("expenses", 48), "result_cf",
      "point_id 1: the expenses expenses(48) are inf, not a finite number, from "
@@ -2492,6 +2530,16 @@ PAST_THE_FLOATS = [
            _set("crossover_mth_init", [10], -1)), {}, 10, ("pu_benefit", 0), "result_cf",
      "point_id 10: the paid-up cover pu_benefit(0) is inf, not a finite number, from "
      "pols_pu_init 1e+300 paid-up policies at pu_benefit_pp_init 6e+299"),
+    ("the paid-up cover within a policy year", _paid_up_near_the_floats(113000.0), {}, 10,
+     ("pu_benefit", 3), "result_cf",
+     "point_id 10: the paid-up cover pu_benefit(3) is inf, not a finite number, from "
+     "pols_pu_init 113000.0 paid-up policies at pu_benefit_pp_init 1.5e+303 and the "
+     "conversions since"),
+    ("the paid-up cover on an anniversary", _paid_up_near_the_floats(110000.0), {}, 10,
+     ("pu_benefit", 4), "result_cf",
+     "point_id 10: the paid-up cover pu_benefit(4) is inf, not a finite number, from "
+     "pols_pu_init 110000.0 paid-up policies at pu_benefit_pp_init 1.5e+303 and the "
+     "conversions since"),
     ("a benefit",
      _then(_set("sum_assured", [2], 1e308), _set("cover_pp_init", [2], 1e308)), {}, 2,
      ("benefit_pp", 12, "ACC"), "result_cf",
@@ -2534,22 +2582,43 @@ def test_a_value_past_the_floats_is_refused_where_it_first_is(tmp_path, case, ed
 
 
 # A step to the policy years that overflows the floats, from a Reference in its domain, as
-# (case, the References set, the S point whose twin is read, the call): each of the five
-# powers the projection raises, the cover's and the premium's steps, the inflation and
-# improvement factors and the crossover's search.  A step of 1e200 squares past the floats
-# at the second anniversary, t = 24.
+# (case, the table's edit, the References set, the committed point read, the call): each
+# of the five powers the projection raises, the cover's and the premium's steps, the
+# inflation and improvement factors and the crossover's search.  A step of 1e200 squares
+# past the floats at the second anniversary, t = 24.  The search guards both its steps in
+# both its loops, from issue on a point not yet in force and from the valuation date on
+# one in force, and each guard is reached: on the underwritten increasing twin, point 6,
+# and on the same point in force 12 months, point 12.  The cover's step in each loop, the
+# premiums paid never passing the cover; the premium's from issue on a premium of 0, which
+# pays nothing however it grows, and on a cover of 1e300, which the premiums paid do not
+# reach first; and the premium's in force on that cover.  Compiled without its guard, each
+# search returns -1 or 24 where modelx raises.
 OVERFLOWING_POWERS = [
-    ("the cover's step", {"esc_fixed_cover": 1e200}, 6, ("cover_pp", 24)),
-    ("the premium's step", {"esc_fixed_prem": 1e200}, 6, ("premium_pp", 24)),
-    ("the inflation factor", {"inflation_rate": 1e200}, 1, ("inflation_factor", 24)),
-    ("the improvement factor", {"mort_improvement": -1e200}, 1, ("mort_improve_factor", 24)),
-    ("the crossover's search", {"esc_fixed_cover": 1e200}, 6, ("crossover_mth",)),
+    ("the cover's step", None, {"esc_fixed_cover": 1e200}, 6, ("cover_pp", 24)),
+    ("the premium's step", None, {"esc_fixed_prem": 1e200}, 6, ("premium_pp", 24)),
+    ("the inflation factor", None, {"inflation_rate": 1e200}, 1, ("inflation_factor", 24)),
+    ("the improvement factor", None, {"mort_improvement": -1e200}, 1,
+     ("mort_improve_factor", 24)),
+    ("the crossover's search: the cover's step from issue", None,
+     {"esc_fixed_cover": 1e200}, 6, ("crossover_mth",)),
+    ("the crossover's search: the premium's step from issue, a premium of 0",
+     _then(_set("premium_mth", [6], 0.0), _set("premium_pp_init", [6], 0.0)),
+     {"esc_fixed_prem": 1e200}, 6, ("crossover_mth",)),
+    ("the crossover's search: the premium's step from issue, a cover of 1e300",
+     _then(_set("sum_assured", [6], 1e300), _set("cover_pp_init", [6], 1e300)),
+     {"esc_fixed_prem": 1e200}, 6, ("crossover_mth",)),
+    ("the crossover's search: the cover's step in force", None,
+     {"esc_fixed_cover": 1e200}, 12, ("crossover_mth",)),
+    ("the crossover's search: the premium's step in force, a cover of 1e300",
+     _then(_set("sum_assured", [12], 1e300), _set("cover_pp_init", [12], 1e300)),
+     {"esc_fixed_prem": 1e200}, 12, ("crossover_mth",)),
 ]
 
 
-@pytest.mark.parametrize("case, refs, s_point, call", OVERFLOWING_POWERS,
+@pytest.mark.parametrize("case, edit, refs, point, call", OVERFLOWING_POWERS,
                          ids=[c[0] for c in OVERFLOWING_POWERS])
-def test_an_overflowing_power_raises_python_s_overflow_error(case, refs, s_point, call):
+def test_an_overflowing_power_raises_python_s_overflow_error(tmp_path, case, edit, refs,
+                                                             point, call):
     """A power that leaves the floats raises ``OverflowError``, as Python raises it.
 
     The cells check what they compute, but a ``**`` whose result passes the largest float
@@ -2562,12 +2631,14 @@ def test_an_overflowing_power_raises_python_s_overflow_error(case, refs, s_point
     infinity there, so each of these cells takes uslib's M22 form, Python's own float power
     where the compiled one gives an infinity, so that both engines raise this error, which
     the compiled refusal test holds.  Each Reference is set on a model just read (K7).
+    The crossover's search guards each of its two steps in each of its two loops, and each
+    guard is reached by a case of its own.
     """
-    model = mx.read_model(model_path(SEC), name=_name("power"))
+    model = _read_edited(tmp_path, edit or (lambda t: t))
     try:
         for ref, value in refs.items():
             setattr(model.Projection, ref, value)
-        p = _row(model, "twin", s_point, 0)
+        p = _point(model, point)
         name, *args = call
         with pytest.raises(Exception) as excinfo:
             p.cells[name](*args)
@@ -4113,26 +4184,43 @@ def test_no_check_passes_a_residual_that_is_not_a_number():
             model.close()
 
 
-@pytest.mark.parametrize("check, resid", [
-    ("check_pols_roll_fwd", "check_pols_roll_fwd_resid"),
-    ("check_truncation", "pols_maturity")])
-def test_a_check_fails_a_residual_that_is_not_a_number(sec_model, check, resid):
-    """Each check returns False where its residual is NaN (§7.1, item 11).
+def _nan_in_the_first_month(t):
+    """A residual NaN in the frame's first month, ``t = 0``, and 0 in every other."""
+    return float("nan") if t == 0 else 0.0
+
+
+def _nan_in_the_last_month(t):
+    """A residual NaN in the frame's last month, ``t = proj_len() - 1``, and 0 in every
+    other: a formula for the model, which reads ``proj_len`` as its own cell."""
+    return float("nan") if t == proj_len() - 1 else 0.0              # noqa: F821
+
+
+@pytest.mark.parametrize("check, resid, month", [
+    ("check_pols_roll_fwd", "check_pols_roll_fwd_resid", _nan_in_the_first_month),
+    ("check_pols_roll_fwd", "check_pols_roll_fwd_resid", _nan_in_the_last_month),
+    ("check_truncation", "pols_maturity", _nan_in_the_last_month)],
+    ids=["roll_fwd-first", "roll_fwd-last", "truncation-last"])
+def test_a_check_fails_a_residual_that_is_not_a_number(sec_model, check, resid, month):
+    """Each check returns False where its residual is NaN in one month (§7.1, item 11).
 
     A check is ``abs(resid) <= tolerance`` over the frame, or the truncation residual
     ``<= tolerance`` in its last month, which no NaN passes, as ``WOL_UK_S``'s are; but no
     input the frame accepts gives a NaN residual any more, so the residual's formula is
-    replaced, on a model read for the test, by one that returns NaN in every month: the
-    roll-forward's, and the truncation residual, ``pols_maturity``.  Then the check is the
-    bool False on every committed point, where with its own formula it is True.  A check
-    that asked whether any residual was past its tolerance would pass NaN.
+    replaced, on a model read for the test, by one that is NaN in one month and 0 in every
+    other: the roll-forward's in the frame's first month, and in its last, and the
+    truncation residual, ``pols_maturity``, in the last, which is the month its check
+    reads.  Then the check is the bool False on every committed point, where with its own
+    formula it is True.  A check that asked whether any residual was past its tolerance
+    would pass NaN, and a loop over the frame that stopped a month short, or started a
+    month late, would pass the month it skips.
     """
     model = mx.read_model(model_path(SEC), name=_name("nan_resid"))
     try:
-        model.Projection.cells[resid].formula = lambda t: float("nan")
+        model.Projection.cells[resid].formula = month
         for key in point_keys(model):
             p, shipped = projection(model, key), projection(sec_model, key)
-            assert math.isnan(p.cells[resid](0)), key
+            first = 0 if month is _nan_in_the_first_month else p.proj_len() - 1
+            assert math.isnan(p.cells[resid](first)), key
             assert shipped.cells[check]() is True and p.cells[check]() is False, key
     finally:
         model.close()
@@ -4772,6 +4860,44 @@ def test_the_all_total_is_s_total_bit_for_bit(sec_model, s_model):
                 found.append(f"point {point_id}, t = {t}: {p.claims(t, total)!r}, S "
                              f"{s.claims(t)!r}")
     assert counts[3] == 0 and counts[2] > 0 and counts[1] > 0, counts
+    assert not found, found[:10]
+
+
+# The two chains whose refusal of a value past the floats is a cell of its own, which
+# computes the value again from the same cells and raises only where the chain would, as
+# (the chain, its refusal cell).
+REFUSAL_CELLS = (("prem_cum_pp", "prem_cum_pp_refusal"), ("pu_benefit", "pu_benefit_refusal"))
+
+
+def test_each_refusal_cell_computes_its_chain_s_value_bit_for_bit(sec_model):
+    """``prem_cum_pp_refusal`` and ``pu_benefit_refusal`` are their chains, bit for bit.
+
+    No cell a chain recurses through builds text (the chain-text test), so ``prem_cum_pp``
+    and ``pu_benefit`` call a refusal cell of their own on their error paths alone, and
+    each refusal cell repeats its chain's formula, branch by branch, to name the value it
+    refuses (:data:`REFUSAL_CELLS`).  Nothing else holds the two formulas together: C4
+    compares two engines that share any drift, and a refusal cell is reached only past the
+    floats.  So on every committed point, in every month of its frame and the month after
+    it, each refusal cell must return its chain's value, by ``float.hex``: the opening
+    month, every month within a policy year and every year's first month after
+    ``t_entry()``, whose value is the year's opening, on the paid-up points for the
+    paid-up cover.  A refusal that dropped the month's premium, or read the month before
+    where the chain reads the year's opening, parts here, though the value it would refuse
+    only ever passes the floats in a test of its own.
+    """
+    found, months = [], {"entry": 0, "anniversary": 0, "within": 0}
+    for key, point_id in zip(point_keys(sec_model), sec_model.Data.model_point_table().index):
+        p = projection(sec_model, key)
+        for t in range(p.proj_len() + 1):
+            if p.is_active(t):
+                months["entry" if t == p.t_entry() else "anniversary"
+                       if p.duration_mth(t) % 12 == 0 else "within"] += 1
+            for chain, refusal in REFUSAL_CELLS:
+                want, got = p.cells[chain](t), p.cells[refusal](t)
+                if got.hex() != want.hex():
+                    found.append(f"point {point_id}: {refusal}({t}) is {got!r}, "
+                                 f"{chain}({t}) {want!r}")
+    assert min(months.values()) > 10, months
     assert not found, found[:10]
 
 
@@ -6645,7 +6771,9 @@ def test_the_compiled_model_computes_what_modelx_computes_on_an_anniversary(sec_
 # runs each case on a fresh instance of the model, whose Data reads the case's own copies
 # of the three files by absolute path.  A refusal names a file by its Reference, so the
 # child's names the path, and the test writes each path as the file's name (_named), as
-# modelx, reading the files by name, writes it.
+# modelx, reading the files by name, writes it.  It sets every space's References that a
+# case gives, Data's named "Data.<name>" and Projection's by name (UKLIB-SEC-PLAN.md §6.2,
+# *Record -- M4*, *Carried into M6 and after*).
 REFUSALS_CHILD = '''\
 import pickle, sys
 case_root, package, job_path, result_path = sys.argv[1:5]
@@ -6670,7 +6798,10 @@ for files, refs, calls, data in cases:
     for ref, path in files.items():
         setattr(model.Data, ref, path)
     for ref, value in refs.items():
-        setattr(model.Projection, ref, value)
+        if ref.startswith("Data."):
+            setattr(model.Data, ref[len("Data."):], value)
+        else:
+            setattr(model.Projection, ref, value)
     values = [did(lambda: getattr(model.Projection[idx], cell)(*args))
               for idx, cell, args in calls]
     read = [did(lambda: getattr(model.Data, name)()) for name in data]
@@ -6707,6 +6838,36 @@ def _held_compiled(refs):
     """Whether the compiled model holds every one of ``refs`` as modelx does."""
     return all(math.isfinite(value) and value == value // 1 and abs(value) < 2.0 ** 63
                for ref, value in refs.items() if ref in INT_REFERENCES)
+
+
+# Data's integer Reference, which the compiled model holds as a long long, as it holds
+# Projection's (INT_REFERENCES), and which the child sets as it sets theirs: the horizon
+# is refused at -1 and at 2**53 in both engines, message for message, and a fraction is
+# truncated as it is set, 12.5 to 12, where modelx refuses 12.5 (the horizon test), so
+# that compiled, 12.5 does what 12 does in modelx: it refuses the point issued 13 months
+# on.  model-sec.md says to set it as a whole number.
+DATA_INT_REFERENCES = frozenset({"future_horizon_mth"})
+HORIZONS = (-1, 12.5, 2 ** 53)
+
+
+def _as_held(ref, value):
+    """What the compiled model holds of ``value`` set on Reference ``ref``, ``"Data."``
+    before a ``Data`` Reference's name: a fraction set on a ``Data`` integer Reference
+    truncated, as a ``long long`` takes it, and any other value as it is."""
+    name = ref[len("Data."):] if ref.startswith("Data.") else None
+    if name in DATA_INT_REFERENCES and math.isfinite(value) and value % 1:
+        return int(value)
+    return value
+
+
+def _set_refs(model, refs):
+    """Set each of ``refs`` on ``model`` as the compiled model holds it (:func:`_as_held`):
+    ``"Data.<name>"`` on its ``Data``, any other on its ``Projection``."""
+    for ref, value in refs.items():
+        if ref.startswith("Data."):
+            setattr(model.Data, ref[len("Data."):], _as_held(ref, value))
+        else:
+            setattr(model.Projection, ref, value)
 
 
 # Projection's idx past the extract's last row, 17, and -1, beside the last row, 16, as
@@ -6795,12 +6956,16 @@ def _refusal_cases():
         if edit is not None:
             cases.append((case, edit(committed), None, {}, [(8, cell, args)],
                           ("point_id",)))
-    for case, refs, s_point, call in OVERFLOWING_POWERS:
+    for case, edit, refs, point, call in OVERFLOWING_POWERS:
         name, *args = call
-        calls = [(at(s_point), name, tuple(args))]
+        calls = [(at(point), name, tuple(args))]
         if args:
-            calls.insert(0, (at(s_point), name, (args[0] - 1,)))
-        cases.append((f"overflow: {case}", extract(), None, refs, calls, ()))
+            calls.insert(0, (at(point), name, (args[0] - 1,)))
+        cases.append((f"overflow: {case}", extract(edit), None, refs, calls, ()))
+    for horizon in HORIZONS:
+        cases.append((f"future_horizon_mth at {horizon!r}", extract(), None,
+                      {"Data.future_horizon_mth": horizon}, [(at(1), "result_cf", ())],
+                      ("model_point_table",)))
     return cases
 
 
@@ -6821,14 +6986,18 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
     ``omega_age_max`` among them; each value of :data:`PAST_THE_FLOATS`, by its cell and by
     a report, a kind named by its code; a point past the limiting age; an attained age
     below a mortality table cut at 20, by ``mort_rate`` and a report, and an ``omega_age``
-    past one cut at 100, by ``proj_len()``, which no frame then passes; and a label the
-    vectors cannot hold, by ``Data.point_id``.
+    past one cut at 100, by ``proj_len()``, which no frame then passes; a label the
+    vectors cannot hold, by ``Data.point_id``; and ``Data.future_horizon_mth`` at each of
+    :data:`HORIZONS`, set by the child as every space's References are, refused by a
+    projection and by ``Data``'s reader: at ``-1`` and ``2**53`` as modelx refuses it, and
+    at ``12.5``, which the compiled model truncates as it is set, as modelx refuses 12
+    (:func:`_as_held`).
 
     And each power of :data:`OVERFLOWING_POWERS` past the largest float, the month before
     it computing: compiled, the cell calls Python's own power where C's gives an infinity,
     uslib's M22 form, so that it raises the platform's ``OverflowError`` as modelx does,
     where it would carry an infinity on; the cover's, the premium's, the inflation's, the
-    improvement's and the crossover search's.
+    improvement's and the crossover search's, each of the search's four guards among them.
 
     And the refusals that are the compiled model's alone (:data:`COMPILED_ONLY`): a month
     past the ``t`` cache either side, a timing, a benefit and a kind past their codes and a
@@ -6861,8 +7030,7 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
                              model_point_file=TABLE, edits=edits)
         model = mx.read_model(folder, name=_name("refused"))
         try:
-            for ref, value in refs.items():
-                setattr(model.Projection, ref, value)
+            _set_refs(model, refs)
             want = [_did(lambda: model.Projection[idx].cells[cell](*args))
                     for idx, cell, args in calls]
             want_data = [_did(model.Data.cells[name]) for name in data]
