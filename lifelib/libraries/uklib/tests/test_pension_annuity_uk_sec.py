@@ -76,7 +76,8 @@ product's own facts:
   table; and what the default grid reaches.
 * C2, the fingerprint: every committed point computes what the model computed when its E
   step ended, frozen at the end of this module before its C step changed anything
-  (USLIB-SEC-PLAN.md §5.4).
+  (USLIB-SEC-PLAN.md §5.4), and refrozen once since, when M11's review added point 23,
+  which added its entry and changed no other.
 
 SEC month ``t`` is S month ``t + source_mth`` throughout, the direction in which
 ``uk_sec_support`` takes its ``t_offset``: ``d`` for a point restated at S month ``d``,
@@ -4308,7 +4309,9 @@ def test_the_phase_1_fingerprint_is_reproduced(sec_model):
     the column's own magnitude (``uk_sec_support.fingerprint_mismatches``), with the same
     points, frames and columns exactly.  ``python tools/gen_sec_fingerprint.py PA_UK_SEC
     --check`` runs the same comparison from the command line.  Until the freeze, which is
-    committed alone, the block is empty and the test skips.
+    committed alone, the block is empty and the test skips.  The block was refrozen once,
+    in a commit of its own, when M11's review added point 23, the LPI point held at its
+    floor: it added that point's entry, and every other point's is what M11 first froze.
     """
     if not FINGERPRINT:
         pytest.skip("the Phase 1 fingerprint is frozen in a commit of its own")
@@ -4316,10 +4319,12 @@ def test_the_phase_1_fingerprint_is_reproduced(sec_model):
 
 
 # PA_UK_SEC's fingerprint, frozen from the model as M11 committed it and committed alone,
-# before its C step changed anything.  Each point is keyed by its point_id; each column
-# holds (its sum over the frame, its largest absolute value, (its values at the months)).
-# The block is written by tools/gen_sec_fingerprint.py, and is never edited by hand: a
-# refreeze goes through the tool's --force, in a commit of its own that says why.
+# before its C step changed anything, and refrozen alone once since, when M11's review
+# added point 23, which added its entry and changed no other.  Each point is keyed by its
+# point_id; each column holds (its sum over the frame, its largest absolute value, (its
+# values at the months)).  The block is written by tools/gen_sec_fingerprint.py, and is
+# never edited by hand: a refreeze goes through the tool's --force, in a commit of its own
+# that says why.
 # BEGIN generated fingerprint: PA_UK_SEC -- tools/gen_sec_fingerprint.py
 FINGERPRINT = {
     1: {"rows": 636, "months": (0, 158, 317, 476, 635),
@@ -5369,6 +5374,56 @@ FINGERPRINT = {
                 261119.18507579862, 269328.2269246159)),
             "vp_balance": (833236.1332074542, 29850.9125, (
                 29850.9125, 0.0, 0.0, 0.0, 0.0)),
+        },
+    },
+    23: {"rows": 582, "months": (0, 145, 290, 435, 581),
+        "result_cf": {
+            "pols_if": (347.38626527230383, 0.9986414813716636, (
+                0.9986414813716636, 0.9569125799377458, 0.7310100056068868,
+                0.20547209018350543, 0.0007810393830953411)),
+            "annuity_payments": (203959.47023296118, 1663.3306192174425, (
+                0.0, 0.0, 1468.9552140722778, 0.0, 2.1785297345360415)),
+            "claims_vp": (892.1975717977265, 28.002637202196023, (
+                28.002637202196023, 0.0, 0.0, 0.0, 0.0)),
+            "claims_prop": (0.0, 0.0, (
+                0.0, 0.0, 0.0, 0.0, 0.0)),
+            "expenses": (1427.9647659956797, 3.814220896097501, (
+                2.4966037034291593, 3.4108213215157646, 3.7149820779031657,
+                1.488788264970661, 0.008068628646429783)),
+            "liability_cf": (206279.63257075462, 1666.9595227063146, (
+                30.499240905625182, 3.4108213215157646, 1472.670196150181,
+                1.488788264970661, 2.1865983631824712)),
+            "net_cf": (-206279.63257075462, 1666.9595227063146, (
+                -30.499240905625182, -3.4108213215157646, -1472.670196150181,
+                -1.488788264970661, -2.1865983631824712)),
+        },
+        "result_pols": {
+            "pols_if": (347.38626527230383, 0.9986414813716636, (
+                0.9986414813716636, 0.9569125799377458, 0.7310100056068868,
+                0.20547209018350543, 0.0007810393830953411)),
+            "pols_new_biz": (0.0, 0.0, (
+                0.0, 0.0, 0.0, 0.0, 0.0)),
+            "lives_if_1": (223.75207242707788, 0.9478898134802793, (
+                0.9478898134802793, 0.7159216813773177, 0.3395509232434521,
+                0.022877055578206393, 0.0)),
+            "lives_if_2": (305.9445930205485, 0.9739298835972843, (
+                0.9739298835972843, 0.8483255594050328, 0.5927165259824154,
+                0.18687007161964506, 0.0007810393830953411)),
+            "certain_floor": (0.0, 0.0, (
+                0.0, 0.0, 0.0, 0.0, 0.0)),
+            "payment_factor": (223.75207242707788, 0.9478898134802793, (
+                0.9478898134802793, 0.7159216813773177, 0.3395509232434521,
+                0.022877055578206393, 0.0)),
+            "dependant_factor": (61.81709642261301, 0.1962284948587069, (
+                0.025375833945692157, 0.12049544928021405, 0.19572954118171734,
+                0.09129751730264951, 0.00039051969154767056)),
+            "annuity_pp": (583419.4984148317, 5578.540037001206, (
+                0.0, 0.0, 2744.2720437215457, 0.0, 5578.540037001206)),
+            "cum_annuity_all": (90420967.87937877, 227942.38869908007, (
+                23982.9184661188, 94851.46313810047, 173496.21979792096, 221512.36973973288,
+                227942.38869908007)),
+            "vp_balance": (715204.6502170002, 25700.0, (
+                25700.0, 0.0, 0.0, 0.0, 0.0)),
         },
     },
 }
