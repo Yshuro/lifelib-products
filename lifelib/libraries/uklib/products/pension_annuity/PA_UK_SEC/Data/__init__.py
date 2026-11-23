@@ -181,10 +181,13 @@ def model_point_table():
         number, 1 or more, the peak being at least the latest index; and on RPI-linked
         escalation with value protection on the first death ``cum_annuity_pp_init`` is a
         finite number, 0 or more;
-    14. on RPI-linked escalation ``annual_income_init`` is ``annual_income`` or more: the
-        LPI's floor and the ratchet never let the income fall below the first year's, so a
-        lower one is no history the contract can have, as a negative fixed escalation is
-        none;
+    14. on RPI-linked escalation ``annual_income_init`` is ``annual_income`` or more, to
+        half a cent: the LPI's floor and the ratchet never let the income fall below the
+        first year's, so a lower one is no history the contract can have, as a negative
+        fixed escalation is none.  Half a cent, since an extract may carry the opening
+        income to the cent, which takes it up to half a cent from its exact value, while
+        the first year's income is the contract's own (USLIB-SEC-PLAN.md D6): 5,399.995
+        against 5,400 is read, and 5,399.99 refused;
     15. a contract not yet in payment, ``duration_mth`` 0 or less, holds its values at the
         start date: each covered life alive, nothing paid, the first year's income,
         ``annual_income``, and a peak of 1;
@@ -318,12 +321,15 @@ def model_point_table():
         if bad:
             raise ValueError(f"{name}: {column} must be {rule}{on}; it is not at "
                              f"point_id {bad}")
+    # Amounts of money are compared to a cent, so that an extract may carry each to the
+    # cent (USLIB-SEC-PLAN.md D6): an opening income so carried is within half a cent of
+    # its exact value, and the first year's income, the contract's own, adds nothing.
     income = pd.to_numeric(table["annual_income"], errors="coerce")  # noqa: F821
-    bad = table.index[linked & ~(values["annual_income_init"] >= income)].tolist()
+    bad = table.index[linked & ~(values["annual_income_init"] >= income - 0.005)].tolist()
     if bad:
-        raise ValueError(f"{name}: annual_income_init must be annual_income or more on "
-                         f"RPI-linked escalation, whose income never falls below the first "
-                         f"year's; it is not at point_id {bad}")
+        raise ValueError(f"{name}: annual_income_init must be annual_income or more, to "
+                         f"half a cent, on RPI-linked escalation, whose income never falls "
+                         f"below the first year's; it is not at point_id {bad}")
     issued = months <= 0
     for column, want, where in (
             ("lives_if_init_1", 1.0, everyone),

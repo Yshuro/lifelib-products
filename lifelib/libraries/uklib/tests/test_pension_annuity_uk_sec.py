@@ -87,8 +87,9 @@ SEC month ``t`` is S month ``t + source_mth`` throughout, the direction in which
 every month, about 400 cases, run by default on a core, chosen so that between them they
 reach every branch, every opening-state column, every kind of valuation month and both
 sides of every ``min`` and ``max`` the full grid reaches, which
-``test_the_core_grid_reaches_every_branch`` asserts.  The other cases, and the rules test's
-scan of their rows, carry the ``sec_full`` marker and are skipped, with the reason shown,
+``test_the_core_grid_reaches_every_branch`` asserts.  The other cases, the rules test's
+scan of their rows, and the depth test's shapes issued 120 months on, which run as deep as
+those issued now, carry the ``sec_full`` marker and are skipped, with the reason shown,
 unless ``UKLIB_SEC_FULL=1`` is set.  They are never dropped: one leg of the CI matrix sets
 it, and ``UKLIB_SEC_FULL=1 python -m pytest -m sec_full
 lifelib/libraries/uklib/tests/test_pension_annuity_uk_sec.py`` runs them alone.  Each
@@ -1495,8 +1496,8 @@ CHAIN_OVERHEAD = 16
 # which reads no mortality, every covered life issued at issue_age_min, 0, reaches it by
 # the age stop.  On the table basis, which reads the table from the issue age on, a life
 # issued at its first age, 50, stops at 780 months, and the frame reaches 1,380 by a
-# guarantee of that length, which proj_len() accepts.  Each issued now and
-# future_horizon_mth, 120 months, on.
+# guarantee of that length, which proj_len() accepts.  Each issued now, and with
+# UKLIB_SEC_FULL=1 future_horizon_mth, 120 months, on too (DEPTH_DELAYS).
 YOUNGEST = {"scenario": 0, "table": 50}
 LONGEST = 1380
 
@@ -1523,14 +1524,25 @@ SHAPES = ((1, "scenario", 0, SCENARIO_HEADS), (10, "scenario", 0, SCENARIO_HEADS
           (7, "table", LONGEST, TABLE_HEADS), (8, "table", LONGEST, SINGLE_HEADS))
 
 # How deep each shape's deepest chain head runs, called cold in the last month of its
-# longest cover, issued now or 120 months on, by S point (measured at M11): net_cf in each,
-# 1,379 months back to t_entry() and 7 to 12 cells more.  The deepest, DEEPEST_SHAPE's,
-# net_cf(1379) through the table basis's survival under a 1,380-month guarantee, 1,391
-# cells, as deep on points 6, 7 and 8, is the chain the C step measures its stack on
-# (UKLIB-SEC-PLAN.md §6.7, *Risk*, which put it at about 1,510).
+# longest cover, by S point (measured at M11), issued now and, as deep, 120 months on:
+# net_cf in each, 1,379 months back to t_entry() and 7 to 12 cells more.  The deepest,
+# DEEPEST_SHAPE's, net_cf(1379) through the table basis's survival under a 1,380-month
+# guarantee, 1,391 cells, as deep on points 6, 7 and 8, is the chain the C step measures
+# its stack on (UKLIB-SEC-PLAN.md §6.7, *Risk*, which put it at about 1,510).
 SHAPE_DEPTHS = {1: 1386, 10: 1387, 2: 1391, 6: 1391, 7: 1391, 8: 1391}
 DEEPEST_SHAPE = 2
 DEEPEST = SHAPE_DEPTHS[DEEPEST_SHAPE]
+
+# When the shapes are issued, months after the valuation date: now by default, and 120
+# months on, the shipped future_horizon_mth, with UKLIB_SEC_FULL=1 alone, since its chains
+# run as deep as now's (test_every_chain_runs_one_cell_a_month_from_a_cold_start) and
+# would double the test's time.
+DEPTH_DELAYS = (pytest.param(0, id="now"),
+                pytest.param(120, id="120-months-on", marks=(
+                    pytest.mark.sec_full,
+                    pytest.mark.skipif(not SEC_FULL, reason="the shapes issued 120 months "
+                                       "on run as deep as now's, and run with "
+                                       "UKLIB_SEC_FULL=1 (UKLIB-SEC-PLAN.md U6)"))))
 
 
 def _cold_depth(proj, cell, args):
@@ -1548,11 +1560,11 @@ def _cold_depth(proj, cell, args):
     return deepest
 
 
-def _longest_cover(tmp_path):
+def _longest_cover(tmp_path, k):
     """A copy whose table holds each of :data:`SHAPES` at its longest cover: the twin of
-    its S point with every covered life issued at :data:`YOUNGEST` on its basis, now and
-    120 months on, the shipped ``future_horizon_mth``.  ``(folder, [(label, frame,
-    t_entry, heads)])``."""
+    its S point with every covered life issued at :data:`YOUNGEST` on its basis, ``k``
+    months after the valuation date.  ``(folder, [(label, frame, t_entry, heads, S
+    point)])``."""
     committed = _committed()
     rows, frames = [], []
     top = committed.index.max()
@@ -1560,21 +1572,21 @@ def _longest_cover(tmp_path):
         twin = _label(committed, "twin", s_point, 0)
         age = YOUNGEST[basis]
         assert committed.at[twin, "mort_basis"] == basis, s_point
-        for k in (0, 120):
-            top += 1
-            row = committed.loc[[twin]].assign(annuitant_age=age, duration_mth=-k,
-                                               guarantee_months=guarantee)
-            if str(row["dependant_present"].iloc[0]) == "True":
-                row = row.assign(dependant_age=age)
-            row.index = pd.Index([top], name="point_id")
-            rows.append(row)
-            frames.append((top, max(12 * (115 - age), guarantee) + k, k, heads, s_point))
+        top += 1
+        row = committed.loc[[twin]].assign(annuitant_age=age, duration_mth=-k,
+                                           guarantee_months=guarantee)
+        if str(row["dependant_present"].iloc[0]) == "True":
+            row = row.assign(dependant_age=age)
+        row.index = pd.Index([top], name="point_id")
+        rows.append(row)
+        frames.append((top, max(12 * (115 - age), guarantee) + k, k, heads, s_point))
     return _sec_inputs(tmp_path, pd.concat(rows)), frames
 
 
 # modelx warns as its stack trace starts and stops, which is all the test does with it.
 @pytest.mark.filterwarnings("ignore:call stack trace:UserWarning")
-def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path):
+@pytest.mark.parametrize("k", DEPTH_DELAYS)
+def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path, k):
     """Called cold, each chain runs one cell a month back to ``t_entry()``, no more (D5).
 
     No number shows how deep a chain runs, and a compiled model runs it on the C stack, so
@@ -1586,13 +1598,20 @@ def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path):
     each chain head of each of :data:`SHAPES`, in the last month of the frame, each on a
     read of its own and called first.  At each shape's longest cover, 1,380 months from
     the start, every life issued at the youngest age its basis projects, and on the table
-    basis a guarantee to that month, now and 120 months on (:func:`_longest_cover`); each
-    row's frame is asserted after.  Each shape's deepest call is its measure in
-    :data:`SHAPE_DEPTHS`, so that a shape left out, or a chain grown, fails here; the
-    deepest of all, :data:`DEEPEST_SHAPE`'s, is the longest chain the C step's stack must
-    carry (UKLIB-SEC-PLAN.md §6.7, *Risk*, which put it at about 1,510).
+    basis a guarantee to that month (:func:`_longest_cover`), issued ``k`` months after the
+    valuation date; each row's frame is asserted after.  Each shape's deepest call is its
+    measure in :data:`SHAPE_DEPTHS`, so that a shape left out, or a chain grown, fails
+    here; the deepest of all, :data:`DEEPEST_SHAPE`'s, is the longest chain the C step's
+    stack must carry (UKLIB-SEC-PLAN.md §6.7, *Risk*, which put it at about 1,510).
+
+    Issued 120 months on, each chain runs as deep as issued now, and the same measures
+    hold, so those rows run with ``UKLIB_SEC_FULL=1`` alone (:data:`DEPTH_DELAYS`).  The
+    later row runs the same cells over the same policy months, 120 months later on the
+    valuation clock: improvement, the income and the schedules are dated on the policy
+    clock, and inflation, the one cell the valuation clock dates, is a closed form outside
+    every chain, read once by the month's expense.
     """
-    folder, frames = _longest_cover(tmp_path)
+    folder, frames = _longest_cover(tmp_path, k)
     found, deepest = [], {}
     for label, months, entry, heads, s_point in frames:
         for cell, extra in heads:
@@ -1864,6 +1883,9 @@ STATUS = ("{file}: on the scenario basis lives_if_init_{life} must be 1 while th
           "later, and 0 once it has died; it is not at point_id {points}")
 DEATH = ("{file}: death_mth_{life} must be blank or a whole number of months, 0 or more, a "
          "policy month, on the scenario basis; it is not at point_id {points}")
+BELOW_FIRST_YEAR = ("{file}: annual_income_init must be annual_income or more, to half a "
+                    "cent, on RPI-linked escalation, whose income never falls below the "
+                    "first year's; it is not at point_id [14]")
 
 
 def _start(column, points):
@@ -2005,9 +2027,12 @@ MALFORMED = [
      _rule("cum_annuity_pp_init", "a finite number, 0 or more", [14], PAID)),
     ("negative annuitant payments", _set("cum_annuity_pp_init", [21], -1.0),
      _rule("cum_annuity_pp_init", "a finite number, 0 or more", [21], PAID)),
+    # Rule 14 at its edge too: a cent below the first year's 5,400 is refused, half a cent
+    # below read (test_the_edges_of_the_in_force_interface_are_accepted).
     ("an RPI income below the first year's", _set("annual_income_init", [14], 5000.0),
-     "{file}: annual_income_init must be annual_income or more on RPI-linked escalation, "
-     "whose income never falls below the first year's; it is not at point_id [14]"),
+     BELOW_FIRST_YEAR),
+    ("an RPI income a cent below the first year's",
+     _set("annual_income_init", [14], 5399.99), BELOW_FIRST_YEAR),
     # Each window at both its ends: the start date's at duration_mth 0 and -120, the
     # horizon; the first policy year's at 1 and 12.
     ("survival at the start of a contract not yet in payment",
@@ -2652,7 +2677,9 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
     with a frame of 756 months, 636 from its start after 120 before it.  A row valued in its
     first month, 1, holds each life's survival and a payment to date.  Just past the first
     policy year, in month 13, an RPI-linked row holds the income and the peak its history
-    gives, which the first year's rule no longer reads.  And each bound of the contract at
+    gives, which the first year's rule no longer reads.  An RPI-linked income half a cent
+    below the first year's, as an extract carrying it to the cent may hold it, is rule 14's
+    edge, read and projected (USLIB-SEC-PLAN.md D6).  And each bound of the contract at
     its edge projects: issue at 0, the youngest the contract allows, a frame of 1,380 months
     on the scenario basis, and a guarantee of exactly 1,380 months, the longest frame from
     the start.
@@ -2663,6 +2690,8 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
     first = _label(committed, "derived", 2, 101)
     capped = _label(committed, "derived", 7, 42)
     frozen = _label(committed, "derived", 6, 60)
+    floored = _label(committed, "derived", 7, 54)
+    half_cent = committed.at[floored, "annual_income"] - 0.005
 
     def edit(table):
         table = _set("policy_count", [last], 0.0)(table)
@@ -2670,6 +2699,7 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
         table = _set("duration_mth", [future], -120.0)(table)
         table = _set("duration_mth", [first], 1.0)(table)
         table = _set("duration_mth", [capped, frozen], 13.0)(table)
+        table = _set("annual_income_init", [floored], half_cent)(table)
         table = _set("annuitant_age", [1], 0)(table)
         table = _set("dependant_age", [1], 0)(table)
         return _set("guarantee_months", [3], 1380)(table)
@@ -2696,6 +2726,9 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
             assert len(p13.result_cf()) == 636 - 13, label
         assert _point(model, frozen).rpi_peak_init() == committed.at[frozen,
                                                                      "rpi_peak_init"]
+        low = _point(model, floored)
+        assert low.annual_income_init() == half_cent == 5399.995
+        assert len(low.result_cf()) == 636 - 54
         assert len(_point(model, 1).result_cf()) == 1380
         assert len(_point(model, 3).result_cf()) == 1380
         for point in (1, 3):

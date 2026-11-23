@@ -135,7 +135,7 @@ over no month already run (UKLIB-SEC-PLAN.md K14, §9 item 5):
 | `duration_mth` | whole months | the valuation date | the months from the annuity start date: positive in payment, 0 for an annuity starting at the valuation date, `−k` for one to start `k` months later, with `k` at most 120 as shipped |
 | `lives_if_init_1`, `lives_if_init_2` | probabilities | the start of month 0, before any month-0 death | each covered life's probability of being alive, the annuitant's and the dependant's: 1 or 0 on a record, `PA_UK_S`'s `lives_if(d, life)` on a restated point; the dependant's 0 on a single life |
 | `cum_annuity_all_init` | pounds per contract, 0 or more | the start of month 0 | the instalments paid on every stream before the valuation date, the annuitant's, the guaranteed and the dependant's: what was paid on a record, the expectation on a restated point; last-survivor value protection nets it |
-| `annual_income_init` | pounds a year, `annual_income` or more | the start of month 0, before any month-0 anniversary | read on RPI-linked escalation, `lpi5` and `rpi_catchup`: the annuitant's income of the policy year under way, before the dependant's percentage, the scale the dependant is paid `δ` times of after the annuitant's death; the increases the RPI has given since the start, never below the first year's; on a point valued on an anniversary the year the anniversary closes, month 0 escalating it at the valuation date's RPI |
+| `annual_income_init` | pounds a year, `annual_income` or more, to half a cent | the start of month 0, before any month-0 anniversary | read on RPI-linked escalation, `lpi5` and `rpi_catchup`: the annuitant's income of the policy year under way, before the dependant's percentage, the scale the dependant is paid `δ` times of after the annuitant's death; the increases the RPI has given since the start, never below the first year's; on a point valued on an anniversary the year the anniversary closes, month 0 escalating it at the valuation date's RPI |
 | `rpi_peak_init` | a factor, 1 or more | the anniversary that opened the policy year under way | read on `rpi_catchup`: the ratchet's running peak of the reference index over the latest index, above 1 while the index stands below a past peak |
 | `cum_annuity_pp_init` | pounds per contract, 0 or more | the start of month 0 | read on RPI-linked escalation with value protection on the first death: the annuitant's as-if-alive instalments before the valuation date, which the first-death balance nets |
 
@@ -205,7 +205,9 @@ each state column in its domain where it is read; the start date's values on a p
 yet in payment, and the first year's in the first policy year; and on the scenario basis
 each life's opening status its month of death's, alive while the death falls at the
 valuation month or later; and on RPI-linked escalation the income of the year under way
-is the first year's or more, the LPI's floor and the ratchet never letting it fall.
+is the first year's or more, to half a cent, the LPI's floor and the ratchet never letting
+it fall: half a cent, so that an extract may carry it to the cent (USLIB-SEC-PLAN.md D6),
+5,399.995 against a first year's 5,400 read and 5,399.99 refused.
 `PA_UK_S` meets most of these only when a projection reaches them, and some never: `bool`
 reads a blank flag as True, `int()` truncates an age, a frequency, a guarantee, a start
 year and a month of death, and a negative month of death reads as a life that never dies
@@ -356,13 +358,16 @@ runs forward one cell a month from there. So a contract valued late in life read
 balance without recursing back to its start date, where `PA_UK_S`'s `G(k)` recurses from
 0. On a model just read, a cold call in the frame's last month runs at most 12 cells deeper
 than one a month back to `t_entry()`, at each shape's longest cover, 1,380 months from the
-start, now and 120 months on: on the scenario basis every life issued at 0, where `net_cf`
-runs 1,387 cells deep through the payments to date; on the table basis every life issued
-at 50, the table's first age, whose age stop at 780 months a guarantee of 1,380 months,
-which `proj_len()` accepts, carries to the longest frame. There `net_cf(1379)` runs 1,391
-cells deep through survival, on the worked example's table twin, the RPI points and the
-rated life alike: the deepest call a projection makes, which the C step measures its stack
-on.
+start, now, and as deep 120 months on, which the full grid runs: on the scenario basis
+every life issued at 0, where `net_cf` runs 1,387 cells deep through the payments to date;
+on the table basis every life issued at 50, the table's first age, whose age stop at 780
+months a guarantee of 1,380 months, which `proj_len()` accepts, carries to the longest
+frame. There `net_cf(1379)` runs 1,391 cells deep through survival, on the worked
+example's table twin, the RPI points and the rated life alike: the deepest call a
+projection makes, which the C step measures its stack on. Issued later, a chain runs the
+same cells over the same policy months, later on the valuation clock: improvement, the
+income and the schedules are dated on the policy clock, and inflation, the one cell the
+valuation clock dates, is a closed form outside every chain.
 
 Cover is `is_active(t)`, `0 ≤ duration_mth(t) < stop_mth()`, started and short of the stop
 rule, and outside it, before the start and from the stop rule on, every count is zero, and
@@ -495,9 +500,9 @@ the start of the month dies in it; so S's point 8 owes nothing after policy mont
   spliced under RPIs of 8% and −2%, where the LPI's cap and floor bind and the ratchet
   freezes, and the worked example's table twin beside them, its fixed 3% apart from either
   RPI. A core of 44 of the 378 splice cases and 7 of the 46 future ones runs by default,
-  and the full grid with `UKLIB_SEC_FULL=1`; a test asserts the core reaches every branch,
-  opening-state column, kind of valuation month and side of every `min` and `max` the full
-  grid reaches.
+  and the full grid with `UKLIB_SEC_FULL=1`, the depth test's shapes issued 120 months on
+  among it; a test asserts the core reaches every branch, opening-state column, kind of
+  valuation month and side of every `min` and `max` the full grid reaches.
 - **Future new business**: starting 1 and 12 months after the valuation date, each S point
   is the S projection moved on, with zeros before the start and no rate evaluated there,
   and so is each variant starting a month on, the catch-up point 13 months on and the
@@ -521,7 +526,7 @@ the start of the month dies in it; so S's point 8 owes nothing after policy mont
   multiplying `policy_count` by 2.5 multiplies every flow and counted cell and moves no
   per-contract value, every flow nonzero on some point; and each point in payment, restated
   a month on with the state it carries there, continues its own flows.
-- **Validation and regeneration**: each malformed row of the table, 81 cases, is refused
+- **Validation and regeneration**: each malformed row of the table, 82 cases, is refused
   naming its point, on the committed labels and on an extract's; each text value no
   decode knows raises `PA_UK_S`'s message; the horizon is a Reference; a point at its
   stop, one owing nothing and one the contract does not issue are refused by
@@ -568,15 +573,17 @@ product over every month before each time point, holds about 110 MB of that reco
 point on the table basis. So the module's sweeps evaluate the check's residual at every
 25th time point and the frame's close, the whole check running on each splice row as it
 is scanned, released once read; the splice keeps two S points swept at a time. The
-default run peaks at 2.8 GB of memory, inside the 7 GB of the smallest CI runner, macOS's,
-and takes about five minutes, from 295 s to 330 s on the shared 4-CPU machine as its load
-varied (measured at M11): at and past the five minutes UKLIB-SEC-PLAN.md U6 budgets. Half
-of it is the core's 44 splice cases, about 110 s, each scanned whole, and the cold-depth
-test, about 35 s, which reads the model afresh for each of its 74 cold calls on frames of
-1,380 and 1,500 months; then the 105 domain cases, about 25 s, each on a model just read,
-every accepted edge projected. A cut would cost coverage: the core's cases are there for
-what the core-reach test asks of the core, and the depth test's table shapes alone hold
-the deepest chain, the one the C step measures its stack on.
+default run peaks at 2.9 GB of memory, inside the 7 GB of the smallest CI runner, macOS's,
+and takes 284 s on the shared 4-CPU machine, inside the five minutes UKLIB-SEC-PLAN.md U6
+budgets (measured at M11). It took 295 s to 330 s, as the machine's load varied, until
+the depth test's shapes issued 120 months on, which run as deep as those issued now,
+moved to the full grid. The largest part is the core's 44 splice cases, about 110 s, each
+scanned whole, and none is cut: the core-reach test's predicates are coarser than the
+faults the cases are there for, and the review found that cutting by them would lose
+`rpi_high-point2-d24` and `rpi_low-point7-d25`, which catch a fixed escalation
+compounded at the RPI and the LPI's floor dropped. Then the 105 domain cases, about 25 s,
+each on a model just read, every accepted edge projected, and the cold-depth test, about
+18 s, which reads the model afresh for each of its 37 cold calls.
 
 ```bash
 python -m pytest tests/test_pension_annuity_uk_sec.py -q
