@@ -548,7 +548,7 @@ raise the same error.
   tolerance scaled by the policies on both strands, closes on ten million policies, the
   point paid-up entirely among them; and so does the truncation check, on that point with
   ten million paid-up policies at a loading under which survivors reach the limiting age.
-- **Validation and regeneration**: each malformed row of the table, 87 cases, is refused
+- **Validation and regeneration**: each malformed row of the table, 89 cases, is refused
   naming its point, and naming its label on an extract labelled otherwise than by position,
   among them each bound of the premiums paid, the paid-up cover and the crossover a cent or
   a month outside, the first year's history a month after issue, and a paid-up strand at

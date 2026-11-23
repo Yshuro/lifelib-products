@@ -813,6 +813,9 @@ AT_VALUATION = {
     "crossover_mth_init 0 or more": lambda x: x.crossover_mth_init() >= 0,
     "an escalating point valued once premiums have ceased": lambda x: (
         x.escalation() != "level" and 0 < x.cessation_mths() <= x.duration_mth_init()),
+    "an increase at t = 0 on an anniversary valuation": lambda x: (
+        0 < x.duration_mth_init() and x.duration_mth_init() % 12 == 0
+        and x.cover_pp(0) > x.cover_pp_init()),
 }
 IN_FRAME = {
     "the moratorium": lambda x, t: x.in_moratorium(t),
@@ -1698,6 +1701,12 @@ MALFORMED = [
     ("a cent past the latest premium", lambda t: _set(
         "prem_cum_pp_init", [11], t.at[11, "premium_pp_init"] * 186 + 0.01)(t),
      _PAID_ESCALATING),
+    # Past cessation the premiums due are cessation_months, 240, not the months in force,
+    # 250: a cent past the latest premium times 240, which times 250 would admit.
+    ("a cent past the latest premium after cessation", lambda t: _then(
+        _set("duration_mth", [11], 250),
+        _set("prem_cum_pp_init", [11], t.at[11, "premium_pp_init"] * 240 + 0.01))(t),
+     _PAID_ESCALATING),
     # The paid-up cover: the review's 0 and 1e7 beside paid-up policies, and each bound a
     # cent outside, 5,000 x 120 / 240 and 5,000 x 200 / 240.
     ("no paid-up cover beside paid-up policies", _set("pu_benefit_pp_init", [10], 0.0),
@@ -1707,6 +1716,12 @@ MALFORMED = [
      _PU_COVER),
     ("a cent past the paid-up cover",
      _set("pu_benefit_pp_init", [10], 5000.0 * 200 / 240 + 0.01), _PU_COVER),
+    # On an odd cessation, 239 months, a conversion needs 120 payments, half rounded up, so
+    # the paid-up cover is at least 5,000 x 120 / 239: a cent below it, which half rounded
+    # down, 5,000 x 119 / 239, would admit.
+    ("a cent short of the paid-up cover on an odd cessation",
+     _then(_set("cessation_months", [10], 239),
+           _set("pu_benefit_pp_init", [10], 5000.0 * 120 / 239 - 0.01)), _PU_COVER),
 ]
 
 
@@ -2261,8 +2276,10 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
     conversion and at today's cover's share of the payments made; and an odd cessation, 239
     months, at its first paid-up month, 120, where the two shares meet.  And the first
     year's rule at its edge: a month past the first anniversary, its first increase in the
-    columns.  The extra rows are copies of committed rows under labels of their own, 21 to
-    30.
+    columns; the paid-up cover at its lower bound on an odd cessation, valued at 200, where
+    the upper bound does not meet it; and the premiums paid on an escalating point past
+    cessation at the latest premium times the 240 premiums due.  The extra rows are copies
+    of committed rows under labels of their own, 21 to 32.
     """
     committed = _committed()
     crossover = _label(committed, "derived", 1, 166)
@@ -2272,6 +2289,7 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
     entire = _label(committed, "derived", 3, 180)
     ceased = _label(committed, "derived", 7, 300)
     latest = committed.at[rpi, "premium_pp_init"] * 186
+    latest_paid = committed.at[rpi, "premium_pp_init"] * 240
     copies = {21: (paid_up, {"duration_mth": 120, "prem_cum_pp_init": 3600.0,
                              "pu_benefit_pp_init": 2500.0, "crossover_mth_init": -1}),
               22: (rpi, {"cover_pp_init": 5000.0, "premium_pp_init": 30.0,
@@ -2288,7 +2306,10 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
               29: (_label(committed, "derived", 1, 6), {"prem_cum_pp_init": 180.004}),
               30: (_label(committed, "derived", 6, 12),
                    {"duration_mth": 13, "cover_pp_init": 157500.0,
-                    "premium_pp_init": 111.375, "prem_cum_pp_init": 1215.0 + 111.375})}
+                    "premium_pp_init": 111.375, "prem_cum_pp_init": 1215.0 + 111.375}),
+              31: (paid_up, {"cessation_months": 239,
+                             "pu_benefit_pp_init": 5000.0 * 120 / 239}),
+              32: (rpi, {"duration_mth": 250, "prem_cum_pp_init": latest_paid})}
 
     def edit(table):
         extra = []
@@ -2346,6 +2367,11 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
         assert refund.benefit_pp(0, _code(refund, "NON_ACC")) == 180.004 + 30.0
         second = _point(model, 30)
         assert (second.duration_init(), second.cover_pp(0)) == (1, 157500.0)
+        odd = _point(model, 31)
+        assert odd.pu_benefit_pp_init() == 5000.0 * 120 / 239
+        assert odd.pu_benefit(0) == odd.pols_pu_init() * odd.pu_benefit_pp_init()
+        ceased = _point(model, 32)
+        assert ceased.prem_cum_pp(0) == latest_paid and ceased.premium_pp(0) == 0.0
     finally:
         model.close()
 
