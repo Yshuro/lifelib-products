@@ -161,7 +161,10 @@ valued on its fifth anniversary carries the factors of policy year 5, `1.03^4` a
 it is `1.03^4 × 1.05`, its cover 177,267.64 in month 0, where a column that held the year
 the anniversary opens would carry the step made at 3%, and pay 173,891.11. A policy in
 force 12 months or fewer has been given no increase, its first anniversary falling in
-month 0 or later, so `Data` holds its factors to 1.
+month 0 or later, so `Data` holds its factors to 1. An extract written under the old
+rule, its factors those after an anniversary at the valuation date, is refused only at
+month 12; on a later anniversary it passes every rule and takes the month-0 step twice,
+so an extract must give the factors before it.
 
 The waiver's deferred period is a vector whose length is a Reference,
 `Projection.wop_defer_mths`, six months as shipped, so it goes in a companion,
@@ -317,6 +320,15 @@ a future row's carries the months to issue, `TA-000007-F13`. Row `t` of a genera
 is month `t + source_mth` of its S point. The pipeline holds point 11's six lags and point
 12's four.
 
+An indexed point that `Term_UK_S` opens in force has no twin. S opens an in-force frame
+on an anniversary only, at index factors of 1, and takes its first step at the next
+anniversary; this model takes an anniversary at the valuation date as month 0's own step,
+from factors `Data` holds to 1 or more, so the twin would be one step above S in every
+month of its frame: made indexed, S's point 8 would have a twin paying 154,500 at
+`t = 0` against S's 150,000. So the generator refuses to write it, naming the point, and a
+test holds the refusal. S's own point 8 is not indexed, and a row restated from such a
+point at a later month is S's, its factors read in the month before.
+
 ## Counts and timings
 
 `pols_if_init()` is the count in force at the valuation date: `policy_count` for a point
@@ -389,7 +401,7 @@ fail it.
 | `claims(t, FIB)`; `fib_streams`, new | `(1 − c) I [D(t) + FIBcum(t)]` | `I [(1 − c) D(t) + fib_streams(t)]`, the streams opening at `fib_streams_init() × pols_if_init()` | The streams in payment are history, which a take-up changed at the valuation date does not commute; S's number at a take-up that never changes |
 | `wop_active_frac` | 1 at `proj_start()`, then `act(t − 1)(1 − inc_m) + (1 − act(t − 1)) rec_m` | `1 − wop_waived_frac_init() − Σ wop_deferred_init(lag)` at `t_entry()`, 1 on a point not yet in force, then the same chain; 0 outside cover | The lives active at the valuation date are what the waived share and the deferred period leave |
 | `wop_waived_frac` | 0 at `proj_start()`, no entrants from before it | `wop_waived_frac_init()` at `t_entry()`; entrants from before it, `wop_deferred_init(lag) (1 − rec_m)^t`, from after issue | The waived share and the deferred period carried in, at the valuation instant |
-| `idx_factor`, `idx_prem_factor` | a step per anniversary since `proj_start()`'s, from 1 | `idx_factor_init()` and `idx_prem_factor_init()`, then a step for each anniversary from month 0 on, month 0's own among them | The increases given before month 0 are history; an anniversary at the valuation date is the projection's, at the day's `rpi_rate` (*The in-force interface*) |
+| `idx_factor`, `idx_prem_factor` | a step per anniversary since `proj_start()`'s, from 1 | `idx_factor_init()` and `idx_prem_factor_init()`, then a step for each anniversary from month 0 on, month 0's own among them | The increases given before month 0 are history; an anniversary at the valuation date is the projection's, at the day's `rpi_rate` (*The in-force interface*). So an indexed point S opens in force, on an anniversary, at factors of 1 and with no step there, has no twin, one step above S throughout, and the generator refuses to write one (*The model points*) |
 | `premium_pp` | an annual premium where `t % 12 == 0` | where `duration_mth(t) % 12 == 0` | An anniversary is a policy month |
 | `fib_commute_pp` | `I a(N − t)` | `I a(N − duration_mth(t))` | The months left to the end of the term |
 | `benefit_pp`, `select_factor`, `mort_rate_base`, `lapse_rate_base`, the counts | unguarded: no `Term_UK_S` frame has a month outside cover | zero outside cover, before any table or rate is read; the tables' extents from `Data`, a read past them refused by name | Before issue S raises `KeyError` on the tables, and `B(k)` at a negative month exceeds the sum assured without a word |
@@ -894,9 +906,10 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   binds, is accepted in force; and the committed table and pipeline are what `Term_UK_S`
   generates. Not every state S reaches at any rates is accepted: at an incidence of
   0.999999 a year with no recovery, far outside the product, rounding takes S's waived
-  share a unit in the last place past 1, alone or with the deferred shares, and `Data`'s
-  rules 6 and 8 refuse S point 7 restated at 208 of its 239 months, from month 32. The
-  rules are not widened for it: each refuses a state no policy can be in, by its last bit.
+  share a unit in the last place past 1, alone or with the deferred shares, and
+  `Data.model_point_table`'s rule 6 and `Data.wop_pipeline`'s rule 8 refuse S point 7
+  restated at 208 of its 239 months, from month 32. The rules are not widened for it: each
+  refuses a state no policy can be in, by its last bit.
 - **The product's own facts**: the two clocks on the shipped points; the committed rows,
   in force and issued later, continuing their S points at the shipped assumptions but for
   inflation; the lapse ratio carried on from the issued cohort, and the deaths it loads;

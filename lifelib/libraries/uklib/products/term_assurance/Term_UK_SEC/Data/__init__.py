@@ -1043,14 +1043,15 @@ def fib_streams_init():
 
 
 def idx_factor_init():
-    """The cover indexation factor already given at the valuation date: float64 [point]."""
+    """The cover indexation factor entering month 0, before month 0's own event: float64
+    [point]."""
     return pd.to_numeric(model_point_table()["idx_factor_init"]).to_numpy(  # noqa: F821
         dtype="float64")
 
 
 def idx_prem_factor_init():
-    """The premium indexation factor already given at the valuation date: float64
-    [point]."""
+    """The premium indexation factor entering month 0, before month 0's own event:
+    float64 [point]."""
     return pd.to_numeric(                                            # noqa: F821
         model_point_table()["idx_prem_factor_init"]).to_numpy(dtype="float64")
 

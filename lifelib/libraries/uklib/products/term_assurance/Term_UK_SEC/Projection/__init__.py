@@ -588,8 +588,11 @@ def policy_term():
 def sum_assured():
     """SA0: the initial sum assured of the level and decreasing shapes [S1][S6].
 
-    The sum assured at issue: on an indexed point in force, the cover of the year under
-    way is this times :func:`idx_factor_init`. From ``Data.sum_assured``.
+    The sum assured at issue: on an indexed point in force, the cover entering month 0,
+    before month 0's own event, is this times :func:`idx_factor_init`, and the cover in
+    month t this times :func:`idx_factor` ``(t)``, so that on a point valued on its
+    anniversary the year under way from ``t = 0`` takes that anniversary's step too.  From
+    ``Data.sum_assured``.
     """
     return float(data.sum_assured()[idx])                            # noqa: F821
 
@@ -642,8 +645,12 @@ def premium_mth_pp():
     quote-driven and only the £5/month minimum is public [S5] - so any reference
     premium basis is constructed rather than observed.  It is guaranteed level for the
     full term [S2][S6][S9], which is what puts every month of premium inside the
-    Solvency UK contract boundary [R3].  On an indexed point in force, the premium of the
-    year under way is this times :func:`idx_prem_factor_init`.  From ``Data.premium_mth``.
+    Solvency UK contract boundary [R3].  On an indexed point in force, the premium
+    entering month 0, before month 0's own event, is this times
+    :func:`idx_prem_factor_init`, and the premium in month t this times
+    :func:`idx_prem_factor` ``(t)``, so that on a point valued on its anniversary the year
+    under way from ``t = 0`` takes that anniversary's step too.  From
+    ``Data.premium_mth``.
     """
     return float(data.premium_mth()[idx])                            # noqa: F821
 

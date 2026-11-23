@@ -2679,9 +2679,10 @@ def test_every_state_s_reaches_is_accepted_in_force(s_model, spliced, tmp_path):
     ``Term_UK_SEC`` refuses no state ``Term_UK_S`` reaches on these inputs, so none is set
     aside.  At rates far outside the product it does, by a unit in the last place: at an
     incidence of 0.999999 a year with no recovery, rounding takes S's waived share past 1,
-    alone or with the deferred shares, and ``Data``'s rules 6 and 8 refuse S point 7
-    restated at 208 of its 239 months, from month 32.  No rule is widened for it: each
-    refuses a share no policy can hold, by its last bit.
+    alone or with the deferred shares, and ``Data.model_point_table``'s rule 6 and
+    ``Data.wop_pipeline``'s rule 8 refuse S point 7 restated at 208 of its 239 months,
+    from month 32.  No rule is widened for it: each refuses a share no policy can hold, by
+    its last bit.
     """
     capped = _capped_s(tmp_path / "capped")
     try:
@@ -3166,6 +3167,35 @@ def test_an_anniversary_at_the_valuation_date_is_made_at_today_s_rpi(s_model, tm
     finally:
         s_today.close()
         sec.close()
+
+
+def test_no_twin_is_written_of_an_indexed_point_s_opens_in_force(tmp_path):
+    """The generator refuses the twin of an indexed point ``Term_UK_S`` opens in force.
+
+    S opens an in-force frame on an anniversary only, at index factors of 1, and takes its
+    first step at the next anniversary.  This model takes an anniversary at the valuation
+    date as month 0's own step (USLIB-SEC-PLAN.md D6, precised at its M7), from factors
+    ``Data`` holds to 1 or more, so no twin of such a point is S's: S's point 8, in force at
+    60, made indexed in a copy of S's table, would have a twin paying 154,500 at ``t = 0``,
+    one step above S's 150,000 in every month of its frame.  The generator refuses to write
+    it, naming the point and why; S itself takes no step at month 60 and its first at 72.
+    """
+    indexed = _s_table().assign(indexation=lambda t: t["indexation"] | (t.index == 8))
+    s = mx.read_model(temp_inputs(tmp_path, model_path(TWIN), model_points=indexed),
+                      name=_name("indexed_in_force"))
+    try:
+        p = _point(s, 8)
+        assert (p.idx_factor(60), p.idx_factor(71), p.idx_factor(72)) == (1.0, 1.0, 1.03)
+        assert p.benefit_pp(60) == 150000.0
+        with pytest.raises(ValueError) as err:
+            build_sec_table(SPEC, s)
+        assert str(err.value) == (
+            "Term_UK_S point 8: S opens it in force at month 60, an anniversary, indexed, "
+            "at factors of 1 and with no step there, where Term_UK_SEC makes an "
+            "anniversary at the valuation date month 0's own step (D6): no opening factor "
+            "of 1 or more gives S's numbers, so no twin is written")
+    finally:
+        s.close()
 
 
 def test_the_streams_in_payment_are_read_from_the_model_point(sec_model, s_model,

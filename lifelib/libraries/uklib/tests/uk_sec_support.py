@@ -1159,6 +1159,27 @@ def _term_commission_paid(s, d):
     return s.comm_init_pp() if d > 0 else 0.0
 
 
+def _term_no_indexed_twin_in_force(s, d):
+    """Refuse the twin of an indexed ``Term_UK_S`` point S opens in force, at month ``d``.
+
+    S opens an in-force frame on an anniversary only, ``proj_start()``, at index factors of
+    1, and takes its first step at the next anniversary.  ``Term_UK_SEC`` takes an
+    anniversary at the valuation date as month 0's own step (D6, precised at uslib's M7),
+    from the factors before it, which ``Data`` holds to 1 or more: the twin would be one
+    step above S in every month of its frame, its cover and premium ``1 + the increase``
+    times S's, 154,500 for S's 150,000 on an indexed point 8 at ``t = 0``, and so it is not
+    written.  S's own point 8 is not indexed.  A row restated from such a point at a later
+    month is S's, its factors read in the month before.
+    """
+    if d > 0 and s.indexation():
+        raise ValueError(
+            f"Term_UK_S point {s.point_id}: S opens it in force at month {d}, an "
+            f"anniversary, indexed, at factors of 1 and with no step there, where "
+            f"Term_UK_SEC makes an anniversary at the valuation date month 0's own step "
+            f"(D6): no opening factor of 1 or more gives S's numbers, so no twin is "
+            f"written")
+
+
 def _term_cover_factor(s, d):
     """``Term_UK_S``'s cover indexation factor entering month ``d``, before its own step.
 
@@ -1168,16 +1189,24 @@ def _term_cover_factor(s, d):
     the month before: mid-year that of the policy year under way, and on an anniversary
     that of the year it closes.  Where S's frame opens, at issue or at ``proj_start()`` on
     S's point 8, there is no month before it, and it is S's own opening factor,
-    ``idx_factor(d)``, 1.
+    ``idx_factor(d)``, 1, but on an indexed point S opens in force, whose twin no factor
+    can make S's (:func:`_term_no_indexed_twin_in_force`).
     """
-    return s.idx_factor(d - 1) if d > s.proj_start() else s.idx_factor(d)
+    if d > s.proj_start():
+        return s.idx_factor(d - 1)
+    _term_no_indexed_twin_in_force(s, d)
+    return s.idx_factor(d)
 
 
 def _term_premium_factor(s, d):
     """``Term_UK_S``'s premium indexation factor entering month ``d``, before its own step,
     at the instant :func:`_term_cover_factor` reads the cover factor: S's
-    ``idx_prem_factor(d - 1)``, or where S's frame opens its own opening factor."""
-    return s.idx_prem_factor(d - 1) if d > s.proj_start() else s.idx_prem_factor(d)
+    ``idx_prem_factor(d - 1)``, or where S's frame opens its own opening factor, refused
+    as that one is."""
+    if d > s.proj_start():
+        return s.idx_prem_factor(d - 1)
+    _term_no_indexed_twin_in_force(s, d)
+    return s.idx_prem_factor(d)
 
 
 # Term_UK_SEC's opening state (D6; UKLIB-SEC-PLAN.md §6.1): what Term_UK_S carries into

@@ -86,13 +86,15 @@ notes' own convention.
 
 **In force.** A point in force carries, beside its count, the state :mod:`~.Term_UK_S`
 carries into the month it is valued at, which S itself restarts where its frame opens,
-each measured at the valuation instant: the selective-lapse ratio, as a share of the
-cohort issued; the deaths since issue, and the family income benefit streams in payment,
-each per policy in force; the RPI indexation factors already given; the share of the
-policies whose premium is waived; the initial commission paid at issue, which the
-clawback recovers; and, in a companion, ``wop_pipeline_sec.csv``, the share still in the
-deferred period from each of its months, after the recoveries already made. Each is
-history, which no Reference changed at the valuation date reaches back to.
+each measured at the valuation instant, before month 0's own event: the selective-lapse
+ratio, as a share of the cohort issued; the deaths since issue, and the family income
+benefit streams in payment, each per policy in force; the RPI indexation factors given
+before month 0, an anniversary at the valuation date being month 0's own event, made at
+the day's RPI; the share of the policies whose premium is waived; the initial commission
+paid at issue, which the clawback recovers; and, in a companion, ``wop_pipeline_sec.csv``,
+the share still in the deferred period from each of its months, after the recoveries
+already made. Each is history, which no Reference changed at the valuation date reaches
+back to.
 ``result_pols()`` sets out the counts: in force, new business and each decrement, month by
 month.
 
