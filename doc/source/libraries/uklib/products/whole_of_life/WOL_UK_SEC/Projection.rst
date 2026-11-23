@@ -46,6 +46,8 @@ Cells Descriptions
 
 .. autofunction:: premium_pp_init
 
+.. autofunction:: crossover_mth_init
+
 .. autofunction:: t_entry
 
 .. autofunction:: is_active
@@ -53,6 +55,8 @@ Cells Descriptions
 .. autofunction:: limit_mth
 
 .. autofunction:: proj_len
+
+.. autofunction:: duration_init
 
 .. autofunction:: duration
 
