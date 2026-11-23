@@ -2021,11 +2021,13 @@ def _reviewed_too_soon(point, duration, column, value, issue, period=60):
 # the valuation month is month 0's own event, the projection's (USLIB-SEC-PLAN.md D6,
 # precised at its M7), so a reviewable point in force no more months than the review period
 # has made none before month 0: point 9, the reviewable point on its first review, is
-# refused a review factor there, its own month, the rule's edge, and moved back to 59, 1
-# and 30 months, a review factor, a latch and a review change, each in turn; and at 61
-# months, once the review period is lengthened to 61, the edge moving with the Reference.
-# One month past its first review at the shipped period the row may carry that review's
-# history, which the edges test accepts.
+# refused a review factor, a closed latch and a review change, each alone, there, its own
+# month, the rule's upper edge, and in its first month, the lower, and a factor and a
+# change between; the latch closed at a factor of 1 with no change, a history no factor or
+# change shows; and at 61 months, once the review period is lengthened to 61, the edge
+# moving with the Reference.  One month past its first review at the shipped period the
+# row may carry that review's history, which the edges test accepts, and a point not yet in
+# force holds the issue values, which Data's rule for it refuses otherwise.
 REVIEWED_TOO_SOON = [
     ("a review factor on the first review, month 0's own",
      _set("review_prem_factor_init", [9], 1.1), {}, 9,
@@ -2033,13 +2035,25 @@ REVIEWED_TOO_SOON = [
     ("a review factor before the first review",
      _then(_set("duration_mth", [9], 59), _set("review_prem_factor_init", [9], 1.1)), {}, 9,
      _reviewed_too_soon(9, 59, "review_prem_factor_init", 1.1, 1)),
-    ("a latch before the first review",
+    ("a review factor in the first month",
+     _then(_set("duration_mth", [9], 1), _set("review_prem_factor_init", [9], 1.1)), {}, 9,
+     _reviewed_too_soon(9, 1, "review_prem_factor_init", 1.1, 1)),
+    ("a latch closed at 1 on the first review, month 0's own",
+     _set("ci_sel_latched_init", [9], 1), {}, 9,
+     _reviewed_too_soon(9, 60, "ci_sel_latched_init", 1, 0)),
+    ("a latch in the first month",
      _then(_set("duration_mth", [9], 1), _set("ci_sel_latched_init", [9], 1),
            _set("ci_sel_factor_init", [9], 1.1)), {}, 9,
      _reviewed_too_soon(9, 1, "ci_sel_latched_init", 1, 0)),
+    ("a review change on the first review, month 0's own",
+     _set("review_prem_shock_init", [9], 0.1), {}, 9,
+     _reviewed_too_soon(9, 60, "review_prem_shock_init", 0.1, 0)),
     ("a review change before the first review",
      _then(_set("duration_mth", [9], 30), _set("review_prem_shock_init", [9], 0.1)), {}, 9,
      _reviewed_too_soon(9, 30, "review_prem_shock_init", 0.1, 0)),
+    ("a review change in the first month",
+     _then(_set("duration_mth", [9], 1), _set("review_prem_shock_init", [9], 0.1)), {}, 9,
+     _reviewed_too_soon(9, 1, "review_prem_shock_init", 0.1, 0)),
     ("a review factor on a review period lengthened to 61",
      _then(_set("duration_mth", [9], 61), _set("review_prem_factor_init", [9], 1.1)),
      {"review_period_mths": 61}, 9,
@@ -2095,15 +2109,22 @@ def _reviewed(points, factor, change):
 # period is shortened to 38 months, when two reviews precede its 78 months; at 39 the
 # second, at policy month 78, would be its month 0's.  The rule's edges are pinned: a
 # factor 2e-12 of itself off 1.1 is refused and one 0.5e-12 off is accepted, the rule
-# reading to 1e-12 as an extract may spell the two; and a mismatch in month 119, and in
-# month 120, the second review's, which is month 0's own (USLIB-SEC-PLAN.md D6, precised at
-# its M7), is refused, and one in month 121, the second review made, accepted.  The latch
-# is not asked: one left open after a change past today's threshold is a history the
-# threshold of its day may have given.
+# reading to 1e-12 as an extract may spell the two; a mismatch in month 61, the month after
+# the first review, the window's lower edge, is refused, and the factor that review's
+# change gives accepted there; and a mismatch in month 119, and in month 120, the second
+# review's, which is month 0's own (USLIB-SEC-PLAN.md D6, precised at its M7), the upper
+# edge, is refused, the one review's factor accepted there too, and a mismatch in month
+# 121, the second review made, accepted.  The latch is not asked: one left open after a
+# change past today's threshold is a history the threshold of its day may have given.
 ONE_OFF, ONE_NEAR = 1.1 * (1.0 + 2e-12), 1.1 * (1.0 + 0.5e-12)
 ONE_REVIEW_MADE = [
     ("a factor the first review's change did not give",
      _reviewed([10], 1.3, 0.2), {}, 10, _one_review(10, 66, 1.3, 0.2)),
+    ("a mismatch the month after the first review",
+     _then(_set("duration_mth", [10], 61), _reviewed([10], 1.3, 0.2)), {}, 10,
+     _one_review(10, 61, 1.3, 0.2)),
+    ("the one review's factor the month after the first review",
+     _then(_set("duration_mth", [10], 61), _reviewed([10], 1.2, 0.2)), {}, 10, None),
     ("a factor with no change", _set("review_prem_factor_init", [11], 1.1), {}, 11,
      _one_review(11, 78, 1.1, 0.0)),
     ("a change with no factor", _set("review_prem_shock_init", [10], 0.1), {}, 10,
@@ -2123,6 +2144,8 @@ ONE_REVIEW_MADE = [
     ("a mismatch on the second review, month 0's own",
      _then(_set("duration_mth", [11], 120), _reviewed([11], 1.3, 0.0)), {}, 11,
      _one_review(11, 120, 1.3, 0.0)),
+    ("the one review's factor on the second review, month 0's own",
+     _then(_set("duration_mth", [11], 120), _reviewed([11], 1.2, 0.2)), {}, 11, None),
     ("a mismatch the month after the second review",
      _then(_set("duration_mth", [11], 121), _reviewed([11], 1.3, 0.0)), {}, 11, None),
 ]

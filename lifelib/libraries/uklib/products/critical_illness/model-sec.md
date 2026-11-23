@@ -178,6 +178,11 @@ review would carry 10% and 66.55, the window opens at 15%, its lapse
 first review, it carries no history, and the review at `t = 0` closes the latch at the
 day's 1.2. The index factors are history up to month 0 alike: the indexed point valued on
 its third anniversary carries `1.03^2` and `1.045^2`, and takes its third step at `t = 0`.
+An extract written under the old rule, its columns those after an anniversary or a review
+at the valuation date, is refused only at month 12, at the review period, and at twice the
+review period when the first review's change was not 0; on a later anniversary or review
+it passes every rule and takes the month-0 step twice, so an extract must give the state
+before it.
 
 On a point issued at the valuation date each history column holds its issue value, and the
 model is `CI_UK_S`. A model that dropped the columns and recomputed them from the
@@ -305,6 +310,11 @@ change of 0 it projects `CI_UK_S` under 10% up to its next review, at `t = 56`, 
 the S row's with the month appended, `CI-000003-M60`, and a future row's carries the months
 to issue, `CI-000004-F13`. Row `t` of a generated point is month `t + source_mth` of its S
 point.
+
+`CI_UK_S` has no point in force, so every twin opens at issue, where no anniversary or
+review falls. None is the case `Term_UK_SEC`'s generator refuses, an indexed point its S
+model opens in force on an anniversary at factors of 1 and with no step there, whose twin
+would take that anniversary's step at `t = 0` and run one step above S.
 
 ## Counts and timings
 
@@ -867,26 +877,28 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   or outside the contract's bounds, 15 cases, a bound set as a float among them, is
   refused by `proj_len()`, each bound just inside it and each moved past a committed
   point, and `run_sec.py --block` refuses such a point before printing anything; so is a
-  review history on a point in force no longer than the review period, 5 cases, in its
-  first review's month among them, the rule's edge, at the shipped period and at 61, and a
-  review factor from the month after the first review to the second review's month that is
-  not 1 plus the one change made before month 0, 8 cases, the rule's tolerance and both
-  ends of its window among them, accepted at two reviews, past the window and within its
-  tolerance, and each of 29 References off its domain, the value next outside each edge,
-  NaN and both infinities, on every point that reads it, each printed as the compiled
-  model holds the Reference, an int set on a float Reference and a whole float on an int
-  one among them, where at the edges the twin that reads it is S's in every cell; a whole
-  review period written `60.0` projects as 60 does, cell for cell and type for type; an
-  exit rate past 1 is refused in the month it passes, where S's residual is complex; each
-  assumption table a reader cannot read, 25 cases, is refused naming its lines, or the
-  group and the age where the pivots' interpolation passes the largest float, three tables
-  on which `CI_UK_S` projects the anchor cell; keys written as floats read as `CI_UK_S`
-  reads them; the edges of the interface and of each bound are accepted, a review that cut
-  the premium, to 0 at the edge, a review history the month after the first review, an
-  increase the month after the first anniversary, and a latch closed at a factor of 0
-  among them; every state `CI_UK_S` reaches, as shipped, under the splice's review change
-  and where the cap binds, is accepted in force, at the months either side of each rule's
-  edges; and the committed table is what `CI_UK_S` generates.
+  review history on a point in force no longer than the review period, 9 cases, a review
+  factor, a closed latch and a change each at both ends of the window, the first month and
+  the first review's, and the edge at 61 under a period of 61, and a review factor from
+  the month after the first review to the second review's month that is not 1 plus the one
+  change made before month 0, 9 cases, the rule's tolerance and both ends of its window,
+  61 and 120, among them, accepted at two reviews, past the window, within its tolerance
+  and at both ends where the factor is the change's, and each of 29 References off its
+  domain, the value next outside each edge, NaN and both infinities, on every point that
+  reads it, each printed as the compiled model holds the Reference, an int set on a float
+  Reference and a whole float on an int one among them, where at the edges the twin that
+  reads it is S's in every cell; a whole review period written `60.0` projects as 60 does,
+  cell for cell and type for type; an exit rate past 1 is refused in the month it passes,
+  where S's residual is complex; each assumption table a reader cannot read, 25 cases, is
+  refused naming its lines, or the group and the age where the pivots' interpolation
+  passes the largest float, three tables on which `CI_UK_S` projects the anchor cell; keys
+  written as floats read as `CI_UK_S` reads them; the edges of the interface and of each
+  bound are accepted, a review that cut the premium, to 0 at the edge, a review history
+  the month after the first review, an increase the month after the first anniversary, and
+  a latch closed at a factor of 0 among them; every state `CI_UK_S` reaches, as shipped,
+  under the splice's review change and where the cap binds, is accepted in force, at the
+  months either side of each rule's edges; and the committed table is what `CI_UK_S`
+  generates.
 - **The product's own facts**: the two clocks on the shipped points; the committed rows,
   in force and issued later, continuing their S points at the shipped assumptions but for
   inflation, and the row read under a review change of 10% continuing `CI_UK_S` under it

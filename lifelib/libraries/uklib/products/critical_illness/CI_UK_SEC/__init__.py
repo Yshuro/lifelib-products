@@ -93,11 +93,13 @@ expires at the end of the last month with no maturity or surrender value.
 
 **In force.** A point in force carries, beside its count, the facts of its contract that
 :mod:`~.CI_UK_S` would recompute from flat References, each measured at the valuation
-instant: the RPI indexation factors already given, on the cover and on the premium; the
-premium factor the reviews already made have given; the select latch, the anti-selection
-factor on the diagnosis rate once a review has shocked lapses; and the premium change the
-last review made, which sets the shock lapse while its window is still running. Each is
-history, which no Reference changed at the valuation date reaches back to.
+instant, before month 0's own event: the RPI indexation factors given before month 0, on
+the cover and on the premium; the premium factor the reviews made before month 0 have
+given; the select latch, the anti-selection factor on the diagnosis rate once a review has
+shocked lapses; and the premium change the last review before month 0 made, which sets the
+shock lapse while its window is still running. An anniversary or a review at the
+valuation date is month 0's own event, made at the day's References. Each is history,
+which no Reference changed at the valuation date reaches back to.
 ``result_pols()`` sets out the counts: in force, new business and each decrement, month by
 month.
 

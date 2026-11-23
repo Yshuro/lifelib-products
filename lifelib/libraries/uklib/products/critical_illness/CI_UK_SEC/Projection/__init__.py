@@ -639,8 +639,10 @@ def sum_assured():
 
     :func:`benefit_pp` ``(t, MAIN)`` is the amount actually at risk in month t, which
     differs from this once the indexation option is elected: on an indexed point in force,
-    the cover of the year under way is this times :func:`idx_factor_init`.  From
-    ``Data.sum_assured``.
+    the cover entering month 0, before month 0's own event, is this times
+    :func:`idx_factor_init`, and the cover in month t this times :func:`idx_factor`
+    ``(t)``, so that on a point valued on its anniversary the year under way from ``t = 0``
+    takes that anniversary's step too.  From ``Data.sum_assured``.
     """
     return float(data.sum_assured()[idx])                            # noqa: F821
 

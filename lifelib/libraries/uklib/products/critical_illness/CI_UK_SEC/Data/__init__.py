@@ -725,26 +725,29 @@ def duration_mth():
 
 
 def idx_factor_init():
-    """The cover indexation factor already given at the valuation date: float64 [point]."""
+    """The cover indexation factor entering month 0, before month 0's own event: float64
+    [point]."""
     return pd.to_numeric(model_point_table()["idx_factor_init"]).to_numpy(  # noqa: F821
         dtype="float64")
 
 
 def idx_prem_factor_init():
-    """The premium indexation factor already given at the valuation date: float64
-    [point]."""
+    """The premium indexation factor entering month 0, before month 0's own event:
+    float64 [point]."""
     return pd.to_numeric(                                            # noqa: F821
         model_point_table()["idx_prem_factor_init"]).to_numpy(dtype="float64")
 
 
 def review_prem_factor_init():
-    """The premium factor the reviews have given by the valuation date: float64 [point]."""
+    """The premium factor the reviews before month 0 have given, before month 0's own
+    event: float64 [point]."""
     return pd.to_numeric(                                            # noqa: F821
         model_point_table()["review_prem_factor_init"]).to_numpy(dtype="float64")
 
 
 def ci_sel_latched_init():
-    """The select latch at the valuation date, 1 closed and 0 open: int64 [point].
+    """The select latch entering month 0, before month 0's own event, 1 closed and 0
+    open: int64 [point].
 
     :func:`model_point_table` has checked that each is 0 or 1, so a latch written as
     ``1.0`` is the int 1.
@@ -760,8 +763,7 @@ def ci_sel_factor_init():
 
 
 def review_prem_shock_init():
-    """The premium change the last review before the valuation date made: float64
-    [point]."""
+    """The premium change the last review before month 0 made: float64 [point]."""
     return pd.to_numeric(                                            # noqa: F821
         model_point_table()["review_prem_shock_init"]).to_numpy(dtype="float64")
 
