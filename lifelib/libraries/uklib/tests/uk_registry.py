@@ -108,6 +108,8 @@ MODELS = {
                      "reporting_columns": {"sex": {1: "sex", 2: "joint_sex"},
                                            "smoker": {1: "smoker", 2: "joint_smoker"}}}),
     "CI_UK_S": ("products/critical_illness/CI_UK_S", {**MONTHLY, "age_basis": ANB}),
+    "CI_UK_SEC": ("products/critical_illness/CI_UK_SEC",
+                  {**MONTHLY, "age_basis": ANB, "twin": "CI_UK_S", "stage": "E"}),
     "IP_UK_S": ("products/income_protection/IP_UK_S", {**MONTHLY, "age_basis": ANB}),
     "WOL_UK_S": ("products/whole_of_life/WOL_UK_S", {**MONTHLY, "age_basis": ALB}),
     # Savings
@@ -131,6 +133,7 @@ MODELS = {
 # than failing.
 INPUT_FILES = {
     "CI_UK_S": {"ci_rate_table.csv", "lapse_table.csv", "model_point_table.csv"},
+    "CI_UK_SEC": {"ci_rate_table.csv", "lapse_table.csv", "model_point_table_sec.csv"},
     "IP_UK_S": {
         "inception_table.csv", "lapse_table.csv", "model_point_table.csv",
         "mort_table.csv", "termination_table.csv"},

@@ -1203,6 +1203,39 @@ def _term_claims_total(name, args):
     return args
 
 
+def _ci_review_factor(s, d):
+    """The premium factor ``CI_UK_S``'s reviews have given by month ``d``, which S has no
+    cell for: ``(1 + review_prem_shock)`` to the power of the reviews passed, as S's
+    ``premium_pp`` multiplies by it, and 1 before the first review or on a guaranteed
+    point, which passes none.  On a review month, the factor of the period it opens."""
+    return (1.0 + s.review_prem_shock) ** s.reviews_passed(d)
+
+
+def _ci_review_change(s, d):
+    """The premium change ``CI_UK_S``'s last review at or before month ``d`` made: its one
+    ``review_prem_shock``, once a review has passed, and 0 before the first, or on a
+    guaranteed point."""
+    return float(s.review_prem_shock) if s.reviews_passed(d) >= 1 else 0.0
+
+
+# CI_UK_SEC's opening state (D6; UKLIB-SEC-PLAN.md §6.2): the facts of the contract
+# CI_UK_S recomputes from flat References, each read as S's own formulas read it, each a
+# factor or a rate, so that policy_count is the one weight.  The two indexation factors of
+# the policy year under way, S's idx_factor(d) and idx_prem_factor(d); the premium factor
+# of the review period under way (_ci_review_factor); the select latch, S's
+# ci_sel_factor(d); and the premium change the last review made (_ci_review_change),
+# which the SEC model reads while that review's shock window runs.  At a twin's
+# source_mth, 0 on every S point, these are the issue values: 1 for the four factors and 0
+# for the change.
+_CI_STATE = {
+    "idx_factor_init": lambda s, d: s.idx_factor(d),
+    "idx_prem_factor_init": lambda s, d: s.idx_prem_factor(d),
+    "review_prem_factor_init": _ci_review_factor,
+    "ci_sel_factor_init": lambda s, d: s.ci_sel_factor(d),
+    "review_prem_shock_init": _ci_review_change,
+}
+
+
 SEC_SPECS: dict[str, SecSpec] = {
     # Term's state is seven columns (_TERM_STATE above) and the waiver pipeline, a long
     # companion, wop_pipeline_sec.csv, keyed (point_id, lag), lag the months before the
@@ -1261,6 +1294,35 @@ SEC_SPECS: dict[str, SecSpec] = {
         exempt=frozenset({"proj_start", "duration_inforce", "result_pols"}),
         companions={"wop_pipeline_sec.csv": _term_pipeline},
         twin_arg_map=_term_claims_total,
+    ),
+    # CI's state is five columns (_CI_STATE above), with no companion: the reviews, the
+    # latch and the factors are closed forms on the policy clock, and the count is the one
+    # chain.  pols_if_init becomes policy_count (the default), and every S point is new
+    # business, so duration_of is the default too.  The derived rows are the indexed point
+    # on its third anniversary, 36, the factors of policy year 4 carried in; the reviewable
+    # point on its first review, 60, the review history then, inside the review's
+    # twelve-month shock window, 66, which a review before the valuation date opened, and
+    # mid-year after it, 78, the window closed; and the anchor cell in its last covered
+    # month, 299, a one-row frame.  The future row is the indexed point issued 13 months
+    # after the valuation date: more than a year on and off a valuation anniversary, so that
+    # the months before issue read policy years -1 and 0, where a missing guard would show,
+    # and its index steps fall a month after the valuation anniversaries.  T2's splice grid
+    # is built from this spec in a temporary table, not committed.
+    #
+    # T1 holds on CI at any count: S charges the initial expense on the count in force at
+    # t = 0, which on a point issued then is the count issued, as SEC charges it on
+    # pols_new_biz.  It skips one S cell besides the default three:
+    #   result_pols: SEC's gains pols_new_biz, the count D5 puts there, so the frame has a
+    #     column S's lacks and cannot agree as a whole.  Each column it shares with S is a
+    #     cell T1 compares at every month, and test_critical_illness_uk_sec.py compares the
+    #     report itself with S's, on every column both hold.
+    "CI_UK_SEC": SecSpec(
+        twin="CI_UK_S",
+        derived=((4, 36), (3, 60), (3, 66), (3, 78), (1, 299)),
+        future=((4, 13),),
+        state=_CI_STATE,
+        twin_state=_CI_STATE,
+        exempt=frozenset({"result_pols"}),
     ),
 }
 

@@ -288,7 +288,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [term_assurance]
+        module: [term_assurance, critical_illness]
         os: [ubuntu-latest, windows-latest, macos-latest]
         grid: [core, full]
         exclude:
