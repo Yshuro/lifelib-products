@@ -25,12 +25,14 @@ module holds the rest of the plan's tests (its §5) and the product's own facts:
   carries into ``d``, continues S's projection from ``d`` on, in every cell of S's and in
   ``result_pols``.  The months straddle the product's events: the first anniversary, the
   first and second reviews, the review shock window's end, the last covered month.  The
-  review premium change that ships at 0 is on, past the shock threshold, so that the reviews
-  move premiums, open their windows and close the select latch, and four variants of S's
-  points, in a copy of S's table, add a reviewable indexed male smoker, a reviewable
-  standalone contract, a policy issued at 50 whose pivots run past the table's last and
-  whose ancillary benefits fall below their caps, and a reviewable joint point whose second
-  life is a male smoker.
+  review premium change that ships at 0 is on, at 12%, past the shock threshold and apart
+  from the select loading, so that the reviews move premiums, open their windows and close
+  the select latch, and four variants of S's points, in a copy of S's table, add a
+  reviewable indexed male smoker, a reviewable standalone contract, a policy issued at 50
+  whose pivots run past the table's last and whose ancillary benefits fall below their caps,
+  and a reviewable joint point whose second life is a male smoker.  The changes it does not
+  reach, one whose shock lapse takes the cap, the threshold itself and the float above it,
+  are spliced on the reviewable point by a test of their own.
 * T3, future new business: a point issued ``k`` months after the valuation date is S's
   projection ``k`` months on, with zeros before issue and no rate evaluated there.
 * D11's R1 and R2, and D3's and D5's chains: on the splice's grid no cell is called at a
@@ -44,26 +46,27 @@ module holds the rest of the plan's tests (its §5) and the product's own facts:
   every flow and every counted cell by 2.5 and moves no per-policy value, and the
   roll-forward, whose tolerance scales with the count, closes on a million policies.
 * T5, validation: each malformed row of the table is refused as it is read, naming its
-  point; each assumption table, malformed or holding a value that is not a number in its
-  range, is refused before a value of it is read, naming its lines; the future horizon is
-  a Reference that bounds future business; a point past its cover, one the contract does
-  not issue, one that reads a Reference off its domain, and one with a review history
-  before its first review, are refused by the frame, each bound just inside it, and an
-  exit rate past 1 in the month it passes; the edges of the interface and of each bound
-  are accepted; and so is every state ``CI_UK_S`` reaches, on each set of inputs on which
-  those states differ.
+  point, by its label on an extract labelled otherwise; each assumption table, malformed or
+  holding a value that is not a number in its range, is refused before a value of it is
+  read, naming its lines; the future horizon is a Reference that bounds future business; a
+  point past its cover, one the contract does not issue, one that reads a Reference off its
+  domain, and one with a review history before its first review, are refused by the frame,
+  each bound just inside it, and an exit rate past 1 in the month it passes; the edges of
+  the interface and of each bound are accepted; and so is every state ``CI_UK_S`` reaches,
+  on each set of inputs on which those states differ.
 * T6, regeneration: the committed ``model_point_table_sec.csv`` is what the generator makes
   of ``CI_UK_S`` and its table as they stand.
-* Then the product's own facts: the two clocks on the shipped points; the committed rows
-  continuing their S points; each history column read rather than recomputed, the
-  indexation factors, the review factor, the select latch, read from its own flag, and
-  the last review's change, and a review change set at the valuation date reaching back
-  over no review already made (UKLIB-SEC-PLAN.md K14); expense inflation and the
-  morbidity trend on the valuation clock; the initial expense on new business; the
-  reviews and their window on the policy clock; the caps on the claim rates, a NaN that
-  reaches a bound and a check whose residual is NaN; the values outside cover; the block;
-  an in-force extract; the runner; the cells' defaulted parameters; the docstrings; the
-  shared input tables; and what the default grid reaches.
+* Then the product's own facts: the two clocks on the shipped points; each twin S's in every
+  cell with the trend and the review change on, where T1 holds both at 0 and T2 the trend;
+  the committed rows continuing their S points; each history column read rather than
+  recomputed, the indexation factors, the review factor, the select latch, read from its own
+  flag, and the last review's change, and a review change set at the valuation date reaching
+  back over no review already made (UKLIB-SEC-PLAN.md K14); expense inflation and the
+  morbidity trend on the valuation clock; the initial expense on new business; the reviews
+  and their window on the policy clock; the caps on the claim rates, a second life's among
+  them, a NaN that reaches a bound and a check whose residual is NaN; the values outside
+  cover; the block; an in-force extract; the runner; the cells' defaulted parameters; the
+  docstrings; the shared input tables; and what the default grid reaches.
 * C2, the fingerprint: every committed point computes what the model computed when its E
   step ended, frozen at the end of this module before its C step changed anything
   (USLIB-SEC-PLAN.md §5.4).
@@ -256,17 +259,20 @@ FULL_ONLY = (pytest.mark.sec_full,
 # (UKLIB-SEC-PLAN.md §6.2, §9 item 4): on it SEC's diagnosis rate at d is S's at d with
 # none of the trend since issue, by design.  Each clock is then asserted on its own, with
 # its rate on.  There is no scenario table, so no input table moves with d.  The one other
-# assumption that ships at zero, the premium change at a review, is on, at 10%, past the
+# assumption that ships at zero, the premium change at a review, is on, at 12%, past the
 # shock threshold of 5%, without which the reviews move no premium, open no shock window
 # and close no select latch, and so the review history, the latch and the last review's
-# change reach no number.  The identity does not depend on the value, only on both models
-# having the same one.
-SPLICED_REFS = {"inflation_rate": 0.0, "ci_trend": 0.0, "review_prem_shock": 0.10}
+# change reach no number.  And 12%, not 10%, the shipped select loading, so that a latch
+# closed at 1 + rho, or a review factor read from the latch, departs from S.  The
+# identity does not depend on the value, only on both models having the same one; the
+# changes the splice's does not reach, past the lapse cap and at the threshold, have a
+# test of their own.
+SPLICED_REFS = {"inflation_rate": 0.0, "ci_trend": 0.0, "review_prem_shock": 0.12}
 
 # Every assumption that ships at zero, switched on, for T4, at the shipped inflation: the
 # review change, as the splice sets it, and the morbidity trend, at 2% a year, which T4 can
 # hold since it compares the model with itself.
-SWITCHED_ON = {"review_prem_shock": 0.10, "ci_trend": 0.02}
+SWITCHED_ON = {"review_prem_shock": 0.12, "ci_trend": 0.02}
 
 # The cells T2 and T3 skip beyond T1's, which already drop result_pols as a whole (the
 # spec's exempt).  proj_len counts from the valuation date on SEC and from issue on S, so it
@@ -1514,6 +1520,50 @@ def test_a_malformed_in_force_row_is_refused_naming_its_point(malformed, case, e
     _refused(model.Data.model_point_table, message.format(file=files[case]))
 
 
+def _relabelled(message, relabel):
+    """``message`` with every ``point_id [...]`` list it holds relabelled by ``relabel``."""
+    def labels(match):
+        return "point_id [" + ", ".join(str(relabel[int(p)]) for p in
+                                        match.group(1).split(", ")) + "]"
+    return re.sub(r"point_id \[(\d+(?:, \d+)*)\]", labels, message)
+
+
+@pytest.fixture(scope="module")
+def malformed_extract(tmp_path_factory):
+    """:data:`MALFORMED`'s tables as an extract labels its rows, each a file of its own.
+
+    Each case's table is the committed one with its fault, made by its own labels, and
+    then relabelled :data:`EXTRACT_LABELS`, in order, so that no label is its position
+    plus one.  One model reads them all, as :func:`malformed` reads its files.  Returns
+    ``(model, {case: filename}, {committed label: extract label})``.
+    """
+    root = tmp_path_factory.mktemp("malformed_extract")
+    relabel = dict(zip(_committed().index, EXTRACT_LABELS))
+    files = {}
+    for number, (case, edit, _) in enumerate(MALFORMED):
+        files[case] = f"extract_{number:02d}_sec.csv"
+        table = edit(_committed()).rename(index=relabel)
+        temp_inputs(root, model_path(SEC), model_points=table, model_point_file=files[case])
+    model = mx.read_model(root / SEC, name=_name("malformed_extract"))
+    yield model, files, relabel
+    model.close()
+
+
+@pytest.mark.parametrize("case, edit, message", MALFORMED, ids=[c[0] for c in MALFORMED])
+def test_a_malformed_row_of_an_extract_is_refused_naming_its_label(malformed_extract, case,
+                                                                    edit, message):
+    """Each refusal names the extract's labels, never the rows' positions (T5).
+
+    The committed labels are their positions plus one, so a check that named a row by its
+    place in the table, ``idx + 1``, would pass every case of :data:`MALFORMED`.  On the
+    extract each label is another, and each case's message names the extract's.
+    """
+    model, files, relabel = malformed_extract
+    model.Data.model_point_file = files[case]
+    _refused(model.Data.model_point_table,
+             _relabelled(message, relabel).format(file=files[case]))
+
+
 def test_the_future_horizon_is_a_reference_that_bounds_future_business(tmp_path):
     """``Data.future_horizon_mth`` refuses a policy issued later than it, and 0 refuses all.
 
@@ -2716,6 +2766,115 @@ def test_the_ci_trend_runs_on_the_valuation_clock(tmp_path):
         model.close()
 
 
+def test_every_twin_is_s_with_the_trend_and_the_review_change_on():
+    """On new business, each twin is S's in every cell with tau and rho on in both models.
+
+    T1 compares the twins at the shipped References, where the trend and the review change
+    are 0, and the splice holds the trend at 0 by design (D7), so a cell that dropped the
+    trend, the standalone paid rate among them, would pass both.  On a point issued at
+    ``t = 0`` the two clocks coincide, and the trend, which runs on the valuation clock here
+    and from issue in ``CI_UK_S``, is the same factor in every month.  So with the trend at
+    :data:`TREND` and the review change at the splice's 12% set in both models, each twin of
+    S's seven points, its reviews moving premiums, opening windows and closing the latch, is
+    S's in every cell S evaluates in its sweep and in both reports, to 1e-9 relative with no
+    absolute floor but on the residual (:func:`_compare`).  The References are set on models
+    just read (K7).
+    """
+    refs = {"ci_trend": TREND, "review_prem_shock": SPLICED_REFS["review_prem_shock"]}
+    sec = mx.read_model(model_path(SEC), name=_name("tau_rho"))
+    s = mx.read_model(model_path(TWIN), name=_name("tau_rho_s"))
+    try:
+        for model in (sec, s):
+            for ref, value in refs.items():
+                setattr(model.Projection, ref, value)
+        found = []
+        for point in S_POINTS:
+            s_proj, twin = _point(s, point), _row(sec, "twin", point, 0)
+            _sweep_s(s_proj)
+            found += [f"point {point}: {line}" for line in _compare(
+                s_proj, twin, 0, TWIN_EXEMPT_DEFAULT | SPEC.exempt)]
+        assert not found, found[:20]
+        twin = _row(sec, "twin", 3, 0)
+        assert twin.ci_trend_factor(12) == 1.0 + TREND and twin.ci_sel_factor(60) == 1.1
+        assert _row(sec, "twin", 2, 0).claim_rate_paid(12) == pytest.approx(
+            _point(s, 2).claim_rate_paid(12), rel=1e-15)
+    finally:
+        sec.close()
+        s.close()
+
+
+# The review changes the splice's 12% does not reach, as (the change, whether the reviews
+# open a shock window and close the latch, whether the window's lapse takes the cap): 20%,
+# whose shock lapse, w + 2 (0.20 - 0.05) = 0.34 in the window of every review, policy year 6
+# on, passes the cap of 0.30, so that min(review_lapse_cap, shock) takes the cap, before the
+# valuation date and after it; the threshold itself, 5%, where neither the window opens nor
+# the latch closes, each asking for a change above it, though the premium still rises by
+# it; and the float above the threshold, where both do.
+REVIEW_EDGES = {
+    "past the lapse cap": (0.20, True, True),
+    "at the threshold": (0.05, False, False),
+    "one float above the threshold": (math.nextafter(0.05, 1.0), True, False),
+}
+# The reviewable point restated on its first review, inside its window, and on its second.
+REVIEW_EDGE_MTHS = (60, 66, 120)
+
+
+@pytest.mark.parametrize("case", list(REVIEW_EDGES))
+def test_a_review_change_at_an_edge_continues_the_s_projection(tmp_path, case):
+    """T2 at review changes the splice's does not reach: past the cap, at the threshold.
+
+    The splice's change of 12% shocks the lapse by 0.14, so its window never reaches the
+    cap, and is far from the threshold, so neither comparison with it is pinned: a window
+    or a latch that asked for a change at the threshold, rather than above it, would pass.
+    So S's table is restated by the generator under each change of :data:`REVIEW_EDGES`,
+    set in S and SEC alike with the splice's inflation and trend of 0, the reviewable point
+    at each of :data:`REVIEW_EDGE_MTHS`, and each row, and the point's twin, is S's from
+    its month on in every cell (:func:`_compare`): the windows, the latch and the lapse
+    among them.  Then what the change reaches: past the cap, the window's lapse is the
+    cap, 0.30, in the window of the review made at the valuation date and of the next; at
+    the threshold no window opens, no latch closes, and the premium rises by 5% at each
+    review all the same; one float above, every review opens its window and the first
+    closes the latch.
+    """
+    rho, shocks, capped = REVIEW_EDGES[case]
+    refs = {**SPLICED_REFS, "review_prem_shock": rho}
+    s = mx.read_model(model_path(TWIN), name=_name("edge_s"))
+    sec = None
+    try:
+        for ref, value in refs.items():
+            setattr(s.Projection, ref, value)
+        spec = dataclasses.replace(SPEC, derived=tuple((3, d) for d in REVIEW_EDGE_MTHS),
+                                   future=(), derived_refs={})
+        table, _ = build_sec_table(spec, s)
+        sec = mx.read_model(_sec_inputs(tmp_path, table), name=_name("edge"))
+        for ref, value in refs.items():
+            setattr(sec.Projection, ref, value)
+        s_proj = _point(s, 3)
+        _sweep_s(s_proj)
+        found = [f"twin: {line}" for line in _compare(
+            s_proj, _row(sec, "twin", 3, 0), 0, TWIN_EXEMPT_DEFAULT | SPEC.exempt)]
+        for d in REVIEW_EDGE_MTHS:
+            found += [f"d{d}: {line}" for line in _compare(
+                s_proj, _row(sec, "derived", 3, d), d, SPLICE_EXEMPT)]
+        assert not found, found[:20]
+        p = _row(sec, "derived", 3, 60)
+        frame = range(p.proj_len())
+        assert p.ci_sel_latched_init() == int(shocks)
+        assert [p.review_shock_active(t) for t in (0, 11, 12, 60, 71, 72)] == [
+            shocks, shocks, False, shocks, shocks, False]
+        assert {p.ci_sel_factor(t) for t in frame} == {1.1 if shocks else 1.0}
+        assert p.premium_pp(60) == pytest.approx(55.0 * (1.0 + rho) ** 2, rel=1e-12)
+        if capped:
+            for t in (*range(12), *range(60, 72)):
+                assert p.lapse_rate(t) == s_proj.lapse_rate(60 + t) == 0.30, t
+        else:
+            assert all(p.lapse_rate(t) < 0.30 for t in frame)
+    finally:
+        if sec is not None:
+            sec.close()
+        s.close()
+
+
 def test_the_initial_expense_is_charged_on_new_business_only(sec_model):
     """£200 per policy issued, in the issue month alone.
 
@@ -2784,36 +2943,49 @@ def test_the_reviews_and_their_window_run_on_the_policy_clock(sec_model, tmp_pat
 # claim_rate the policy's, the bound second, as CI_UK_S's do since M0.  At the shipped
 # tables the claim rate stays at 0.0404 or less to the end of every frame, the joint point's
 # last month, so neither the committed points nor the splice grid come near a cap, and Data
-# refuses a table rate past 1.  So the
-# caps bind through the product: CAPPED's table writes the male non-smoker's diagnosis rate
-# at 0.98 at pivot age 60 and 1.0 at 65, rates Data accepts.  On the reviewable point the
-# select latch, closed at its first review under the splice's change, loads the rate by 10%,
-# so that the diagnosis rate's product passes 1 from attained age 60, policy month 240, where
-# it stays, and the claim rates with it.  On the anchor cell, which no review loads, the
-# diagnosis rate stays below 1, and its claim rate, the diagnosis rate and 90% of the
-# mortality, passes 1 from attained age 64, policy month 288: each life's cap alone.  S
-# points 3 and 1 in a copy of S's table, under SPLICED_REFS.
+# refuses a table rate past 1.  So the caps bind through the product: CAPPED's table writes
+# the male non-smoker's diagnosis rate at 0.98 at pivot age 60 and 1.0 at 65, rates Data
+# accepts.  On the reviewable point the select latch, closed at its first review under the
+# splice's change, loads the rate by 10%, so that the diagnosis rate's product passes 1 from
+# attained age 60, policy month 240, where it stays, and the claim rates with it.  On the
+# anchor cell, which no review loads, the diagnosis rate stays below 1, and its claim rate,
+# the diagnosis rate and 90% of the mortality, passes 1 from attained age 64, policy month
+# 288: each life's cap alone.  And on the joint point, its second life made a male
+# non-smoker issued at 42 (CAPPED_JOINT), the second life's claim rate passes 1 at its own
+# attained age 64, policy month 264, while the first's, at 62, is below 1: the second life's
+# cap alone.  S points 3, 1 and 7 in a copy of S's table, under SPLICED_REFS, each as (its
+# first capped month, the life whose rate passes 1, that life's attained age then, and the
+# rates capped from then on).
 CAPPED = {CI_RATES: _then(_written("i_ci", 0.98, _pivot("M", "NS", 60)),
                           _written("i_ci", 1.0, _pivot("M", "NS", 65)))}
-CAPPED_POINTS = {3: (12 * (60 - 40), ("ci_rate", "claim_rate_life", "claim_rate",
-                                      "claim_rate_mth")),
-                 1: (12 * (64 - 40), ("claim_rate_life", "claim_rate", "claim_rate_mth"))}
+CAPPED_JOINT = {"joint_sex": "M", "joint_smoker": "NS", "joint_age": 42}
+CAPPED_POINTS = {3: (12 * (60 - 40), 1, 60, ("ci_rate", "claim_rate_life", "claim_rate",
+                                             "claim_rate_mth")),
+                 1: (12 * (64 - 40), 1, 64, ("claim_rate_life", "claim_rate",
+                                             "claim_rate_mth")),
+                 7: (12 * (64 - 42), 2, 64, ("claim_rate_life", "claim_rate",
+                                             "claim_rate_mth"))}
 
 
 def _capped_s(tmp_path):
-    """CI_UK_S on :data:`CAPPED_POINTS` alone, on :data:`CAPPED`'s table, under
-    :data:`SPLICED_REFS`, read from a copy of S's inputs; the caller closes it."""
-    s = mx.read_model(temp_inputs(tmp_path, model_path(TWIN),
-                                  model_points=_s_table().loc[sorted(CAPPED_POINTS)],
+    """CI_UK_S on :data:`CAPPED_POINTS` alone, the joint one's second life
+    :data:`CAPPED_JOINT`, on :data:`CAPPED`'s table, under :data:`SPLICED_REFS`, read from
+    a copy of S's inputs; the caller closes it."""
+    table = _s_table().loc[sorted(CAPPED_POINTS)].astype({"joint_sex": object})
+    for column, value in CAPPED_JOINT.items():
+        table.loc[7, column] = value
+    s = mx.read_model(temp_inputs(tmp_path, model_path(TWIN), model_points=table,
                                   edits=CAPPED), name=_name("capped_s"))
     for ref, value in SPLICED_REFS.items():
         setattr(s.Projection, ref, value)
     return s
 
 
-def _capped_rate(p, name, t):
-    """``name``'s rate in month ``t``: a life's rate for the first life, or the policy's."""
-    return p.cells[name](t, 1) if name in ("ci_rate", "claim_rate_life") else p.cells[name](t)
+def _capped_rate(p, name, t, life):
+    """``name``'s rate in month ``t``: a life's rate for ``life``, or the policy's."""
+    if name in ("ci_rate", "claim_rate_life"):
+        return p.cells[name](t, life)
+    return p.cells[name](t)
 
 
 def test_an_annual_claim_rate_past_1_is_capped_in_both_models(tmp_path):
@@ -2823,12 +2995,13 @@ def test_an_annual_claim_rate_past_1_is_capped_in_both_models(tmp_path):
     ``CI_UK_S``'s rate passes 1 in its first capped month and stays past it to the end of
     the frame: on the reviewable point the diagnosis rate's product, loaded by the latch, and
     with it each life's claim rate and the policy's; on the anchor cell each life's claim
-    rate and the policy's, the diagnosis rate staying below 1.  Both models cap each: the
-    capped rates and the monthly decrement, ``1 - (1 - q)^(1/12)``, are 1.0 in every one of
-    those months, the float, not the int 1, which compares equal to it, and S's are floats
-    below 1 in every month before.  So every policy in force at the start of the first capped
-    month claims in it, none is in force after it, and every report holds finite floats
-    alone.
+    rate and the policy's, the diagnosis rate staying below 1; and on the joint point the
+    second life's claim rate and the policy's, the first life's diagnosis rate staying below
+    1.  Both models cap each: the capped rates and the monthly decrement,
+    ``1 - (1 - q)^(1/12)``, are 1.0 in every one of those months, the float, not the int 1,
+    which compares equal to it, and S's are floats below 1 in every month before.  So every
+    policy in force at the start of the first capped month claims in it, none is in force
+    after it, and every report holds finite floats alone.
 
     Four rows of each point, built from S by the generator: issued at the valuation date
     and 12 months after it, and restated in force in the month before the cap, opened with
@@ -2844,26 +3017,31 @@ def test_an_annual_claim_rate_past_1_is_capped_in_both_models(tmp_path):
     sec = None
     try:
         derived, future = [], []
-        for s_point, (cap, names) in CAPPED_POINTS.items():
+        for s_point, (cap, life, age, names) in CAPPED_POINTS.items():
             sp = _point(s, s_point)
             end = sp.proj_len()
             first = next(t for t in range(end) if sp.claim_rate(t) == 1.0)
-            assert (first, sp.age(first, 1)) == (cap, 40 + cap // 12), s_point
+            assert (first, sp.age(first, life)) == (cap, age), s_point
             after = range(cap, end)
             for name in names:
-                assert all(type(_capped_rate(sp, name, t)) is float
-                           and _capped_rate(sp, name, t) < 1.0 for t in range(cap)), name
-                assert [(type(_capped_rate(sp, name, t)), _capped_rate(sp, name, t))
+                assert all(type(_capped_rate(sp, name, t, life)) is float
+                           and _capped_rate(sp, name, t, life) < 1.0
+                           for t in range(cap)), name
+                assert [(type(_capped_rate(sp, name, t, life)),
+                         _capped_rate(sp, name, t, life))
                         for t in after] == [(float, 1.0)] * len(after), name
             if "ci_rate" not in names:
                 assert all(sp.ci_rate(t, 1) < 1.0 for t in range(end))
+            if life == 2:
+                assert all(sp.claim_rate_life(t, 1) < 1.0 for t in range(cap + 1))
             _sweep_s(sp)
             assert sp.pols_if(cap) > 0.0 and sp.pols_claim(cap) == sp.pols_if(cap)
             assert [sp.pols_if(t) for t in range(cap + 1, end)] == [0.0] * (len(after) - 1)
             derived += [(s_point, cap - 1), (s_point, cap + 5)]
             future.append((s_point, 12))
         rows, _ = build_sec_table(dataclasses.replace(SPEC, derived=tuple(derived),
-                                                      future=tuple(future)), s)
+                                                      future=tuple(future),
+                                                      derived_refs={}), s)
         emptied = (rows["row_kind"] == "derived") & (rows["policy_count"] == 0.0)
         assert emptied.sum() == len(CAPPED_POINTS)
         rows.loc[emptied, "policy_count"] = 1.0
@@ -2871,7 +3049,7 @@ def test_an_annual_claim_rate_past_1_is_capped_in_both_models(tmp_path):
                             name=_name("capped"))
         for ref, value in SPLICED_REFS.items():
             setattr(sec.Projection, ref, value)
-        for s_point, (cap, names) in CAPPED_POINTS.items():
+        for s_point, (cap, life, _, names) in CAPPED_POINTS.items():
             sp = _point(s, s_point)
             # Each row with the month its rates are first capped, on its own clock, and the
             # exemptions of its comparison with S: none for the row S's count does not open.
@@ -2890,7 +3068,8 @@ def test_an_annual_claim_rate_past_1_is_capped_in_both_models(tmp_path):
                                            codes=codes(p)) == [], case
                 capped, later = range(first, p.proj_len()), range(first + 1, p.proj_len())
                 for name in names:
-                    assert [(type(_capped_rate(p, name, t)), _capped_rate(p, name, t))
+                    assert [(type(_capped_rate(p, name, t, life)),
+                             _capped_rate(p, name, t, life))
                             for t in capped] == [(float, 1.0)] * len(capped), (case, name)
                 assert p.pols_if(first) > 0.0 and p.pols_claim(first) == p.pols_if(first)
                 assert [p.pols_if(t) for t in later] == [0.0] * len(later), case
@@ -3106,9 +3285,10 @@ def test_the_points_sum_row_by_row_into_a_block(spliced):
     assert frame_mismatches(expected, block) == []
 
 
-# The labels an extract carries in the test below: the committed points' in reverse, from
-# 113 down, so that a label is neither a position plus one nor in the order of the rows.
-EXTRACT_LABELS = tuple(range(113, 100, -1))
+# The labels an extract carries in the test below and in the malformed extract's: the
+# committed points' in reverse, from 100 plus their number down to 101, so that a label is
+# neither a position plus one nor in the order of the rows.
+EXTRACT_LABELS = tuple(range(100 + len(_committed()), 100, -1))
 
 
 def _extract():

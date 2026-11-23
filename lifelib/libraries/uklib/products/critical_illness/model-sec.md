@@ -343,7 +343,7 @@ definition. Fourteen cells are new — `policy_count`, `duration_mth_init`, `t_e
 | `ci_rate_base`, `mort_rate`, `lapse_rate_base`, `benefit_pp`, `claims`, `claim_expenses`, the counts | unguarded: no `CI_UK_S` frame has a month outside cover | zero outside cover, before any table or rate is read; the lapse table's extent from `Data` | Before issue `CI_UK_S` extrapolates the pivots to ages the policy never reaches, and raises `KeyError` on the lapse table |
 | `check_pols_roll_fwd_resid` | `pols_if(t + 1)` | `pols_if_at(t + 1, "BEF_NB")` | The next month's new business is no part of month `t`'s movement |
 | `check_claim_split_resid` | any `q_exit` | zero outside cover; `q_exit` past 1 refused in the month it passes | Past 1 the independent conversion has no real value |
-| `check_pols_roll_fwd`, `check_claim_split` | tolerance on `pols_if_init()` | tolerance on `policy_count()` | `pols_if_init` is 0 on new business here |
+| `check_pols_roll_fwd` | `1e-10 × max(pols_if_init(), 1)` | `1e-10 × max(policy_count(), 1)` | `pols_if_init` is 0 on new business here; `check_claim_split` keeps `CI_UK_S`'s tolerance, `claim_split_tol`, a Reference, unscaled in both models, since the artefact it bounds is a rate no count moves |
 | `result_cf` | `range(proj_len())`, from issue | `range(proj_len())`, from the valuation date | Row 0 is the valuation month |
 | `result_pols` | — | `pols_new_biz` added, the rates 0 outside cover | The counts behind `result_cf()`, after `basiclife/BasicTerm_SE`'s `result_pols()` |
 
@@ -415,16 +415,22 @@ earlier, where the check returns False, as `CI_UK_S`'s does.
   the penny and the in-force to six decimals, holds here with no number restated. The same
   suite holds the model to the conventions every `_SEC` model meets: every frame starts at
   `t = 0`, `pols_if` is the `"BEF_DECR"` count, new business enters once at its
-  `policy_count`, nothing happens before issue, and the in-force columns are present.
+  `policy_count`, nothing happens before issue, and the in-force columns are present. And
+  `tests/test_critical_illness_uk_sec.py` compares each twin with S in every cell again,
+  with the trend and the review change on in both models, which T1 and the splice, each
+  at a trend of 0, cannot: a cell that dropped the trend fails there alone.
 - **The splice**, in `tests/test_critical_illness_uk_sec.py`: each `CI_UK_S` point
   restated in force at months 1, 11, 12 and 13 (the first anniversary), 59, 60 and 61 (the
   first review, pivot age 45 on the anchor cell, lapse year 6), 71 and 72 (the shock
   window's end), 119, 120 and 121 (the second review), 239 and 299, continues the S
   projection in every cell the two share but `proj_len`, and in both reports, to 1e-9
   relative with no absolute floor. The review change, which ships at 0, is on in both
-  models at 10%, past the shock threshold, so that the reviews move premiums, open their
-  windows and close the latch; inflation and the trend, the inputs on the valuation clock,
-  are 0 in both. Four variants of S's points, in a copy of S's table that is never
+  models at 12%, past the shock threshold and apart from the select loading of 10%, so
+  that the reviews move premiums, open their windows and close the latch, and a latch or
+  a review factor read from the other's value would show; inflation and the trend, the
+  inputs on the valuation clock, are 0 in both. A change of 20%, whose shock lapse takes
+  the cap, the threshold itself, where no window opens and no latch closes, and the float
+  above it, where both do, are spliced on the reviewable point the same way. Four variants of S's points, in a copy of S's table that is never
   committed, reach what S's own cannot: the reviewable point indexed and a male smoker, the
   standalone contract reviewable, the anchor cell issued at 50 with cover of 40,000, whose
   pivots run past the table's last and whose ancillary benefits fall below their caps, and
@@ -451,7 +457,8 @@ earlier, where the check returns False, as `CI_UK_S`'s does.
   factors, the reviews and the latch among them; and the roll-forward, its tolerance scaled
   by the count, closes on a million policies.
 - **Validation and regeneration**: each malformed row of the table, 74 cases, is refused
-  naming its point; the horizon is a Reference; a point past its cover or outside the
+  naming its point, and naming its label on an extract labelled otherwise than by
+  position; the horizon is a Reference; a point past its cover or outside the
   contract's bounds, 14 cases, is refused by `proj_len()`, each bound just inside it and
   each moved past a committed point, and `run_sec.py --block` refuses such a point before
   printing anything; so is a review history before the first review, 4 cases, a review
@@ -482,11 +489,13 @@ earlier, where the check returns False, as `CI_UK_S`'s does.
   `--cython` stopping where no repository is above it; no cell's parameter defaulted but
   the `claims` total's; the docstrings, read through docutils as the docs build reads them
   where docutils is installed; and the shared input tables.
-- **The caps**: on the reviewable point and the anchor cell with the male non-smoker's
-  diagnosis pivots at 60 and 65 raised to 0.98 and 1.0, in a copy of the table, under the
-  splice's References: on the reviewable point the latch's loading takes the diagnosis rate
-  past 1 from attained age 60, policy month 240, and with it the claim rates; on the anchor
-  cell the claim rate alone passes 1, from attained age 64, policy month 288. In both
+- **The caps**: on the reviewable point, the anchor cell and the joint point, its second
+  life a male non-smoker issued at 42, with the male non-smoker's diagnosis pivots at 60
+  and 65 raised to 0.98 and 1.0, in a copy of the table, under the splice's References:
+  on the reviewable point the latch's loading takes the diagnosis rate past 1 from
+  attained age 60, policy month 240, and with it the claim rates; on the anchor cell the
+  claim rate alone passes 1, from attained age 64, policy month 288; and on the joint
+  point the second life's claim rate, from its attained age 64, policy month 264. In both
   models the capped rates and the monthly decrement are the float 1.0 there; every policy
   in force at the start of that month claims in it, and none is in force after it; the
   reports hold finite floats; and every cell the two models share agrees, issued now and 12
