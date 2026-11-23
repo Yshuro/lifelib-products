@@ -705,27 +705,38 @@ def test_the_shipped_mortality_table_marks_its_own_provenance():
         "mort_rate"].iloc[0] == 1.0
 
 
-def test_an_input_can_be_swapped_without_touching_formulas():
-    """This is what a production user does with a licensed SAPS or PMA16 basis."""
+def test_an_input_can_be_swapped_without_touching_formulas(tmp_path):
+    """This is what a production user does with a licensed SAPS or PMA16 basis.
+
+    The model and its input tables are copied into ``tmp_path``, and the lighter table is
+    written there, beside the copy.  Written into the product folder, even for the length
+    of one test, it is a CSV beside ``PA_UK_SEC`` too, which reads the folder's tables: a
+    run of that model's tests on the same checkout meanwhile would see it, and a run
+    killed inside this test would leave it behind, failing the CSV-set tests for both
+    models.
+    """
+    import shutil
+
     import pandas as pd
 
-    src = MODEL_DIR.parent / "mort_table.csv"
-    lighter = pd.read_csv(src, index_col=["sex", "age"])
+    shutil.copytree(MODEL_DIR, tmp_path / MODEL_DIR.name,
+                    ignore=shutil.ignore_patterns("__pycache__"))
+    for csv in MODEL_DIR.parent.glob("*.csv"):
+        shutil.copy(csv, tmp_path / csv.name)
+    lighter = pd.read_csv(tmp_path / "mort_table.csv", index_col=["sex", "age"])
     lighter["mort_rate"] = lighter["mort_rate"] * 0.5
+    alt_name = "mort_table_light.csv"
+    lighter.to_csv(tmp_path / alt_name)
 
-    model = mx.read_model(MODEL_DIR, name="PA_UK_S_swap")
+    model = mx.read_model(tmp_path / MODEL_DIR.name, name="PA_UK_S_swap")
     try:
-        alt_name = "mort_table_light.csv"
-        lighter.to_csv(model.Data.input_dir() / alt_name)
-        try:
-            base = model.Projection[2].result_cf()["liability_cf"].sum()
-            model.Data.mort_table_file = alt_name
-            model.Data.clear_all()
-            model.Projection.clear_all()
-            # Lighter mortality lengthens every annuity stream, so the liability rises.
-            assert model.Projection[2].result_cf()["liability_cf"].sum() > base
-        finally:
-            (model.Data.input_dir() / alt_name).unlink(missing_ok=True)
+        assert model.Data.input_dir().resolve() == tmp_path.resolve()
+        base = model.Projection[2].result_cf()["liability_cf"].sum()
+        model.Data.mort_table_file = alt_name
+        model.Data.clear_all()
+        model.Projection.clear_all()
+        # Lighter mortality lengthens every annuity stream, so the liability rises.
+        assert model.Projection[2].result_cf()["liability_cf"].sum() > base
     finally:
         model.close()
 
