@@ -89,7 +89,7 @@ is valued at, its expenses apart, which inflate from the valuation date; and a p
 restated in force at any month continues it too, opened with the state the `_S` model
 carries into that month, which the `_S` model itself restarts where its frame opens. Each
 `model-sec.md` says what running in force changes. `Term_UK_SEC` is the first: it runs in
-force, and compiles.
+force, and compiles. `CI_UK_SEC` runs in force, and compiles too.
 
 Assumption tables stay in the units they are quoted in: a mortality rate by attained age
 and a lapse rate by policy year are annual, and each model converts them month by month

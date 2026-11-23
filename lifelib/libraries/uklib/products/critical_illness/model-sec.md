@@ -6,9 +6,10 @@ there, in any month of their policy year, and policies to be written in the ten 
 it, as lifelib's `basiclife/BasicTerm_SE` extends `basiclife/BasicTerm_S`. The product is
 the one [`product-spec.md`](product-spec.md) specifies and
 [`technical-notes.md`](technical-notes.md) models; this page says what running in force
-changes. The suffix adds lifelib's letters to `S`: `E` for in force, as in `BasicTerm_SE`,
-and `C` for the compiled form, as in `basiclife/BasicTerm_SC`, which the model's next step
-adds (UKLIB-SEC-PLAN.md U2). Until then it runs in modelx alone.
+changes, and how the model compiles. The suffix adds lifelib's letters to `S`: `E` for in
+force, as in `BasicTerm_SE`, and `C` for the compiled form, as in `basiclife/BasicTerm_SC`:
+the same formulas compile under modelx-cython, from `sample_sec.py` and `spec_sec.py`
+beside the model (UKLIB-SEC-PLAN.md U2).
 
 > **This is a mechanics demonstration, not a pricing or reserving result.** The model is
 > `CI_UK_S` on another time axis, and it reads `CI_UK_S`'s assumption tables in place,
@@ -23,7 +24,14 @@ adds (UKLIB-SEC-PLAN.md U2). Until then it runs in modelx alone.
 python products/critical_illness/run_sec.py            # point 1: the anchor cell, issued at t = 0
 python products/critical_illness/run_sec.py 9          # point 9: the reviewable point on its first review
 python products/critical_illness/run_sec.py --block    # every model point, summed row by row
+python products/critical_illness/run_sec.py 9 --cython # point 9 on the compiled model
 ```
+
+`--cython` runs the compiled model and prints the same lines. The runner builds it beside
+the model with the repository's `tools/build_sec_cy.py` the first time, in about a minute,
+and again whenever the model, `sample_sec.py`, `spec_sec.py` or the tool is newer than the
+build, and says so on stderr. Nothing the build leaves there is committed, and
+`.gitignore` covers it.
 
 The first prints the twelve rows `run.py` prints for `CI_UK_S`'s point 1, with the policy
 counts behind them. Three lines to the same thing for point 9:
@@ -31,12 +39,12 @@ counts behind them. Three lines to the same thing for point 9:
 ```python
 import modelx as mx
 model = mx.read_model("products/critical_illness/CI_UK_SEC")
-model.Projection[9].result_cf()
+model.Projection[8].result_cf()      # point 9, the table's ninth row
 ```
 
-`Projection` takes a `point_id`, as `CI_UK_S`'s does; it will take `idx`, a point's
-position in the table, once the model compiles, and the runner takes its key from the
-model either way. `result_cf()` has `CI_UK_S`'s columns — `pols_if`, `premiums`,
+`Projection` takes `idx`, the position of a point in the table, as `basiclife/BasicTerm_SC`
+does, where `CI_UK_S`'s takes a `point_id`: `Projection[8]` is point 9, and its
+`point_id()` says so. `result_cf()` has `CI_UK_S`'s columns — `pols_if`, `premiums`,
 `claims_main`, `claims_ap`, `claims_child`, `claims_lapse`, `claim_expenses`, `expenses`
 and `net_cf` — with one row per month from the valuation date, `t = 0 … proj_len() − 1`.
 `result_pols()` sets out the counts behind it on the same rows: `pols_if`, `pols_new_biz`,
@@ -46,20 +54,15 @@ life's diagnosis and mortality rates, the policy's annual and monthly claim rate
 annual lapse rate.
 
 `--block` projects every point and releases its ItemSpace once its frame is read, so the
-run holds the cells of one point at a time. Deleting it, `del model.Projection[9]`, is not
+run holds the cells of one point at a time. Deleting it, `del model.Projection[8]`, is not
 enough: an ItemSpace sits in reference cycles, which only Python's cyclic collector frees,
 so the runner collects after each release. It freezes everything alive (`gc.freeze()`)
 once the model and its table are read, and again once it has asked every point for its
 frame, so that each collection scans only what the block has made since. It keeps the
 block's sum as it goes, compensated as pandas sums a `groupby`, so that the block is, bit
-for bit, the frames concatenated and summed by `t`.
-
-The runner is uslib Term's, so it already takes `--cython`, which runs the compiled model
-in place of modelx, building it first with the repository's `tools/build_sec_cy.py`, and
-`--build DIR`, which runs a build made elsewhere. The model compiles from its next step
-on, which brings the build's `sample_sec.py` and `spec_sec.py`; until then a build stops,
-saying why. A `lifelib.create()` copy carries no `tools/`, and there `--cython` stops
-before building, saying so.
+for bit, the frames concatenated and summed by `t`. The runner is uslib Term's, and
+`--build DIR` runs a build made elsewhere (*The compiled model*). A `lifelib.create()`
+copy carries no `tools/`, and there `--cython` stops before building, saying so.
 
 ## Two clocks
 
@@ -100,7 +103,8 @@ row by row, which is what `run_sec.py --block` prints:
 
 ```python
 import pandas as pd
-frames = [model.Projection[p].result_cf() for p in model.Data.model_point_table().index]
+points = range(len(model.Data.model_point_table()))
+frames = [model.Projection[i].result_cf() for i in points]
 block = pd.concat(frames).groupby(level="t").sum()
 ```
 
@@ -238,12 +242,12 @@ The assumption tables are checked before a value of them is read. The pivot tabl
 checked by its reader, `Data.ci_rate_table`, as it reads the file and before it indexes
 and sorts it, so that a fault is named by its line: each age a whole number, each sex `M`
 or `F` and smoker `NS` or `S`, each of the four groups holding two pivot ages or more, one
-row an age, and each `i_ci` and `q_d` a number above 0 and at most 1, since
-`pivot_interp` raises the ratio of two rates to a power. The pivot ages need not run
-without a gap, nor be the same in each group. The lapse table is checked by
-`Data.lapse_last_year`, the cell the projection takes its extent from: policy years from 1
-without a gap, each rate from 0 to 1. A key is read by its value, so an age written `40.0`
-is 40. Each refusal names the file, the column and its lines.
+row an age, and each `i_ci` and `q_d` a number above 0 and at most 1, since the
+interpolation, `CI_UK_S`'s `pivot_interp`, raises the ratio of two rates to a power. The
+pivot ages need not run without a gap, nor be the same in each group. The lapse table is
+checked by `Data.lapse_last_year`, the cell the projection takes its extent from: policy
+years from 1 without a gap, each rate from 0 to 1. A key is read by its value, so an age
+written `40.0` is 40. Each refusal names the file, the column and its lines.
 
 ## The model points
 
@@ -282,20 +286,21 @@ point.
 `pols_if_init()` is the count in force at the valuation date: `policy_count` for a point
 already in force, 0 for any other. `pols_new_biz(t)` is `policy_count` in the issue month,
 the month with `duration_mth(t) = 0`, and 0 in every other. `pols_if_at(t, timing)` keeps
-`CI_UK_S`'s three timings and adds `basiclife/BasicTerm_SE`'s `"BEF_NB"`:
+`CI_UK_S`'s three timings and adds `basiclife/BasicTerm_SE`'s `BEF_NB`, each an int
+code named as `CI_UK_S`'s string (*The compiled model*):
 
-- `"BEF_NB"`, the count carried in from month `t − 1`, before month `t`'s new business:
+- `BEF_NB`, the count carried in from month `t − 1`, before month `t`'s new business:
   `pols_if_init()` at `t_entry()`, the first month on the books, and the survivors of
   month `t − 1` after it;
-- `"BEF_DECR"`, that count plus `pols_new_biz(t)`, before month `t`'s decrements, which
+- `BEF_DECR`, that count plus `pols_new_biz(t)`, before month `t`'s decrements, which
   `pols_if(t)` returns;
-- `"BEF_LAPSE"`, after the month's main claims, before its lapses;
-- `"AFT_DECR"`, the end of the month, after its claims and lapses, which is `"BEF_NB"`
-  at `t + 1` exactly, and 0 from the last covered month on.
+- `BEF_LAPSE`, after the month's main claims, before its lapses;
+- `AFT_DECR`, the end of the month, after its claims and lapses, which is `BEF_NB` at
+  `t + 1` exactly, and 0 from the last covered month on.
 
 Any other timing raises. The survivors carried into month `t` are those of month `t − 1`'s
-`"BEF_DECR"` count, which `"BEF_NB"` forms itself, as its own value at `t − 1` plus that
-month's new business, exactly the sum `"BEF_DECR"` returns. So the chain of calls from
+`BEF_DECR` count, which `BEF_NB` forms itself, as its own value at `t − 1` plus that
+month's new business, exactly the sum `BEF_DECR` returns. So the chain of calls from
 month `t` back to `t_entry()` is one cell a month, where `CI_UK_S`'s `pols_if` chain runs
 three. It is the model's one chain: the reviews, the latch and the factors are closed forms
 on the policy clock. On a model just read, a cold `net_cf` in the last month runs 11 cells
@@ -306,7 +311,7 @@ standalone and the joint shapes alike.
 The roll-forward closes as
 
 ```
-pols_if(t) − pols_if_at(t + 1, "BEF_NB")
+pols_if(t) − pols_if_at(t + 1, BEF_NB)
     = pols_claim(t) + pols_lapse(t) + pols_maturity(t)
 ```
 
@@ -327,17 +332,21 @@ rate is read.
 Each formula that tested `t` against a contractual event now tests the policy clock, and
 each recursion opens at `t_entry()` from the opening state. Where `CI_UK_S`'s test would
 have stayed correct on the valuation clock, it moved anyway, so that cover has one
-definition. Fourteen cells are new — `policy_count`, `duration_mth_init`, `t_entry`,
-`is_active`, `expiry_mth`, `pols_new_biz`, the six accessors of the opening state,
-`review_prem_factor` and `review_prem_change` — and none of `CI_UK_S`'s 63 is gone.
+definition. Fourteen cells are new with running in force — `policy_count`,
+`duration_mth_init`, `t_entry`, `is_active`, `expiry_mth`, `pols_new_biz`, the six
+accessors of the opening state, `review_prem_factor` and `review_prem_change` — and four
+more with compiling, `point_id`, `is_accelerated`, `is_reviewable` and `rate_group` (*The
+compiled model*). One of `CI_UK_S`'s 63, `pivot_interp`, is gone, `Data`'s two arrays of
+its interpolation replacing it. The twin identity exempts it, its spec saying why, and a
+cell of `CI_UK_S`'s that this model lacked without saying so would fail it.
 
 | Cells | `CI_UK_S` | `CI_UK_SEC` | Why |
 |---|---|---|---|
 | `duration_mth`, `duration` | `t`, `t // 12` | `duration_mth_init() + t`, `duration_mth(t) // 12` | The policy clock, opened from the model point |
 | `proj_len` | `12 × policy_term()`, from issue | `expiry_mth() − duration_mth_init()`, from the valuation date; raises past cover, outside the contract's bounds, on a Reference off its domain, and on a review history before the first review | The frame starts at the valuation date |
 | `age_at_entry`, `sex`, `smoker`, `age`, `ci_rate_base`, `mort_rate`, `ci_rate`, `claim_rate_life` | `life=1`, a default | `life`, no default; every call passes 1 or 2, positionally | A compiled model declares a defaulted parameter as `long long life=*`, which the C step's typing guard would read as a parameter of that name; modelx keys `CI_UK_S`'s `age(t)` as `(t, 1)`, so the twin identity pairs the cells as before |
-| `pols_if`, `pols_if_at`, `pols_if_init` | a recursion through `"AFT_DECR"`, three cells a month, from the column's 1.0 at `t = 0` | `"BEF_DECR"`, one cell a month from `t_entry()`; `pols_if_init()` is 0 unless in force | Policies in force at the valuation date open the count; new business joins it in its issue month |
-| `pols_maturity`, `"AFT_DECR"` | at `t = proj_len() − 1` | at `duration_mth(t) = expiry_mth() − 1` | One definition of cover, on the policy clock |
+| `pols_if`, `pols_if_at`, `pols_if_init` | a recursion through `"AFT_DECR"`, three cells a month, from the column's 1.0 at `t = 0` | `BEF_DECR`, one cell a month from `t_entry()`; `pols_if_init()` is 0 unless in force | Policies in force at the valuation date open the count; new business joins it in its issue month |
+| `pols_maturity`, `AFT_DECR` | at `t = proj_len() − 1` | at `duration_mth(t) = expiry_mth() − 1` | One definition of cover, on the policy clock |
 | `reviews_passed`, `review_shock_active` | `t // review_period_mths`; the window `t % review_period_mths < 12`, after a review whose `review_prem_shock` passes the threshold | `duration_mth(t) // review_period_mths`; the window on `duration_mth(t)`, asked first, after a review whose own change, `review_prem_change(t)`, passes it | A review falls on a policy month, and a review made before the valuation date made its own change |
 | `premium_pp`; `review_prem_factor`, new | `P × idx_p(t) × (1 + ρ)^reviews_passed(t)` | `P × idx_p(t) × review_prem_factor(t)`, the factor opening at `review_prem_factor_init()` and taking `1 + ρ` for each review after `t_entry()` | The reviews already made are history |
 | `ci_sel_factor` | `1 + η` once `reviews_passed(t) ≥ 1` while `ρ` passes the threshold | `ci_sel_factor_init()` while `ci_sel_latched_init()` is 1; else `1 + η` once a review after `t_entry()` has a `ρ` past the threshold | The latch closed before the valuation date is history, at the loading of its day, which may have been 0 |
@@ -347,11 +356,15 @@ definition. Fourteen cells are new — `policy_count`, `duration_mth_init`, `t_e
 | `inflation_factor` | `1.03^(y − 1)`, from issue | `1.03^(t // 12)`, from the valuation date | Unit costs in valuation-date pounds |
 | `expenses` | the initial expense on `pols_if(t)` at `t = 0` | on `pols_new_biz(t)` | A point in force bears none, one issued later bears it in its issue month, per policy issued and not inflated, as in `basiclife/BasicTerm_SE` |
 | `ci_rate_base`, `mort_rate`, `lapse_rate_base`, `benefit_pp`, `claims`, `claim_expenses`, the counts | unguarded: no `CI_UK_S` frame has a month outside cover | zero outside cover, before any table or rate is read; the lapse table's extent from `Data` | Before issue `CI_UK_S` extrapolates the pivots to ages the policy never reaches, and raises `KeyError` on the lapse table |
-| `check_pols_roll_fwd_resid` | `pols_if(t + 1)` | `pols_if_at(t + 1, "BEF_NB")` | The next month's new business is no part of month `t`'s movement |
+| `check_pols_roll_fwd_resid` | `pols_if(t + 1)` | `pols_if_at(t + 1, BEF_NB)` | The next month's new business is no part of month `t`'s movement |
 | `check_claim_split_resid` | any `q_exit` | zero outside cover; `q_exit` past 1 refused in the month it passes | Past 1 the independent conversion has no real value |
 | `check_pols_roll_fwd` | `1e-10 × max(pols_if_init(), 1)` | `1e-10 × max(policy_count(), 1)` | `pols_if_init` is 0 on new business here; `check_claim_split` keeps `CI_UK_S`'s tolerance, `claim_split_tol`, a Reference, unscaled in both models, since the artefact it bounds is a rate no count moves |
 | `result_cf` | `range(proj_len())`, from issue | `range(proj_len())`, from the valuation date | Row 0 is the valuation month |
 | `result_pols` | — | `pols_new_biz` added, the rates 0 outside cover | The counts behind `result_cf()`, after `basiclife/BasicTerm_SE`'s `result_pols()` |
+| `claims` | `claims(t, kind=None)`, the kinds by name and, with no kind, their total by `sum` | `claims(t, kind)`, no default: the codes `MAIN`, `AP`, `CHILD` and `LAPSE`, and the total `ALL`, `sum`'s compensated addition written out | A default and `None` do not compile, and three kinds are non-zero together, where a total written left to right parts from `sum`'s in the last bit (*The compiled model*); the twin identity compares `CI_UK_S`'s `claims(t)` with `claims(t, ALL)` |
+| `pivot_interp`; `ci_rate_base`, `mort_rate`; `rate_group`, new | `pivot_interp(x, sex, smoker, column)`, a `.loc`, a sorted generator and text keys at every call | gone: `Data.i_ci_array` and `Data.q_d_array`, S's formula at each age the contract admits, 18 to 74, read at a life's row, `rate_group(life)`, and its attained age, an age outside them refused by name, either side | A C cell takes no text and runs no pandas; the twin identity exempts `pivot_interp` and compares its two readers, and a test holds each array to S's call at every group and age, bit for bit |
+| `sex(2)`, `smoker(2)` | `invalid life` on a single life | the column as read, NaN where blank | Reporting cells, whose type the sample traces on a blank second life, so that each compiles to a Python object; no projection cell reads them, `rate_group` taking each life's row of the pivot arrays |
+| `premium_mode` | the column as read | the column, refusing any value but `monthly` and `annual` | A reporting cell that validates its column returns text or raises, and compiles to `str`, as `Term_UK_SEC`'s does; `Data` has refused any other mode since the in-force step, so the text is the same on every point it admits |
 
 Of the cash flows, the change of clock moves the maintenance expense alone at the shipped
 assumptions, and `net_cf` with it, the trend shipping at 0. Point 9 carries that expense in
@@ -424,16 +437,358 @@ made of and the References, as `Term_UK_SEC`'s waived share raises in the month 
 to 1. At rates that high the artefact passes the shipped `claim_split_tol` some months
 earlier, where the check returns False, as `CI_UK_S`'s does.
 
+## The compiled model
+
+The model compiles under modelx-cython into C-typed code, as `basiclife/BasicTerm_SC`
+does, and modelx reads and runs the same formulas as before. Compiling changed how each
+cell reads its inputs and spells its codes, and no number: what the model computed on each
+committed point was frozen before the change, and it still computes it, to the last bit
+(*Tests*, below). Cell by cell, at every argument a full modelx sweep evaluates, the
+compiled model computes what modelx computes, bit for bit, on the committed points, on the
+points of the splice grid, which take the branches they do not, at the contract's
+extremes, where the caps on the claim rates bind and on keys written as floats. The
+compile tests hold it so on x86-64, and to 1e-12 relative elsewhere, where no run has
+shown it yet.
+
+### Building it
+
+In the source repository:
+
+```bash
+python tools/build_sec_cy.py critical_illness                  # in place, beside the model
+python tools/build_sec_cy.py critical_illness --out /tmp/ci    # elsewhere, with the CSVs
+```
+
+The tool exports the model to `CI_UK_SEC_nomx/`, the Python package modelx's `export`
+writes, which runs without modelx. It copies the CSVs beside the export when it builds
+anywhere but here, because the package reads the CSVs of the directory that holds it. It
+then runs mx2cy, modelx-cython's compiler, on the export, with `sample_sec.py` and
+`spec_sec.py` (below). The result is `CI_UK_SEC_nomx_cy/`, whose spaces are C extension
+types, and it is imported as the export is:
+
+```python
+import sys
+sys.path.insert(0, "products/critical_illness")    # the directory holding the build
+from CI_UK_SEC_nomx_cy import mx_model as model
+model.Projection[8].result_cf()                    # point 9, compiled
+```
+
+Compiled, no cache is ever cleared. An ItemSpace takes the References when it is made,
+and keeps the values it computes until it is deleted; the base `Projection` and `Data`
+keep theirs for good. So a Reference set on `Projection` after it has computed,
+`inflation_rate` say, leaves every value computed before as it was, in the base
+`Projection` and in every ItemSpace made before, and only an ItemSpace made afterwards
+computes with it. Set every Reference on a model just imported, before anything is
+computed, where modelx would recompute; a test holds the compiled model to this.
+
+A build takes about a minute with gcc, 58 s here, and needs a C compiler, which is why
+`requirements.txt` leaves modelx-cython out: `pip install -r requirements-cython.txt`.
+`run_sec.py --cython` builds in place when it finds no build, or one older than the model,
+the sample, the spec or the tool, and `--build DIR` runs a build made with `--out DIR`.
+Nothing a build writes is committed. All of it derives from committed files, and an
+extension module is built for one operating system, processor and Python
+(`_mx_classes.cpython-313-x86_64-linux-gnu.so` here); in place, `.gitignore` covers all of
+it. A `lifelib.create()` copy of the library carries no `tools/`, so it cannot build, and
+`run_sec.py --cython` says so.
+
+### What compiling changed, and why
+
+A compiled cell is fast when its body is C, and types alone do not make it so: a cell
+whose body still looks a value up in a DataFrame or compares text runs Python under its C
+declaration. So each input now reaches a cell as a number, as `Term_UK_SEC` was taught
+first (UKLIB-SEC-PLAN.md §6.1; USLIB-SEC-PLAN.md R1 to R17):
+
+- **`idx`.** `Projection` is parameterized by the position of a point in the table, from
+  0, as `BasicTerm_SC` is: `Projection[8]` is point 9, and `point_id()` returns the label,
+  which every refusal names. The position is what indexes the vectors below.
+- **`Data`'s vectors.** Each model point attribute a formula uses is a `Data` vector of
+  int64 or float64, one element a point, and a cell reads its point's element:
+  `policy_term()` is `int(data.policy_term()[idx])`. Compiled, the vector is a typed
+  memoryview, and the read is a load from memory. The six columns of opening state are
+  vectors too, the latch an int64 of 0 and 1.
+- **Text, decoded once.** A C cell holds no text, so `Data` decodes each text column a
+  formula reads into the number it selects, for every point at once: the contract type
+  into `is_accelerated`, the life basis into `is_joint` and the premium guarantee into
+  `is_reviewable`, each a flag; each life's sex and smoker status into the row of the
+  pivot arrays they select, `rate_group` and `joint_rate_group`, M NS 0, M S 1, F NS 2 and
+  F S 3; each true-or-false column, `children_cover` and `indexation`, into a 0/1 flag;
+  and a single life's blank second age into 0 beside the flag `is_joint`, so that no
+  formula tests for NaN. Each decodes as `CI_UK_S` reads the column, which a test holds on
+  every value a column can hold, and what it cannot hold it refuses (below). The cover
+  basis and the premium mode are checked, and not decoded: no projection cell reads
+  either, the cover being level on every point `Data` admits and the premium carried
+  monthly in either mode.
+- **The pivot interpolation, made once.** `CI_UK_S`'s `pivot_interp(x, sex, smoker,
+  column)` interpolates the pivot table log-linearly at every call, with a `.loc`, a
+  sorted generator and text keys, none of which a C cell can run. `Data` makes it once:
+  `i_ci_array` and `q_d_array`, by the group's row and the attained age, padded from age 0
+  so that the index is the age, each element built by S's own formula on Python floats,
+  at every attained age the contract admits, `Data.rate_age_min` to `rate_age_max`, 18 to
+  74, and NaN below. `Data` cannot read `Projection`'s bounds, so it holds the two ages as
+  References of its own, which a test holds to `issue_age_min` and `expiry_age_max` less
+  one. `ci_rate_base` and `mort_rate`, the arrays' one reader each, read them at the
+  life's row, `rate_group(life)`, and its attained age, checking the age against both ends
+  first. A test holds every element to S's call by its bits, on the shipped table and on
+  one whose groups hold other pivot ages, and `pivot_interp` is the one cell of `CI_UK_S`'s
+  this model lacks, which the twin identity exempts.
+- **Tables indexed by integers.** The lapse rates are `lapse_table_array`, by policy year,
+  padded at year 0 with NaN, which nothing reads. `lapse_rate_base` holds the policy year
+  at the table's last above, as `CI_UK_S` does, and reads in cover alone, where the year
+  is 1 or more.
+- **Codes.** A timing or a kind, which `CI_UK_S` spells as text, is an int Reference named
+  as the text: `BEF_NB = 0`, `BEF_DECR = 1`, `BEF_LAPSE = 2` and `AFT_DECR = 3`, in the
+  order of their instants within the month, and `MAIN = 0`, `AP = 1`, `CHILD = 2` and
+  `LAPSE = 3`. A call reads as before, less the quotes: `pols_if_at(t, BEF_DECR)`.
+  `benefit_pp` takes the first three kinds, and refuses the others. A string argument
+  would give the cell a dictionary for a cache, where a code indexes a C array, so codes
+  are numbered from 0 without a gap.
+- **The claims total, a code of its own.** `CI_UK_S` totals the four kinds as
+  `claims(t)`, its `kind` defaulted to `None`, with Python's `sum`. A default compiles as
+  a keyword parameter the typing guard refuses, and `None` is no C integer, so the total
+  is `claims(t, ALL)`, `ALL = 4`, and `net_cf` reads it. `sum` of floats compensates since
+  Python 3.12: it carries the rounding error of each addition, Neumaier's way, and adds it
+  back once at the end. The main claim, the additional payment and the children's claim
+  are non-zero together in most months of cover, and there a total written left to right
+  parts from `sum`'s: in 415 of the 2,040 months of the twins of `CI_UK_S`'s seven points.
+  So the total is `sum`'s addition written out, in explicit statements: `0.0 +` the main
+  claim, `sum`'s start, then each later kind added with its rounding error carried, and
+  the carried error added once at the end, where it is finite and not 0. A test holds it
+  to `CI_UK_S`'s total by its bits in every month of every twin, of S's points and of the
+  splice's, and finds the months where a sum left to right would part.
+- **Five powers raise as modelx does.** Past the largest float, Python's float power
+  raises `OverflowError` where C's `pow` gives an infinity. So expense inflation, the
+  morbidity trend, the two index factors and the review factor call Python's own power
+  where theirs is infinite from a finite base, as `Term_UK_SEC`'s do (uslib's *Record —
+  M22* form). Only inputs far outside the product reach it (*What it refuses*, below).
+- **Reporting cells stay Python.** `model_point()`, the label accessors `contract_type()`,
+  `life_basis()`, `cover_basis()`, `premium_guarantee()`, `premium_mode()`, `sex(life)` and
+  `smoker(life)`, and the two reports return a table row, text and DataFrames, for a
+  reader, for `run_sec.py` and for the comparison with `CI_UK_S`. No other cell calls
+  them, so they cost the projection nothing. The first five validate their column, as
+  `CI_UK_S`'s first four do and `premium_mode()` now does too, so each returns text or
+  raises, and compiles to `str`. `sex(life)` and `smoker(life)` return each life's column
+  as read, a single life's blank second life as NaN, and compile to Python objects, as
+  the sample traces them (below), so that each returns what modelx returns.
+
+The `Data` docstring lists its 27 vectors, arrays and extents, each with the column or
+file it comes from. The four readers stay Python, returning DataFrames and a
+path, and no `Projection` cell but `model_point()` reads them. Every other cell of
+`Projection`, 70 of its 80, returns a C `bint`, `long long` or `double`, and caches a
+single value, or a C array the spec sizes from the contract:
+
+| Compiled to | Cells |
+|---|---|
+| a C array of 722 by `t`, of `double`, `long long` or `bint` | the 35 cells of `t` alone: every count, rate, factor, premium and cash flow; the policy clock and its years; the reviews, their window and the latch; the checks' residuals; and the flag `is_active` |
+| a C array of 722 by 5 | `pols_if_at(t, timing)`, `benefit_pp(t, kind)`, `claims(t, kind)`, `age(t, life)`, `ci_rate_base(t, life)`, `mort_rate(t, life)`, `ci_rate(t, life)` and `claim_rate_life(t, life)` |
+| a C array of 5 by life | `age_at_entry(life)` and `rate_group(life)` |
+| one `bint`, `long long` or `double` | the 25 other cells without a parameter: the point's numbers, flags and opening state, the ends of its frame, and the two checks |
+| a Python object, or `str` | the ten reporting cells |
+
+The declarations the build generates, `_mx_classes.pxd` in the compiled package, are the
+record of it, and none of `Projection`'s caches there is a dictionary but the two labels
+of a life's.
+
+### The sample and the spec
+
+mx2cy types each cell from the values the sample run passes it and gets back, and a cell
+the run never calls compiles as a Python object. So `sample_sec.py` runs the two reports
+and the two checks on every committed point, and then the cells no report reaches:
+`model_point()` and the seven label accessors, which only a reader asks for, and
+`point_id()`, which only a refusal names. Every timing and every kind a cell takes the
+reports reach, the total through `net_cf`. It runs the committed points alone: the export
+reads the CSVs of the directory the build is made in, which in place is the product
+directory. The committed points leave branches untaken: a review that changes the premium
+in the frame, its window and the latch it closes, on every point but 14, the review
+change shipping at 0; the reviewable standalone and joint contracts, a male smoker, cover
+below the ancillary caps and ages past the last pivot; the caps on the claim rates. That
+still types every cell, because every branch of a cell returns the one type its others
+return, a count a float in every branch, and on points that take those branches the
+compiled model computes modelx's numbers (above). The two life labels are typed from more
+than the committed points: the sample also calls `sex` and `smoker` of each life on a copy
+of the first point, a single life, with its second life blank, written to a temporary
+directory and read by a second instance of the export, so that each compiles to a Python
+object, which a test holds in the sample's code. The sample also raises the recursion
+limit, which modelx raises and its export does not (*What a compiled run needs*, below).
+
+`spec_sec.py` sizes each C-array cache, by the names of the cells' parameters, and a
+compiled cache raises `IndexError` for an argument outside it. So each size covers the
+largest argument a cell is called with on a point the contract allows, in its frame and
+in the month after it, `t = proj_len()`, which the roll-forward reads and the compile
+tests' full sweep evaluates every monthly cell at; plus one because the index starts at
+0, and no more, which a test holds to the spec's own derivation:
+
+| Parameters | Size | The largest argument |
+|---|---|---|
+| `t` | 722 | 721. The longest frame is the longest term, 50 years, `policy_term_max`, issued 120 months after the valuation date, the furthest ahead `Data.future_horizon_mth` admits as shipped: 12 × 50 + 120 = 720 months, `t = 0 … 719`, and the month after, 720, whose roll-forward residual reads the count carried into 721 |
+| `t`, `timing`; `t`, `kind`; `t`, `life` | 722 by 5 | `t` as above, by the four timings, by the four kinds and the total, and by the two lives. Every 2-D cache of a model shares one inner width, the widest, here the kinds': Cython's unpickle code converts them with one function, and two widths are refused by gcc 14, as uslib's `WholeLife_US_SEC` found (USLIB-SEC-PLAN.md §7.2) |
+| `life` | 5 | 2. Widened to the same 5, so that a life the cells refuse by their own formula, 0, 3 or 4, is refused as in modelx, `ValueError("invalid life")`, in every per-life cache |
+
+`proj_len()` refuses a term above `policy_term_max`, in modelx as compiled, and `Data` a
+point issued more than `future_horizon_mth` months ahead, so no report on a point the
+model projects runs past these caches. Those two References are the contract the sizes
+are derived from; the ages bound none, since an age indexes `Data`'s pivot arrays, not a
+cache. Raise the maximum term or the horizon, and a report runs past the caches in the
+compiled model alone: `t` past its size raises `IndexError`, naming nothing, where modelx
+projects. Each needs the sizes derived again, as `spec_sec.py` derives them, and a
+rebuild; a longer horizon, `t` raised to 12 × 50 + the horizon + 2. Lower `issue_age_min`
+or raise `expiry_age_max` past `Data.rate_age_min` or `rate_age_max`, and the arrays'
+readers refuse the age, in both engines, naming the point, until the two are moved too.
+
+### Two compiler directives
+
+`tools/build_sec_cy.py` puts `# cython: infer_types=True, cpow=True` at the top of the
+module mx2cy translates, before it compiles it, and on Linux and macOS compiles with
+`-ffp-contract=off` and `-Werror=incompatible-pointer-types`. Without `infer_types` an
+integer local, such as `d` in `proj_len()`, stays a Python object, though the cell is
+typed `long long`; without `cpow`, `1 − (1 − q)^(1/12)`, the monthly rate of every
+decrement here, is a complex power, which gcc computes with `cpow` rather than `pow`, and
+its last bits can differ from Python's; and gcc fuses a multiply and an add where the
+target has the instruction, one rounding where Python rounds twice. The tool's docstring
+has the detail, and uslib's
+[`term_life/model-sec.md`](../../../uslib/products/term_life/model-sec.md) the
+measurements that put each there. With all four, every compiled value here agrees with
+modelx bit for bit. The compile tests hold each directive in the module's first line, and
+a static test holds the tool's line to the two and no other: `cdivision=True` would make
+`//` and `%` on C integers truncate where Python floors, which the policy clock before
+issue and the reviews' period read, and `boundscheck=False` or `wraparound=False` would
+change what an `idx` outside the table reads.
+
+### What a compiled run needs
+
+**Memory, and the release.** A compiled `Projection` ItemSpace is a C struct of
+645,072 bytes, the type's basic size, which holds every cell's cache, and deleting
+it, `del model.Projection[idx]`, frees nothing by itself: an ItemSpace sits in reference
+cycles, and only Python's cyclic collector frees it. That is why `run_sec.py --block`
+collects after each release, in its frame pass and in its projections (*Run it*, above),
+and a test runs the compiled runner on a block of 126 points, the committed table copied,
+and finds no ItemSpace but the base alive after each collection.
+
+**Stack, not recursion limit.** A compiled chain of cells calls C to C, on the C stack,
+which the interpreter's recursion limit does not count, so the compiled model needs no
+limit raised: the deepest call the contract allows runs under a limit of 26. What it needs
+is stack. That call, a cold `net_cf` in the last month of the longest cover, a 50-year
+term from 18, now or 120 months on, runs the count chain back to `t_entry()`, 611 cells
+deep in modelx, one cell a month and 11 more, which a test holds, on the reviewable, the
+standalone and the joint shape alike, and compiled with gcc, on each shape, at the shipped
+References or with the review change and the trend on, it needs between 144 and 160 KiB:
+it ran on a thread of 160 KiB and not of 144. A test runs each shape at its longest cover
+in a thread of 1 MiB, the stack Windows gives a program's main thread unless the program
+is linked for more, and again on the main thread, which is where `run_sec.py --cython`
+runs. MSVC's
+frames may be larger than gcc's, and CI's Ubuntu runner needed two to four times this
+machine's stack for `Term_UK_SEC`'s chain (UKLIB-SEC-PLAN.md §6.1, *Record — M2*); the
+`cython_uk` CI job runs the test on both, and records the sizes each ran on. The export
+recurses in Python instead: the same call needs a recursion limit of 1,242 there, and the
+reports and checks, which run in ascending `t`, need 128, so `sample_sec.py` sets 5,000.
+
+### What it refuses
+
+The compiled model refuses what modelx refuses, with the same message. modelx raises its
+`FormulaError`, which quotes the error; compiled, the `ValueError` itself propagates. A
+test holds the in-force suite's refusals to modelx's, compiled, message for message: each
+malformed row of the table, each assumption table a reader cannot read, each point the
+frame refuses, a review history among them, each Reference off its domain that the
+compiled model can hold, an exit rate past 1, an age either side of the pivot arrays, and
+what the vectors cannot hold, in a cell typed `long long` or `double` as in a Python one.
+
+A message prints each Reference as the compiled model holds it: a rate as a float, and a
+term, an age or a count of months as an int, a whole number as an int where its domain is
+refused. So a rate written as an int, 2, or a bound written as a float, 24.0, gives one
+message in both engines, which a test holds for each. An int Reference is a C `long long`
+compiled, so a value no C integer holds is refused as it is set, NaN with `ValueError` and
+an infinity with `OverflowError`, and a fraction is truncated as it is set, 60.5 to 60,
+where modelx computes with it, and its `proj_len()` refuses it as no whole number. So set
+each int Reference as a whole number: the five bounds of the contract and
+`review_period_mths`, which a test holds the compiled model to, and `Data`'s
+`future_horizon_mth`, `rate_age_min` and `rate_age_max`.
+
+- What `Data` cannot decode or hold, when the vector is first read, naming every point at
+  fault: a `point_id` that is not a whole number, or is `2**53` or more in size; an issue
+  age, a term or, on a joint first-event point, a second age `2**53` or more in size,
+  which an int64 vector cannot hold whole and numpy would cast without a word; and, as
+  since the in-force step, a code that names no contract type, life basis, sex, smoker
+  status, cover basis, premium guarantee or premium mode, and a flag that is not True or
+  False. A key written as a float, an age `40.0`, is read by its value, as `CI_UK_S`'s
+  lookups match it. And `Data.rate_age_min` and `rate_age_max` that are not whole, the
+  first below 0 or the second below the first, by `Data.rate_age_first`, which the arrays
+  and their readers ask first.
+- An attained age outside the pivot arrays, by the cell that reads them, where
+  `CI_UK_S`'s interpolation extrapolated to any age: `point_id 1: ci_rate_table.csv is
+  interpolated at attained ages 18 to 74, Data's rate_age_min to rate_age_max, not at
+  17`, from `ci_rate_base` or `mort_rate`, on a contract whose bounds were moved past them.
+- A power past the largest float, which Python's float power refuses with
+  `OverflowError` where C's `pow` gives an infinity: expense inflation, the morbidity
+  trend, the two index factors and the review factor each call Python's own power where
+  theirs is infinite from a finite base, so that the compiled model raises the platform's
+  message as modelx does, rather than carry an infinity on. Only an input far outside the
+  product reaches one: an inflation or a trend above about 140,000 a year, an index
+  increase or step above about 2 million, or a review change above about 1.8e34 at the
+  shipped period of 60 months, or 2.3 at one of a month; a test reaches each.
+- A timing, a kind or a life no cell takes, by the cell, as `CI_UK_S`'s are:
+  `invalid timing`, `invalid kind`, `invalid life`.
+
+An argument outside a cache raises `IndexError` in the compiled model alone:
+`net_cf(722)` or `net_cf(-1)`, which modelx answers with 0, the month being outside
+cover; `pols_if_at(t, 5)`, `claims(t, 5)` and `benefit_pp(t, 5)`, which modelx refuses as
+a timing and a kind it does not take; and `age_at_entry(5)`. An `idx` past the last row is
+refused in both, with an `IndexError` at the first read of a vector, and `Projection[-1]`
+reads every vector at its last element in both, so it is the table's last point, under
+that point's own `point_id()`; the compiled refusal test holds both against modelx.
+
+An annual claim rate above 1 is not refused but capped, in both: `ci_rate`,
+`claim_rate_life`, `claim_rate` and `claim_rate_paid` cap at 1, as `CI_UK_S` does
+(*Departures from CI_UK_S*, above), and a compile test holds the two equal on points where
+each cap binds, new business and in force. A NaN product would stay NaN through a cap, in
+both, which the compiled model computes as a comparison that keeps the value unless the
+bound is smaller.
+
+### Speed
+
+`python tools/bench_sec_cy.py critical_illness` builds the model into a temporary
+directory and times one block run on three engines: modelx, the export and the compiled
+model. Each engine runs the committed table repeated, in a process of its own, as
+`run_sec.py --block` runs a block, each point projected and then released. `net_cf` is
+`net_cf(t)` summed over the frame, the projection alone, as `basiclife/BasicTerm_SC` is
+timed on its `pv_net_cf()`; `result_cf` is the report `run_sec.py` prints, which builds a
+DataFrame for each point. Each run of the tool takes the fastest of three runs of each
+engine and loop. The tool was run three times, and each time below is the median of its
+three, with the range of the three beside it:
+
+| Engine | Points | `net_cf`, a point | `result_cf`, a point | Peak memory |
+|---|---|---|---|---|
+| compiled | 6,006 | 0.207 ms (0.205–0.218) | 0.607 ms (0.555–0.623) | 86–87 MB |
+| export | 602 | 2.74 ms (2.71–2.74) | 3.21 ms (3.15–3.29) | 86–87 MB |
+| modelx | 126 | 85.2 ms (82.4–91.0) | 90.7 ms (90.1–91.0) | 104–106 MB |
+
+On `net_cf` the compiled model runs 13.2 times its export (12.5 to 13.4 over the three),
+and on `result_cf`, where building the DataFrame takes most of its time, 5.4 times (5.1
+to 5.7); it runs 411 times modelx on `net_cf` (379 to 443) and 150 on `result_cf` (146 to
+162). The ranges are the noise of a shared machine, about −3% to +7% on modelx's
+`net_cf` and −8% to +3% on the compiled report. `Term_UK_SEC`, timed the same way on its
+own points on the same day, ran 12.8 and 4.5 times its export. The release keeps a block
+flat: the compiled model's peak did not grow over its 6,006 points in any run. Reading the
+three files and building every `Data` vector and array for those points, the pivot arrays
+among them, took 0.041 to 0.043 s, and asking every point for its frame, the runner's
+first pass, 0.08 s. Every engine, loop and run summed `net_cf` over a copy of the table to
+the same −41,825.43743, to 1e-9 relative.
+
+Measured on 2026-11-23 on a machine shared with other work: 4 CPUs (an Intel Xeon at
+2.30 GHz), a 1-minute load average between 1.38 and 2.23 as the runs started; Linux,
+Python 3.13.18 and gcc 13.3.0, with modelx 0.33.0, modelx-cython 0.1.0, Cython 3.3.1,
+numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
+
 ## Tests
 
 - **The twin identity**, in `tests/test_model_conventions_uk.py`: on points 1 to 7, every
   cell of `CI_UK_S`'s agrees at every argument `CI_UK_S` evaluates in its own sweep, to
   1e-9 relative with no absolute floor, but for `pols_if_init` and `model_point`, and
-  `result_pols`, which the spec names with its reason; a cell this model lacked would fail
-  it. So `CI_UK_S`'s worked example, which `tests/test_critical_illness_uk.py` asserts to
-  the penny and the in-force to six decimals, holds here with no number restated. The same
+  `result_pols` and `pivot_interp`, which the spec names with its reasons; a cell this
+  model lacked would fail it. The kinds and timings are compared as the codes of the same
+  names, and `CI_UK_S`'s claims total, `claims(t)`, with `claims(t, ALL)`. So
+  `CI_UK_S`'s worked example, which `tests/test_critical_illness_uk.py` asserts to the
+  penny and the in-force to six decimals, holds here with no number restated. The same
   suite holds the model to the conventions every `_SEC` model meets: every frame starts at
-  `t = 0`, `pols_if` is the `"BEF_DECR"` count, new business enters once at its
+  `t = 0`, `pols_if` is the `BEF_DECR` count, new business enters once at its
   `policy_count`, nothing happens before issue, and the in-force columns are present. And
   `tests/test_critical_illness_uk_sec.py` compares each twin with S in every cell again,
   with the trend and the review change on in both models, which T1 and the splice, each
@@ -475,24 +830,27 @@ earlier, where the check returns False, as `CI_UK_S`'s does.
   multiplies every flow and counted cell and moves no per-policy value, bit for bit, the
   factors, the reviews and the latch among them; and the roll-forward, its tolerance scaled
   by the count, closes on a million policies.
-- **Validation and regeneration**: each malformed row of the table, 73 cases, is refused
-  naming its point, and naming its label on an extract labelled otherwise than by position;
-  the horizon is a Reference; a point past its cover or outside the contract's bounds, 14
-  cases, is refused by `proj_len()`, each bound just inside it and each moved past a
+- **Validation and regeneration**: each malformed row of the table, 76 cases, each
+  `2**53` bound at the bound among them, is refused naming its point, and naming its label
+  on an extract labelled otherwise than by position; the horizon is a Reference; a point
+  past its cover or outside the contract's bounds, 15 cases, a bound set as a float among
+  them, is refused by `proj_len()`, each bound just inside it and each moved past a
   committed point, and `run_sec.py --block` refuses such a point before printing anything;
   so is a review history before the first review, 4 cases, a review factor between the first
   review and the second that is not 1 plus that review's change, 6 cases, the rule's
   tolerance and the last month of its window among them, accepted at two reviews and within
   its tolerance, and each of 29 References off its domain, the value next outside each edge,
-  NaN and both infinities, on every point that reads it, where at the edges the twin that
-  reads it is S's in every cell; a whole review period written `60.0` projects as 60 does,
-  cell for cell and type for type; an exit rate past 1 is refused in the month it passes,
-  where S's residual is complex; each assumption table a reader cannot read, 22 cases, is
-  refused naming its lines; keys written as floats read as `CI_UK_S` reads them; the edges
-  of the interface and of each bound are accepted, a review that cut the premium, to 0 at
-  the edge, the first anniversary, and a latch closed at a factor of 0 among them; every
-  state `CI_UK_S` reaches, as shipped, under the splice's review change and where the cap
-  binds, is accepted in force; and the committed table is what `CI_UK_S` generates.
+  NaN and both infinities, on every point that reads it, each printed as the compiled model
+  holds the Reference, an int set on a float Reference and a whole float on an int one
+  among them, where at the edges the twin that reads it is S's in every cell; a whole
+  review period written `60.0` projects as 60 does, cell for cell and type for type; an
+  exit rate past 1 is refused in the month it passes, where S's residual is complex; each
+  assumption table a reader cannot read, 22 cases, is refused naming its lines; keys
+  written as floats read as `CI_UK_S` reads them; the edges of the interface and of each
+  bound are accepted, a review that cut the premium, to 0 at the edge, the first
+  anniversary, and a latch closed at a factor of 0 among them; every state `CI_UK_S`
+  reaches, as shipped, under the splice's review change and where the cap binds, is
+  accepted in force; and the committed table is what `CI_UK_S` generates.
 - **The product's own facts**: the two clocks on the shipped points; the committed rows, in
   force and issued later, continuing their S points at the shipped assumptions but for
   inflation, and the row read under a review change of 10% continuing `CI_UK_S` under it to
@@ -525,11 +883,43 @@ earlier, where the check returns False, as `CI_UK_S`'s does.
   the RPI's floor and caps or the ancillary benefits' caps, stays NaN in the cell, where the
   frame refuses the Reference; and each check is False where its residual's formula is
   replaced by one returning NaN, the only way left to give it one.
+- **The C step's representation**, in modelx, in seconds: `claims(t, ALL)` is `CI_UK_S`'s
+  total by its bits in every month of every twin, of S's points and of the splice's, where
+  a total written left to right parts from it in 415 of the 2,040 months of S's seven;
+  each pivot array is S's `pivot_interp` by its bits at every group and every age it
+  holds, on the shipped table and on one whose groups hold other pivot ages; every value
+  each text column can hold decodes as `CI_UK_S` reads it, each fraction above .5 so that
+  a decode that rounded would part, each life's row of the arrays holding S's rates at
+  every age; each padded array holds NaN where it holds no rate and nothing else, and its
+  one reader refuses an age outside it, either side, on an extract labelled otherwise than
+  by position; the arrays' ages are the contract's, and each off its domain is refused;
+  each `Data` vector is the int64 or float64 the `Data` docstring's table states, and each
+  parameterless cell returns a Python number; `spec_sec.py`'s sizes and `sample_sec.py`'s
+  recursion limit are what their comments derive, and the sample traces each life's labels
+  on a blank second life; `run_sec.py --cython` rebuilds exactly when a source is newer;
+  and a label the vectors cannot hold, or a timing, kind or life no cell takes, a single
+  life's second issue age and the benefits' lapse kind and total among them, is refused.
+- **C2, the fingerprint**: every committed point computes what the model computed when its
+  E step ended, every cell at every argument, frozen at the end of the module by
+  `tools/gen_sec_fingerprint.py` before the C step changed anything.
+- **Compiled**, the tests marked `cython`, which compile the model once a session into a
+  temporary directory and run it in child processes: in
+  `tests/test_compiled_conventions_uk.py`, C3, the typing guard, on the declarations, the
+  spec and the generated C; C4 on the committed points; and the release. In this model's
+  module, C4 on the splice grid, at the contract's extremes, each shape at its longest
+  cover and its oldest age, issued now and 120 months on and in force in its last month,
+  where the caps on the claim rates bind and on keys written as floats; each life's label
+  that is not text; the refusals, message for message, the overflows of the five powers,
+  the `IndexError`s past the caches and an `idx` past the table and of −1 among them; what
+  the compiled model does with a value an int Reference cannot hold; each shape's deepest
+  cold call on a 1 MiB thread and on the main thread; a Reference set late, which clears
+  no cache; and `run_sec.py --cython`, which prints what modelx prints.
 
 ```bash
 python -m pytest tests/test_critical_illness_uk_sec.py -q
 UKLIB_SEC_FULL=1 python -m pytest tests/test_critical_illness_uk_sec.py -q   # the full grid
 python -m pytest tests/test_model_conventions_uk.py -q -k CI_UK_SEC
+UKLIB_CYTHON_SHARD=critical_illness python -m pytest -m cython tests -q     # compiled
 ```
 
 <!-- BEGIN generated citation links -- regenerate with tools/gen_citation_links.py -->
