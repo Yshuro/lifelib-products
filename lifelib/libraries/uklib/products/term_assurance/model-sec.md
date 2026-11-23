@@ -919,11 +919,13 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   labels on a blank second life; `run_sec.py --cython` rebuilds exactly when a source is
   newer; and a label the vectors cannot hold, or a timing, kind or life no cell takes, a
   single life's second issue age among them, is refused.
-- **C2, the fingerprint**: every committed point computes what the model computed when
-  its E step ended, every cell at every argument, frozen at the end of the module by
-  `tools/gen_sec_fingerprint.py` before the C step changed anything, and refrozen once
-  since, alone, when both models' waiver came to take its incidence from the active lives,
-  which moved the waiver points 7, 11, 12 and 14 and no other number.
+- **C2, the fingerprint**: on every committed point, each column of `result_cf` and
+  `result_pols`, its sum over the frame, its largest absolute value and its values in five
+  months, the first, the last and the three quartiles between, is what the model computed
+  when its E step ended, to 1e-12 of the column's largest value, frozen at the end of the
+  module by `tools/gen_sec_fingerprint.py` before the C step changed anything, and refrozen
+  once since, alone, when both models' waiver came to take its incidence from the active
+  lives, which moved the waiver points 7, 11, 12 and 14 and no other number.
 - **Compiled**, the tests marked `cython`, which compile the model once a session into a
   temporary directory and run it in child processes: in
   `tests/test_compiled_conventions_uk.py`, C3, the typing guard, on the declarations, the

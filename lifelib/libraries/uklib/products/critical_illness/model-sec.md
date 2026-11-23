@@ -247,7 +247,12 @@ interpolation, `CI_UK_S`'s `pivot_interp`, raises the ratio of two rates to a po
 pivot ages need not run without a gap, nor be the same in each group. The lapse table is
 checked by `Data.lapse_last_year`, the cell the projection takes its extent from: policy
 years from 1 without a gap, each rate from 0 to 1. A key is read by its value, so an age
-written `40.0` is 40. Each refusal names the file, the column and its lines.
+written `40.0` is 40. Each refusal names the file, the column and its lines. And the
+interpolation is checked as `Data` makes it, at every attained age the contract admits:
+two pivots far apart can extrapolate past the largest float at an age no point reaches,
+and a pivot below about 5.6e-309 can make the ratio of two pivots infinite, so a table
+whose rate is not a finite number at such an age is refused, naming the file, the column,
+the group and the first such age (*Departures from CI_UK_S*).
 
 ## The model points
 
@@ -363,6 +368,7 @@ cell of `CI_UK_S`'s that this model lacked without saying so would fail it.
 | `result_pols` | — | `pols_new_biz` added, the rates 0 outside cover | The counts behind `result_cf()`, after `basiclife/BasicTerm_SE`'s `result_pols()` |
 | `claims` | `claims(t, kind=None)`, the kinds by name and, with no kind, their total by `sum` | `claims(t, kind)`, no default: the codes `MAIN`, `AP`, `CHILD` and `LAPSE`, and the total `ALL`, `sum`'s compensated addition written out | A default and `None` do not compile, and three kinds are non-zero together, where a total written left to right parts from `sum`'s in the last bit (*The compiled model*); the twin identity compares `CI_UK_S`'s `claims(t)` with `claims(t, ALL)` |
 | `pivot_interp`; `ci_rate_base`, `mort_rate`; `rate_group`, new | `pivot_interp(x, sex, smoker, column)`, a `.loc`, a sorted generator and text keys at every call | gone: `Data.i_ci_array` and `Data.q_d_array`, S's formula at each age the contract admits, 18 to 74, read at a life's row, `rate_group(life)`, and its attained age, an age outside them refused by name, either side | A C cell takes no text and runs no pandas; the twin identity exempts `pivot_interp` and compares its two readers, and a test holds each array to S's call at every group and age, bit for bit |
+| `Data.i_ci_array`, `Data.q_d_array` | a pivot table whose interpolation is past the largest float at an age raises `OverflowError` only when a point reaches that age, naming nothing, and, where the ratio of two pivots is itself infinite, gives an infinite rate its cap reads as a certain claim | the table refused when the arrays are made, `ValueError` naming the file, the column, the group and the first age whose rate is not a finite number | The arrays hold every age the contract admits, reached or not, and an infinite rate is refused here as one written in the file is |
 | `sex(2)`, `smoker(2)` | `invalid life` on a single life | the column as read, NaN where blank | Reporting cells, whose type the sample traces on a blank second life, so that each compiles to a Python object; no projection cell reads them, `rate_group` taking each life's row of the pivot arrays |
 | `premium_mode` | the column as read | the column, refusing any value but `monthly` and `annual` | A reporting cell that validates its column returns text or raises, and compiles to `str`, as `Term_UK_SEC`'s does; `Data` has refused any other mode since the in-force step, so the text is the same on every point it admits |
 
@@ -433,17 +439,19 @@ decrement: past 1, which an extrapolated mortality rate reaches above the last p
 rates `Data` accepts, the conversion has no real value and `CI_UK_S`'s residual is a complex
 number, whose magnitude its check compares without a word. Here the residual raises in the
 month `q_exit` first passes 1, naming the point, the month, the rate, the two rates it is
-made of and the References, as `Term_UK_SEC`'s waived share raises in the month it leaves 0
-to 1. At rates that high the artefact passes the shipped `claim_split_tol` some months
-earlier, where the check returns False, as `CI_UK_S`'s does.
+made of and the References, rather than return a number with no real value. At rates that
+high the artefact passes the shipped `claim_split_tol` some months earlier, where the check
+returns False, as `CI_UK_S`'s does.
 
 ## The compiled model
 
 The model compiles under modelx-cython into C-typed code, as `basiclife/BasicTerm_SC`
 does, and modelx reads and runs the same formulas as before. Compiling changed how each
-cell reads its inputs and spells its codes, and no number: what the model computed on each
-committed point was frozen before the change, and it still computes it, to the last bit
-(*Tests*, below). Cell by cell, at every argument a full modelx sweep evaluates, the
+cell reads its inputs and spells its codes, and no number: what its reports computed on
+each committed point was frozen before the change, and they still compute it, to 1e-12 of
+each column's largest value (*Tests*, below), and every value the in-force model cached on
+the committed points and on the full splice grid was this one's, bit for bit, when the
+change was made. Cell by cell, at every argument a full modelx sweep evaluates, the
 compiled model computes what modelx computes, bit for bit, on the committed points, on the
 points of the splice grid, which take the branches they do not, at the contract's
 extremes, where the caps on the claim rates bind and on keys written as floats. The
@@ -649,9 +657,10 @@ has the detail, and uslib's
 measurements that put each there. With all four, every compiled value here agrees with
 modelx bit for bit. The compile tests hold each directive in the module's first line, and
 a static test holds the tool's line to the two and no other: `cdivision=True` would make
-`//` and `%` on C integers truncate where Python floors, which the policy clock before
-issue and the reviews' period read, and `boundscheck=False` or `wraparound=False` would
-change what an `idx` outside the table reads.
+`//` on C integers truncate where Python floors, which only `duration(t)` meets, before
+issue, where the policy clock is negative; the reviews' `//` and `%` divide the policy
+clock inside cover alone, where it is 0 or more. And `boundscheck=False` or
+`wraparound=False` would change what an `idx` outside the table reads.
 
 ### What a compiled run needs
 
@@ -711,7 +720,8 @@ each int Reference as a whole number: the five bounds of the contract and
   False. A key written as a float, an age `40.0`, is read by its value, as `CI_UK_S`'s
   lookups match it. And `Data.rate_age_min` and `rate_age_max` that are not whole, the
   first below 0 or the second below the first, by `Data.rate_age_first`, which the arrays
-  and their readers ask first.
+  and their readers ask first; and a pivot table whose interpolation is not a finite
+  number at an age the contract admits, as the arrays are made.
 - An attained age outside the pivot arrays, by the cell that reads them, where
   `CI_UK_S`'s interpolation extrapolated to any age: `point_id 1: ci_rate_table.csv is
   interpolated at attained ages 18 to 74, Data's rate_age_min to rate_age_max, not at
@@ -845,12 +855,14 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   among them, where at the edges the twin that reads it is S's in every cell; a whole
   review period written `60.0` projects as 60 does, cell for cell and type for type; an
   exit rate past 1 is refused in the month it passes, where S's residual is complex; each
-  assumption table a reader cannot read, 22 cases, is refused naming its lines; keys
-  written as floats read as `CI_UK_S` reads them; the edges of the interface and of each
-  bound are accepted, a review that cut the premium, to 0 at the edge, the first
-  anniversary, and a latch closed at a factor of 0 among them; every state `CI_UK_S`
-  reaches, as shipped, under the splice's review change and where the cap binds, is
-  accepted in force; and the committed table is what `CI_UK_S` generates.
+  assumption table a reader cannot read, 25 cases, is refused naming its lines, or the
+  group and the age where the pivots' interpolation passes the largest float, three tables
+  on which `CI_UK_S` projects the anchor cell; keys written as floats read as `CI_UK_S`
+  reads them; the edges of the interface and of each bound are accepted, a review that cut
+  the premium, to 0 at the edge, the first anniversary, and a latch closed at a factor of 0
+  among them; every state `CI_UK_S` reaches, as shipped, under the splice's review change
+  and where the cap binds, is accepted in force; and the committed table is what
+  `CI_UK_S` generates.
 - **The product's own facts**: the two clocks on the shipped points; the committed rows, in
   force and issued later, continuing their S points at the shipped assumptions but for
   inflation, and the row read under a review change of 10% continuing `CI_UK_S` under it to
@@ -885,7 +897,10 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   replaced by one returning NaN, the only way left to give it one.
 - **The C step's representation**, in modelx, in seconds: `claims(t, ALL)` is `CI_UK_S`'s
   total by its bits in every month of every twin, of S's points and of the splice's, where
-  a total written left to right parts from it in 415 of the 2,040 months of S's seven;
+  a total written left to right parts from it in 415 of the 2,040 months of S's seven, and
+  under 12 additional payments a year or a survival slippage of 1, where a later kind
+  outweighs the main claim and its error is carried in `sum`'s second form, and by `repr`
+  where the main claim is past the largest float in every month, the total inf as S's;
   each pivot array is S's `pivot_interp` by its bits at every group and every age it
   holds, on the shipped table and on one whose groups hold other pivot ages; every value
   each text column can hold decodes as `CI_UK_S` reads it, each fraction above .5 so that
@@ -899,21 +914,25 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   on a blank second life; `run_sec.py --cython` rebuilds exactly when a source is newer;
   and a label the vectors cannot hold, or a timing, kind or life no cell takes, a single
   life's second issue age and the benefits' lapse kind and total among them, is refused.
-- **C2, the fingerprint**: every committed point computes what the model computed when its
-  E step ended, every cell at every argument, frozen at the end of the module by
-  `tools/gen_sec_fingerprint.py` before the C step changed anything.
+- **C2, the fingerprint**: on every committed point, each column of `result_cf` and
+  `result_pols`, its sum over the frame, its largest absolute value and its values in five
+  months, the first, the last and the three quartiles between, is what the model computed
+  when its E step ended, to 1e-12 of the column's largest value, frozen at the end of the
+  module by `tools/gen_sec_fingerprint.py` before the C step changed anything.
 - **Compiled**, the tests marked `cython`, which compile the model once a session into a
   temporary directory and run it in child processes: in
   `tests/test_compiled_conventions_uk.py`, C3, the typing guard, on the declarations, the
   spec and the generated C; C4 on the committed points; and the release. In this model's
   module, C4 on the splice grid, at the contract's extremes, each shape at its longest
   cover and its oldest age, issued now and 120 months on and in force in its last month,
-  where the caps on the claim rates bind and on keys written as floats; each life's label
-  that is not text; the refusals, message for message, the overflows of the five powers,
-  the `IndexError`s past the caches and an `idx` past the table and of −1 among them; what
-  the compiled model does with a value an int Reference cannot hold; each shape's deepest
-  cold call on a 1 MiB thread and on the main thread; a Reference set late, which clears
-  no cache; and `run_sec.py --cython`, which prints what modelx prints.
+  where the caps on the claim rates bind and on keys written as floats, and on the total's
+  two cases, a later kind outweighing the main claim and a main claim past the largest
+  float; each life's label that is not text; the refusals, message for message, the
+  overflows of the five powers, the `IndexError`s past the caches and an `idx` past the
+  table and of −1 among them; what the compiled model does with a value an int Reference
+  cannot hold; each shape's deepest cold call on a 1 MiB thread and on the main thread; a
+  Reference set late, which clears no cache; and `run_sec.py --cython`, which prints what
+  modelx prints.
 
 ```bash
 python -m pytest tests/test_critical_illness_uk_sec.py -q
