@@ -945,6 +945,12 @@ def _issued_at_valuation(row):
     return 0
 
 
+def _reference_settings(refs):
+    """``refs``, ``{reference: value}``, as a row of ``derived_refs`` is described: each
+    name and its value, ``review_prem_shock 0.1, ci_trend 0.02``, in the spec's order."""
+    return ", ".join(f"{name} {_py(value)!r}" for name, value in refs.items())
+
+
 @dataclasses.dataclass(frozen=True)
 class SecSpec:
     """How one product's SEC model point table and its companions derive from S (D6, D8).
@@ -956,8 +962,9 @@ class SecSpec:
         every S row, under its own ``point_id`` and ``policy_id``.  A new-business twin is
         what T1 compares; the twin of an S row already in force is a splice case.
     ``"derived"``
-        an S row restated in force at S month ``d``, opened with S's own state there.  T2
-        projects it against S from ``d`` on.
+        an S row restated in force at S month ``d``, opened with S's own state there, from
+        S as it ships or, for a row of ``derived_refs``, from S run under References of the
+        row's own.  T2 projects it against S from ``d`` on.
     ``"future"``
         an S new-business row issued ``k`` months after the valuation date (D4), T3's case.
 
@@ -980,6 +987,18 @@ class SecSpec:
         ``row["duration_mth"]`` on UL.  The default says every S row is new business.
     ``derived``
         ``(S point_id, d)`` pairs, in the order the rows are written.
+    ``derived_refs``
+        ``{(S point_id, d): {reference: value}}``, more derived rows, written after every
+        other row in the spec's order, each restated from S run under References of its
+        own: for a history S reaches only under another assumption, such as a review
+        change that has moved premiums where S ships it at 0.  Each row is the one
+        ``derived`` would make of its pair had S shipped those References, which are set on
+        S's ``Projection`` while the row is read and restored after it, and its
+        ``provenance``, where the S table has one, names each Reference and its value.  A
+        pair may not be one of ``derived``'s, whose row would take its ``policy_id``; a
+        name must be one of the References of S's ``Projection``; and a spec with
+        ``companions`` may have none, since a companion's builder reads S at its own
+        References and would give such a row the state of another run.  Empty by default.
     ``future``
         ``(S point_id, k)`` pairs; each S point must be new business.
     ``state``
@@ -1056,6 +1075,8 @@ class SecSpec:
     twin_arg_map: Callable | None = None
     future_state: Mapping[str, Callable] = dataclasses.field(default_factory=dict)
     model_state: Callable | None = None
+    derived_refs: Mapping[tuple[int, int], Mapping[str, object]] = dataclasses.field(
+        default_factory=dict)
 
     def __post_init__(self):
         for filename in (self.model_point_file, *self.companions):
@@ -1080,6 +1101,22 @@ class SecSpec:
         object.__setattr__(self, "future",
                            tuple((int(p), int(k)) for p, k in self.future))
         object.__setattr__(self, "exempt", frozenset(self.exempt))
+        object.__setattr__(self, "derived_refs", {
+            (int(p), int(d)): dict(refs) for (p, d), refs in self.derived_refs.items()})
+        for (p, d), refs in self.derived_refs.items():
+            if not refs:
+                raise ValueError(f"derived_refs row ({p}, {d}) sets no Reference: a row "
+                                 f"read from S at its own References is a derived row")
+            if (p, d) in self.derived:
+                raise ValueError(
+                    f"derived_refs row ({p}, {d}), under {_reference_settings(refs)}, "
+                    f"repeats derived row ({p}, {d}), read from S at its own References: "
+                    f"the two would take one policy_id")
+        if self.derived_refs and self.companions:
+            raise ValueError(
+                f"derived_refs rows {list(self.derived_refs)} and companions "
+                f"{list(self.companions)}: a companion's builder reads S at its own "
+                f"References, and would give such a row the state of another run")
 
 
 # >>> product specs: this library's own.  tools/check_sec_harness.py compares the rest.
@@ -1418,14 +1455,23 @@ def build_sec_table(spec, s_model):
         the twin of new-business point ``p``, issued ``k`` months after the valuation
         date: ``duration_mth`` and ``source_mth`` are ``-k``, and the count is S's; then
         ``future_state`` sets the columns it names.
+    derived rows under References of their own, for each ``(p, d)`` of ``derived_refs``
+        made as a derived row is, from S run under the row's References: each is set on
+        S's ``Projection`` before the row is read, and restored after it in a ``finally``,
+        whatever the row raised.  Setting a Reference drops every ItemSpace of S's
+        ``Projection`` and every value they hold, each made afresh when next asked, so
+        these rows are read after every other, and written after them, so that adding one
+        renumbers no row before it.  A caller that swept S, to spare this function
+        projecting it, sweeps it again.
 
-    Derived and future rows take fresh ``point_id`` s after the largest S one, in the
-    spec's order, so the numbering is fixed by the spec, never by a dict or a filesystem.
-    Their ``policy_id`` is composed from S's and the month (``TL-000001-M120``,
-    ``TL-000001-F3``), and where the S table has a ``provenance`` column theirs is composed
-    the same way, citing S's point and policy and the month.  Every other text cell is
-    copied from S.  That is D8's rule under ``CLAUDE.md``: the generator adds no name, and
-    a reworded S cell reaches the SEC table through T6.
+    Derived, future and ``derived_refs`` rows take fresh ``point_id`` s after the largest
+    S one, in that order and each in the order the spec gives, so the numbering is fixed
+    by the spec, never by a hash or a filesystem.  Their ``policy_id`` is composed from S's
+    and the month (``TL-000001-M120``, ``TL-000001-F3``), and where the S table has a
+    ``provenance`` column theirs is composed the same way, citing S's point and policy and
+    the month, and for a ``derived_refs`` row each Reference and its value.  Every other
+    text cell is copied from S.  That is D8's rule under ``CLAUDE.md``: the generator adds
+    no name, and a reworded S cell reaches the SEC table through T6.
 
     Returns ``(table, companions)``: the table on a default index, ``point_id`` its first
     column, exactly as the file is written; and ``{filename: DataFrame}`` from the spec's
@@ -1517,6 +1563,38 @@ def build_sec_table(spec, s_model):
         for column, extract in spec.future_state.items():
             row[column] = extract(projs[p], k)
         row.update(row_kind="future", source_policy_id=twin["policy_id"], source_mth=-k)
+        rows.append(row)
+    space = s_model.Projection
+    for (p, d), refs in spec.derived_refs.items():
+        twin_of(p, "derived_refs")
+        unknown = [name for name in refs if name not in space.refs]
+        if unknown:
+            raise ValueError(f"derived_refs row ({p}, {d}) sets {unknown}, which "
+                             f"{spec.twin}'s Projection has no Reference of")
+    for (p, d), refs in spec.derived_refs.items():
+        twin, shipped = twins[p], {name: space.refs[name] for name in refs}
+        try:
+            for name, value in refs.items():
+                setattr(space, name, value)
+            proj, source = space[p], twin["source_mth"]
+            if not source < d < proj.proj_len():
+                raise ValueError(
+                    f"derived_refs row ({p}, {d}), under {_reference_settings(refs)}: d "
+                    f"must fall after the twin's entry month ({source}) and inside S's "
+                    f"frame, which ends at {proj.proj_len() - 1}")
+            row = dict(twin, point_id=next(fresh),
+                       policy_id=_derived_policy_id(twin["policy_id"], d),
+                       policy_count=proj.pols_if(d),
+                       duration_mth=twin["duration_mth"] + d - source)
+            if provenance:
+                row["provenance"] = (f"{_derived_provenance(p, twin['policy_id'], d)} "
+                                     f"under {_reference_settings(refs)}")
+            for column, extract in {**added, **spec.state}.items():
+                row[column] = extract(proj, d)
+        finally:
+            for name, value in shipped.items():
+                setattr(space, name, value)
+        row.update(row_kind="derived", source_policy_id=twin["policy_id"], source_mth=d)
         rows.append(row)
 
     table = pd.DataFrame(rows, columns=columns)

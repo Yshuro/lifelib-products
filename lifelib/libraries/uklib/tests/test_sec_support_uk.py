@@ -56,6 +56,11 @@ regeneration round trip, generates a table from Term's eight points.
   And the last assertion of ``test_the_registry_admits_engine_cells_by_name``, that
   ``MYGA_US_SEC``'s entry admits its three engine cells: it is a fact of a uslib model,
   and the test's toy entry shows the behaviour.
+* Added: ``SecSpec.derived_refs``, rows restated from S run under References of their
+  own, came to both harnesses with uklib's M3 rework, for ``CI_UK_SEC``'s row with review
+  history, and is tested here alone, by
+  ``test_a_derived_refs_row_is_s_run_under_its_references`` and five refusals among the
+  spec cases.  uslib's suite is left as it was, and no uslib spec uses the field.
 
 What each test pins, against USLIB-SEC-PLAN.md (its §4 item 3 and §5.2), which
 UKLIB-SEC-PLAN.md adopts:
@@ -73,10 +78,11 @@ UKLIB-SEC-PLAN.md adopts:
   than the whole splice.
 * T6's generator: :func:`build_sec_table` writes twins, an in-force one among them, a
   derived row and a future row with the right counts, durations, sources and ids, and no
-  text that is not S's own or composed from S's keys and a month (``CLAUDE.md``);
-  :func:`write_generated` is a no-op on a rerun; and :func:`check_generated` reports an
-  edited S row cell by cell, but reads a float by its value, so a file written on another
-  platform checks clean.
+  text that is not S's own or composed from S's keys and a month (``CLAUDE.md``); a row
+  of ``derived_refs`` that is S run under its References, with S's References restored
+  after it, even when it is refused; :func:`write_generated` is a no-op on a rerun; and
+  :func:`check_generated` reports an edited S row cell by cell, but reads a float by its
+  value, so a file written on another platform checks clean.
 * C2's fingerprint: :func:`fingerprint_months` names the frame's first, last and quartile
   months; :func:`fingerprint_text` writes a literal that reads back as the freeze exactly,
   within 92 columns; and :func:`fingerprint_mismatches` reports every kind of departure,
@@ -880,6 +886,14 @@ def test_generated_text_is_s_text_or_composed_from_s_keys(tmp_path):
     ({"companions": {"model_point_table_sec.csv": lambda m, t: t}}, "would replace"),
     ({"future_state": {"policy_count": lambda s, k: 2.0}}, "the generator owns them"),
     ({"future_state": {"duration_mth": lambda s, k: 0}}, "the generator owns them"),
+    # A row under References of its own may not take a shipped row's place, nor set none,
+    # nor sit beside a companion, whose builder reads S at its own References.
+    ({"derived_refs": {(1, 12): {"mort_scale": 0.9}}},
+     r"derived_refs row \(1, 12\), under mort_scale 0\.9, repeats derived row \(1, 12\)"),
+    ({"derived_refs": {(1, 24): {}}}, r"derived_refs row \(1, 24\) sets no Reference"),
+    ({"derived_refs": {(1, 24): {"mort_scale": 0.9}},
+      "companions": {"policy_ids_sec.csv": lambda m, t: t}},
+     "a companion's builder reads S at its own References"),
 ])
 def test_a_spec_that_could_clobber_s_or_the_generator_is_refused(change, error):
     with pytest.raises(ValueError, match=error):
@@ -905,11 +919,91 @@ def test_a_spec_that_could_clobber_s_or_the_generator_is_refused(change, error):
      "the generator owns them"),
     ({"model_state": lambda m: {"fresh": lambda s, d: 0.0},
       "state": {"fresh": lambda s, d: 1.0}}, "state or twin_state sets too"),
+    # Refused before any Reference is set, so the shared S model keeps its sweep.
+    ({"derived_refs": {(1, 24): {"mort_scal": 0.9}}},
+     r"derived_refs row \(1, 24\) sets \['mort_scal'\], which Term_UK_S's Projection has "
+     r"no Reference of"),
+    ({"derived_refs": {(9, 24): {"mort_scale": 0.9}}}, "a derived_refs row names point 9"),
 ])
 def test_build_sec_table_rejects_a_spec_that_does_not_fit_the_s_table(
         s_model, change, error):
     with pytest.raises(ValueError, match=error):
         build_sec_table(dataclasses.replace(SPEC, **change), s_model)
+
+
+# Two rows read from S under References of their own: point 1 at month 24 under market
+# premiums a third below its own, which rebroking lapses by, and a dearer maintenance
+# expense; and point 2 at month 12 under market premiums a sixth below.  Each carries S's
+# lapse rate in its month as a state column, so that the row's state, and not its count
+# alone, is S's under its References.
+UNDER = {(1, 24): {"premium_market_ratio": 1.5, "expense_maint": 31.0},
+         (2, 12): {"premium_market_ratio": 1.2}}
+UNDER_SPEC = dataclasses.replace(SPEC, state={"lapse_seen": lambda s, d: s.lapse_rate(d)},
+                                 derived_refs=UNDER)
+
+
+def test_a_derived_refs_row_is_s_run_under_its_references(tmp_path):
+    """A ``derived_refs`` row is read from S under its References, which are restored.
+
+    On a model of its own, since setting a Reference drops every ItemSpace of S's
+    ``Projection`` and so the sweep the shared ``s_model`` holds.  Each row's count and
+    state are what a second read of S, run under the row's References, carries into the
+    row's month, and neither is what S carries there as shipped.  The rows come last,
+    numbered on after the future row, and every row before them is the table the spec makes
+    without them, exactly.  Afterwards S's References are its own again and S projects as
+    shipped; and so they are when a row is refused, here one past S's frame, after its
+    References were set.  With a ``provenance`` column in S, each row's names every
+    Reference and its value.
+    """
+    model, shipped = _read("under"), _read("under_shipped")
+    try:
+        table, companions = build_sec_table(UNDER_SPEC, model)
+        assert companions == {}
+        assert table["row_kind"].tolist() == ["twin"] * 8 + ["derived", "future",
+                                                             "derived", "derived"]
+        assert table["point_id"].tolist() == list(range(1, 13))
+        assert table["policy_id"].tolist()[10:] == ["TA-000001-M24", "TA-000002-M12"]
+        assert table["source_policy_id"].tolist()[10:] == ["TA-000001", "TA-000002"]
+        assert table["duration_mth"].tolist()[10:] == table["source_mth"].tolist()[10:] == [
+            24, 12]
+        for i, ((p, d), refs) in zip((10, 11), UNDER.items()):
+            under = _read(f"under_{p}")
+            try:
+                for name, value in refs.items():
+                    setattr(under.Projection, name, value)
+                got = (table["policy_count"].iloc[i], table["lapse_seen"].iloc[i])
+                s_under = under.Projection[p]
+                assert got == (s_under.pols_if(d), s_under.lapse_rate(d)), (p, d)
+                assert got[0] != shipped.Projection[p].pols_if(d), (p, d)
+                assert got[1] != shipped.Projection[p].lapse_rate(d), (p, d)
+            finally:
+                under.close()
+        base, _ = build_sec_table(dataclasses.replace(UNDER_SPEC, derived_refs={}), model)
+        pd.testing.assert_frame_equal(table.iloc[:10], base, check_exact=True)
+        assert (model.Projection.premium_market_ratio,
+                model.Projection.expense_maint) == (1.0, 30.0)
+        assert model.Projection[1].pols_if(24) == shipped.Projection[1].pols_if(24)
+        past = dataclasses.replace(SPEC, derived_refs={(1, 300): {"mort_scale": 0.9}})
+        refused = r"derived_refs row \(1, 300\), under mort_scale 0\.9: d must fall .* 299"
+        with pytest.raises(ValueError, match=refused):
+            build_sec_table(past, model)
+        assert model.Projection.mort_scale == 0.75
+        assert model.Projection[2].pols_if(12) == shipped.Projection[2].pols_if(12)
+    finally:
+        model.close()
+        shipped.close()
+    folder = temp_inputs(tmp_path, model_path(TERM), edits={
+        "model_point_table.csv": lambda df: df.assign(provenance="[std] a variant")})
+    model = _read("under_prov", folder)
+    try:
+        table, _ = build_sec_table(UNDER_SPEC, model)
+    finally:
+        model.close()
+    assert table["provenance"].tolist()[10:] == [
+        "S point 1 (TA-000001) restated in force at S month 24 under premium_market_ratio "
+        "1.5, expense_maint 31.0",
+        "S point 2 (TA-000002) restated in force at S month 12 under premium_market_ratio "
+        "1.2"]
 
 
 def _policy_ids(s_model, table):
