@@ -460,7 +460,9 @@ incidence of 0.856 and at 0.806 at 1, and the twin of S's waiver point is S's in
 cell. Rounding alone can take the share past 1, by a few units in the last place, at an
 incidence near 1 with no recovery, 1.0000000000000002 at 0.999999 a year, in `Term_UK_S`
 too: a refusal would refuse those inputs for their last bit and reach no other, so it is
-dropped, not kept unreachable.
+dropped, not kept unreachable. Restated in force, such a state is refused, by that last
+bit, by `Data`, whose rules hold the waived share, and its sum with the deferred shares,
+to 1 (*Tests*).
 
 A waived share is also refused on a point in force no longer than the deferred period, a
 state `Term_UK_S` cannot reach: its first incapacity has not yet run the six months. The
@@ -776,25 +778,25 @@ three beside it:
 
 | Engine | Points | `net_cf`, a point | `result_cf`, a point | Peak memory |
 |---|---|---|---|---|
-| compiled | 6,006 | 0.168 ms (0.166–0.179) | 0.541 ms (0.488–0.567) | 86–88 MB |
-| export | 602 | 2.10 ms (2.09–2.16) | 2.55 ms (2.50–2.56) | 86–88 MB |
-| modelx | 126 | 68.7 ms (66.7–71.2) | 71.2 ms (69.1–73.0) | 100–101 MB |
+| compiled | 6,006 | 0.181 ms (0.173–0.183) | 0.588 ms (0.567–0.634) | 87–88 MB |
+| export | 602 | 2.31 ms (2.17–2.35) | 2.57 ms (2.50–2.76) | 87–88 MB |
+| modelx | 126 | 76.8 ms (74.5–80.6) | 73.9 ms (73.2–78.2) | 100–101 MB |
 
-On `net_cf` the compiled model runs 12.4 times its export (12.0 to 12.7 over the three),
-and on `result_cf`, where building the DataFrame takes most of its time, 4.7 times (4.4
-to 5.2); it runs 402 times modelx on `net_cf` (397 to 409) and 132 on `result_cf` (129 to
-142). The ranges are the noise of a shared machine, about ±3% on modelx and up to −10%
-and +5% on the compiled report: within it modelx's `result_cf`, which does more, came out
-faster than its `net_cf` in one of the three, and in an earlier run of the tool. uslib's
-`Term_US_SEC`, timed the same way on its own points on 2026-11-02, ran 9.5 and 4.7 times
-its export. The release keeps a block flat: the compiled model's peak grew by less than
-0.1 MB over its 6,006 points in every run. Reading the five files and building every
-`Data` vector and array for those points took 0.044 to 0.048 s, and asking every point
-for its frame, the runner's first pass, 0.06 s. Every engine, loop and run summed `net_cf`
-over a copy of the table to the same −33,525.55113, to 1e-9 relative.
+On `net_cf` the compiled model runs 12.8 times its export (12.0 to 13.3 over the three),
+and on `result_cf`, where building the DataFrame takes most of its time, 4.5 times (3.9
+to 4.7); it runs 419 times modelx on `net_cf` (412 to 465) and 129 on `result_cf` (116 to
+133). The ranges are the noise of a shared machine, about −3% to +6% on modelx and −4%
+to +8% on the compiled report: within it modelx's `result_cf`, which does more, came out
+faster than its `net_cf` in each of the three. uslib's `Term_US_SEC`, timed the same way
+on its own points on 2026-11-02, ran 9.5 and 4.7 times its export. The release keeps a block flat: the compiled model's
+peak grew by less than 0.1 MB over its 6,006 points in every run. Reading the five files
+and building every `Data` vector and array for those points took 0.046 to 0.052 s, 858 of
+the points with a pipeline that rule 8 sums in one walk, and asking every point for its
+frame, the runner's first pass, 0.06 to 0.07 s. Every engine, loop and run summed `net_cf`
+over a copy of the table to the same −33,525.29268, to 1e-9 relative.
 
-Measured on 2026-11-22 on a machine shared with other work: 4 CPUs (an Intel Xeon at
-2.30 GHz), a 1-minute load average between 0.81 and 1.29 as the runs started; Linux,
+Measured on 2026-11-23 on a machine shared with other work: 4 CPUs (an Intel Xeon at
+2.30 GHz), a 1-minute load average between 0.79 and 1.24 as the runs started; Linux,
 Python 3.13.18 and gcc 13.3.0, with modelx 0.33.0, modelx-cython 0.1.0, Cython 3.3.1,
 numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
 
@@ -871,7 +873,11 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   `Term_UK_S` reads them; the edges of the interface and of each bound are accepted; every
   state `Term_UK_S` reaches, as shipped, under the splice's switches and where the cap
   binds, is accepted in force; and the committed table and pipeline are what `Term_UK_S`
-  generates.
+  generates. Not every state S reaches at any rates is accepted: at an incidence of
+  0.999999 a year with no recovery, far outside the product, rounding takes S's waived
+  share a unit in the last place past 1, alone or with the deferred shares, and `Data`'s
+  rules 6 and 8 refuse S point 7 restated at 208 of its 239 months, from month 32. The
+  rules are not widened for it: each refuses a state no policy can be in, by its last bit.
 - **The product's own facts**: the two clocks on the shipped points; the committed rows,
   in force and issued later, continuing their S points at the shipped assumptions but for
   inflation; the lapse ratio carried on from the issued cohort, and the deaths it loads;

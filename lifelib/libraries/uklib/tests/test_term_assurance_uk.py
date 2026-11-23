@@ -898,18 +898,23 @@ def _waiver_ladder(inc, rec, defer, months):
 
 
 # The waiver's rates for the partition test, as (case, wop_inc_rate, wop_rec_rate,
-# wop_defer_mths): the shipped ones; an incidence of 0.856, at which incidence on 1 - u
-# took point 7's waived fraction past 1 in month 19; an incidence of 1 and no recovery,
-# where every life is incapacitated in the issue month and waived from month 7 on; and
-# a deferred period of 0, where a life waives from the month after it falls ill.
-WAIVER_LADDERS = [("shipped", 0.004, 0.35, 6), ("incidence 0.856", 0.856, 0.35, 6),
-                  ("incidence 1, no recovery", 1.0, 0.0, 6),
-                  ("no deferred period", 0.3, 0.6, 0)]
+# wop_defer_mths, duration_inforce): the shipped ones; an incidence of 0.856, at which
+# incidence on 1 - u took point 7's waived fraction past 1 in month 19; an incidence of 1
+# and no recovery, where every life is incapacitated in the issue month and waived from
+# month 7 on; a deferred period of 0, where a life waives from the month after it falls
+# ill; and the shipped rates on point 7 put in force five years, so that S's frame opens
+# at month 60, with every life active and none waived or deferred, as S assumes where its
+# frame opens.
+WAIVER_LADDERS = [("shipped", 0.004, 0.35, 6, 0), ("incidence 0.856", 0.856, 0.35, 6, 0),
+                  ("incidence 1, no recovery", 1.0, 0.0, 6, 0),
+                  ("no deferred period", 0.3, 0.6, 0, 0),
+                  ("in force five years", 0.004, 0.35, 6, 5)]
 
 
-@pytest.mark.parametrize("case, inc, rec, defer", WAIVER_LADDERS,
+@pytest.mark.parametrize("case, inc, rec, defer, inforce", WAIVER_LADDERS,
                          ids=[c[0] for c in WAIVER_LADDERS])
-def test_the_waiver_states_partition_the_in_force(case, inc, rec, defer):
+def test_the_waiver_states_partition_the_in_force(tmp_path, case, inc, rec, defer,
+                                                  inforce):
     """Active, deferred and waived partition the in-force in every month: ``act + P + u =
     1``, each fraction the ladder's (:func:`_waiver_ladder`).
 
@@ -920,15 +925,32 @@ def test_the_waiver_states_partition_the_in_force(case, inc, rec, defer):
     point 7's 20 years, at the shipped rates and at the edges of their range
     (:data:`WAIVER_LADDERS`).  Incidence on ``1 - u`` instead, which counts the deferred
     lives as able to fall ill, departs from the ladder by 1.4e-5 at the shipped rates.
+
+    Point 7 put in force five years, in a copy of the table written outside the library,
+    opens S's frame at ``proj_start()``, month 60, and the ladder starts there: every life
+    active, none waived and none deferred, where both chains open.  An active fraction that
+    opened anywhere else, at issue, would hold lives in the deferred period at month 60
+    that the waived fraction, opening at 0 there, never takes in.
     """
-    model = mx.read_model(MODEL_DIR, name="Term_UK_S_ladder")
+    folder = MODEL_DIR
+    if inforce:
+        from uk_sec_support import temp_inputs
+
+        def put_in_force(table):
+            years = table["duration_inforce"].where(table["point_id"] != 7, inforce)
+            return table.assign(duration_inforce=years)
+        folder = temp_inputs(tmp_path, MODEL_DIR,
+                             edits={"model_point_table.csv": put_in_force})
+    model = mx.read_model(folder, name="Term_UK_S_ladder")
     try:
         model.Projection.wop_inc_rate = inc
         model.Projection.wop_rec_rate = rec
         model.Projection.wop_defer_mths = defer
         p = model.Projection[7]
-        ladder = _waiver_ladder(inc, rec, defer, p.proj_len())
-        for t, (active, deferred, waived) in enumerate(ladder):
+        start = p.proj_start()
+        assert start == 12 * inforce
+        ladder = _waiver_ladder(inc, rec, defer, p.proj_len() - start)
+        for t, (active, deferred, waived) in enumerate(ladder, start):
             assert active + deferred + waived == pytest.approx(1.0, abs=1e-14), t
             act, u = p.wop_active_frac(t), p.wop_waived_frac(t)
             assert act == pytest.approx(active, abs=1e-14), t

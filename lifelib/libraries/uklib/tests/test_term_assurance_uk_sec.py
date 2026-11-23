@@ -1702,11 +1702,26 @@ def test_a_malformed_pipeline_is_refused_naming_its_line(tmp_path, case, edit, m
 EXACT_ONE = {6: 0.25, 5: 0.125, 4: 0.0625, 3: 0.03125, 2: 0.015625, 1: 0.015625}
 PAST_ONE_ULP = {**EXACT_ONE, 1: 0.015625 + 2.0 ** -52}
 
+# Two opening states of point 11 whose sum turns on its order (the review's), as (waived
+# share, {lag: deferred share}).  Powers of 2 sum exactly in any order, so they cannot
+# tell the active share's order, the waived share and then the last lag down, from
+# another; these can.  PAST_IN_ORDER sums to 1 from the first lag up, and to the float
+# above 1 in the active share's order: refused.  ONE_IN_ORDER sums to 1 exactly in the
+# active share's order, and to the float above 1 from the first lag up: accepted.
+# test_rule_8_sums_as_the_active_share_does holds both sums.
+PAST_IN_ORDER = (0.44447597388895366,
+                 {1: 0.07176474865770067, 2: 0.06300620235246578, 3: 0.028168511827111734,
+                  4: 0.1303173894130484, 5: 0.26080420398918386, 6: 0.0014629698715359113})
+ONE_IN_ORDER = (0.6624947942016208,
+                {1: 0.009973524213338492, 2: 0.10665500667616475, 3: 0.08261293840341907,
+                 4: 0.014856837475601278, 5: 0.05186757776780304, 6: 0.07153932126205256})
+
 # What Data refuses of an opening state whose waived and deferred shares sum past 1, as
 # (case, the table's edit, the pipeline's edit, the points named): the deferred shares
 # alone of point 12, which waives nothing; point 11's waived share with its committed
-# pipeline; both points at once, each named; and the sum one unit in the last place past
-# 1, which no share of its own passes.
+# pipeline; both points at once, each named; the sum one unit in the last place past 1,
+# which no share of its own passes; and PAST_IN_ORDER, past 1 in the active share's order
+# alone.
 OPENING_PAST_ONE = [
     ("point 12's deferred shares alone", lambda t: t, _shares(12, {1: 1.0}), [12]),
     ("point 11's waived share and its pipeline",
@@ -1715,6 +1730,9 @@ OPENING_PAST_ONE = [
      [11, 12]),
     ("a unit in the last place past 1", _set("wop_waived_frac_init", [11], 0.5),
      _shares(11, PAST_ONE_ULP), [11]),
+    ("past 1 in the active share's order alone",
+     _set("wop_waived_frac_init", [11], PAST_IN_ORDER[0]), _shares(11, PAST_IN_ORDER[1]),
+     [11]),
 ]
 
 
@@ -1760,6 +1778,54 @@ def test_an_opening_state_of_exactly_1_projects(tmp_path):
         assert p.wop_active_frac(0) == 0.0
         rec = 1.0 - p.wop_rec_rate_mth()
         assert p.wop_waived_frac(7) == p.wop_waived_frac(6) * rec
+        for t in range(p.proj_len()):
+            act, u = p.wop_active_frac(t), p.wop_waived_frac(t)
+            assert 0.0 <= act <= 1.0 and 0.0 <= u <= 1.0 and 0.0 <= 1.0 - act - u, t
+    finally:
+        model.close()
+
+
+def _in_order(waived, shares):
+    """The sum ``Data``'s rule 8 and the active share take: the waived share, then the
+    deferred shares from the last lag down."""
+    held = waived
+    for lag in sorted(shares, reverse=True):
+        held = held + shares[lag]
+    return held
+
+
+def _lag_up(waived, shares):
+    """The same shares summed from the first lag up, the order rule 8 does not take."""
+    held = waived
+    for lag in sorted(shares):
+        held = held + shares[lag]
+    return held
+
+
+def test_rule_8_sums_as_the_active_share_does(tmp_path):
+    """Rule 8 sums an opening state in the active share's order, and so accepts the one
+    that opens the active share at 0 exactly (§6.1, T5).
+
+    :data:`ONE_IN_ORDER` sums to 1 exactly in that order, and to the float above 1 from the
+    first lag up; :data:`PAST_IN_ORDER` the other way round, and :data:`OPENING_PAST_ONE`
+    holds its refusal.  Written on point 11, ``ONE_IN_ORDER`` is read back as written,
+    accepted, and projected: the active share opens at 0, to the last bit, and every share
+    stays inside 0 to 1.  A rule 8 summing from the first lag up would refuse it, and pass
+    ``PAST_IN_ORDER``, whose active share would open below 0.
+    """
+    assert _in_order(*PAST_IN_ORDER) == math.nextafter(1.0, 2.0)
+    assert _lag_up(*PAST_IN_ORDER) == 1.0
+    assert _in_order(*ONE_IN_ORDER) == 1.0
+    assert _lag_up(*ONE_IN_ORDER) == math.nextafter(1.0, 2.0)
+    waived, shares = ONE_IN_ORDER
+    model = _read_edited(tmp_path, _set("wop_waived_frac_init", [11], waived),
+                         _shares(11, shares))
+    try:
+        p = _point(model, 11)
+        assert p.wop_waived_frac_init() == waived
+        assert {k: p.wop_deferred_init(k) for k in shares} == shares
+        assert len(p.result_cf()) == p.proj_len()
+        assert p.wop_active_frac(0) == 0.0
         for t in range(p.proj_len()):
             act, u = p.wop_active_frac(t), p.wop_waived_frac(t)
             assert 0.0 <= act <= 1.0 and 0.0 <= u <= 1.0 and 0.0 <= 1.0 - act - u, t
@@ -2232,6 +2298,45 @@ def test_the_waived_share_at_its_worst_stays_inside_0_to_1(tmp_path):
         sec.close()
 
 
+def test_a_waived_share_rounding_takes_past_1_is_projected_as_s_projects_it():
+    """At an incidence of 0.999999 a year with no recovery, rounding alone takes the waived
+    share a unit in the last place past 1, and every waiver point projects (§6.1).
+
+    The share's sum, the waived lives less recoveries plus each month's entrants, is 1 or
+    less in exact arithmetic, and computed, it reaches the float above 1 on the twin of S's
+    waiver point and on the same point issued 13 months on, as in ``Term_UK_S``.  This is
+    the case ``model-sec.md`` gives for dropping the refusal of a share outside 0 to 1 from
+    ``wop_waived_frac``: a refusal there would refuse these inputs for their last bit.  So
+    every waiver point projects; the twin is S's in every cell, and the point issued 13
+    months on is S's projection moved on, but for the expense inflation the valuation clock
+    moves (:func:`_continues_s`); and the largest share on any of them, and on S's point,
+    is that float, ``1.0000000000000002``.
+    """
+    sec = mx.read_model(model_path(SEC), name=_name("rounding"))
+    s = mx.read_model(model_path(TWIN), name=_name("rounding_s"))
+    try:
+        for model in (sec, s):
+            model.Projection.wop_inc_rate = 0.999999
+            model.Projection.wop_rec_rate = 0.0
+        table = sec.Data.model_point_table()
+        largest = 0.0
+        for label in [label for label in table.index if table.at[label, "wop"]]:
+            p = _point(sec, label)
+            assert len(p.result_cf()) == p.proj_len()
+            largest = max([largest] + [p.wop_waived_frac(t) for t in range(p.proj_len())])
+        assert largest == math.nextafter(1.0, 2.0) == 1.0000000000000002
+        s_proj = _point(s, 7)
+        _sweep_s(s_proj)
+        assert max(s_proj.wop_waived_frac(t) for t in range(s_proj.proj_len())) == largest
+        assert _compare(s_proj, _point(sec, _label(table, "twin", 7, 0)), 0,
+                        TWIN_EXEMPT_DEFAULT | SPEC.exempt) == []
+        assert _continues_s(s_proj, _point(sec, _label(table, "future", 7, -13)),
+                            -13) == []
+    finally:
+        sec.close()
+        s.close()
+
+
 # The family income benefit's commutation discount, fib_commute_disc_rate, at the edges
 # of its domain, as (case, its value, what the model does): "accepted", every family
 # income benefit point projected; "refused", proj_len() refusing the Reference on every
@@ -2524,7 +2629,12 @@ def test_every_state_s_reaches_is_accepted_in_force(s_model, spliced, tmp_path):
     * the cap's, its point under :data:`SPLICED_REFS` on :data:`CAPPED`'s table, whose
       count falls to exactly 0 once the cap binds, which neither other set reaches.
 
-    ``Term_UK_SEC`` refuses no state ``Term_UK_S`` reaches, so none is set aside.
+    ``Term_UK_SEC`` refuses no state ``Term_UK_S`` reaches on these inputs, so none is set
+    aside.  At rates far outside the product it does, by a unit in the last place: at an
+    incidence of 0.999999 a year with no recovery, rounding takes S's waived share past 1,
+    alone or with the deferred shares, and ``Data``'s rules 6 and 8 refuse S point 7
+    restated at 208 of its 239 months, from month 32.  No rule is widened for it: each
+    refuses a share no policy can hold, by its last bit.
     """
     capped = _capped_s(tmp_path / "capped")
     try:

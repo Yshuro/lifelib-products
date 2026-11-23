@@ -423,7 +423,9 @@ def wop_pipeline():
        the lives waived and those still deferred are shares of one in-force, and
        ``Projection.wop_active_frac`` opens at what they leave, the active lives.  They are
        summed as that cell sums them, from the waived share and then the point's last lag
-       down to its first, so that what this check passes it opens at 0 or more.
+       down to its first, in one walk back over the sorted rows, so that what this check
+       passes it opens at 0 or more: summed in another order, a state can pass 1 by a unit
+       in the last place one way and not the other.
     """
     name = wop_pipeline_file                                         # noqa: F821
     points = model_point_file                                        # noqa: F821
@@ -477,15 +479,20 @@ def wop_pipeline():
                          f"not on line {bad}")
     out = table.assign(point_id=keys["point_id"], lag=keys["lag"], wop_deferred_init=v)
     out = out.set_index(["point_id", "lag"]).sort_index()
+    pids = out.index.get_level_values("point_id").to_numpy()
+    shares = out["wop_deferred_init"].to_numpy()
     waived = pd.to_numeric(model_points["wop_waived_frac_init"],      # noqa: F821
-                           errors="coerce")
+                           errors="coerce").reindex(pids).to_numpy()
     bad = []
-    for p in out.index.get_level_values("point_id").unique():
-        held = float(waived[p])
-        for share in out.loc[p, "wop_deferred_init"].iloc[::-1]:
-            held = held + float(share)
+    i = len(pids) - 1
+    while i >= 0:
+        p, held = pids[i], float(waived[i])
+        while i >= 0 and pids[i] == p:
+            held = held + float(shares[i])
+            i = i - 1
         if held > 1.0:
             bad.append(int(p))
+    bad.reverse()
     if bad:
         raise ValueError(f"{name}: a point's wop_waived_frac_init and its "
                          f"wop_deferred_init must sum to 1 or less, shares of the policies "
