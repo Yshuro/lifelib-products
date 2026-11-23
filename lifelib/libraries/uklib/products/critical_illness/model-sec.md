@@ -262,14 +262,20 @@ writes it.
 | 11 | derived | S point 3 at S month 78 | the reviewable point mid-year after the window closed |
 | 12 | derived | S point 1 at S month 299 | in its last covered month: a one-row frame |
 | 13 | future | S point 4, 13 months on | to be issued at `t = 13` |
+| 14 | derived | S point 3 at S month 124, `CI_UK_S` run under a review change of 10% | the reviewable point inside the window its second review opened, its latch closed at its first and its review factor `1.1^2` |
 
 A derived row's `policy_count` is the count `CI_UK_S` carries into that month, its
-`pols_if(d)`, and its state what S carries there, so the row continues the S projection
-from there: point 8 opens with 0.772371 policies and cover and premium factors of `1.03^3`
-and `1.045^3`. At the shipped review change of 0 the reviewable rows' history is the issue
-values, which the tests move off. A derived row's `policy_id` is the S row's with the month
-appended, `CI-000003-M60`, and a future row's carries the months to issue, `CI-000004-F13`.
-Row `t` of a generated point is month `t + source_mth` of its S point.
+`pols_if(d)`, and its state what S carries there, so the row continues the S projection from
+there: point 8 opens with 0.772371 policies and cover and premium factors of `1.03^3` and
+`1.045^3`. At the shipped review change of 0 the reviewable rows' history is the issue
+values, which the tests move off, so one row is read from `CI_UK_S` run under a change of
+10%, which the spec's `derived_refs` records: point 14, with 0.458641 policies, a review
+factor of `1.1^2`, the latch closed at 1.1 and its window's change of 10%. At the shipped
+change of 0 it projects `CI_UK_S` under 10% up to its next review, at `t = 56`, policy month
+180, and today's change from then on, which a test asserts. A derived row's `policy_id` is
+the S row's with the month appended, `CI-000003-M60`, and a future row's carries the months
+to issue, `CI-000004-F13`. Row `t` of a generated point is month `t + source_mth` of its S
+point.
 
 ## Counts and timings
 
@@ -473,22 +479,23 @@ earlier, where the check returns False, as `CI_UK_S`'s does.
   anniversary among them; every state `CI_UK_S` reaches, as shipped, under the splice's
   review change and where the cap binds, is accepted in force; and the committed table
   is what `CI_UK_S` generates.
-- **The product's own facts**: the two clocks on the shipped points; the committed rows,
-  in force and issued later, continuing their S points at the shipped assumptions but for
-  inflation; each history column read, not recomputed, the index factors, the review
-  factor, the latch and the window's change, each written off its References' path, on
-  a history a policy can have, and projected through; the latch read from its flag, so
-  that one closed at a factor of 1, or below it, stays closed through a later shock
-  review; the change read inside its window alone; and a review change set at the
-  valuation date reaching back over no review already made (UKLIB-SEC-PLAN.md K14);
-  expense inflation and the morbidity trend on the valuation clock, which only these tests
-  see; the initial expense on new business alone; the reviews and their window on the
-  policy clock; every guarded cell's value outside cover; the block; an extract without the
-  generator's three columns, labelled otherwise, projecting the same numbers; `run_sec.py`'s
-  numbers, for a point, the joint life among them, and for the block, and its sum, and its
-  `--cython` stopping where no repository is above it; no cell's parameter defaulted but
-  the `claims` total's; the docstrings, read through docutils as the docs build reads them
-  where docutils is installed; and the shared input tables.
+- **The product's own facts**: the two clocks on the shipped points; the committed rows, in
+  force and issued later, continuing their S points at the shipped assumptions but for
+  inflation, and the row read under a review change of 10% continuing `CI_UK_S` under it to
+  its next review, and after it at that change in both; each history column read, not
+  recomputed, the index factors, the review factor, the latch and the window's change, each
+  written off its References' path, on a history a policy can have, and projected through;
+  the latch read from its flag, so that one closed at a factor of 1, or below it, stays
+  closed through a later shock review; the change read inside its window alone; and a review
+  change set at the valuation date reaching back over no review already made
+  (UKLIB-SEC-PLAN.md K14); expense inflation and the morbidity trend on the valuation clock,
+  which only these tests see; the initial expense on new business alone; the reviews and
+  their window on the policy clock; every guarded cell's value outside cover; the block; an
+  extract without the generator's three columns, labelled otherwise, projecting the same
+  numbers; `run_sec.py`'s numbers, for a point, the joint life among them, and for the
+  block, and its sum, and its `--cython` stopping where no repository is above it; no cell's
+  parameter defaulted but the `claims` total's; the docstrings, read through docutils as the
+  docs build reads them where docutils is installed; and the shared input tables.
 - **The caps**: on the reviewable point, the anchor cell and the joint point, its second
   life a male non-smoker issued at 42, with the male non-smoker's diagnosis pivots at 60
   and 65 raised to 0.98 and 1.0, in a copy of the table, under the splice's References:

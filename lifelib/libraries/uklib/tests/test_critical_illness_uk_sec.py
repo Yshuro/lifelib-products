@@ -58,7 +58,8 @@ module holds the rest of the plan's tests (its §5) and the product's own facts:
   of ``CI_UK_S`` and its table as they stand.
 * Then the product's own facts: the two clocks on the shipped points; each twin S's in every
   cell with the trend and the review change on, where T1 holds both at 0 and T2 the trend;
-  the committed rows continuing their S points; each history column read rather than
+  the committed rows continuing their S points, the one read under a review change of its
+  own continuing S under it to its next review; each history column read rather than
   recomputed, the indexation factors, the review factor, the select latch, read from its own
   flag, and the last review's change, and a review change set at the valuation date reaching
   back over no review already made (UKLIB-SEC-PLAN.md K14); expense inflation and the
@@ -193,6 +194,11 @@ def _s_table_with_variants():
 
 # The months of cover from issue of each S point and variant, 12 times its term.
 COVER = {p: 12 * int(n) for p, n in _s_table_with_variants()["policy_term"].items()}
+
+# The committed rows the generator reads from S under References of their own (the spec's
+# derived_refs), by (S policy, month), with those References.
+UNDER_REFS = {(_s_table().at[p, "policy_id"], d): refs
+              for (p, d), refs in SPEC.derived_refs.items()}
 
 # T2's cases, as (row_kind, S point, source_mth): each S point restated in force at each
 # of its months, and each variant at its own.  CI_UK_S has no point in force, so no twin is
@@ -653,7 +659,7 @@ def spliced(tmp_path_factory):
         setattr(s.Projection, ref, value)
     derived = [(p, d) for kind, p, d in _selected(SPLICES + IN_FORCE_TWINS, CORE_SPLICES)
                if kind == "derived"]
-    spec = dataclasses.replace(SPEC, derived=tuple(derived),
+    spec = dataclasses.replace(SPEC, derived=tuple(derived), derived_refs={},
                                future=tuple(_selected(FUTURES, CORE_FUTURES)))
     table, companions = build_sec_table(spec, s)
     assert companions == {}
@@ -2142,7 +2148,7 @@ def _restated(root, s, states):
     """The twins of ``s``'s points and a row in force at each of ``states``, ``(S point,
     month)``, built by the generator out of ``s`` into a copy of the product directory:
     ``(folder, table)``."""
-    spec = dataclasses.replace(SPEC, derived=tuple(states), future=())
+    spec = dataclasses.replace(SPEC, derived=tuple(states), future=(), derived_refs={})
     table, _ = build_sec_table(spec, s)
     return _sec_inputs(root, table), table
 
@@ -2390,7 +2396,7 @@ def test_a_key_written_as_a_float_reads_as_ci_uk_s_reads_it(sec_model, tmp_path)
 # T6 -- regeneration
 
 
-def test_the_committed_sec_inputs_are_what_s_generates(s_model):
+def test_the_committed_sec_inputs_are_what_s_generates():
     """``model_point_table_sec.csv`` is what CI_UK_S and its table generate today.
 
     Every row and column, the text cells and the six opening-state columns included: an
@@ -2398,9 +2404,11 @@ def test_the_committed_sec_inputs_are_what_s_generates(s_model):
     read from, fails here until ``python tools/gen_sec_points.py CI_UK_SEC`` regenerates
     it, in the same commit.  Text and integers compare exactly, and a float by its value, to
     1e-12, because the text the writer picks for a computed float depends on the platform's
-    parser (§5).
+    parser (§5).  The generator reads S itself: the row of the spec's ``derived_refs`` is
+    read with a review change set on S, which drops what an S model given to it had
+    cached, and ``s_model``'s sweep is what the tests after this one compare.
     """
-    assert check_generated(SEC, s_model=s_model) == []
+    assert check_generated(SEC) == []
 
 
 # ---------------------------------------------------------------------------
@@ -2455,7 +2463,9 @@ def test_the_committed_rows_continue_their_s_points(sec_model, s_model):
     shipped assumptions (USLIB-SEC-PLAN.md §7.1, *Precised at M3*, item 11): the five
     derived rows from their months, and the row issued 13 months on from S's issue month,
     all to 1e-9 relative with no absolute floor but on the residual, every cell but those
-    expense inflation moves (:func:`_continues_s`), which the inflation test holds.
+    expense inflation moves (:func:`_continues_s`), which the inflation test holds.  The
+    row read from S under a review change of its own is S's under that change, which the
+    test after this one compares.
     """
     table = sec_model.Data.model_point_table()
     found = []
@@ -2464,11 +2474,99 @@ def test_the_committed_rows_continue_their_s_points(sec_model, s_model):
         if kind == "twin" and month == 0:
             continue
         policy = table.at[point_id, "source_policy_id"]
+        if (policy, month) in UNDER_REFS:
+            continue
         s_point = int(s_model.Data.model_point_table().index[
             s_model.Data.model_point_table()["policy_id"] == policy][0])
         found += [f"point {point_id}: {line}" for line in _continues_s(
             _point(s_model, s_point), _point(sec_model, point_id), month)]
     assert not found, found[:20]
+
+
+def _window_sweep(proj, months):
+    """Evaluate on an S point every cell keyed by a month at each of ``months``, alone.
+
+    Each cell with a ``t`` parameter is called at each of ``months`` with every life the
+    point has, every timing of S's and every kind the cell takes, and no report and no
+    check is called: so what S caches from the first of ``months`` on is those months and
+    the months their recursions and look-aheads read, and a comparison that reads S's cache,
+    :func:`uk_sec_support.twin_mismatches`, compares those months alone.
+    """
+    domains = {"life": (1, 2) if proj.is_joint() else (1,),
+               "timing": ("BEF_DECR", "BEF_LAPSE", "AFT_DECR")}
+    kinds = {"benefit_pp": BENEFITS, "claims": (*KINDS, None)}
+    for name, cells in proj.cells.items():
+        params = list(cells.parameters)
+        if "t" not in params:
+            continue
+        options = [months if param == "t" else kinds[name] if param == "kind"
+                   else domains[param] for param in params]
+        for args in itertools.product(*options):
+            cells(*args)
+
+
+def test_the_committed_row_with_review_history_is_s_under_its_review_change(sec_model):
+    """The row read from S under a review change of its own is S's under that change to its
+    next review, and today's References' after it (§6.2, K14).
+
+    At the shipped review change of 0 no S point has a shock month, a closed latch or a
+    review factor other than 1, so the spec reads one row from S under a change of 10%,
+    which its ``derived_refs`` records (:data:`UNDER_REFS`): the reviewable point at S
+    month 124, inside the window its second review opened at policy month 120, its latch
+    closed at its first, its review factor 1.1 squared, and its count what S under 10%
+    carries in.  At the shipped References the committed model projects S under 10% from
+    there to the next review, at ``t = 56``, policy month 180: every cell S evaluates in
+    those months, and both reports' rows, to 1e-9 relative with no absolute floor but on
+    the residual, but those expense inflation moves (:func:`_continues_s`).  The history
+    is history.  From that review on today's change of 0 applies: the premium stays at its
+    factor, where S's rises by 10%, and no window opens.  And with 10% set in both models
+    the row is S's in every month of its frame.  Each Reference is set on a model just read
+    (K7).
+    """
+    assert UNDER_REFS == {("CI-000003", 124): {"review_prem_shock": 0.10}}
+    rho, d = 0.10, 124
+    row = _row(sec_model, "derived", 3, d)
+    assert (row.ci_sel_latched_init(), row.ci_sel_factor_init()) == (1, 1.1)
+    assert row.review_prem_factor_init() == pytest.approx((1 + rho) ** 2, rel=1e-15)
+    assert (row.review_prem_shock_init(), row.reviews_passed(0)) == (rho, 2)
+    assert row.review_shock_active(7) and not row.review_shock_active(8)
+    after = 180 - d
+    s = mx.read_model(model_path(TWIN), name=_name("under"))
+    try:
+        s.Projection.review_prem_shock = rho
+        sp = _point(s, 3)
+        _window_sweep(sp, range(d, 180))
+        assert max(sp.premium_pp.keys()) == 179 and set(range(d, 180)) <= set(
+            sp.premium_pp.keys())
+        exempt = SPLICE_EXEMPT | INFLATION_CELLS
+        found = twin_mismatches(sp, row, t_offset=d, exempt=exempt | RESIDUALS, atol=0.0,
+                                codes=codes(row))
+        others = exempt | (set(sp.cells) - RESIDUALS)
+        found += twin_mismatches(sp, row, t_offset=d, exempt=others, codes=codes(row))
+        keep = [c for c in sp.result_cf().columns if c not in INFLATED]
+        for report, columns in (("result_cf", keep), ("result_pols", None)):
+            found += [f"{report}: {line}" for line in frame_mismatches(
+                sp.cells[report]().loc[d:179], row.cells[report]().loc[:after - 1],
+                t_offset=d, columns=columns, atol=0.0)]
+        assert not found, found[:20]
+        assert row.premium_pp(after) == row.premium_pp(after - 1) == pytest.approx(
+            55.0 * (1 + rho) ** 2, rel=1e-12)
+        assert sp.premium_pp(180) == pytest.approx(sp.premium_pp(179) * (1 + rho),
+                                                   rel=1e-12)
+        assert sp.review_shock_active(180) and not row.review_shock_active(after)
+    finally:
+        s.close()
+    sec = mx.read_model(model_path(SEC), name=_name("under_sec"))
+    s = mx.read_model(model_path(TWIN), name=_name("under_s"))
+    try:
+        for model in (sec, s):
+            model.Projection.review_prem_shock = rho
+        sp = _point(s, 3)
+        _sweep_s(sp)
+        assert _continues_s(sp, _row(sec, "derived", 3, d), d) == []
+    finally:
+        sec.close()
+        s.close()
 
 
 def test_the_indexation_history_is_read_from_the_model_point(sec_model, tmp_path):
@@ -3370,7 +3468,7 @@ def test_run_sec_prints_a_point_and_the_block(sec_model):
     line names its second life through the cells that take one; point 9, restated in force
     at S's month 60; and point 13, to be issued 13 months on: each with the two lines that
     say where its row came from and where it stands, which only the committed table's
-    generator columns can say.  And the block: a line for each of the 13 points, in table
+    generator columns can say.  And the block: a line for each committed point, in table
     order, its first twelve rows, which must be the committed points' frames summed row by
     row, as this test sums them, and those frames summed into projection years, each
     year's count the one in force in its first month.  Nothing else runs the runner on the

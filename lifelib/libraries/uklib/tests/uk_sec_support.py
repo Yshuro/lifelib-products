@@ -1357,6 +1357,15 @@ SEC_SPECS: dict[str, SecSpec] = {
     # and its index steps fall a month after the valuation anniversaries.  T2's splice grid
     # is built from this spec in a temporary table, not committed.
     #
+    # And one row S reaches only under a review change of its own (derived_refs).  At the
+    # shipped change of 0 no S point has a shock month, a closed latch or a review factor
+    # other than 1, so no other committed row carries a review history, and C2 would
+    # freeze no review path.  So the reviewable point is restated at S month 124 from S
+    # run under a change of 10%: inside the window its second review opened, at policy
+    # month 120, its latch closed at its first, its review factor 1.1 squared.  At the
+    # shipped change of 0 the committed model projects S under 10% from there to its next
+    # review, at policy month 180, and today's change from then on.
+    #
     # T1 holds on CI at any count: S charges the initial expense on the count in force at
     # t = 0, which on a point issued then is the count issued, as SEC charges it on
     # pols_new_biz.  It skips one S cell besides the default three:
@@ -1371,6 +1380,7 @@ SEC_SPECS: dict[str, SecSpec] = {
         state=_CI_STATE,
         twin_state=_CI_STATE,
         exempt=frozenset({"result_pols"}),
+        derived_refs={(3, 124): {"review_prem_shock": 0.10}},
     ),
 }
 
