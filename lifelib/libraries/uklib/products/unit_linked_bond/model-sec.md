@@ -229,7 +229,7 @@ the product's rule, not the table's. So does a bond the contract does not issue
 the youngest age the mortality table rates, though the product admits issue from 3
 months, or at or past `omega_age`. Each bound is a lower-case Reference, the contract the
 compiled model's caches are sized from (*The sample and the spec*): a frame of at most
-1,224 months and the horizon, and ages from 18 to `omega_age`, at most `omega_age_max`,
+1,236 months and the horizon, and ages from 18 to `omega_age`, at most `omega_age_max`,
 on the mortality table. So does a point read
 under a Reference outside its domain, each named, NaN and the infinities outside every
 one, since `ULB_UK_S` reads several of them through a `min` or a `max` whose bound comes
@@ -239,7 +239,7 @@ first, which keeps the bound where a NaN meets it:
 |---|---|---|
 | `issue_age_min` | a whole number of years below `2**53`, 0 or more | a NaN switches the bound off, every comparison with it failing; past `2**53` the compiled model's `long long` cannot hold it |
 | `omega_age` | a whole number of years below `2**53`, above `issue_age_min`, at most a year past the table's last age, `Data.mort_age_last() + 1`, 121 | it sizes every frame: a NaN, an infinity or a fraction raises in the fund's search; cover reads attained ages to `omega_age − 1`, so past a year beyond the table's last age a rate would be read beyond the table |
-| `omega_age_max` | a whole number of years below `2**53`, and `omega_age` at most it, 120 as shipped | the compiled model's caches hold frames to this limiting age and no further; past `2**53` its `long long` cannot hold it |
+| `omega_age_max` | a whole number of years below `2**53`, and `omega_age` at most it, 121 as shipped, the shipped table's last age plus one | the compiled model's caches hold frames to this limiting age and no further, so a longer mortality table, which would admit a later `omega_age`, bounds no frame; past `2**53` its `long long` cannot hold it |
 | `fund_return`, `inflation_rate` | finite, −1 or more | the monthly return `(1 + g)^(1/12) − 1` has no real value, and the inflation factor changes sign each year |
 | `return_shock` | finite, and `fund_return + return_shock`, the trailing year's return, above −1 | a trailing return of −100% or less is a fund lost whole; a NaN reads as no shock |
 | `mort_be_factor` | finite, 0 or more | a mortality rate is negative |
@@ -360,13 +360,17 @@ way, the fund one cell a month within a year where `ULB_UK_S`'s runs four (*Depa
 so that a compiled run's chains fit its stack (*What a compiled run needs*). On a model
 just read, a cold `net_cf` in the frame's last month runs one cell a month back to its
 policy year's first month, two cells a year before that, back to `t_entry()`'s year, and
-at most 16 cells more, at each shape's longest cover, issued at 18 now and 120 months on:
-1,224 months on the accumulation cell, whose cold `net_cf` runs 226 deep on a chain of
-213, where one cell a month ran 1,232 deep and `ULB_UK_S`'s fund alone would run about
-4,900; each other chain, the excess gain and the guarantee, reads the withdrawals since
-issue, and runs no deeper. The deepest is the GMDB point's with no withdrawals, the rider
-to the limiting age: its unit-funding residual 16 cells beyond its chain, 229 deep, its
-death strain 15 and its `net_cf` 14.
+at most 16 cells more, at each shape's longest cover, issued at 18 now and 120 months
+on, the limiting age at the contract's largest, 121: 1,236 months on the accumulation
+cell, whose cold `net_cf` runs 228 deep on a chain of 215, where at the shipped limiting
+age one cell a month ran 1,232 deep and `ULB_UK_S`'s fund alone would run about 4,900;
+each other chain, the excess gain and the guarantee, reads the withdrawals since issue,
+and runs no deeper. The deepest is the GMDB point's with no withdrawals, the rider to the
+limiting age: its unit-funding residual 16 cells beyond its chain, 231 deep, its death
+strain 15 and its `net_cf` 14. The bound of 16 is `Term_UK_SEC`'s, met here with nothing
+to spare: one cell a month, the deepest call ran 12 beyond, and the year walk's steps at
+the chain's foot add four. A model that copies the walk measures its own overhead and
+derives its bound from that, rather than copy 16.
 
 The roll-forward closes as
 
@@ -607,7 +611,8 @@ taught first (USLIB-SEC-PLAN.md R1 to R17), and `Term_UK_SEC` here:
   the month, `fund_return` and `av_pp_init`. The cell takes the month alone, since a float
   parameter would give it a dictionary for a cache, and returns the fund grown where it is
   finite, which the sample asks for to type it. A test holds every cell that a cold call's
-  deepest path holds more than once to formatting no refusal. The allowance's refusal
+  deepest path holds more than once to building no text and raising only a constant. The
+  allowance's refusal
   stays in `allowance_cum_pp`, and the surrender rate's and the mortality table's in
   theirs: no chain recurses through them, each read once, at a path's foot or off it.
 - **Reporting cells stay Python.** `model_point()`, the label accessors `sex()`,
@@ -626,9 +631,9 @@ value, or a C array the spec sizes from the contract:
 
 | Compiled to | Cells |
 |---|---|
-| a C array of 1,346 by `t`, of `double`, `long long` or `bint` | the 47 cells of `t` alone: every count, rate, charge, fund, withdrawal and cash flow, and the fund grown's refusal; the policy clock, its years and the attained age; the checks' residuals; and the flag `is_active` |
-| a C array of 1,346 by 8 | `pols_if_at(t, timing)`, `av_pp_at(t, timing)` and `claims(t, kind)` |
-| a C array of 103 by policy year | `av_pp_py(y)`, `wd_cum_pp_py(y)` and `pols_if_py(y)` |
+| a C array of 1,358 by `t`, of `double`, `long long` or `bint` | the 47 cells of `t` alone: every count, rate, charge, fund, withdrawal and cash flow, and the fund grown's refusal; the policy clock, its years and the attained age; the checks' residuals; and the flag `is_active` |
+| a C array of 1,358 by 8 | `pols_if_at(t, timing)`, `av_pp_at(t, timing)` and `claims(t, kind)` |
+| a C array of 104 by policy year | `av_pp_py(y)`, `wd_cum_pp_py(y)` and `pols_if_py(y)` |
 | one `bint`, `long long` or `double` | the 29 other cells without a parameter: the point's numbers, codes and flag, its opening state, the ends of its frame, the three monthly rates, and the three checks |
 | a Python object, or `str` | the seven reporting cells |
 
@@ -641,14 +646,16 @@ mx2cy types each cell from the values the sample run passes it and gets back, an
 the run never calls compiles as a Python object. So `sample_sec.py` runs the three reports
 and the three checks on every committed point, and then the cells no report reaches:
 `model_point()` and the three label accessors, which only a reader asks for; `point_id()`,
-which only a refusal names; `av_per_segment_pp`, with `n_segments`, which only it reads;
-and two codes, the count at `AFT_DECR`, which `ULB_UK_S`'s count chain read in every
-month and this model's reads only where a year's opening ends, and the fund at
-`BEF_GROWTH`, which is `av_pp`, in every month of the frame and the month after it. It
-runs the committed points alone: the export reads the CSVs of the directory the build is
-made in, which in place is the product directory. The committed points leave branches
-untaken: the custom pattern above
-the 7.5% cap, the cap binding net of an adviser charge, the rider beside an adviser
+which only a refusal names; `av_pp_grown_refusal(t)`, which only `av_pp_at`'s error path
+calls, where the fund has left the floats, and which returns the fund grown elsewhere, so
+that the sample's call of it in every month types it; `av_per_segment_pp`, with
+`n_segments`, which only it reads; and two codes, the count at `AFT_DECR`, which
+`ULB_UK_S`'s count chain read in every month and this model's reads only where a year's
+opening ends, and the fund at `BEF_GROWTH`, which is `av_pp`, each monthly one in every
+month of the frame and the month after it. It runs the committed points alone: the export
+reads the CSVs of the directory the build is made in, which in place is the product
+directory. The committed points leave branches untaken: the custom pattern above the 7.5%
+cap, the cap binding net of an adviser charge, the rider beside an adviser
 charge, the surrender cap and the performance multiplier binding, the cap on mortality.
 That still types every cell, because every branch of a cell returns the one type its
 others return, a count or an amount a float in every branch, and on points that take those
@@ -666,15 +673,17 @@ tests' full sweep evaluates every monthly cell at; plus one because the index st
 
 | Parameters | Size | The largest argument |
 |---|---|---|
-| `t` | 1,346 | 1,345. The longest frame is the longest cover, a bond issued at 18, `issue_age_min`, whose fund lasts to the limiting age, 120, `omega_age_max`, issued 120 months after the valuation date, the furthest ahead `Data.future_horizon_mth` admits as shipped: 12 × (120 − 18) + 120 = 1,344 months, `t = 0 … 1,343`, and the month after, 1,344, whose roll-forward residual reads the count carried into 1,345 |
-| `t`, `timing`; `t`, `kind` | 1,346 by 8 | `t` as above, by the eight timings, and by the two kinds and the total. Every 2-D cache of a model shares one inner width, the widest: Cython's unpickle code converts them with one function, and two widths are refused by gcc 14, as uslib's `WholeLife_US_SEC` found (USLIB-SEC-PLAN.md §7.2) |
-| `y` | 103 | 102, the policy year of the longest cover's last month, 1,223 months from issue, whose first month reads its opening |
+| `t` | 1,358 | 1,357. The longest frame is the longest cover, a bond issued at 18, `issue_age_min`, whose fund lasts to the largest limiting age, 121, `omega_age_max`, issued 120 months after the valuation date, the furthest ahead `Data.future_horizon_mth` admits as shipped: 12 × (121 − 18) + 120 = 1,356 months, `t = 0 … 1,355`, and the month after, 1,356, whose roll-forward residual reads the count carried into 1,357 |
+| `t`, `timing`; `t`, `kind` | 1,358 by 8 | `t` as above, by the eight timings, and by the two kinds and the total. Every 2-D cache of a model shares one inner width, the widest: Cython's unpickle code converts them with one function, and two widths are refused by gcc 14, as uslib's `WholeLife_US_SEC` found (USLIB-SEC-PLAN.md §7.2) |
+| `y` | 104 | 103, the policy year of the longest cover's last month, 1,235 months from issue, whose first month reads its opening |
 
 **The limiting age the caches hold.** `omega_age` may be set to a year past the mortality
-table's last age, 121 on the shipped table, and the frame then runs a year longer: the
-table, not the contract, would bound the caches. So the contract has its own bound,
-`omega_age_max`, 120, the shipped limiting age, and `proj_len()` refuses an `omega_age`
-above it, in modelx as compiled, naming the point (*What it refuses*). `proj_len()`
+table's last age, 121 on the shipped table, as `ULB_UK_S` and the in-force step allow, and
+the frame then runs a year longer than at the shipped 120. A longer table would let it run
+longer still, so the contract has its own bound, `omega_age_max`, 121, the shipped table's
+last age plus one: every limiting age the shipped table admits projects, in modelx as
+compiled, and `proj_len()` refuses an `omega_age` above the bound, naming the point
+(*What it refuses*), so that no table bounds the caches. `proj_len()`
 refuses an issue age below `issue_age_min`, and `Data` a point issued more than
 `future_horizon_mth` months ahead, so no report on a point the model projects runs past
 these caches. Those three References are the contract the sizes are derived from; the ages
@@ -704,7 +713,7 @@ a static test holds the tool's line to the two and no other.
 ### What a compiled run needs
 
 **Memory, and the release.** A compiled `Projection` ItemSpace is a C struct of
-1,146,048 bytes, the type's basic size, which holds every cell's cache, and deleting it,
+1,156,248 bytes, the type's basic size, which holds every cell's cache, and deleting it,
 `del model.Projection[idx]`, frees nothing by itself: an ItemSpace sits in reference
 cycles, and only Python's cyclic collector frees it. That is why `run_sec.py --block`
 collects after each release, in its frame pass and in its projections (*Run it*, above),
@@ -715,34 +724,37 @@ no ItemSpace but the base alive after each collection.
 which the interpreter's recursion limit does not count, so the compiled model needs no
 limit raised: the deepest call the contract allows runs under a limit of 24. What it needs
 is stack. That call is a cold one in the last month of the longest cover, a bond issued at
-18 whose fund lasts to the limiting age, 1,224 months from issue, now or 120 months on.
-One cell a month, as the in-force step left the fund, the count and the withdrawals since
-issue, it ran 1,236 cells deep in modelx, and compiled with gcc a cold `net_cf` needed
-288 KiB of C stack: it ran on a thread of 288 KiB and not of 284. The count's chain needed
-that, at about 240 bytes a month, a cell's formula frame of 96 bytes beside its
-two-dimensional cache's wrapper of 128, and the fund's 248 to 252 KiB, at about 210: past,
-or all but at, the 256 KiB the C step allows itself, so that the 1 MiB thread holds on
-every runner, where `Term_UK_SEC`'s cold call needed two to four times as much on CI's
-Ubuntu runner as here (UKLIB-SEC-PLAN.md §6.1, *Record — M2*). No cell those chains
-recurse through month by month formats a message. `av_pp_at`'s refusal of a fund past the
+18 whose fund lasts to the limiting age, now or 120 months on: 1,236 months from issue at
+the contract's largest limiting age, 121, and 1,224 at the shipped 120. One cell a month,
+as the in-force step left the fund, the count and the withdrawals since issue, the call at
+the shipped limiting age ran 1,236 cells deep in modelx, and compiled with gcc a cold
+`net_cf` needed 288 KiB of C stack: it ran on a thread of 288 KiB and not of 284. The
+count's chain needed that, at about 240 bytes a month, a cell's formula frame of 96 bytes
+beside its two-dimensional cache's wrapper of 128, and the fund's 248 to 252 KiB, at about
+210: past, or all but at, the 256 KiB the C step allows itself, so that the 1 MiB thread
+holds on every runner, where `Term_UK_SEC`'s cold call needed two to four times as much on
+CI's Ubuntu runner as here (UKLIB-SEC-PLAN.md §6.1, *Record — M2*). No cell those chains
+recurse through month by month builds text. `av_pp_at`'s refusal of a fund past the
 floats took its formula's frame from 96 bytes to 208, and the deepest path holds six such
 frames, three timings at each end of the fund's chain, so moving it into a cell of its own
 (*What compiling changed*, above) saves 672 bytes of the 288 KiB: one cell a month, the
 call still runs on 288 KiB and not on 284 with it moved, as before. So the three chains
-are blocked by policy year as well. Blocked, the same call runs 229 cells deep in modelx,
-one cell a month within its year, two cells a year before it and 16 more, which a test
-holds. Compiled, on the three shapes whose cover runs a century, to or near the limiting
-age, the deepest chain heads, `net_cf`, the count, the unit-funding residual and the death
-strain, run on a thread of 60 KiB and not of 56, the refusal in `av_pp_at` or moved; the
-fund on 56 or 60, and the withdrawals since issue and the excess gain on 52 or 56. The
+are blocked by policy year as well. Blocked, the call runs 229 cells deep in modelx at
+120 and 231 at 121, on a chain of 213 and 215, one cell a month within its year and two
+cells a year before it, and 16 more, which a test holds. Compiled, on the three shapes
+whose cover runs a century, to or near the limiting age, the deepest chain heads,
+`net_cf`, the count, the unit-funding residual and the death strain, run on a thread of
+60 KiB and not of 56, at 120 and at 121 alike, the refusal in `av_pp_at` or moved, each
+head cold in an ItemSpace of its own; the fund on 56 or 60, and the withdrawals since issue
+and the excess gain on 52 or 56. The
 GMDB point withdrawing 5% and the adviser charge, whose funds run out at 353 and 323
 months, run on 36 KiB and not on 32. A test runs each shape at its longest cover in a
 thread of 1 MiB, the stack Windows gives a program's main thread unless the program is
 linked for more, and again on the main thread, which is where `run_sec.py --cython` runs,
 and records the smallest of its sizes each ran on. MSVC's frames may be larger than
 gcc's, and the `cython_uk` CI job, which runs the test on Windows too, is the check on
-them. The export recurses in Python instead: the same call needs a recursion limit of 473
-there, and the reports and checks, which run in ascending `t`, need 128, so
+them. The export recurses in Python instead: the same call needs a recursion limit of 477
+there at 121, and the reports and checks, which run in ascending `t`, need 128, so
 `sample_sec.py` sets 2,000.
 
 ### What it refuses
@@ -776,10 +788,11 @@ cannot be set on it at all; so set each as a whole number.
   lookup raised `KeyError`: `point_id 1: mort_table.csv has no rate at attained age 18`,
   from `mort_rate`, on a table that starts at 20. No frame reads past the table's last
   age, which `proj_len()` holds `omega_age` to.
-- An `omega_age` above `omega_age_max`, by `proj_len()`: `point_id 1: omega_age, 121, is
-  above omega_age_max, 120`. With `omega_age_max` raised to 121 as well, modelx projects
-  every point at 121, and the compiled model every point whose frame its caches hold, which
-  a bond issued at 18 outruns (*The sample and the spec*).
+- An `omega_age` above `omega_age_max`, by `proj_len()`, which only a mortality table
+  longer than the shipped one, or the bound lowered, can bring about: `point_id 1:
+  omega_age, 121, is above omega_age_max, 120`, under a bound lowered to 120. Raised past
+  121, the bound lets a longer table's frames run past the caches, in the compiled model
+  alone (*The sample and the spec*).
 - A power past the largest float, which Python's float power refuses with
   `OverflowError` where C's `pow` gives an infinity: expense inflation calls Python's own
   power where its own is infinite from a finite base, so that the compiled model raises the
@@ -792,13 +805,17 @@ cannot be set on it at all; so set each as a whole number.
   kinds' three, reaches the formula, which refuses it in both engines, as a test holds.
 
 An argument outside a cache raises `IndexError` in the compiled model alone:
-`net_cf(1346)` or `net_cf(-1)`, which modelx answers with 0, the month being outside
+`net_cf(1358)` or `net_cf(-1)`, which modelx answers with 0, the month being outside
 cover; `pols_if_at(t, 8)`, `av_pp_at(t, 8)` and `claims(t, 8)`, which modelx refuses as a
-timing and a kind it does not take; and a year's opening at policy year 103, which modelx
-computes outside cover as 0. An `idx` past the last row is refused in both, with an
-`IndexError` at the first read of a vector, and `Projection[-1]` reads every vector at its
-last element in both, so it is the table's last point, under that point's own
-`point_id()`; the compiled refusal test holds both against modelx.
+timing and a kind it does not take; and a year's opening at policy year 104, past the `y`
+cache, which modelx computes as it computes any year's opening, the closing value of the
+year before: 0 once that year is past the point's cover, as on the test's point, issued at
+65, and the fund that year closes on for a bond whose cover reaches it, one issued at 18
+under a limiting age of 121. No frame asks for it: a frame's last month is in policy year
+103 at most. An `idx` past the last row is refused in both, with an `IndexError` at the
+first read of a vector, and `Projection[-1]` reads every vector at its last element in
+both, so it is the table's last point, under that point's own `point_id()`; the compiled
+refusal test holds both against modelx.
 
 An annual mortality above 1 is not refused but capped, in both: `mort_rate` caps the
 product at 1, as `ULB_UK_S` does, and a compile test holds the two equal on points where
@@ -843,7 +860,8 @@ took 0.022 s, and asking every point for its frame, the runner's first pass, 0.5
 Measured on 2026-11-23 on a machine shared with other work: 4 CPUs (an Intel Xeon at
 2.30 GHz), a 1-minute load average between 2.52 and 3.96 as the runs started; Linux,
 Python 3.13.18 and gcc 13.3.0, with modelx 0.33.0, modelx-cython 0.1.0, Cython 3.3.1,
-numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
+numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`, made at `4fe5519`,
+before `omega_age_max` rose to 121 and every `t` cache with it by 12 elements.
 
 ## Tests
 
@@ -889,12 +907,15 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   `duration_mth(500)` evaluates `duration_mth` once, the policy clock being a closed form,
   and every point's reports and checks run under modelx's recursion limit lowered to 40,
   which a recursion backward over the frame would exceed. Each chain, called cold in the
-  last month at each shape's longest cover, runs one cell a month back to its policy
+  last month at each shape's longest cover, at the limiting age of 121, runs one cell a
+  month back to its policy
   year's first month, two cells a year back to `t_entry()`'s, and at most 16 more; the
   inline fund is `av_pp_at`'s, bit for bit, and each year's opening, of the fund, the
   withdrawals since issue and the count, is the closing value of the month before it, the
   one cell a year that the month reads; and no cell that a cold call's deepest path holds
-  more than once formats a refusal.
+  more than once, at the limiting age of 121, builds text anywhere in its
+  formula, at a raise, in an error branch or into a local, or raises other than one
+  exception on one string constant.
 - **Counts**: the roll-forward closes; `result_pols()` is S's counts with `pols_new_biz`
   beside them; multiplying `policy_count` by 2.5, with every switch that ships off on,
   multiplies every flow and counted cell and moves no per-policy value, the fund at each
@@ -911,11 +932,10 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   moved past a committed point, and `run_sec.py --block` refuses such a point before
   printing anything; each of fifteen References is held to its domain, 115 cases, each
   edge accepted and the nearest value past it refused, NaN, the infinities, a fraction and
-  `2**53` too, an `omega_age` of 121 refused under the shipped `omega_age_max` and
-  accepted with it raised, the fund and the allowance refused where they would pass the
-  floats; so is a
-  fund at or below the threshold, at exactly it, part of it and a rounding above 0, where
-  the least fund past it projects; a surrender rate of exactly 1 is accepted, and one just
+  `2**53` too, an `omega_age` of 121 accepted, as at stage E, and refused under an
+  `omega_age_max` lowered to 120, the fund and the allowance refused where they would pass
+  the floats; so is a fund at or below the threshold, at exactly it, part of it and a
+  rounding above 0, where the least fund past it projects; a surrender rate of exactly 1 is accepted, and one just
   above 1 or below 0 refused in its month and by the frame; each assumption table a reader
   cannot read, 26 cases, a key of `2**53` and of `2**53 − 1` among them, is refused naming
   its lines, and a read beyond the mortality table naming the point; keys written as
@@ -970,9 +990,9 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   `tests/test_compiled_conventions_uk.py`, C3, the typing guard, on the declarations, the
   spec and the generated C; C4 on the committed points; and the release. In this model's
   module, C4 on the splice grid, at the contract's longest covers, issued now and 120
-  months on, the longest 1,344 months, where the cap binds, at the depletion threshold's
-  edges, on every value a decoded column holds, on keys written as floats, and on the
-  committed row in the money under its own return; the refusals, message for message, the
+  months on at the limiting age of 121, the longest 1,356 months, where the cap binds, at
+  the depletion threshold's edges, on every value a decoded column holds, on keys written
+  as floats, and on the committed row in the money under its own return; the refusals, message for message, the
   fund, the allowance and the inflation factor past the floats among them, each code
   no cell takes inside the caches, the `IndexError`s past the caches and an `idx` past
   the table and of −1; each shape's deepest cold call on a 1 MiB thread and on the main

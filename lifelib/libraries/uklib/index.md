@@ -91,7 +91,8 @@ carries into that month, which the `_S` model itself restarts where its frame op
 `model-sec.md` says what running in force changes. `Term_UK_SEC` is the first: it runs in
 force, and compiles. `CI_UK_SEC` runs in force, and compiles too. `ULB_UK_SEC` runs in
 force and compiles too, its fund, its withdrawals and its count blocked by policy year, so
-that a cold call at its longest cover, a century of months, runs on a small C stack.
+that a cold call at its longest cover, 1,236 months, more than a century, runs on a small
+C stack.
 
 Assumption tables stay in the units they are quoted in: a mortality rate by attained age
 and a lapse rate by policy year are annual, and each model converts them month by month
