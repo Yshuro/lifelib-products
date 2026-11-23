@@ -860,7 +860,7 @@ took 0.022 s, and asking every point for its frame, the runner's first pass, 0.5
 Measured on 2026-11-23 on a machine shared with other work: 4 CPUs (an Intel Xeon at
 2.30 GHz), a 1-minute load average between 2.52 and 3.96 as the runs started; Linux,
 Python 3.13.18 and gcc 13.3.0, with modelx 0.33.0, modelx-cython 0.1.0, Cython 3.3.1,
-numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`, made at `4fe5519`,
+numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`, made at `4fbc404`,
 before `omega_age_max` rose to 121 and every `t` cache with it by 12 elements.
 
 ## Tests
