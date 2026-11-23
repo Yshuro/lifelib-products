@@ -473,10 +473,12 @@ is `proj_len()`'s, beside the pipeline's length, which reads it too.
 
 The model compiles under modelx-cython into C-typed code, as `basiclife/BasicTerm_SC`
 does, and modelx reads and runs the same formulas as before. Compiling changed how each
-cell reads its inputs and spells its codes, and no number: what the model computed on each
-committed point was frozen before the change, and it still computes it, to the last bit
-(*Tests*, below), refrozen once since for the waiver's incidence on the active lives, a
-change of numbers on the four waiver points alone. Cell by cell, at every argument a full
+cell reads its inputs and spells its codes, and no number: what its reports computed on
+each committed point was frozen before the change, and they still compute it, to 1e-12 of
+each column's largest value (*Tests*, below), refrozen once since for the waiver's
+incidence on the active lives, a change of numbers on the four waiver points alone; and
+every value the in-force model cached on the committed points and on the full splice grid
+was this one's, bit for bit, when the change was made. Cell by cell, at every argument a full
 modelx sweep evaluates, the compiled model computes what modelx computes, bit for bit, on
 the committed points, on the points of the splice grid, which take the branches they do
 not, at the contract's longest covers, on points where the cap on mortality binds and at a
