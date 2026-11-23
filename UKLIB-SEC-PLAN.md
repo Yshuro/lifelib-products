@@ -3,12 +3,12 @@
 **Status:** Accepted, 2026-11-22, with §9's eleven decisions confirmed as recommended;
 drafted the same day. Phase 0 (M0) is done, 2026-11-22, its gate met by the Tests
 workflow's run 43 (§3, *Record — M0*), and so is Term's in-force step, M1, by run 45
-(§6.1, *Record — M1*). Term's compile step, M2, is done too, 2026-11-23, by run 46
-(§6.1, *Record — M2*), and critical illness's in-force step, M3, by run 47 (§6.2,
-*Record — M3*). The unit-linked bond's, M9, has landed and awaits its run (§6.6). Like
-USLIB-SEC-PLAN.md, this document is both the specification and the record: each
-milestone records what it actually did, including where the implementation departed
-from the plan.
+(§6.1, *Record — M1*). Term's compile step, M2, is done too, 2026-11-23, by run 46 (§6.1,
+*Record — M2*), critical illness's in-force step, M3, by run 47 (§6.2, *Record — M3*), and
+the unit-linked bond's, M9, by run 48 (§6.6, *Record — M9*). Work pauses there; their
+compile steps, M4 and M10, are next in their streams (§7). Like USLIB-SEC-PLAN.md, this
+document is both the specification and the record: each milestone records what it actually
+did, including where the implementation departed from the plan.
 
 Every number in it was measured in this repository, under modelx 0.33.0 and pandas 3.0.5
 as USLIB-SEC-PLAN.md's were, or is quoted from USLIB-SEC-PLAN.md, and each is given with
@@ -1823,6 +1823,217 @@ left to right. No float parameter, no uncached cell, no `round` or `math`. `t` t
 though the product admits issue from 3 months, which the table cannot rate. Never reached
 by a report: `av_per_segment_pp`, `n_segments`, `lives`, and the `BEF_GROWTH` and
 `BEF_DECR` keys.
+
+#### Record — M9, done 2026-11-23
+
+Built in three commits, as U1 and §7 ask, beside CI's in-force step, M3, one in each stream
+(§7):
+- `ULB_UK_S` copied with only `_name` changed (`7dcdb98`);
+- the enhancement (`999a8b9`);
+- the Phase 1 fingerprint, frozen alone (`82e35c3`).
+
+The review's fixes followed in five commits more, among them a committed row derived under
+a return of its own and a refreeze of the fingerprint, alone (`54dc92e`, `f851e5c`). They
+were rebased onto M3's landing to use its `derived_refs`, keeping both sides of each shared
+line.
+- One agent built it, injecting 12 faults, all caught.
+- A second agent reviewed it against this note, the plan and USLIB-SEC-PLAN.md, injecting
+  22 faults of its own. Two were missed, and two more were caught only by tests other than
+  the one meant for them, T1 and T4.
+  - It found no wrong cash flow. It confirmed every claim of the threshold's.
+  - It confirmed the inline chain bit for bit, on every twin and on 137 grid rows, under
+    both sets of References.
+  - It found seven gaps:
+    - the allowance accrued before the valuation date, rebuilt from today's rate (K14);
+    - six References with no domain, a NaN in each lost in S's bound-first `min` or `max`;
+    - the 7.5% cap net of the adviser charge, reached by no row;
+    - T1's frame cut keyed by model, not by point;
+    - T4 never testing the rider charge;
+    - mortality refusals naming keys, not lines;
+    - a loop in `proj_len()` that the C step would have had to restructure.
+- The builder fixed all seven and the minors, and 16 faults more were caught.
+- The reviewer verified the rework with 14 faults of its own, of which 13 were caught, and
+  found four gaps more:
+  - the allowance column, on an anniversary, measured after month 0's own accrual;
+  - `omega_age` with no domain;
+  - a fund overflowing to NaN in silence;
+  - the shock's domain stated on the shock, not the trailing return.
+
+  The builder closed them, with 10 faults more caught.
+- On M3's `derived_refs`, the builder committed a row with the GMDB in the money (4 faults,
+  all caught).
+- The reviewer verified that round and the rebase with 18 faults of its own, all caught.
+  It found:
+  - `omega_age`'s new bound one year too strict;
+  - the overflow refusal blaming only the return;
+  - the derived row recording its return nowhere in the table.
+
+  The first two are fixed in `a15d894`; the third is carried.
+
+**What exists now.**
+- *`ULB_UK_SEC` at stage E.* `Projection` keeps 73 of `ULB_UK_S`'s 74 cells and adds 9.
+  - It drops `av_init_pp`, which `av_pp_init` replaces.
+  - It adds:
+    - `policy_count`, `duration_mth_init`, `t_entry`, `is_active` and `pols_new_biz`;
+    - `result_pols`;
+    - the opening state's three cells.
+- *The opening state* (D6), three columns per policy. Each is documented in `model-sec.md`
+  with its instant, and each has a K14 test.
+  - `av_pp_init` is the fund at the start of month 0, before that month's growth, charges
+    and cancellations, which is S's `av_pp(d)`. It replaces S's `uf_init`, which moved the
+    fund and nothing else.
+  - `wd_cum_pp_init` holds the withdrawals and adviser charges to the end of month −1.
+    These never restart, and they open the GMDB at `max(0, P − wd_cum_pp_init)`.
+  - `allowance_cum_pp_init` is the 5% allowance accrued before month 0's own accrual, so
+    that a policy year opening at the valuation date accrues at today's rate, as new
+    business does (D6, as precised at M7).
+- *The depletion threshold* (§9 item 10), `depletion_threshold = 0.005`, VA's value and
+  form. Below it the fund counts as exhausted.
+  - `proj_len()` refuses a point whose opening fund is at or below it.
+  - `fund_exhaust_mth()` scans `av_pp` from `t_entry()`: R2's admitted loop, and the only
+    look-ahead.
+- *The fund chain,* written inline, one cell a month, in `av_pp_at`'s order (MYGA's form),
+  with `av_pp_at` reading it. S's four cells a month ran 3,122 deep on point 6.
+- *`model_point_table_sec.csv`*, 12 rows.
+  - S's six points are twins.
+  - Four rows are derived from S:
+    - point 1 in its third policy year;
+    - point 3 at month 66;
+    - point 4 at year 21, where the step goes to 1.5 and the allowance caps;
+    - point 1 in its last month before exhaustion.
+  - One row is future, point 4 issued at `t = 13`.
+  - Point 12 is derived from S under a fund return of 0 at month 66 (*Departures*). Its
+    guarantee of 72,500 is above its fund of 67,232.39.
+  - A case-insensitive search for every publisher, product and form code that
+    `unit_linked_bond/sources.md` cites finds none.
+- *`tests/test_unit_linked_bond_uk_sec.py`*, in the template's forms:
+  - T2 on a core and a full splice grid, with ten variants, the tenth binding the 7.5% cap
+    net of an adviser charge;
+  - T3, T4 at 2.5 and T5, the last with the domains, over 102 cases;
+  - T6;
+  - the rules test, the cold-depth bound at each shape's longest cover, the caps and the
+    NaN tests, the runner and the committed rows;
+  - K14 tests for the three history columns, the threshold's tests, the inline-chain test,
+    and a month-on restatement test.
+
+  277 tests pass and 97 skip by default; 374 pass on the full grid.
+- *Shared files, added to in place:* `test_model_conventions_uk.py`'s `TWIN_FRAME_ENDS`,
+  beside `TWIN_FLOORS`, keyed by point. The rest is as M3's: the registry entry and its
+  `INPUT_FILES`, the product spec, the `sec_uk` module and uklib's `index.md` row.
+
+**Departures and precisions.**
+- *The threshold's effect on S's points.*
+  - Points 1, 4 and 5 close on exactly 0 and keep S's 353 months. Points 2 and 6 never
+    run out, keeping 660 and 780.
+  - Point 3 closes on 3.386e−15 at month 322 and runs 323 months, where S runs 324. Its
+    0.019446 survivors mature in month 322, and `net_cf` differs only by S's month 323,
+    −£0.18.
+  - T1 cuts that one twin at SEC's frame (`TWIN_FRAME_ENDS = {3: (323, 324)}`). It asserts
+    both frames, and that S's month 323 opens above 0 and at or below the threshold.
+- *The allowance's two roles.* S's `wd_allowance_rate` is both the statutory allowance and
+  the anchor pattern's election. It is kept as one Reference, and `model-sec.md` says what
+  follows from that: from the valuation date on, both accrue at it.
+- *Domains.* `proj_len()` refuses 14 References off their domains, by name, NaN and ±inf
+  included:
+  - `surr_rate_cap` and `wd_cap_rate` in [0, 1];
+  - `fund_return` and `inflation_rate` at −1 or more;
+  - `return_shock` above −1, and `fund_return + return_shock` above −1;
+  - `issue_age_min`, `allowance_years` and `omega_age`, whole numbers below `2**53`;
+    `omega_age` is above `issue_age_min` and at most one past the table's last age;
+  - the rest finite and 0 or more.
+- *Computed values past their range are refused in their cells,* naming the References:
+  - a surrender rate outside [0, 1], where S's monthly rate would be complex;
+  - a fund that stops being finite, at `av_pp_at(t, "AFT_GROWTH")`, naming the return and
+    the opening fund;
+  - an allowance past the largest float.
+- *Mortality refusals name the table's lines,* read once and unsorted, with S's sort
+  applied after.
+- *A row derived under a return of its own.* At S's References no state S reaches has the
+  rider charging. Variant 7's 4% AMC is a table column, which `derived_refs` cannot set.
+  - So point 12 is S's state at month 66 under a fund return of 0: a fund that has
+    earned nothing since issue.
+  - At today's 5% the rider charges for 36 months, 86.71 in all, and the death benefit
+    pays the guarantee for 39.
+  - With the zero return set on the model, the row continues S in every cell over the
+    whole frame, 143 months. At today's return the paths part at month 0's growth, so only
+    the opening state and the counts are compared.
+- *The frame's last month* on an exhausted point, `result_uf` and `excess_gain_pp` are
+  compared at a floor of 1e−9. The first closes on a subtraction that is 0 in exact
+  arithmetic, as VA's does. S's excess gain is a year-end rounding.
+- *The rules test follows calls that take no month* (DIA's `_months_read`), since every
+  count reads `proj_len()` and through it the scan.
+- *Smaller precisions.*
+  - The roll-forward tolerance scales with `policy_count`.
+  - `Data` holds `future_horizon_mth`.
+  - The runner's block leaves out `av_pp`.
+  - The every-state test sets aside the exhausted states S reaches and asserts that they
+    are refused.
+
+**Measured for K6.** On the shared 4-CPU Linux machine:
+- the default module takes about 220 s, and the full grid about 630 s, of which the
+  every-state test is about 330 s;
+- a cold `net_cf` runs at most 10 cells beyond its one-a-month chain at 1,224 months.
+  At the rider's longest cover, `check_unit_funding_resid` runs 12 and `death_strain` 11,
+  inside 16.
+
+At landing, `a15d894` ran its gate here in four jobs at once:
+- uklib's suite: 1,936 passed and 330 skipped, in 794 s;
+- the full grid: 374 passed, in 593 s;
+- Term's `term_assurance` compile shard: 13 passed;
+- `gen_sec_points.py --check` and `gen_sec_fingerprint.py --check`, for ULB_UK_SEC,
+  CI_UK_SEC and Term_UK_SEC: current and reproduced;
+- `check_sec_harness.py`: agreed;
+- doccheck: 0 warnings;
+- the scaffolding: 0 files.
+
+In CI, the Tests workflow's run 48 on `a15d894` passed all 87 jobs, 1 h 22 min from
+dispatch to the last:
+- `sec_uk`'s three new legs: the full grid on Ubuntu in 10.7 min, and the core on Windows
+  in 5.6 and on macOS in 2.8;
+- CI's and Term's legs, both `cython_uk` shards and every uslib leg;
+- the `test` job on Python 3.14 and Ubuntu: 7,044 passed and 105 skipped, in 37 min
+  44 s, its harness step agreeing.
+
+**Faults.** Each was injected into a copy of its own, and each run was held to the test
+meant to catch it.
+- The builder: 12, then 16, 10, 4 and 2 on the reworks, all caught.
+- The review: 22. Its misses are all caught since `1320d00`:
+  - a surrender rate refused at exactly 1, and the cap not net of the adviser charge,
+    missed by every test;
+  - every exhausted twin a month short, missed by T1;
+  - the rider charge weighted by the issued count, missed by T4.
+- The first verification: 14, of which 13 were caught. The miss, the allowance measured
+  after month 0's accrual in both the generator and the model, is caught since `ab5b962`.
+- The second verification: 18, all caught.
+
+**Carried into M10 and after.**
+- *M10, §6.6's C list,* and M2's compile form:
+  - mortality as `[sex, age]` padded from 0, surrender by policy year, `gmdb_flag` int64;
+  - `wd_pattern` as a code, the fund's four timings beside the counts' four, an inner
+    width of 8, and `claims`' total left to right;
+  - M22's guard on inflation's power, References printed as compiled, and the `idx` edges.
+
+  `static_faults` lists 83 lines, none in `proj_len()`, all of them that list's work.
+- *The stack* (K12, M2's record). ULB's longest cold chain runs about 1,236 cells: 1,224
+  months and 12 beyond, twice Term's 611. On CI's Ubuntu runner, where Term's needed
+  512 KiB to 1 MiB, it may need more than the 1 MiB thread the test asserts. M10
+  measures it there first.
+- *`omega_age` bounds the frame by the table's length, not the contract.* The C step's `t`
+  cache needs a contract Reference for the largest `omega_age`, as Term's caches have.
+- *The template, for every later product:*
+  - K14 reaches every cumulative quantity S rebuilds with today's References, an accrued
+    allowance as much as an increase or a review.
+  - A column's instant on an anniversary is before month 0's own event.
+  - A domain is stated on each combination a formula reads, not only on each Reference.
+  - A computed value that can leave the floats is refused where it first does.
+  - An int Reference is whole and below `2**53` from stage E.
+  - T4 holds every flow non-zero on some point. A month-on restatement test catches a
+    flow weighted by the count issued.
+  - A twin's frame-end exemption is keyed by point and asserts both frames.
+- *For the harness, at the close:* a row derived under References of its own records them
+  nowhere in its table. `ULB-000004-M66` and CI's point 14 read like restatements at the
+  shipped References, and only the specs and `model-sec.md` say otherwise. A `row_kind` or
+  a column for them is a shared change, left for M15.
 
 ### 6.7 Pension annuity — `PA_UK_SEC` (E: M, C: M)
 
