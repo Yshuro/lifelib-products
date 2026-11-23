@@ -61,7 +61,8 @@ and the product's own facts:
 * T6, regeneration: the committed ``model_point_table_sec.csv`` is what the generator makes
   of ``ULB_UK_S`` and its table as they stand.
 * Then the product's own facts: the two clocks on the shipped points; the committed rows
-  continuing their S points; each history column read rather than recomputed, the unit
+  continuing their S points, and the one read from S under a fund return of its own
+  holding the guarantee in the money and the rider charging; each history column read rather than recomputed, the unit
   fund, the withdrawals since issue, which open the GMDB, and the allowance accrued, which
   an allowance rate changed at the valuation date does not rewrite (UKLIB-SEC-PLAN.md
   K14); the
@@ -768,7 +769,8 @@ def spliced(tmp_path_factory):
     derived = [(p, d) for kind, p, d in _selected(SPLICES + IN_FORCE_TWINS, CORE_SPLICES)
                if kind == "derived"]
     spec = dataclasses.replace(SPEC, derived=tuple(derived),
-                               future=tuple(_selected(FUTURES, CORE_FUTURES)))
+                               future=tuple(_selected(FUTURES, CORE_FUTURES)),
+                               derived_refs={})
     table, companions = build_sec_table(spec, s)
     assert companions == {}
     sec_folder = _sec_inputs(root / "sec", table)
@@ -2284,7 +2286,7 @@ def _restated(root, s, states):
     """The twins of ``s``'s points and a row in force at each of ``states``, ``(S point,
     month)``, built by the generator out of ``s`` into a copy of the product directory:
     ``(folder, table)``."""
-    spec = dataclasses.replace(SPEC, derived=tuple(states), future=())
+    spec = dataclasses.replace(SPEC, derived=tuple(states), future=(), derived_refs={})
     table, _ = build_sec_table(spec, s)
     return _sec_inputs(root, table), table
 
@@ -2648,13 +2650,18 @@ def test_the_committed_rows_continue_their_s_points(sec_model, s_model):
     all to 1e-9 relative with no absolute floor but on the residuals and in an exhausted
     frame's last month, every cell but those expense inflation moves (:func:`_continues_s`),
     which the inflation test holds.  The adviser charge's row at 66 ends a month before S's
-    point does, where the depletion threshold drops S's month on a rounding.
+    point does, where the depletion threshold drops S's month on a rounding.  The row read
+    from S under a fund return of its own continues S under that return, which the
+    shipped one replaces from the valuation date, and its own test holds it.
     """
     table = sec_model.Data.model_point_table()
+    s_table = s_model.Data.model_point_table()
     found = []
     for point_id in table.index:
         kind, month = table.at[point_id, "row_kind"], int(table.at[point_id, "source_mth"])
-        if kind == "twin":
+        policy = table.at[point_id, "source_policy_id"]
+        if kind == "twin" or (int(s_table.index[s_table["policy_id"] == policy][0]),
+                              month) in SPEC.derived_refs:
             continue
         policy = table.at[point_id, "source_policy_id"]
         s_point = int(s_model.Data.model_point_table().index[
@@ -2662,6 +2669,81 @@ def test_the_committed_rows_continue_their_s_points(sec_model, s_model):
         found += [f"point {point_id}: {line}" for line in _continues_s(
             _point(s_model, s_point), _point(sec_model, point_id), month)]
     assert not found, found[:20]
+
+
+# The committed row S reaches only under a fund return of its own: the GMDB point at its
+# month 66, read from S run under a fund_return of 0 (SEC_SPECS' derived_refs).
+IN_THE_MONEY, IN_THE_MONEY_REFS = (4, 66), {"fund_return": 0.0}
+
+
+def test_a_committed_row_holds_the_guarantee_in_the_money(sec_model, tmp_path):
+    """One committed row has the GMDB in the money and the rider charging (C2, T4).
+
+    At ``ULB_UK_S``'s References no state it reaches has the rider charging: its GMDB
+    point is in the money in its issue month alone, on the death benefit.  So the spec
+    restates that point at its month 66 from S run under a ``fund_return`` of 0, a fund
+    that has earned nothing since issue (:data:`IN_THE_MONEY`, the spec's
+    ``derived_refs``), and C2 freezes the row with the rest.  Three things are held:
+
+    * the row is S's state under that return: S read under it holds, at month 66, the
+      row's count, fund, withdrawals since issue and allowance, of which only the fund is
+      not S's at the shipped return, since no decrement, no scheduled withdrawal and no
+      allowance reads a return;
+    * set on this model too, that return gives the row S's path: it continues S's
+      projection from month 66 on in every cell, over the whole of both frames, as the
+      splice compares them (:func:`_continues_s`);
+    * at today's References, which take over from the valuation date, the paths part in
+      month 0's growth, 5% where S's history earned 0, so the comparison runs over what no
+      return moves: the opening state at ``t = 0``, and the counts, whose decrements read
+      no return, in every month both frames run but the shorter's last, where its
+      survivors leave.  And the row opens in the money: the guarantee, 72,500, above the
+      uplifted fund after charges, the rider charging from ``t = 0``, ``gmdb_charges``
+      nonzero, and the death benefit paying the guarantee.
+    """
+    assert SPEC.derived_refs == {IN_THE_MONEY: IN_THE_MONEY_REFS}
+    s_point, month = IN_THE_MONEY
+    label = _label(_committed(), "derived", s_point, month)
+    s = mx.read_model(model_path(TWIN), name=_name("s_refs"))
+    shipped_s = mx.read_model(model_path(TWIN), name=_name("s_shipped"))
+    sec = mx.read_model(model_path(SEC), name=_name("sec_refs"))
+    try:
+        for model in (s, sec):
+            for ref, value in IN_THE_MONEY_REFS.items():
+                setattr(model.Projection, ref, value)
+        sp, row = _point(s, s_point), _point(sec_model, label)
+        shipped = _point(shipped_s, s_point)
+        opening = {"policy_count": sp.pols_if(month), "av_pp_init": sp.av_pp(month),
+                   "wd_cum_pp_init": sp.wd_cum_pp(month - 1),
+                   "allowance_cum_pp_init": sp.allowance_cum_pp(month - 1)}
+        for column, value in opening.items():
+            assert row.cells[column]() == pytest.approx(value, rel=1e-12), column
+        assert row.policy_count() == pytest.approx(shipped.pols_if(month), rel=1e-12)
+        assert row.av_pp_init() < shipped.av_pp(month) - 10000.0
+        _sweep_s(sp)
+        assert _continues_s(sp, _point(sec, label), month) == []
+        assert row.av_pp(0) == row.av_pp_init()
+        assert row.gmdb_guarantee_pp(0) == pytest.approx(
+            sp.gmdb_guarantee_pp(month), rel=1e-12)
+        both = min(row.proj_len(), sp.proj_len() - month) - 1
+        assert both > 100
+        for t in range(both):
+            for count in ("pols_if", "pols_death", "pols_surr"):
+                assert row.cells[count](t) == pytest.approx(
+                    sp.cells[count](month + t), rel=1e-9, abs=0.0), (count, t)
+        assert row.av_pp_at(0, "AFT_GROWTH") > sp.av_pp_at(month, "AFT_GROWTH")
+        uplifted = row.db_uplift() * row.av_pp_at(0, "AFT_CHARGE")
+        assert row.gmdb_guarantee_pp(0) == pytest.approx(72500.0, rel=1e-12)
+        assert row.gmdb_guarantee_pp(0) > uplifted
+        assert row.gmdb_charge_pp(0) > 0.0
+        charges = row.result_cf()["gmdb_charges"]
+        assert (charges > 0.0).sum() == 36 and (charges.iloc[:36] > 0.0).all()
+        deaths = row.pols_death(0)
+        assert row.claims(0, _code(row, "DEATH")) == pytest.approx(
+            row.gmdb_guarantee_pp(0) * deaths, rel=1e-12)
+    finally:
+        sec.close()
+        shipped_s.close()
+        s.close()
 
 
 def test_the_depletion_threshold_moves_point_3_alone(sec_model, s_model):
@@ -2861,7 +2943,8 @@ def test_the_allowance_accrued_is_read_from_the_model_point(sec_model, s_model, 
         assert [g.allowance_cum_pp(t) for t in (0, 12, 100)] == [100000.0] * 3
     finally:
         model.close()
-    spec = dataclasses.replace(SPEC, derived=((1, 12),), future=((1, 13),))
+    spec = dataclasses.replace(SPEC, derived=((1, 12),), future=((1, 13),),
+                               derived_refs={})
     rows, _ = build_sec_table(spec, s_model)
     model = mx.read_model(_sec_inputs(tmp_path / "anniversary", rows),
                           name=_name("anniversary"))
@@ -3034,7 +3117,7 @@ def test_an_annual_mortality_past_1_is_capped_in_both_models(tmp_path):
         assert [sp.pols_if(t) for t in range(cap + 1, end)] == [0.0] * (len(after) - 1)
         spec = dataclasses.replace(
             SPEC, derived=((CAPPED_POINT, cap - 1), (CAPPED_POINT, cap + 5)),
-            future=((CAPPED_POINT, 12),))
+            future=((CAPPED_POINT, 12),), derived_refs={})
         rows, _ = build_sec_table(spec, s)
         rows.loc[rows["source_mth"] == cap + 5, "policy_count"] = 1.0
         sec = mx.read_model(_sec_inputs(tmp_path / "sec", rows), name=_name("capped"))
@@ -3237,8 +3320,8 @@ def test_the_points_sum_row_by_row_into_a_block(spliced):
 
 
 # The labels an extract carries in the test below: the committed points' in reverse, from
-# 111 down, so that a label is neither a position plus one nor in the order of the rows.
-EXTRACT_LABELS = tuple(range(111, 100, -1))
+# 112 down, so that a label is neither a position plus one nor in the order of the rows.
+EXTRACT_LABELS = tuple(range(112, 100, -1))
 
 
 def _extract():
@@ -3323,7 +3406,7 @@ def test_run_sec_prints_a_point_and_the_block(sec_model):
     adviser charge restated in force at S's month 66, whose frame ends where its fund is
     exhausted; and point 11, to be issued 13 months on: each with the lines that say where
     its row came from and where it stands, which only the committed table's generator
-    columns can say.  And the block: a line for each of the 11 points, in table order, its
+    columns can say.  And the block: a line for each of the 12 points, in table order, its
     first twelve rows, which must be the committed points' frames summed row by row, as
     this test sums them, but the fund per policy, which summed is no amount, and those
     frames summed into projection years, each year's count the one in force in its first

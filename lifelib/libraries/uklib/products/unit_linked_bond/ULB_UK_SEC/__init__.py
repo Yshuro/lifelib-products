@@ -98,7 +98,9 @@ date. Points 7 to 10 are S points restated in force, each opened with the state 
 into its month: the anchor cell 30 months in, the adviser charge at 66, the GMDB point on
 its twentieth anniversary, its whole premium withdrawn, and the anchor cell in its last
 month before its fund is exhausted. Point 11 is the GMDB point issued 13 months after the
-valuation date.
+valuation date. Point 12 is the GMDB point restated at its month 66 from S run under a fund
+return of 0, a fund that has earned nothing since issue, its guarantee in the money and
+the rider charging, which no state S reaches at its shipped return holds.
 
 **Verification.** On the six twins every cell this model shares with :mod:`~.ULB_UK_S`
 agrees with it at every argument the S model evaluates in its sweep, ``pols_if_init`` and

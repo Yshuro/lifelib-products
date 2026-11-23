@@ -1428,15 +1428,26 @@ SEC_SPECS: dict[str, SecSpec] = {
     # above 0, since its charges consume the allowance beside its withdrawals; the GMDB
     # point at 240, the first month of policy year 21, where the allowance-exhaustion step
     # applies and the guarantee has just run out; and the anchor cell at 352, the last month
-    # before its fund is exhausted, a one-row frame.  At S's References no committed row has
-    # a positive rider charge: S point 4's guarantee is in the money in its issue month
-    # alone, by 82.88 pounds on the death benefit and never on the charge, which reads the
-    # fund before the month's withdrawal, so the twin of point 4 at t = 0 and the future row
-    # at t = 13 are in it there, and no row after; the splice's variants reach the charge.  The future row is the GMDB point issued 13
+    # before its fund is exhausted, a one-row frame.  The future row is the GMDB point issued 13
     # months after the valuation date: more than a year on and off a valuation anniversary,
     # so that the months before issue read policy years -1 and 0, where a missing guard
     # would show.  T2's splice grid is built from this spec in a temporary table, not
     # committed.
+    #
+    # And one row S reaches only under a fund return of its own (derived_refs).  At S's
+    # References no state has the rider charging: S point 4's guarantee is in the money in
+    # its issue month alone, by 82.88 pounds on the death benefit and never on the charge,
+    # which reads the fund before the month's withdrawal, so the twin of point 4 at t = 0
+    # and the future row at t = 13 are in it there, and no committed row after, and C2
+    # would freeze no rider charge.  So the GMDB point is restated at S month 66, mid-way
+    # through policy year 6, from S run under a fund_return of 0, a fund that has earned
+    # nothing since issue: 0.7298 policies, as at the shipped return, since no decrement
+    # reads it, a fund of 67,232.39 and a guarantee of 72,500, the premium less 66
+    # withdrawals, above the uplifted fund after charges, so that the rider charges from
+    # the row's first month.  At the shipped return the committed model grows that fund at
+    # 5% from the valuation date, so the two paths part in month 0's growth; the guarantee
+    # stays in the money on the charge for the frame's first 36 months, and on the death
+    # benefit for 39.  The splice's variants reach the charge on their own grid.
     #
     # T1 holds at any count: S charges acquisition on the count in force at t = 0, which on a
     # point issued then is the count issued, as SEC charges it on pols_new_biz.  It skips one
@@ -1464,6 +1475,7 @@ SEC_SPECS: dict[str, SecSpec] = {
         state=_ULB_STATE,
         twin_state=_ULB_STATE,
         exempt=frozenset({"av_init_pp"}),
+        derived_refs={(4, 66): {"fund_return": 0.0}},
     ),
 }
 

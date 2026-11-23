@@ -294,6 +294,7 @@ reaches it or fails the suite. In the source repository,
 | 9 | derived | S point 4 at S month 240 | the GMDB point in policy year 21, its whole premium withdrawn and its guarantee 0, the step on and the allowance spent |
 | 10 | derived | S point 1 at S month 352 | in the last month before its fund is exhausted: a one-row frame |
 | 11 | future | S point 4, 13 months on | to be issued at `t = 13` |
+| 12 | derived | S point 4 at S month 66, S run under a `fund_return` of 0 | the GMDB point mid-way through policy year 6, its fund earning nothing since issue: its guarantee in the money and the rider charging |
 
 A derived row's `policy_count` is the count `ULB_UK_S` carries into that month, its
 `pols_if(d)`, and its state what S carries there, so the row continues the S projection
@@ -303,13 +304,23 @@ premium withdrawn. Its `policy_id` is the S row's with the month appended,
 `ULB-000001-M30`, and a future row's carries the months to issue, `ULB-000004-F13`. Row `t`
 of a generated point is month `t + source_mth` of its S point.
 
-No committed row holds the guarantee in the money, because no state `ULB_UK_S` reaches at
-its shipped References does after the issue month: its GMDB point's fund grows faster than
-its 5% withdrawals erode the guarantee, and in its issue month the guarantee exceeds the
-uplifted fund after the month's withdrawal by £82.88, on the death benefit alone; the
-rider charge, on the fund before the withdrawal, is 0 throughout. So the tests reach it
-otherwise: the splice adds the GMDB point at a 4% AMC, in the money from its sixth month,
-and a test writes point 9's withdrawals since issue at half its premium, as does T4's table.
+No state `ULB_UK_S` reaches at its shipped References has the rider charging after the
+issue month: its GMDB point's fund grows faster than its 5% withdrawals erode the
+guarantee, and in its issue month the guarantee exceeds the uplifted fund after the
+month's withdrawal by £82.88, on the death benefit alone; the rider charge, on the fund
+before the withdrawal, is 0 throughout. So point 12 is read from S run under a
+`fund_return` of 0, a fund that has earned nothing since issue, the spec's `derived_refs`:
+at month 66 it holds 0.729798 bonds, as at the shipped return, since no decrement reads a
+return, a fund of 67,232.39 and the withdrawals and the allowance the pattern gives, and
+its guarantee, 72,500, stands above the uplifted fund after charges, 67,457.08. Set on the
+model too, that return gives the row S's path over the whole of both frames, 143 months to
+policy month 209. At today's return, which takes over from the valuation date, the paths
+part in month 0's growth: the row's frame runs 203 months, to policy month 269, the rider
+charging in its first 36 and the death benefit paying the guarantee in its first 39, and
+only its opening state and its counts, which read no return, are S's. C2 freezes it, so
+that the rider charge is in every later version's fingerprint; the splice's GMDB point at
+a 4% AMC and a K14 test, which writes point 9's withdrawals since issue at half its
+premium, as T4's table does, reach the charge too.
 
 ## Counts and timings
 
