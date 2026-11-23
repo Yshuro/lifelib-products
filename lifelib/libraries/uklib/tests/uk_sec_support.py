@@ -1388,21 +1388,35 @@ def _wol_premium(s, d):
     return s.premium_pp(min(d, cessation - 1) if cessation > 0 else d)
 
 
+def _wol_crossover(s, d):
+    """``WOL_UK_S``'s crossover, a policy month, where it fell before month ``d``; else -1.
+
+    S's ``crossover_mth()``, searched from issue at S's References: history once it falls
+    before the month the row is valued at, which the in-force model reports and never
+    searches for again; -1 where it falls in month ``d`` or later, the projection's, or
+    never, which the in-force model searches for forward from ``d``.  -1 on a twin.
+    """
+    month = s.crossover_mth()
+    return month if 0 <= month < d else -1
+
+
 # WOL_UK_SEC's opening state (D6; UKLIB-SEC-PLAN.md §6.4): what WOL_UK_S carries into month
 # d, each per policy or a count, so that policy_count and the paid-up count are the only
 # weights.  The paid-up strand, S's pols_pu(d) and its cover per paid-up policy
 # (_wol_paid_up_cover); the premiums paid to the end of month d - 1 (_wol_premiums_paid);
-# and the cover and premium of the policy year under way, S's cover_pp(d) and its premium
+# the cover and premium of the policy year under way, S's cover_pp(d) and its premium
 # (_wol_premium), the history of increases S rebuilds from issue at today's rpi_rate,
-# esc_fixed_cover and esc_take_up.  At a twin's source_mth, 0 on every S point, these are
-# what S itself assumes at issue: no paid-up policy, nothing paid, and the sum assured and
-# the premium at issue.
+# esc_fixed_cover and esc_take_up; and the crossover, where it fell before month d
+# (_wol_crossover), which S searches for again from issue.  At a twin's source_mth, 0 on
+# every S point, these are what S itself assumes at issue: no paid-up policy, nothing
+# paid, the sum assured and the premium at issue, and no crossover.
 _WOL_STATE = {
     "pols_pu_init": lambda s, d: s.pols_pu(d),
     "pu_benefit_pp_init": _wol_paid_up_cover,
     "prem_cum_pp_init": _wol_premiums_paid,
     "cover_pp_init": lambda s, d: s.cover_pp(d),
     "premium_pp_init": _wol_premium,
+    "crossover_mth_init": _wol_crossover,
 }
 
 
@@ -1600,10 +1614,11 @@ SEC_SPECS: dict[str, SecSpec] = {
         derived_refs={(4, 66): {"fund_return": 0.0}},
         twin_arg_map=_ulb_claims_total,
     ),
-    # WOL's state is five columns (_WOL_STATE above), with no companion: the paid-up
+    # WOL's state is six columns (_WOL_STATE above), with no companion: the paid-up
     # strand's count and its cover per paid-up policy, which need no cohort of conversion
-    # months, since paid-up policies neither lapse nor escalate; the premiums paid; and
-    # the cover and premium of the policy year under way.  pols_if_init becomes
+    # months, since paid-up policies neither lapse nor escalate; the premiums paid; the
+    # cover and premium of the policy year under way; and the crossover, if it fell before
+    # the valuation date.  pols_if_init becomes
     # policy_count (the default), the full-cover count, and every S point is new business.
     # The derived rows are the anchor cell at 6, inside its moratorium and its first
     # policy year, its refund reading the premiums paid and its commission still due; the
@@ -1639,9 +1654,13 @@ SEC_SPECS: dict[str, SecSpec] = {
     #     every column both hold.
     #
     # Phase 2 sizes its caches from the contract:
-    #   t 0..1,345: a policy issued at issue_age_min, 18, to omega_age, 120, a cover of
-    #     1,224 months, issued future_horizon_mth, 120 months, after the valuation date, a
-    #     frame of 1,344 months, its month after, and the roll-forward's t + 1 there.
+    #   t 0..1,356: a policy issued at issue_age_min, 18, to the largest omega_age
+    #     proj_len() accepts, 121, a year past mort_table.csv's last age, a cover of 1,236
+    #     months, issued future_horizon_mth, 120 months, after the valuation date: a frame
+    #     of 1,356 months, t 0..1,355, and the roll-forward's t + 1, 1,356, where it reads
+    #     the month after the frame.  At the shipped omega_age of 120 the frame is 1,344.
+    #     The C step carries a contract Reference for the largest omega_age, 121, from which
+    #     it derives the t cache, as ULB's compile step derives its own.
     # proj_len() refuses an issue age below issue_age_min, one at or past omega_age, and a
     # point at or past the limiting age at the valuation date, each naming the point.
     "WOL_UK_SEC": SecSpec(

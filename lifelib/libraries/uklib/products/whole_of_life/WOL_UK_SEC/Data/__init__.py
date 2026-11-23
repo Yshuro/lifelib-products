@@ -49,11 +49,12 @@ better than the population and self-selects worse, so it takes a population shap
 anti-selection loading. The FCA's price differential between the two designs — £71.73
 against £8.10 per £1,000 of cover — is the scale of the error a basis mix-up produces.
 
-**The model point table is checked as it is read.** Seven of its columns are the in-force
+**The model point table is checked as it is read.** Eight of its columns are the in-force
 interface: ``policy_count`` and ``duration_mth``, as in ``basiclife.BasicTerm_SE``, and
 the opening state of a point in force, the paid-up strand's ``pols_pu_init`` and
-``pu_benefit_pp_init``, the premiums paid, ``prem_cum_pp_init``, and the cover and premium
-of the policy year under way, ``cover_pp_init`` and ``premium_pp_init``.
+``pu_benefit_pp_init``, the premiums paid, ``prem_cum_pp_init``, the cover and premium
+of the policy year under way, ``cover_pp_init`` and ``premium_pp_init``, and the
+crossover, if it fell before the valuation date, ``crossover_mth_init``.
 :func:`model_point_table` refuses a table that lacks one, repeats a ``point_id``, holds a
 count, a duration or a state no policy can have, or a policy to be issued more than
 ``future_horizon_mth`` months after the valuation date, 120 as shipped: future new
@@ -110,9 +111,9 @@ def input_dir():
 def model_point_table():
     """The model point table, read from *model_point_table_sec.csv* and checked.
 
-    Indexed by ``point_id``. Seven columns are the in-force interface: ``policy_count``
+    Indexed by ``point_id``. Eight columns are the in-force interface: ``policy_count``
     and ``duration_mth``, the completed policy months at the valuation date, as in
-    ``basiclife.BasicTerm_SE``, and the five of a point's opening state. The rest are
+    ``basiclife.BasicTerm_SE``, and the six of a point's opening state. The rest are
     :mod:`~.WOL_UK_S`'s, but ``pols_if_init``, which ``policy_count`` replaces, and
     ``row_kind``, ``source_policy_id`` and ``source_mth``, which record where the generator
     took each shipped row from and which no formula reads.
@@ -120,7 +121,7 @@ def model_point_table():
     The checks run over the whole table at once, and the first that fails raises
     ``ValueError``, naming the missing column or every point it fails on:
 
-    1. the seven in-force columns are present;
+    1. the eight in-force columns are present;
     2. no ``point_id`` appears twice;
     3. ``policy_count`` is a number, zero or more: the policies on full cover;
     4. ``duration_mth`` is a whole number of months, below ``2**53`` in size, which numpy
@@ -129,11 +130,13 @@ def model_point_table():
     5. no policy is issued more than ``future_horizon_mth`` months after the valuation
        date, so ``duration_mth`` is ``-future_horizon_mth`` or more. At 0 the model takes
        no future new business, and the message says so; a horizon that is not a whole
-       number of months, 0 or more, is itself refused, since a NaN one fails every
-       comparison and so would admit every policy, and an infinite one bounds nothing;
+       number of months, 0 or more, below ``2**53``, is itself refused, since a NaN one
+       fails every comparison and so would admit every policy, and an infinite one bounds
+       nothing;
     6. the opening state is a number, zero or more: ``pols_pu_init``, a count;
        ``pu_benefit_pp_init``, ``prem_cum_pp_init``, ``cover_pp_init`` and
-       ``premium_pp_init``, amounts per policy;
+       ``premium_pp_init``, amounts per policy; and ``crossover_mth_init`` a whole number
+       of months, -1 or more, below ``2**53``;
     7. each of ``variant_adb_2x`` and ``variant_paid_up`` is True or False. pandas reads a
        column of them as booleans, but one blank or one other text leaves the whole
        column text or mixed, and ``bool("False")`` is True;
@@ -147,8 +150,8 @@ def model_point_table():
         ``cessation_months`` above 0, which the paid-up value is measured to, and which
         :mod:`~.WOL_UK_S` asks for only when a projection reaches it;
     11. a policy not yet in force, ``duration_mth`` 0 or less, holds the issue values: no
-        paid-up policy, no paid-up cover and no premium paid, and the sum assured and the
-        premium at issue as its cover and premium;
+        paid-up policy, no paid-up cover and no premium paid, the sum assured and the
+        premium at issue as its cover and premium, and no crossover, ``-1``;
     12. a policy in force fewer than 12 months, before its first anniversary, holds the
         sum assured and the premium at issue, no increase having been given;
     13. on a level point the cover and the premium are the sum assured and the premium at
@@ -160,18 +163,35 @@ def model_point_table():
         a would-be lapse converts once half the expected payments have been made, and a
         policy converted at the end of a month is paid-up from the start of the next;
     15. ``pu_benefit_pp_init``, an amount per paid-up policy, is 0 where no paid-up policy
-        is in force.
+        is in force;
+    16. the premiums paid, ``prem_cum_pp_init``, are the premiums due so far,
+        ``min(duration_mth, cessation_months)`` or ``duration_mth`` where premiums are
+        payable for life, times the premium at issue on a level point, and on an
+        escalating one between that and the same count times ``premium_pp_init``, the
+        latest premium, each increase being floored at 0;
+    17. where paid-up policies are in force, the paid-up cover per policy lies between the
+        sum assured times the payments a conversion needs, half of ``cessation_months``
+        rounded up, and ``cover_pp_init`` times the payments made, each over
+        ``cessation_months``: each policy converted at ``SA(t) x N_paid / N_expected``,
+        on a cover at least the sum assured and at most today's, having made at least half
+        its payments and no more than have fallen due;
+    18. a crossover before the valuation date, ``crossover_mth_init`` 0 or more, fell in a
+        premium-paying policy month before it, below ``duration_mth`` and below
+        ``cessation_months`` where premiums cease; there was one, ``crossover_mth_init``
+        not -1, where the premiums paid exceed the cover; and on a level point it is the
+        month the contract puts it in, the whole number of premiums the sum assured holds,
+        ``P x t* <= SA < P x (t* + 1)``.
 
-    Each rule of the history holds of every state :mod:`~.WOL_UK_S` reaches, under any
-    References: the relations it states are the contract's. The cumulative premiums are
-    held to no premium schedule, since a policy's premiums paid are what its history
-    paid.
+    Rules 16 to 18 hold each amount to the cent, within half a cent of its bound, so that
+    an extract rounded to the cent reads.  Each rule of the history holds of every state
+    :mod:`~.WOL_UK_S` reaches, under any References: the relations it states are the
+    contract's.
     """
     name = model_point_file                                          # noqa: F821
     table = pd.read_csv(input_dir() / name, index_col="point_id")    # noqa: F821
     state_columns = ("pols_pu_init", "pu_benefit_pp_init", "prem_cum_pp_init",
                      "cover_pp_init", "premium_pp_init")
-    for column in ("policy_count", "duration_mth", *state_columns):
+    for column in ("policy_count", "duration_mth", *state_columns, "crossover_mth_init"):
         if column not in table.columns:
             raise ValueError(f"{name} has no {column} column")
     repeated = table.index[table.index.duplicated()].unique().tolist()
@@ -192,9 +212,10 @@ def model_point_table():
         raise ValueError(f"{name}: duration_mth must be below 2**53 months; it is not at "
                          f"point_id {bad}")
     horizon = future_horizon_mth                                     # noqa: F821
-    if not (horizon >= 0 and horizon % 1 == 0):
+    if not (horizon >= 0 and horizon < 2.0 ** 53 and horizon % 1 == 0):
         raise ValueError(f"future_horizon_mth must be a whole number of months, 0 or more, "
-                         f"not {horizon}")
+                         f"below 2**53, not {horizon}")
+    horizon = int(horizon)
     bad = table.index[months < -horizon].tolist()
     if bad and horizon == 0:
         raise ValueError(f"{name}: duration_mth must be 0 or more: this model takes no "
@@ -211,6 +232,12 @@ def model_point_table():
             raise ValueError(f"{name}: {column} must be a number, zero or more; it is not "
                              f"at point_id {bad}")
         state[column] = v
+    crossover = pd.to_numeric(table["crossover_mth_init"], errors="coerce")  # noqa: F821
+    bad = table.index[~((crossover >= -1) & (crossover % 1 == 0)
+                        & (crossover < 2.0 ** 53))].tolist()
+    if bad:
+        raise ValueError(f"{name}: crossover_mth_init must be a whole number of months, -1 "
+                         f"or more, below 2**53; it is not at point_id {bad}")
     flags = {}
     for column in ("variant_adb_2x", "variant_paid_up"):
         flag = table[column]
@@ -260,6 +287,10 @@ def model_point_table():
             what = at_issue.get(column, "0")
             raise ValueError(f"{name}: {column} must be {what} on a policy not yet in "
                              f"force, duration_mth 0 or less; it is not at point_id {bad}")
+    bad = table.index[(months <= 0) & (crossover != -1)].tolist()
+    if bad:
+        raise ValueError(f"{name}: crossover_mth_init must be -1 on a policy not yet in "
+                         f"force, duration_mth 0 or less; it is not at point_id {bad}")
     for column in ("cover_pp_init", "premium_pp_init"):
         bad = table.index[(months > 0) & (months < 12)
                           & (state[column] != issue[column])].tolist()
@@ -293,6 +324,58 @@ def model_point_table():
     if bad:
         raise ValueError(f"{name}: pu_benefit_pp_init must be 0 where no paid-up policy is "
                          f"in force, pols_pu_init 0; it is not at point_id {bad}")
+    cent = 0.005
+    in_force = months > 0
+    due = months.where((cessation <= 0) | (months <= cessation), cessation)
+    premium, sa = numbers["premium_mth"], numbers["sum_assured"]
+    paid = state["prem_cum_pp_init"]
+    low = premium * due
+    bad = table.index[in_force & level & ~((paid >= low - cent)
+                                           & (paid <= low + cent))].tolist()
+    if bad:
+        raise ValueError(f"{name}: prem_cum_pp_init must be premium_mth times the premiums "
+                         f"due, min(duration_mth, cessation_months), to the cent, on a "
+                         f"level point; it is not at point_id {bad}")
+    high = state["premium_pp_init"] * due
+    bad = table.index[in_force & ~level & ~((paid >= low - cent)
+                                            & (paid <= high + cent))].tolist()
+    if bad:
+        raise ValueError(f"{name}: prem_cum_pp_init must lie between premium_mth and "
+                         f"premium_pp_init times the premiums due, min(duration_mth, "
+                         f"cessation_months), to the cent, on an escalating point; it is not "
+                         f"at point_id {bad}")
+    cover_pu = state["pu_benefit_pp_init"]
+    pu_low = sa * (-(-cessation // 2)) / cessation
+    pu_high = state["cover_pp_init"] * due / cessation
+    bad = table.index[(state["pols_pu_init"] > 0)
+                      & ~((cover_pu >= pu_low - cent) & (cover_pu <= pu_high + cent))].tolist()
+    if bad:
+        raise ValueError(f"{name}: pu_benefit_pp_init must lie between sum_assured times "
+                         f"the payments a conversion needs, half of cessation_months rounded "
+                         f"up, and cover_pp_init times the payments made, min(duration_mth, "
+                         f"cessation_months), each over cessation_months, to the cent, where "
+                         f"paid-up policies are in force; it is not at point_id {bad}")
+    last = cessation.where(cessation > 0, months)
+    bad = table.index[in_force & (crossover >= 0)
+                      & ~((crossover < months) & (crossover < last))].tolist()
+    if bad:
+        raise ValueError(f"{name}: crossover_mth_init must be -1, or a premium-paying policy "
+                         f"month before the valuation date, below duration_mth and "
+                         f"cessation_months; it is not at point_id {bad}")
+    bad = table.index[in_force & (crossover == -1)
+                      & (paid > state["cover_pp_init"] + cent)].tolist()
+    if bad:
+        raise ValueError(f"{name}: crossover_mth_init must not be -1 where the premiums paid "
+                         f"exceed the cover, prem_cum_pp_init above cover_pp_init, to the "
+                         f"cent: they crossed it before the valuation date; it is not at "
+                         f"point_id {bad}")
+    bad = table.index[in_force & level & (crossover >= 0)
+                      & ~((premium * crossover <= sa + cent)
+                          & (premium * (crossover + 1) > sa - cent))].tolist()
+    if bad:
+        raise ValueError(f"{name}: crossover_mth_init must be the month the contract puts the "
+                         f"crossover in on a level point, the whole number of premiums the sum "
+                         f"assured holds, to the cent; it is not at point_id {bad}")
     return table
 
 

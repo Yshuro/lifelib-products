@@ -107,6 +107,7 @@ which gives the model's int Reference of its name where the model has one, as at
 """
 import ast
 import dataclasses
+import errno
 import inspect
 import io
 import itertools
@@ -163,7 +164,7 @@ SPLICE_MTHS = {1: _O50, 2: _O50, 3: _O50, 4: (*_O50, 185, 186), 5: _UW, 6: _UW,
 # date and off its anniversaries (USLIB-SEC-PLAN.md §7.1, *Record — M14*, *Splice grid*).
 FUTURE_MTHS = (1, 12, 120)
 
-# Four more S points, in the splice's copy of S's table and never in the committed one,
+# Five more S points, in the splice's copy of S's table and never in the committed one,
 # each one of S's points changed so as to reach what S's own points cannot:
 #
 # 8, S point 4 with the pro-rata paid-up value: conversions at a cover that RPI has
@@ -174,7 +175,12 @@ FUTURE_MTHS = (1, 12, 120)
 #   entry age of the over-50s cell, a cessation of its own, total premiums below the cash
 #   sum, so no crossover, and the cap from policy month 360;
 # 11, S point 6 as a female smoker: the underwritten cell's other mortality rows, the
-#   assured female smoker's, which no S point reads, capped from policy month 852.
+#   assured female smoker's, which no S point reads, capped from policy month 852;
+# 12, S point 3 with its premiums ceasing after 239 months, an odd number: the first
+#   conversion at the end of policy month 119, when 120 of 239 payments, more than half,
+#   have been made, so that the paid-up strand is in force from 120, half of 239 rounded
+#   up, where half rounded down would be 119; with a cessation a multiple of 12 the two
+#   agree.
 #
 # Each variant is (the S point it changes, the columns it changes); the policy_id keeps
 # the generated ids apart.
@@ -183,11 +189,13 @@ VARIANTS = {
     9: (2, {"policy_id": "WOL-900009", "variant_paid_up": True}),
     10: (1, {"policy_id": "WOL-900010", "entry_age": 80, "cessation_months": 120}),
     11: (6, {"policy_id": "WOL-900011", "sex": "F", "smoker": "S"}),
+    12: (3, {"policy_id": "WOL-900012", "cessation_months": 239}),
 }
 VARIANT_MTHS = {8: (118, 119, 120, 121, 185, 186, 200, 239, 240, 241),
                 9: (11, 12, 13, 119, 120, 200),
                 10: (1, 11, 12, 13, 119, 120, 121, 359, 360, 361, 479),
-                11: (12, 642, 643, 851, 852, 853, 959)}
+                11: (12, 642, 643, 851, 852, 853, 959),
+                12: (119, 120, 121, 238, 239, 240)}
 LATE_FUTURES = tuple((p, 13) for p in VARIANTS)
 
 
@@ -244,6 +252,7 @@ CORE_SPLICES = {
     ("derived", 4, 12): "the RPI point on its first anniversary, its first increase",
     ("derived", 4, 186): "the RPI point past its crossover",
     ("derived", 4, 239): "the RPI point in its last premium month",
+    ("derived", 4, 241): "the RPI point after its premiums ceased, its crossover history",
     ("derived", 5, 12): "underwritten on its first anniversary, the suicide window over",
     ("derived", 5, 888): "underwritten in its first capped month",
     ("derived", 6, 11): "underwritten increasing, inside the suicide window",
@@ -260,6 +269,7 @@ CORE_SPLICES = {
     ("derived", 10, 360): "issued at 80, its first capped month",
     ("derived", 11, 12): "an underwritten female smoker on its first anniversary",
     ("derived", 11, 852): "an underwritten female smoker in its first capped month",
+    ("derived", 12, 120): "an odd cessation, its strand in force from half of 239 up",
 }
 CORE_FUTURES = {
     (1, 1): "issued a month off the valuation anniversaries",
@@ -378,7 +388,7 @@ IN_COVER_ONLY = ("age", "duration", "policy_year", "mort_rate_mth", "lapse_rate_
 # The opening state, in the table's order, and the cells running in force adds to
 # WOL_UK_S's, each of which the symbol map must name.
 STATE = ("pols_pu_init", "pu_benefit_pp_init", "prem_cum_pp_init", "cover_pp_init",
-         "premium_pp_init")
+         "premium_pp_init", "crossover_mth_init")
 NEW_CELLS = ("policy_count", "duration_mth_init", "t_entry", "is_active", "limit_mth",
              "pols_new_biz", *STATE)
 
@@ -796,6 +806,9 @@ AT_VALUATION = {
     "valued once premiums have ceased": lambda x: (
         0 < x.cessation_mths() <= x.duration_mth_init()),
     "valued past the crossover": lambda x: 0 <= x.crossover_mth() < x.duration_mth_init(),
+    "crossover_mth_init 0 or more": lambda x: x.crossover_mth_init() >= 0,
+    "an escalating point valued once premiums have ceased": lambda x: (
+        x.escalation() != "level" and 0 < x.cessation_mths() <= x.duration_mth_init()),
 }
 IN_FRAME = {
     "the moratorium": lambda x, t: x.in_moratorium(t),
@@ -1262,10 +1275,11 @@ def test_scaling_the_counts_scales_every_flow_and_no_per_policy_value(tmp_path):
     benefits, the payments made, the rates, both clocks, the flags) agrees bit for bit at
     every argument that sweep cached.  So a flow that dropped a count, or read it as whole
     policies, which a table of counts of 1 hides from every comparison with S and a count
-    doubled hides here, fails (USLIB-SEC-PLAN.md §5.2, T4, precised at M11); and so does a
-    paid-up flow weighted by the full-cover count, which scaling ``policy_count`` alone
-    would pass.  Each counted cell but the residual is nonzero on some point, the paid-up
-    ones on the committed paid-up rows.
+    doubled hides here, fails (USLIB-SEC-PLAN.md §5.2, T4, precised at M11).  Each counted
+    cell but the residual is nonzero on some point, the paid-up ones on the committed
+    paid-up rows.  A paid-up flow weighted by the full-cover count scales with both counts
+    alike, so this test cannot see it: the month-on restatement, which moves one count and
+    not the other, does.
     """
     table = _committed()
     base = mx.read_model(_sec_inputs(tmp_path / "base", table), name=_name("counted"))
@@ -1321,7 +1335,8 @@ def test_a_point_restated_a_month_on_continues_its_own_flows(tmp_path):
     its month 1: the full-cover count, ``pols_if_at(1, "BEF_NB")``; the paid-up count,
     ``pols_pu(1)``, and its cover per paid-up policy, ``pu_benefit(1) / pols_pu(1)``; the
     premiums paid, ``prem_cum_pp(0)``; the cover, ``cover_pp(1)``; and the premium,
-    ``premium_pp(1)``, or once the premiums have ceased by month 1 the last one paid.  The
+    ``premium_pp(1)``, or once the premiums have ceased by month 1 the last one paid; and
+    the crossover, if it fell in month 0 or before.  The
     restatement must continue the point's own frames, its row ``t`` the point's row
     ``t + 1``, in ``result_cf`` and ``result_pols``, every flow among them, to 1e-9
     relative, floored at 1e-9 for what a state read back from the CSV an ulp off moves
@@ -1343,6 +1358,7 @@ def test_a_point_restated_a_month_on_continues_its_own_flows(tmp_path):
             if p.proj_len() < 2:
                 continue
             cessation, d = p.cessation_mths(), p.duration_mth_init()
+            crossover = p.crossover_mth()
             premium = (p.premium_pp(1) if cessation <= 0 or d + 1 < cessation
                        else p.premium_pp(0) if d + 1 == cessation else p.premium_pp_init())
             paid_up = p.pols_pu(1)
@@ -1353,7 +1369,8 @@ def test_a_point_restated_a_month_on_continues_its_own_flows(tmp_path):
                 pols_pu_init=paid_up,
                 pu_benefit_pp_init=p.pu_benefit(1) / paid_up if paid_up > 0 else 0.0,
                 prem_cum_pp_init=p.prem_cum_pp(0), cover_pp_init=p.cover_pp(1),
-                premium_pp_init=premium)
+                premium_pp_init=premium,
+                crossover_mth_init=crossover if 0 <= crossover <= d else -1)
             row.index = pd.Index([top], name="point_id")
             rows.append(row)
             pairs.append((label, top))
@@ -1446,6 +1463,26 @@ _FIRST_YEAR = ("on a policy in force fewer than 12 months, before its first anni
                "it is not at point_id")
 _EARLIEST = ("before the first policy month a converted policy can be in force at, half "
              "of cessation_months, rounded up; it is not at point_id")
+_CROSS_WHOLE = ("{file}: crossover_mth_init must be a whole number of months, -1 or more, "
+                "below 2**53; it is not at point_id ")
+_CROSS_MONTH = ("{file}: crossover_mth_init must be -1, or a premium-paying policy month "
+                "before the valuation date, below duration_mth and cessation_months; it is "
+                "not at point_id ")
+_CROSS_LEVEL = ("{file}: crossover_mth_init must be the month the contract puts the "
+                "crossover in on a level point, the whole number of premiums the sum assured "
+                "holds, to the cent; it is not at point_id ")
+_PAID_LEVEL = ("{file}: prem_cum_pp_init must be premium_mth times the premiums due, "
+               "min(duration_mth, cessation_months), to the cent, on a level point; it is "
+               "not at point_id [8]")
+_PAID_ESCALATING = ("{file}: prem_cum_pp_init must lie between premium_mth and "
+                    "premium_pp_init times the premiums due, min(duration_mth, "
+                    "cessation_months), to the cent, on an escalating point; it is not at "
+                    "point_id [11]")
+_PU_COVER = ("{file}: pu_benefit_pp_init must lie between sum_assured times the payments a "
+             "conversion needs, half of cessation_months rounded up, and cover_pp_init times "
+             "the payments made, min(duration_mth, cessation_months), each over "
+             "cessation_months, to the cent, where paid-up policies are in force; it is not "
+             "at point_id [10]")
 
 MALFORMED = [
     ("a negative count", _set("policy_count", [8], -0.1),
@@ -1590,6 +1627,57 @@ MALFORMED = [
     ("a paid-up cover on no paid-up policy", _set("pols_pu_init", [10], 0.0),
      "{file}: pu_benefit_pp_init must be 0 where no paid-up policy is in force, "
      "pols_pu_init 0; it is not at point_id [10]"),
+    # The first year's history at its first month: an increase a month after issue.
+    ("a cover a month after issue",
+     _then(_set("duration_mth", [14], 1), _set("cover_pp_init", [14], 5150.0)),
+     f"{{file}}: cover_pp_init must be the sum assured {_FIRST_YEAR} [14]"),
+    # The earliest paid-up month on an odd cessation: 239 months, half of which rounded up
+    # is 120, so a strand at 119 is one no conversion can have made, where half rounded
+    # down would admit it.
+    ("a paid-up count at half an odd cessation rounded down",
+     _then(_set("cessation_months", [10], 239), _set("duration_mth", [10], 119)),
+     f"{{file}}: pols_pu_init must be 0 {_EARLIEST} [10]"),
+    ("a crossover not whole", _set("crossover_mth_init", [10], 166.5), _CROSS_WHOLE + "[10]"),
+    ("a crossover below -1", _set("crossover_mth_init", [11], -2), _CROSS_WHOLE + "[11]"),
+    ("a blank crossover", _set("crossover_mth_init", [13], float("nan")),
+     _CROSS_WHOLE + "[13]"),
+    ("a crossover on new business", _set("crossover_mth_init", [1], 166),
+     "{file}: crossover_mth_init must be -1 on a policy not yet in force, duration_mth 0 "
+     "or less; it is not at point_id [1]"),
+    ("a crossover in the valuation month", _set("crossover_mth_init", [9], 166),
+     _CROSS_MONTH + "[9]"),
+    ("a crossover after cessation",
+     _then(_set("duration_mth", [13], 310), _set("crossover_mth_init", [13], 305)),
+     _CROSS_MONTH + "[13]"),
+    ("premiums paid past the cover with no crossover",
+     _set("crossover_mth_init", [10], -1),
+     "{file}: crossover_mth_init must not be -1 where the premiums paid exceed the cover, "
+     "prem_cum_pp_init above cover_pp_init, to the cent: they crossed it before the "
+     "valuation date; it is not at point_id [10]"),
+    ("a level crossover a month early", _set("crossover_mth_init", [10], 165),
+     _CROSS_LEVEL + "[10]"),
+    ("a level crossover a month late", _set("crossover_mth_init", [10], 167),
+     _CROSS_LEVEL + "[10]"),
+    # The premiums paid: the review's refund of 1,000,030 on a 5,000 policy, and each
+    # bound a cent outside.
+    ("a million paid on a level point", _set("prem_cum_pp_init", [8], 1e6), _PAID_LEVEL),
+    ("a cent short of the level premiums", _set("prem_cum_pp_init", [8], 179.99),
+     _PAID_LEVEL),
+    ("a cent past the level premiums", _set("prem_cum_pp_init", [8], 180.01), _PAID_LEVEL),
+    ("a cent short of the premiums at issue", _set("prem_cum_pp_init", [11], 5579.99),
+     _PAID_ESCALATING),
+    ("a cent past the latest premium", lambda t: _set(
+        "prem_cum_pp_init", [11], t.at[11, "premium_pp_init"] * 186 + 0.01)(t),
+     _PAID_ESCALATING),
+    # The paid-up cover: the review's 0 and 1e7 beside paid-up policies, and each bound a
+    # cent outside, 5,000 x 120 / 240 and 5,000 x 200 / 240.
+    ("no paid-up cover beside paid-up policies", _set("pu_benefit_pp_init", [10], 0.0),
+     _PU_COVER),
+    ("a paid-up cover of 1e7", _set("pu_benefit_pp_init", [10], 1e7), _PU_COVER),
+    ("a cent short of the paid-up cover", _set("pu_benefit_pp_init", [10], 2499.99),
+     _PU_COVER),
+    ("a cent past the paid-up cover",
+     _set("pu_benefit_pp_init", [10], 5000.0 * 200 / 240 + 0.01), _PU_COVER),
 ]
 
 
@@ -1672,9 +1760,11 @@ def test_the_future_horizon_is_a_reference_that_bounds_future_business(tmp_path)
     120 months and at 13, the shortest horizon that admits it, and is refused at 12, by
     name.  At 0 the model takes no future new business, D4's fallback for a product that
     cannot support it, and the message says so.  A horizon that is not a whole number of
-    months, 0 or more, is itself refused, a NaN and an infinity among them: either would
-    admit every policy.  Setting the Reference clears the table, so each value is read
-    afresh.
+    months, 0 or more, below ``2**53``, is itself refused, a NaN and an infinity among
+    them: either would admit every policy.  A whole number written as a float, ``13.0``,
+    reads as 13 does, and ``2**53 - 1``, the largest whole number the compiled model holds
+    exactly, reads; ``2**53`` does not.  Setting the Reference clears the table, so each
+    value is read afresh.
     """
     future = _label(_committed(), "future", 4, -13)
     later = (f"{TABLE}: duration_mth must be -12 or more, a policy issued at most 12 months "
@@ -1684,11 +1774,12 @@ def test_the_future_horizon_is_a_reference_that_bounds_future_business(tmp_path)
     model = mx.read_model(_sec_inputs(tmp_path, _committed()), name=_name("horizon"))
     try:
         assert model.Data.future_horizon_mth == 120
-        off = "future_horizon_mth must be a whole number of months, 0 or more, not {}"
-        for horizon, refusal in ((13, None), (12, later), (0, no_future),
+        off = ("future_horizon_mth must be a whole number of months, 0 or more, below "
+               "2**53, not {}")
+        for horizon, refusal in ((13, None), (12, later), (0, no_future), (13.0, None),
                                  *((h, off.format(h)) for h in (
-                                     -1, 12.5, math.nan, math.inf, -math.inf)),
-                                 (120, None)):
+                                     -1, 12.5, math.nan, math.inf, -math.inf, WHOLE)),
+                                 (WHOLE - 1, None), (120, None)):
             model.Data.future_horizon_mth = horizon
             if refusal is None:
                 assert len(model.Data.model_point_table()) == len(_committed()), horizon
@@ -1715,6 +1806,15 @@ def _run_sec(script, *args, check=True):
     return done.stdout.decode("ascii").replace("\r\n", "\n")
 
 
+def _moved_on(label, months):
+    """An edit that moves the anchor cell's row ``label`` on to policy month ``months``,
+    past its cessation at 240, with the history the move gives it: 240 premiums of 30
+    paid, and its crossover at 166, so that ``Data`` reads it."""
+    return _then(_set("duration_mth", [label], months),
+                 _set("prem_cum_pp_init", [label], 30.0 * 240),
+                 _set("crossover_mth_init", [label], 166))
+
+
 def test_a_point_past_the_limiting_age_is_refused_by_proj_len(tmp_path):
     """A point at or past the limiting age has no frame, and ``proj_len()`` refuses it.
 
@@ -1729,7 +1829,7 @@ def test_a_point_past_the_limiting_age_is_refused_by_proj_len(tmp_path):
     And one month earlier, 599, the last month before the limiting age, projects one month.
     """
     moved = _label(_committed(), "derived", 1, 166)
-    model = _read_edited(tmp_path, _set("duration_mth", [moved], 600))
+    model = _read_edited(tmp_path, _moved_on(moved, 600))
     message = (f"point_id {moved}: duration_mth 600 is at or past the limiting age, policy "
                f"month 600, omega_age 120")
     try:
@@ -1737,7 +1837,7 @@ def test_a_point_past_the_limiting_age_is_refused_by_proj_len(tmp_path):
         _refused(_point(model, moved).result_cf, message)
     finally:
         model.close()
-    model = _read_edited(tmp_path / "last", _set("duration_mth", [moved], 599))
+    model = _read_edited(tmp_path / "last", _moved_on(moved, 599))
     try:
         assert len(_point(model, moved).result_cf()) == 1
     finally:
@@ -1878,7 +1978,7 @@ DOMAINS = [
     *_whole_domain("issue_age_min", (0,)),
     ("issue_age_min=2**53-1", {"issue_age_min": WHOLE - 1},
      f"point_id 1: the issue age, 70, is below issue_age_min, {int(WHOLE - 1)}"),
-    *_whole_domain("omega_age", (120, 121), below=False),
+    *_whole_domain("omega_age", (120, 121, 120.0), below=False),
     ("omega_age=122", {"omega_age": 122}, OMEGA.format(122)),
     ("omega_age=18", {"omega_age": 18}, OMEGA.format(18)),
     ("omega_age=19", {"omega_age": 19},
@@ -1916,56 +2016,172 @@ def test_each_reference_is_held_to_its_domain_at_both_edges(case, refs, message)
         model.close()
 
 
-# A cover, a premium and premiums paid that leave the floats, from an opening state and
-# References each in its domain, as (case, the table's edit, the point, the call, a report
-# that reads it, the message).  The RPI row at 186 opened on a cover or a premium near
+# A value that leaves the floats, from an opening state and References each in its domain,
+# as (case, the table's edit, the References set, the point, the call, a report that reads
+# it, the start of the message).  The RPI row at 186 opened on a cover or a premium near
 # the largest float, which its next anniversary's increase takes past it at t = 6, and on
-# premiums paid at it, which month 0's premium, opened at 1e300, takes past it at t = 0:
-# a premium of a few pounds would round back to the largest float.  Each is refused in the
-# cell where it first is, naming the point, the month and what makes it.
+# premiums paid at it, which month 0's premium, opened at 1e306, takes past it at t = 0: a
+# premium of a few pounds would round back to the largest float.  Then the review's
+# expenses, an expense of 1.7e308 inflated at 100% a year, past the floats at t = 48; a
+# commission rate of 1e308; a commission and an expense each just inside the floats, whose
+# sum, the net cash flow, is not; a count of 1e307 paying 30 a month; a count of 1e300
+# with a cover of 1e300, whose claims leave the floats; a paid-up count and cover of 1e300
+# and 6e299, whose summed paid-up cover does; and the double accidental benefit on a cover
+# of 1e308, from the first anniversary.  Each is refused in the cell where it first is,
+# naming the point, the month and what makes it.
+NET = 1.7e308
 PAST_THE_FLOATS = [
-    ("a cover past the floats", _set("cover_pp_init", [11], 1.79e308), 11, ("cover_pp", 6),
+    ("a cover", _set("cover_pp_init", [11], 1.79e308), {}, 11, ("cover_pp", 6),
      "result_cf",
      "point_id 11: the cover cover_pp(6) is inf, not a finite number, from cover_pp_init "
      "1.79e+308 and an annual increase of 0.03"),
-    ("a premium past the floats", _set("premium_pp_init", [11], 1.79e308), 11,
-     ("premium_pp", 6), "result_cf",
+    ("a premium", _set("premium_pp_init", [11], 1.79e308), {}, 11, ("premium_pp", 6),
+     "result_cf",
      "point_id 11: the premium premium_pp(6) is inf, not a finite number, from "
      "premium_pp_init 1.79e+308 and an annual increase of 0.045"),
-    ("premiums paid past the floats",
-     _then(_set("prem_cum_pp_init", [11], BIG), _set("premium_pp_init", [11], 1e300)), 11,
-     ("prem_cum_pp", 0), "result_pols",
+    ("premiums paid",
+     _then(_set("prem_cum_pp_init", [11], BIG), _set("premium_pp_init", [11], 1e306)), {},
+     11, ("prem_cum_pp", 0), "result_pols",
      "point_id 11: the premiums paid prem_cum_pp(0) are inf, not a finite number, from "
      "prem_cum_pp_init 1.7976931348623157e+308"),
+    ("the expenses", None, {"expense_maint_o50": NET, "inflation_rate": 1.0}, 1,
+     ("expenses", 48), "result_cf",
+     "point_id 1: the expenses expenses(48) are inf, not a finite number, from "
+     "expense_acq_o50 150.0, expense_maint_o50 1.7e+308 and inflation_rate 1.0, on "
+     "pols_all(48) "),
+    ("the commission", None, {"comm_init_rate": 1e308}, 1, ("commissions", 0), "result_cf",
+     "point_id 1: the commission commissions(0) is inf, not a finite number, from "
+     "comm_init_rate 1e+308 on premiums(0) 30.0"),
+    ("the net cash flow", None, {"comm_init_rate": NET / 30, "expense_acq_o50": NET}, 1,
+     ("net_cf", 0), "result_cf",
+     "point_id 1: the net cash flow net_cf(0) is -inf, not a finite number, from premiums "
+     "30.0, claims "),
+    ("the premiums", _set("policy_count", [1], 1e307), {}, 1, ("premiums", 0), "result_cf",
+     "point_id 1: the premiums premiums(0) are inf, not a finite number, from premium_pp(0) "
+     "30.0 on pols_if(0) 1e+307 policies"),
+    ("the claims",
+     _then(_set("policy_count", [1], 1e300), _set("sum_assured", [1], 1e300),
+           _set("cover_pp_init", [1], 1e300)), {}, 1, ("claims", 0, "DEATH"), "result_cf",
+     "point_id 1: the claims claims(0, DEATH) are inf, not a finite number, from "
+     "pols_death(0) "),
+    ("the paid-up cover",
+     _then(_set("sum_assured", [10], 1e300), _set("cover_pp_init", [10], 1e300),
+           _set("pols_pu_init", [10], 1e300), _set("pu_benefit_pp_init", [10], 6e299),
+           _set("crossover_mth_init", [10], -1)), {}, 10, ("pu_benefit", 0), "result_cf",
+     "point_id 10: the paid-up cover pu_benefit(0) is inf, not a finite number, from "
+     "pols_pu_init 1e+300 paid-up policies at pu_benefit_pp_init 6e+299"),
+    ("a benefit",
+     _then(_set("sum_assured", [2], 1e308), _set("cover_pp_init", [2], 1e308)), {}, 2,
+     ("benefit_pp", 12, "ACC"), "result_cf",
+     "point_id 2: the benefit benefit_pp(12, ACC) is inf, not a finite number, from the "
+     "cover cover_pp(12) 1e+308"),
 ]
 
 
-@pytest.mark.parametrize("case, edit, point, call, report, message", PAST_THE_FLOATS,
+@pytest.mark.parametrize("case, edit, refs, point, call, report, message", PAST_THE_FLOATS,
                          ids=[c[0] for c in PAST_THE_FLOATS])
-def test_a_value_past_the_floats_is_refused_where_it_first_is(tmp_path, case, edit, point,
-                                                              call, report, message):
-    """A cover, a premium or premiums paid past the largest float is refused in its cell.
+def test_a_value_past_the_floats_is_refused_where_it_first_is(tmp_path, case, edit, refs,
+                                                              point, call, report, message):
+    """A value past the largest float is refused in the cell where it first is.
 
-    ``Data`` holds each opening amount to a finite number, so a value near the largest
-    float reads; an increase or a premium then takes it past the floats, where
-    ``WOL_UK_S`` would pay an infinite claim or compare an infinite total, every report
-    infinite and its checks NaN.  The cell where the value first leaves the floats refuses
-    it, naming the point, the month and what makes it, and so does a report that reads it
-    first: ``result_cf`` the cover and the premium, through the claims and the premiums,
-    and ``result_pols`` the premiums paid, which no cash flow reads on that point at the
+    ``Data`` and ``proj_len()`` hold each opening amount, count and Reference to a finite
+    number, so a value near the largest float reads; an increase, a premium, a count, an
+    inflation rate or a sum then takes a value the projection computes past the floats,
+    where ``WOL_UK_S`` would pay an infinite claim, charge an infinite expense or compare
+    an infinite total, every report infinite and its checks NaN or passing.  The cell where
+    the value first leaves the floats refuses it, naming the point, the month and what makes
+    it (:data:`PAST_THE_FLOATS`), and so does a report that reads it first: ``result_cf``,
+    or ``result_pols`` for the premiums paid, which no cash flow reads on that point at the
     shipped References (USLIB-SEC-PLAN.md §7.1, *Record — M1*; UKLIB-SEC-PLAN.md §6.6,
-    *Carried into M10 and after*).  The month before projects.
+    *Carried into M10 and after*).  The month before projects.  Each Reference is set on a
+    model just read (K7).
     """
-    model = _read_edited(tmp_path, edit)
+    model = _read_edited(tmp_path, edit or (lambda t: t))
     try:
+        for ref, value in refs.items():
+            setattr(model.Projection, ref, value)
         p = _point(model, point)
-        name, t = call
+        name, t, *rest = call
         if t > 0:
-            p.cells[name](t - 1)
-        _refused(lambda: p.cells[name](t), message)
+            p.cells[name](t - 1, *rest)
+        _refused(lambda: p.cells[name](t, *rest), message)
         _refused(p.cells[report], message)
     finally:
         model.close()
+
+
+# A step to the policy years that overflows the floats, from a Reference in its domain, as
+# (case, the References set, the S point whose twin is read, the call): each of the five
+# powers the projection raises, the cover's and the premium's steps, the inflation and
+# improvement factors and the crossover's search.  A step of 1e200 squares past the floats
+# at the second anniversary, t = 24.
+OVERFLOWING_POWERS = [
+    ("the cover's step", {"esc_fixed_cover": 1e200}, 6, ("cover_pp", 24)),
+    ("the premium's step", {"esc_fixed_prem": 1e200}, 6, ("premium_pp", 24)),
+    ("the inflation factor", {"inflation_rate": 1e200}, 1, ("inflation_factor", 24)),
+    ("the improvement factor", {"mort_improvement": -1e200}, 1, ("mort_improve_factor", 24)),
+    ("the crossover's search", {"esc_fixed_cover": 1e200}, 6, ("crossover_mth",)),
+]
+
+
+@pytest.mark.parametrize("case, refs, s_point, call", OVERFLOWING_POWERS,
+                         ids=[c[0] for c in OVERFLOWING_POWERS])
+def test_an_overflowing_power_raises_python_s_overflow_error(case, refs, s_point, call):
+    """A power that leaves the floats raises ``OverflowError``, as Python raises it.
+
+    The cells check what they compute, but a ``**`` whose result passes the largest float
+    raises before the cell can look at it: modelx runs the formula as Python does, and
+    Python's float power raises ``OverflowError`` with the platform's own message,
+    ``os.strerror(errno.ERANGE)``, "Numerical result out of range" on Linux, rather than
+    return an infinity.  So a step to the policy years at a Reference in its domain but large
+    enough, 1e200, is refused, not projected, though the refusal names neither the point nor
+    the Reference (:data:`OVERFLOWING_POWERS`).  The compiled model's ``pow`` returns an
+    infinity there, so its C step takes uslib's M22 form, Python's own float power where
+    the compiled one gives an infinity, so that both engines raise this error.  Each
+    Reference is set on a model just read (K7).
+    """
+    model = mx.read_model(model_path(SEC), name=_name("power"))
+    try:
+        for ref, value in refs.items():
+            setattr(model.Projection, ref, value)
+        p = _row(model, "twin", s_point, 0)
+        name, *args = call
+        with pytest.raises(Exception) as excinfo:
+            p.cells[name](*args)
+        text = str(excinfo.value)
+        assert "OverflowError" in text and os.strerror(errno.ERANGE) in text, text
+    finally:
+        model.close()
+
+
+def test_a_whole_limit_written_as_a_float_projects_as_the_int_does():
+    """``omega_age = 120.0`` projects what 120 projects, cell for cell (§6.4).
+
+    ``proj_len()`` holds ``omega_age``, ``issue_age_min`` and ``suicide_mths`` to whole
+    numbers, which ``120.0``, ``18.0`` and ``12.0`` are, and reads ``omega_age`` as the
+    ``int`` it is: a float limit would make ``proj_len()`` the float 600.0, on which every
+    report's ``range`` raises ``TypeError``, where the compiled model, typing the Reference
+    ``long long``, would project.  So with the three set as floats, on a model just read,
+    the twins of S's anchor and underwritten points, the paid-up point in force and the RPI
+    point issued later are what the shipped model makes of them in every cell, bit for bit,
+    each integer cell an ``int`` in both.
+    """
+    floats = mx.read_model(model_path(SEC), name=_name("floats"))
+    ints = mx.read_model(model_path(SEC), name=_name("ints"))
+    try:
+        floats.Projection.omega_age = 120.0
+        floats.Projection.issue_age_min = 18.0
+        floats.Projection.suicide_mths = 12.0
+        for case in (("twin", 1, 0), ("twin", 5, 0), ("derived", 3, 200), ("future", 4, -13)):
+            mine, theirs = _row(floats, *case), _row(ints, *case)
+            sweep(theirs)
+            assert twin_mismatches(theirs, mine, exempt=frozenset(), rtol=0.0,
+                                   atol=0.0) == [], case
+            for name in ("proj_len", "limit_mth", "t_entry", "duration_mth_init"):
+                assert type(mine.cells[name]()) is int, (case, name)
+    finally:
+        ints.close()
+        floats.close()
 
 
 def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
@@ -1981,8 +2197,13 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
     values, an RPI of 0 since issue, are read; and so is a level point valued after its
     premiums ceased, its premium the last one paid.  And each bound of the contract at its
     edge projects: issue at 18, 1,224 months to the limiting age, and issue at 119, 12
-    months.  The extra rows are copies of committed rows under labels of their own, 21 to
-    23.
+    months.  Then the history's bounds, each at its edge (``Data``'s rules 16 and 17): the
+    premiums paid on an escalating point at the premium at issue and at the latest premium
+    times the premiums due; on a level point a third of a cent past the premiums due, an
+    extract rounded to the cent; the paid-up cover at the sum assured's share at the first
+    conversion and at today's cover's share of the payments made; and an odd cessation, 239
+    months, at its first paid-up month, 120, where the two shares meet.  The extra rows are
+    copies of committed rows under labels of their own, 21 to 29.
     """
     committed = _committed()
     crossover = _label(committed, "derived", 1, 166)
@@ -1991,9 +2212,21 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
     rpi = _label(committed, "derived", 4, 186)
     entire = _label(committed, "derived", 3, 180)
     ceased = _label(committed, "derived", 7, 300)
-    copies = {21: (paid_up, {"duration_mth": 120}),
-              22: (rpi, {"cover_pp_init": 5000.0, "premium_pp_init": 30.0}),
-              23: (crossover, {"entry_age": 119, "duration_mth": 0, "prem_cum_pp_init": 0.0})}
+    latest = committed.at[rpi, "premium_pp_init"] * 186
+    copies = {21: (paid_up, {"duration_mth": 120, "prem_cum_pp_init": 3600.0,
+                             "pu_benefit_pp_init": 2500.0, "crossover_mth_init": -1}),
+              22: (rpi, {"cover_pp_init": 5000.0, "premium_pp_init": 30.0,
+                         "prem_cum_pp_init": 5580.0, "crossover_mth_init": 166}),
+              23: (crossover, {"entry_age": 119, "duration_mth": 0, "prem_cum_pp_init": 0.0}),
+              24: (rpi, {"prem_cum_pp_init": 5580.0}),
+              25: (rpi, {"prem_cum_pp_init": latest}),
+              26: (paid_up, {"pu_benefit_pp_init": 2500.0}),
+              27: (paid_up, {"pu_benefit_pp_init": 5000.0 * 200 / 240}),
+              28: (paid_up, {"cessation_months": 239, "duration_mth": 120,
+                             "prem_cum_pp_init": 3600.0,
+                             "pu_benefit_pp_init": 5000.0 * 120 / 239,
+                             "crossover_mth_init": -1}),
+              29: (_label(committed, "derived", 1, 6), {"prem_cum_pp_init": 180.004})}
 
     def edit(table):
         extra = []
@@ -2037,6 +2270,18 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
         young = _point(model, 5)
         assert len(young.result_cf()) == young.proj_len() == 1224
         assert young.check_pols_roll_fwd() and young.check_truncation()
+        for label in (24, 25):
+            edge = _point(model, label)
+            assert edge.prem_cum_pp(0) == edge.prem_cum_pp_init() + edge.premium_pp(0)
+        assert _point(model, 25).prem_cum_pp_init() == latest
+        for label in (26, 27, 28):
+            edge = _point(model, label)
+            assert edge.pu_benefit(0) == edge.pols_pu_init() * edge.pu_benefit_pp_init()
+            assert edge.pols_pu(0) > 0.0 and edge.proj_len() > 0
+        odd = _point(model, 28)
+        assert (odd.cessation_mths(), odd.duration_mth(0)) == (239, 120)
+        refund = _point(model, 29)
+        assert refund.benefit_pp(0, _code(refund, "NON_ACC")) == 180.004 + 30.0
     finally:
         model.close()
 
@@ -2114,6 +2359,14 @@ def _refused_in_force(folder, refs):
 # under it, and under no other set of inputs.
 LAPSE_ALL = {**SPLICED_REFS, "lapse_crossover_beta": 100.0}
 
+# The other inputs that move the states S reaches, each moving the cover, the premium, the
+# premiums paid and the crossover of an escalating point: an RPI of 8%, under which the
+# RPI point's premiums rise faster and it crosses at 201, and a take-up of a half, under
+# which both escalating points take half their increases.
+RPI_SET = {"rpi_rate": 0.08}
+TAKE_UP_SET = {"esc_take_up": 0.5}
+ESCALATED = {"cover_pp_init", "premium_pp_init", "prem_cum_pp_init", "crossover_mth_init"}
+
 
 def test_every_state_s_reaches_is_accepted_in_force(s_model, spliced, tmp_path):
     """Every state ``WOL_UK_S`` reaches is a valid opening state (T5).
@@ -2127,28 +2380,34 @@ def test_every_state_s_reaches_is_accepted_in_force(s_model, spliced, tmp_path):
     (USLIB-SEC-PLAN.md §5.2, T5, precised at M10).  The splice's stress moves three of the
     states S reaches: the full-cover count, the paid-up count and the paid-up cover per
     policy, through the stressed lapses and conversions past the crossover.  It leaves
-    alone the premiums paid, the cover and the premium, which per policy no decrement moves.
-    A stress that lapses every policy moves the counts to a full-cover count of 0 with
-    paid-up policies in force, which no other set reaches.  Expense inflation and
-    improvement move no state, each at 0 or on the valuation clock.  So the test runs on
-    each set of inputs on which those states differ (precised at M9), and asserts which
-    states each moves:
+    alone the premiums paid, the cover, the premium and the crossover, which per policy no
+    decrement moves.  A stress that lapses every policy moves the counts to a full-cover
+    count of 0 with paid-up policies in force, which no other set reaches.  The RPI and the
+    take-up move the other four on an escalating point: its cover, its premium, its
+    premiums paid and its crossover.  Expense inflation and improvement move no state, each
+    at 0 or on the valuation clock.  So the test runs on each set of inputs on which those
+    states differ (precised at M9), and asserts which states each moves:
 
     * S as shipped, its seven points under its own References, as T1 and the committed rows
       read it (``s_model``);
-    * the splice's, its points and four variants under :data:`SPLICED_REFS`, the stress
-      on (``spliced``);
+    * the splice's, its points and five variants under :data:`SPLICED_REFS`, the stress
+      on (``spliced``), an odd cessation among them;
     * the stress that lapses every policy, :data:`LAPSE_ALL`, on S's points, whose paid-up
-      point is paid-up entirely from policy month 167.
+      point is paid-up entirely from policy month 167;
+    * an RPI of 8%, :data:`RPI_SET`, on S's points, the RPI point crossing at 201;
+    * a take-up of a half, :data:`TAKE_UP_SET`, on S's points, both escalating points
+      taking half their increases.
 
     ``WOL_UK_SEC`` refuses no state ``WOL_UK_S`` reaches, so none is set aside.
     """
-    lapse_all = mx.read_model(model_path(TWIN), name=_name("lapse_all"))
+    extra = {"lapse_all": LAPSE_ALL, "rpi": RPI_SET, "take_up": TAKE_UP_SET}
+    read = {tag: mx.read_model(model_path(TWIN), name=_name(tag)) for tag in extra}
     try:
-        for ref, value in LAPSE_ALL.items():
-            setattr(lapse_all.Projection, ref, value)
+        for tag, refs in extra.items():
+            for ref, value in refs.items():
+                setattr(read[tag].Projection, ref, value)
         sets = {"shipped": (s_model, {}), "spliced": (spliced[0], SPLICED_REFS),
-                "lapse_all": (lapse_all, LAPSE_ALL)}
+                **{tag: (read[tag], refs) for tag, refs in extra.items()}}
         found, states = {}, {}
         for tag, (s, refs) in sets.items():
             reached = _states(s)
@@ -2159,13 +2418,17 @@ def test_every_state_s_reaches_is_accepted_in_force(s_model, spliced, tmp_path):
             if refused:
                 found[tag] = f"{len(refused)} refused, first: {refused[:5]}"
     finally:
-        lapse_all.close()
+        for model in read.values():
+            model.close()
     assert not found, found
-    shipped, splice, every = states["shipped"], states["spliced"], states["lapse_all"]
-    apart = _states_apart(shipped, splice)
+    shipped, every = states["shipped"], states["lapse_all"]
+    apart = _states_apart(shipped, states["spliced"])
     assert apart == {"policy_count", "pols_pu_init", "pu_benefit_pp_init"}, apart
     entire = every[(every["policy_count"] == 0.0) & (every["pols_pu_init"] > 0.0)]
     assert len(entire), "no state paid-up entirely"
+    for tag in ("rpi", "take_up"):
+        apart = _states_apart(shipped, states[tag])
+        assert apart == ESCALATED, (tag, apart)
 
 
 # ---------------------------------------------------------------------------
@@ -2649,18 +2912,21 @@ def test_the_premiums_paid_are_read_from_the_model_point(sec_model, tmp_path):
     ``WOL_UK_S`` sums the premiums from issue at today's RPI, so a model that rebuilt them
     from the schedule would pass the splice.  The stress on the lapse rate compares them
     with the cover in every month, so the RPI point at 186 is projected under a stress of
-    0.5 with the whole history of :data:`RPI_PATH`: its premiums paid, 9,099.31, below its
-    cover of 8,052.55 plus the premiums to come, cross it at ``t`` = 1, where the stressed
-    lapse starts, and the crossover, a policy month, is found where the history puts it,
-    from the columns.  At today's 3% since issue the row's premiums paid exceed its cover
-    from month 0, and stress it there.  And the moratorium refund of the anchor cell
-    valued at 6 pays the premiums it carries in, 180, plus month 0's.
+    0.5 with the whole history of :data:`RPI_PATH`, which never crossed: its premiums paid,
+    6,389.30, below its cover of 8,052.55, cross it at ``t`` = 37, policy month 223, where
+    the stressed lapse starts, and the crossover, a policy month, is found there, searched
+    forward from the columns.  At today's 3% since issue the row's premiums paid exceed its
+    cover from month 0, and stress it there.  And the moratorium refunds of the anchor cell
+    valued at 6 pay the premiums it carries in plus the month's: the 180 it holds, and
+    180.004, which ``Data`` reads, an extract rounded to the cent, where a refund rebuilt
+    from the premium schedule would pay 180.
     """
     row = _label(_committed(), "derived", 4, 186)
     cover, premium, paid = _rpi_history(RPI_PATH, 186)
     model = _read_edited(tmp_path, _then(_set("cover_pp_init", [row], cover),
                                          _set("premium_pp_init", [row], premium),
-                                         _set("prem_cum_pp_init", [row], paid)))
+                                         _set("prem_cum_pp_init", [row], paid),
+                                         _set("crossover_mth_init", [row], -1)))
     try:
         model.Projection.lapse_crossover_beta = 0.5
         p = _point(model, row)
@@ -2670,7 +2936,8 @@ def test_the_premiums_paid_are_read_from_the_model_point(sec_model, tmp_path):
             assert p.lapse_rate(t) == p.lapse_rate_base(t), t
         assert p.lapse_rate(crossing) == pytest.approx(1.5 * p.lapse_rate_base(crossing),
                                                        rel=1e-12)
-        assert p.crossover_mth() == 186 + crossing
+        assert (crossing, p.crossover_mth()) == (37, 223)
+        assert (round(paid, 2), round(cover, 2)) == (6389.30, 8052.55)
         shipped = _point(sec_model, row)
         assert shipped.prem_cum_pp(0) > shipped.cover_pp(0) and crossing > 0
     finally:
@@ -2679,6 +2946,14 @@ def test_the_premiums_paid_are_read_from_the_model_point(sec_model, tmp_path):
     non_acc = _code(anchor, "NON_ACC")
     assert anchor.prem_cum_pp_init() == 180.0
     assert [anchor.benefit_pp(t, non_acc) for t in (0, 5, 6)] == [210.0, 360.0, 5000.0]
+    label = anchor.point_id
+    model = _read_edited(tmp_path / "cent", _set("prem_cum_pp_init", [label], 180.004))
+    try:
+        p = _point(model, label)
+        assert [p.benefit_pp(t, _code(p, "NON_ACC")) for t in (0, 5)] == [
+            180.004 + 30.0, 180.004 + 30.0 + 150.0]
+    finally:
+        model.close()
 
 
 def test_the_fixed_increases_taken_up_are_read_from_the_model_point(sec_model):
@@ -2736,6 +3011,75 @@ def test_the_paid_up_strand_is_read_from_the_model_point(sec_model, spliced, tmp
         assert p.pols_death_pu(0) == count * p.mort_rate_mth(0)
         assert p.pols_pu(1) == count * (1.0 - p.mort_rate_mth(0)) + p.pols_convert(0)
         assert p.pols_if(0) == shipped.pols_if(0)
+    finally:
+        model.close()
+
+
+# Histories of the crossover no flat rate at today's 3% rebuilds, as (WOL_UK_S's RPI, its
+# crossover there, the months S point 4 is restated at): at an RPI of 0 the RPI point is a
+# level point and crosses at 166; at 8% its premiums rise faster and it crosses at 201.
+CROSSOVER_HISTORIES = ((0.0, 166, (167, 186, 200)), (0.08, 201, (202, 230, 239)))
+
+
+@pytest.mark.parametrize("rpi, month, restated", CROSSOVER_HISTORIES,
+                         ids=[f"rpi {rpi:.0%}" for rpi, _, _ in CROSSOVER_HISTORIES])
+def test_the_crossover_is_read_from_the_model_point(tmp_path, rpi, month, restated):
+    """A crossover before the valuation date is the point's, not searched for again (K14).
+
+    ``WOL_UK_S`` searches for the crossover from issue at today's ``rpi_rate``, so a model
+    that carried the opening state back at today's increases would report the month today's
+    RPI puts it in, where the RPI of its day put it elsewhere: the review found the RPI
+    point restated after a crossover at 166 under an RPI of 0 reported at 166, 150 and 137,
+    and one at 201 under 8% at 220.  So S point 4 is restated by the generator out of
+    ``WOL_UK_S`` run under each of :data:`CROSSOVER_HISTORIES`, after its crossover, and
+    projected at the shipped RPI of 3%: each row's ``crossover_mth_init`` is S's month, and
+    ``crossover_mth()`` reports it.  Restated in the crossover month itself, the crossover
+    is the projection's, ``crossover_mth_init`` -1, and the search forward from the opening
+    state finds it there, in month 0.
+    """
+    s = mx.read_model(model_path(TWIN), name=_name("crossover_s"))
+    try:
+        s.Projection.rpi_rate = rpi
+        assert _point(s, 4).crossover_mth() == month
+        spec = dataclasses.replace(SPEC, derived=tuple((4, d) for d in (month, *restated)),
+                                   future=(), derived_refs={})
+        table, _ = build_sec_table(spec, s)
+    finally:
+        s.close()
+    model = mx.read_model(_sec_inputs(tmp_path, table), name=_name("crossover"))
+    try:
+        assert model.Projection.rpi_rate == 0.03
+        for d in restated:
+            row = _row(model, "derived", 4, d)
+            assert (row.crossover_mth_init(), row.crossover_mth()) == (month, month), d
+        at = _row(model, "derived", 4, month)
+        assert (at.crossover_mth_init(), at.crossover_mth()) == (-1, month)
+    finally:
+        model.close()
+
+
+def test_the_truncation_check_scales_with_the_paid_up_policies(tmp_path):
+    """``check_truncation`` closes on the paid-up strand's policies too (§7.1, T4).
+
+    The survivors at the limiting age are rounding on every policy on the books, so the
+    check holds them to 1e-9 times ``max(policy_count() + pols_pu_init(), 1)``.  At the
+    shipped loading the over-50s cap takes every life before the limiting age and the
+    survivors are exactly 0, which any tolerance passes; at a loading of 0.8 the cap no
+    longer binds there and the paid-up point paid-up entirely keeps 3.0e-11 of a policy at
+    age 120 for each it holds.  So that point is projected with ten million paid-up
+    policies and no full cover: its survivors, 3.0e-4 of a policy, exceed 1e-9, which a
+    tolerance scaled by ``policy_count()`` alone, 0, would hold them to, and the check
+    closes on the paid-up count.  The loading is set on a model just read (K7).
+    """
+    label = _label(_committed(), "derived", 3, 180)
+    model = _read_edited(tmp_path, _set("pols_pu_init", [label], 1e7))
+    try:
+        model.Projection.mort_loading_o50 = 0.8
+        p = _point(model, label)
+        survivors = p.pols_maturity(p.proj_len() - 1)
+        assert p.policy_count() == 0.0 and p.pols_pu_init() == 1e7
+        assert 1e-9 < survivors < 1e-9 * 1e7, survivors
+        assert p.check_truncation() is True
     finally:
         model.close()
 
@@ -2889,15 +3233,16 @@ def test_the_crossover_is_a_policy_month_carried_from_the_opening_state(sec_mode
     """The crossover is ``WOL_UK_S``'s policy month on every committed point S reaches.
 
     ``WOL_UK_S`` searches the policy months it projects, which in force start at the
-    valuation date, where look-back stops, and passes each as ``t`` (R1a).  Here the search
-    runs over the policy months on the contractual schedule, the premiums paid and the
-    cover carried from the opening state, back over the months before the valuation date
-    and on over those after.  So on every committed row S reaches at the shipped
-    References, the twins, the rows in force and the row issued later, it is S's policy
-    month: 166 on the level over-50s points, valued before it, at it or after it, 185 on the
-    RPI point valued after it, 642 on the underwritten increasing one, 222 on the male
-    smoker valued after cessation, and none on the level underwritten point.  On no point
-    is it a month of the frame.
+    valuation date, where look-back stops, and passes each as ``t`` (R1a).  Here a crossover
+    before the valuation date is the point's ``crossover_mth_init``, and the search runs
+    forward from the valuation date over the policy months on the contractual schedule, the
+    premiums paid and the cover carried from the opening state.  So on every committed row
+    S reaches at the shipped References, the twins, the rows in force and the row issued
+    later, it is S's policy month: 166 on the level over-50s points, valued before it, at it
+    or after it, 185 on the RPI point valued after it, 642 on the underwritten increasing
+    one, 222 on the male smoker valued after cessation, and none on the level underwritten
+    point.  On no point is it a month of the frame.  The test of the column itself, on
+    histories today's References do not rebuild, follows the paid-up strand's.
     """
     table = sec_model.Data.model_point_table()
     s_table = s_model.Data.model_point_table()
@@ -3428,7 +3773,7 @@ def test_an_in_force_extract_needs_none_of_the_generator_columns(sec_model, tmp_
         f"at the valuation date: in force 200 months: policy year 17, attained age 86, "
         f"{row.pols_if(0):.6f} on full cover, {row.pols_pu(0):.6f} paid-up"]
     last = extract.index[extract["policy_id"] == "WOL-000001-M166"][0]
-    moved = _set("duration_mth", [last], 601)(extract)
+    moved = _moved_on(last, 601)(extract)
     model = mx.read_model(_sec_inputs(tmp_path / "moved", moved), name=_name("moved"))
     try:
         _refused(_point(model, last).result_cf,
@@ -3736,9 +4081,9 @@ def test_the_sec_model_reads_the_s_tables_in_place(sec_model, s_model):
 # The policy month of each S point's and variant's crossover and first capped month, read
 # off S at the shipped References: the static properties of the grid read them.
 CROSSOVER = {1: 166, 2: 166, 3: 166, 4: 185, 5: -1, 6: 642, 7: 222, 8: 185, 9: 166,
-             10: -1, 11: 642}
+             10: -1, 11: 642, 12: 166}
 CAP = {1: 480, 2: 480, 3: 480, 4: 480, 5: 888, 6: 888, 7: 432, 8: 480, 9: 480, 10: 360,
-       11: 852}
+       11: 852, 12: 480}
 
 
 def test_the_core_grid_reaches_every_branch(spliced, splice_records):
@@ -3799,6 +4144,9 @@ def test_the_core_grid_reaches_every_branch(spliced, splice_records):
         "the paid-up value with the double benefit": lambda k, p, d: (
             flag(p, "variant_paid_up") and flag(p, "variant_adb_2x")),
         "an entry age of 80": lambda k, p, d: int(at(p, "entry_age")) == 80,
+        "an odd cessation": lambda k, p, d: cessation(p) % 2 == 1,
+        "an escalating point past cessation": lambda k, p, d: (
+            at(p, "escalation") != "level" and 0 < cessation(p) < d),
         "in the first policy year": lambda k, p, d: d < 12,
         "on an anniversary": lambda k, p, d: d % 12 == 0,
         "in the month before an anniversary": lambda k, p, d: d % 12 == 11,

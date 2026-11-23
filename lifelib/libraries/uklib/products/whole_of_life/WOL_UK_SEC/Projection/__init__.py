@@ -119,6 +119,10 @@ start of month 0, before any month-0 event:
 * :func:`prem_cum_pp_init`, the premiums paid per policy on full cover to the end of
   month -1, which the moratorium refund, the suicide refund, the crossover stress on the
   lapse rate and :func:`crossover_mth` read;
+* :func:`crossover_mth_init`, the policy month the premiums paid first exceeded the cover,
+  if that was before the valuation date, and ``-1`` if it was not, which
+  :func:`crossover_mth` reports rather than searching the months before the valuation
+  date again;
 * :func:`cover_pp_init` and :func:`premium_pp_init`, the cash sum in force and the monthly
   premium of the policy year under way, after every increase already given: on the
   escalating variants the history :mod:`~.WOL_UK_S` rebuilds from issue at today's
@@ -127,9 +131,9 @@ start of month 0, before any month-0 event:
 
 Each is history, read from the model point, never recomputed from a Reference, which is
 an assumption from the valuation date on: an RPI, a take-up or a lapse stress changed at
-the valuation date reaches back over no increase, no premium and no conversion already
-made. The increases after the valuation date step on each policy anniversary at today's
-References.
+the valuation date reaches back over no increase, no premium, no conversion and no
+crossover already made. The increases after the valuation date step on each policy
+anniversary at today's References.
 
 .. rubric:: Naming
 
@@ -186,6 +190,7 @@ N_paid(t)                  payments_made(t)                Payments made by end 
 N_expected                 payments_expected()             Payments expected to cessation
 paid_up                    pu_eligible(t)                  Pro-rata paid-up qualifies
 t*                         crossover_mth()                 Policy month CumPrem passes SA
+(t* before t = 0)          crossover_mth_init()            The crossover, if before t = 0
 (basis)                    mort_basis()                    population or assured
 (loading)                  mort_loading()                  Anti-selection loading
 q(y)                       mort_rate(t)                    Annual mortality rate applied
@@ -588,6 +593,19 @@ def premium_pp_init():
     return float(model_point()["premium_pp_init"])
 
 
+def crossover_mth_init():
+    """t* before the valuation date: the policy month of the crossover, or ``-1``.
+
+    The first policy month, before the valuation date, in which the premiums paid exceeded
+    the cover in force, ``-1`` where none did, and ``-1`` on a point not yet in force: a
+    crossover in month 0 or later is the projection's.  History, read from the model
+    point: :mod:`~.WOL_UK_S` searches the months before the valuation date again, from
+    issue at today's ``rpi_rate`` and ``esc_take_up``, which on an escalating point would
+    move a crossover already past.  :func:`crossover_mth` reports it.
+    """
+    return int(model_point()["crossover_mth_init"])
+
+
 def t_entry():
     """The first month the policy is on the books: ``max(0, -duration_mth_init())``.
 
@@ -618,8 +636,12 @@ def limit_mth():
     ``omega_age - 1``, and :func:`is_active` is false from ``duration_mth(t) = limit_mth()``
     on.  Whole of life has no maturity date, so this is a limiting age rather than a
     contractual one.  :func:`proj_len` counts from the valuation date instead.
+
+    ``omega_age`` is read as an ``int``, which :func:`proj_len` holds it to be first: a
+    whole number written as a float, ``120.0``, makes the frame ``120`` makes, in whole
+    months, as a compiled model typing the Reference ``long long`` would.
     """
-    return 12 * (omega_age - age_at_entry())                         # noqa: F821
+    return 12 * (int(omega_age) - age_at_entry())                    # noqa: F821
 
 
 def proj_len():
@@ -689,9 +711,17 @@ def proj_len():
     a whole one ``2**53``, so that a compiled cell runs it in C, and each Reference is
     printed as the compiled model will type it: ``issue_age_min``, ``omega_age`` and
     ``suicide_mths`` through ``int()`` once they are whole numbers, and every other through
-    ``float()``.  A value a formula computes past the floats, from References each in its
-    domain, is refused in the cell where it first is: the cover, the premium and the
-    premiums paid.
+    ``float()``; ``omega_age`` is then read as the ``int`` it is.  A value a formula
+    computes past the floats, from References and an opening state each in its domain, is
+    refused in the cell where it first is, naming the point: the cover, the premium, the
+    premiums paid, a benefit, the paid-up cover, the premiums, the claims, the expenses,
+    the commission and the net cash flow.  A power that overflows is not: modelx, as
+    Python, raises ``OverflowError``, with the platform's own message, from the ``**``
+    itself, before the cell can look at the result - the cover's and the premium's step to
+    the policy years since the valuation date, the inflation and improvement factors, and
+    the crossover's search, each at a step in its domain but large enough, ``1e200``.
+    The compiled model will take uslib's M22 form there, Python's own float power where
+    the compiled ``pow`` gives an infinity, so that both engines raise the same error.
     """
     if not (issue_age_min > -9007199254740992.0                       # noqa: F821
             and issue_age_min < 9007199254740992.0                    # noqa: F821
@@ -1095,25 +1125,25 @@ def crossover_mth():
     :mod:`~.WOL_UK_S`, on every point: the crossover is a fact of the contract, which can
     fall before the valuation date.
 
-    The search is one loop in this cell over the policy months from issue to cessation,
-    or to the limiting age where premiums are payable for life, on the contractual
-    schedule: in each policy year the premium and the cover of the year, the premium only
-    in premium-paying months.  On a point not yet in force that is :mod:`~.WOL_UK_S`'s own
-    search, from the premium and the sum assured at issue.  On a point in force the
-    schedule is carried from the opening state: from the valuation date on as the
-    projection carries it, the premiums paid accumulating from :func:`prem_cum_pp_init`;
-    and before it, the premiums paid taken back from :func:`prem_cum_pp_init` month by
-    month, each premium and cover of an earlier policy year :func:`premium_pp_init` and
-    :func:`cover_pp_init` carried back at today's annual increases.  So the escalating
-    variants' history is the columns', and where it ran at today's References, as on
-    every row :mod:`~.WOL_UK_S` restates, the month is :mod:`~.WOL_UK_S`'s; where it ran
-    otherwise, a crossover before the valuation date falls where today's increases would
-    have put it from what the columns hold.  No cell of the projection reads it: the
-    crossover stress on the lapse rate compares the premiums paid and the cover month by
-    month instead.
+    Before the valuation date it is history, :func:`crossover_mth_init`, read from the
+    model point and never searched for again: a crossover already past on an escalating
+    point fell where the increases of its day put it, which today's References need not
+    reproduce.  Otherwise the search runs over the policy months from the valuation date,
+    or from issue on a point not yet in force, to cessation, or to the limiting age where
+    premiums are payable for life, on the contractual schedule: in each policy year the
+    premium and the cover of the year, carried from the opening state and stepped on each
+    anniversary at today's References, the premiums paid accumulating from
+    :func:`prem_cum_pp_init`.  On a point not yet in force that is :mod:`~.WOL_UK_S`'s own
+    search, from the premium and the sum assured at issue.  It asks :func:`proj_len` for
+    the frame first, as a report does, so that a Reference off its domain is refused here
+    too.  No cell of the projection reads it: the crossover stress on the lapse rate
+    compares the premiums paid and the cover month by month instead.
     """
-    last = cessation_mths() if cessation_mths() > 0 else limit_mth()
+    end = duration_mth_init() + proj_len()
+    last = cessation_mths() if cessation_mths() > 0 else end
     d = duration_mth_init()
+    if d > 0 and crossover_mth_init() >= 0:
+        return crossover_mth_init()
     c = esc_cover_step()
     g = esc_prem_step()
     if d <= 0:
@@ -1123,16 +1153,6 @@ def crossover_mth():
             if paid > sum_assured() * (1.0 + c) ** (m // 12):
                 return m
         return -1
-    anchor = d if cessation_mths() <= 0 or d < cessation_mths() else cessation_mths() - 1
-    first = -1
-    paid = prem_cum_pp_init()
-    for m in range(min(d, last) - 1, -1, -1):
-        if m < d - 1 and m + 1 < last:
-            paid = paid - premium_pp_init() * (1.0 + g) ** ((m + 1) // 12 - anchor // 12)
-        if paid > cover_pp_init() * (1.0 + c) ** (m // 12 - d // 12):
-            first = m
-    if first >= 0:
-        return first
     paid = prem_cum_pp_init()
     for m in range(d, last):
         paid = paid + premium_pp_init() * (1.0 + g) ** (m // 12 - d // 12)
@@ -1229,14 +1249,22 @@ def pu_benefit(t):
     factor, so the sum of their payouts satisfies the same recursion as the count.
     Death outgo on the strand is then ``pu_benefit(t) x q_m(t)``.  At :func:`t_entry` it
     is :func:`pols_pu_init` times :func:`pu_benefit_pp_init`, 0 on a point not yet in
-    force.  Zero outside cover.
+    force.  Zero outside cover.  A summed cover that leaves the floats raises
+    ``ValueError`` in the month it first does, naming the point.
     """
     if not is_active(t) or not pu_variant():
         return 0.0
     if t == t_entry():
-        return pols_pu_init() * pu_benefit_pp_init()
-    return (pu_benefit(t - 1) * (1.0 - mort_rate_mth(t - 1))
-            + pols_convert(t - 1) * benefit_pp(t - 1, "PAID_UP"))
+        v = pols_pu_init() * pu_benefit_pp_init()
+    else:
+        v = (pu_benefit(t - 1) * (1.0 - mort_rate_mth(t - 1))
+             + pols_convert(t - 1) * benefit_pp(t - 1, "PAID_UP"))
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the paid-up cover pu_benefit({t}) is {v}, not a "  # noqa: F821
+            f"finite number, from pols_pu_init {pols_pu_init()} paid-up policies at "
+            f"pu_benefit_pp_init {pu_benefit_pp_init()} and the conversions since")
+    return v
 
 
 def pols_all(t):
@@ -1406,7 +1434,9 @@ def benefit_pp(t, kind):
 
     The moratorium and the suicide window are policy months, wherever they fall in the
     frame, and their refunds read the premiums paid from the opening state.  Each kind is
-    zero outside cover.
+    zero outside cover.  A benefit the cover and premiums paid make that leaves the
+    floats, a multiple, a blend or a share of them, raises ``ValueError`` in the month it
+    first does, naming the point.
     """
     if kind == "NON_ACC":
         if not is_active(t):
@@ -1417,35 +1447,48 @@ def benefit_pp(t, kind):
     if kind == "ACC":
         if not is_active(t):
             return 0.0
-        if cell() != "O50":
+        if cell() != "O50" or in_moratorium(t):
             return cover_pp(t)
-        if in_moratorium(t):
-            return cover_pp(t)
-        return adb_multiplier() * cover_pp(t)
-    if kind == "DEATH":
+        v = adb_multiplier() * cover_pp(t)
+    elif kind == "DEATH":
         if not is_active(t):
             return 0.0
         if cell() == "O50":
-            return ((1.0 - acc_share) * benefit_pp(t, "NON_ACC")     # noqa: F821
-                    + acc_share * benefit_pp(t, "ACC"))              # noqa: F821
-        if duration_mth(t) < suicide_mths:                           # noqa: F821
-            return ((1.0 - suicide_share) * cover_pp(t)              # noqa: F821
-                    + suicide_share * prem_cum_pp(t))                # noqa: F821
-        return cover_pp(t)
-    if kind == "PAID_UP":
+            v = ((1.0 - acc_share) * benefit_pp(t, "NON_ACC")        # noqa: F821
+                 + acc_share * benefit_pp(t, "ACC"))                 # noqa: F821
+        elif duration_mth(t) < suicide_mths:                         # noqa: F821
+            v = ((1.0 - suicide_share) * cover_pp(t)                 # noqa: F821
+                 + suicide_share * prem_cum_pp(t))                   # noqa: F821
+        else:
+            return cover_pp(t)
+    elif kind == "PAID_UP":
         if not is_active(t) or not pu_variant():
             return 0.0
-        return cover_pp(t) * payments_made(t) / payments_expected()
-    raise ValueError("invalid kind")
+        v = cover_pp(t) * payments_made(t) / payments_expected()
+    else:
+        raise ValueError("invalid kind")
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the benefit benefit_pp({t}, {kind}) is {v}, not a "  # noqa: F821
+            f"finite number, from the cover cover_pp({t}) {cover_pp(t)}")
+    return v
 
 
 def premiums(t):
     """E[premium](t): premium income at the beginning of month t, an inflow.
 
     Carried on the full-cover strand only: paid-up policies pay nothing, and neither do
-    over-50s policies past cessation, where :func:`premium_pp` is already zero.
+    over-50s policies past cessation, where :func:`premium_pp` is already zero.  Income
+    that leaves the floats raises ``ValueError`` in the month it first does, naming the
+    point.
     """
-    return premium_pp(t) * pols_if(t)
+    v = premium_pp(t) * pols_if(t)
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the premiums premiums({t}) are {v}, not a finite "  # noqa: F821
+            f"number, from premium_pp({t}) {premium_pp(t)} on pols_if({t}) {pols_if(t)} "
+            f"policies")
+    return v
 
 
 def claims(t, kind=None):
@@ -1464,21 +1507,31 @@ def claims(t, kind=None):
         cell; the kind exists so the zero is stated rather than inferred.
 
     Each kind is zero outside cover, before any rate is read.  The total is
-    :mod:`~.WOL_UK_S`'s ``sum`` over the three kinds.
+    :mod:`~.WOL_UK_S`'s ``sum`` over the three kinds.  Outgo that leaves the floats,
+    of a kind or in total, raises ``ValueError`` in the month it first does, naming the
+    point.
     """
     if kind is None:
-        return sum(claims(t, k) for k in ("DEATH", "DEATH_PU", "LAPSE"))
-    if kind == "DEATH":
+        v = sum(claims(t, k) for k in ("DEATH", "DEATH_PU", "LAPSE"))
+    elif kind == "DEATH":
         if not is_active(t):
             return 0.0
-        return pols_death(t) * benefit_pp(t, "DEATH")
-    if kind == "DEATH_PU":
+        v = pols_death(t) * benefit_pp(t, "DEATH")
+    elif kind == "DEATH_PU":
         if not is_active(t):
             return 0.0
-        return pu_benefit(t) * mort_rate_mth(t)
-    if kind == "LAPSE":
+        v = pu_benefit(t) * mort_rate_mth(t)
+    elif kind == "LAPSE":
         return 0.0
-    raise ValueError("invalid kind")
+    else:
+        raise ValueError("invalid kind")
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the claims claims({t}, {kind}) are {v}, not a finite "  # noqa: F821
+            f"number, from pols_death({t}) {pols_death(t)} deaths on full cover at "
+            f"benefit_pp({t}, DEATH) {benefit_pp(t, 'DEATH')}, and pu_benefit({t}) "
+            f"{pu_benefit(t)} of paid-up cover")
+    return v
 
 
 def expense_acq_pp():
@@ -1520,10 +1573,21 @@ def expenses(t):
     :mod:`~.WOL_UK_S` charges it on the count at ``t = 0``, which on a point issued then is
     the count issued.  Maintenance is carried on :func:`pols_all`, so a paid-up policy still
     costs money to administer even though it pays no premium - which is part of why the
-    pro-rata paid-up variant is expensive.
+    pro-rata paid-up variant is expensive.  Expenses that leave the floats raise
+    ``ValueError`` in the month they first do, naming the point and the References that
+    make them: an expense and an inflation rate each in its domain can, as an expense of
+    1.7e308 inflated at 100% a year does at ``t = 48``.
     """
     acq = expense_acq_pp() * pols_new_biz(t)
-    return acq + expense_maint_pp() / 12.0 * inflation_factor(t) * pols_all(t)
+    v = acq + expense_maint_pp() / 12.0 * inflation_factor(t) * pols_all(t)
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the expenses expenses({t}) are {v}, not a finite "  # noqa: F821
+            f"number, from expense_acq_{'o50' if cell() == 'O50' else 'uw'} "
+            f"{expense_acq_pp()}, expense_maint_{'o50' if cell() == 'O50' else 'uw'} "
+            f"{expense_maint_pp()} and inflation_rate {float(inflation_rate)}, on "  # noqa: F821
+            f"pols_all({t}) {pols_all(t)} policies")
+    return v
 
 
 def commissions(t):
@@ -1534,11 +1598,18 @@ def commissions(t):
     that year left after the valuation date, and is never paid again on a point valued
     later.  The existence of commission is sourced - an intermediary is "paid by
     commission as a percentage of total annual premium" - and the level is a
-    standardization.  Zero outside cover.
+    standardization.  Zero outside cover.  A commission that leaves the floats raises
+    ``ValueError`` in the month it first does, naming the point and ``comm_init_rate``.
     """
     if not is_active(t) or policy_year(t) > 1:
         return 0.0
-    return comm_init_rate * premiums(t)                              # noqa: F821
+    v = comm_init_rate * premiums(t)                                 # noqa: F821
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the commission commissions({t}) is {v}, not a finite "  # noqa: F821
+            f"number, from comm_init_rate {float(comm_init_rate)} on premiums({t}) "  # noqa: F821
+            f"{premiums(t)}")
+    return v
 
 
 def net_cf(t):
@@ -1550,9 +1621,17 @@ def net_cf(t):
     Note that the notes' worked-example table prints premium income and death outgo as
     separate positive columns and omits expenses "for clarity", so ``net_cf`` will not
     equal any column of that table.  Lapse contributes nothing at all: it moves
-    :func:`pols_if` and pays no cash.
+    :func:`pols_if` and pays no cash.  Each flow is a finite number, its cell refusing one
+    that is not, but their sum can leave the floats, which raises ``ValueError`` here,
+    naming the point and the flows.
     """
-    return premiums(t) - claims(t) - expenses(t) - commissions(t)
+    v = premiums(t) - claims(t) - expenses(t) - commissions(t)
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the net cash flow net_cf({t}) is {v}, not a finite "  # noqa: F821
+            f"number, from premiums {premiums(t)}, claims {claims(t)}, expenses "
+            f"{expenses(t)} and commissions {commissions(t)}")
+    return v
 
 
 def check_pols_roll_fwd_resid(t):
