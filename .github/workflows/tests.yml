@@ -292,7 +292,7 @@ jobs:
       matrix:
         module: [term_assurance, critical_illness, whole_of_life, unit_linked_bond,
                  pension_annuity,
-                 income_protection]
+                 income_protection, with_profits]
         os: [ubuntu-latest, windows-latest, macos-latest]
         grid: [core, full]
         exclude:

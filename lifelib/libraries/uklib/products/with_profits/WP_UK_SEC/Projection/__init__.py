@@ -3,26 +3,23 @@
 # It can be imported as a Python module, but functions defined herein
 # are model formulas and may not be executable as standard Python.
 
-"""The by-policy projection of the :mod:`~.WP_UK_S` model.
+"""The by-policy projection of the :mod:`~.WP_UK_SEC` model; holds all formulas.
 
 The Space is parameterized by ``point_id``, so ``Projection[1]`` is an ItemSpace
-projecting model point 1::
+projecting model point 1, the twin of :mod:`~.WP_UK_S`'s worked-example bond, in force at
+the valuation date five years after issue::
 
-    >>> Projection[1].result_cf()          # the worked example's scenario A
-    >>> Projection.point_id = 2            # scenario B, the down market
+    >>> Projection[1].result_cf()          # one row per month from the valuation date
+    >>> Projection[1].result_pols()        # the counts behind it
+    >>> Projection.point_id = 7            # or switch the default
 
-``t`` counts **policy months** from issue and is **0-based**, as everywhere in lifelib:
-``t = 0`` is the issue month, month ``t`` runs from time ``t`` to time ``t + 1``, and
-the contractual policy year containing it is the 1-based label
-``policy_year(t) = t // 12 + 1``. An in-force model point opens the frame at
-``t = proj_start() = 12 x duration_inforce()``, the elapsed months — so the worked
-example's bond, in force at duration 5, is projected from ``t = 60``, the first month of
-its sixth policy year. The state carried into that month (the asset share, the smoothed
-payout, the unit price, the guaranteed benefit) is its **opening** value, read through
-``asset_share_at(t, "BEF_PREM")`` and the ``*_open`` cells rather than through a row
-below the frame. The frame is ``range(proj_start(), proj_len())``: ``proj_len()`` is
-the number of policy months projected from issue, so the last month is
-``proj_len() - 1``.
+This is :mod:`~.WP_UK_S` taught to run in force at a valuation date, as lifelib's
+``basiclife.BasicTerm_SE`` extends ``basiclife.BasicTerm_S``. A formula of :mod:`~.WP_UK_S`
+is rewritten where it depends on where the projection starts, where it must answer for a
+month outside cover, where it read a policy month as ``t``, or where a chain of its cells
+ran more than one cell a month; every other formula is :mod:`~.WP_UK_S`'s own, the cap on
+mortality, ``min(q, 1.0)``, among them. ``products/with_profits/model-sec.md`` lists the
+rewritten cells with the reason for each.
 
 .. rubric:: A monthly grid with an annual discretion cycle
 
@@ -30,7 +27,7 @@ This is the one thing to hold on to about this model. The notes' rationale for a
 grid was that **bonus declarations are annual** — they are the governing act of
 discretion, and a declaration permanently hardens the guarantee. That is a fact about
 the product, not about the grid, and it survives the move to monthly steps intact: the
-declaration still fires once a policy year, in the twelfth month,
+declaration still fires once a policy year, in its twelfth month,
 :func:`is_declaration_month`. Everything continuous runs monthly around it — the fund
 return, the charges, the mortality charge, the decrements, the smoothed payout, the
 final bonus and the market value reduction — and everything discretionary stays where
@@ -71,45 +68,167 @@ input can be edited or swapped without rewriting the model. This follows
 *inside* the model through modelx's IOSpec machinery.
 
 The consequence worth knowing: **the model is not portable on its own.** Copying the
-``WP_UK_S`` folder without its parent's CSVs produces a model that reads and then fails
+``WP_UK_SEC`` folder without its parent's CSVs produces a model that reads and then fails
 on first evaluation.
 
-Each table has a filename Reference and a reader Cells, both on :mod:`~.WP_UK_S.Data`,
-reached here through the ``data`` Reference:
+The two assumption tables are the files :mod:`~.WP_UK_S` reads, read in place; the model
+point table is this model's own. Each table has a filename Reference and a reader Cells,
+both on :mod:`~.WP_UK_SEC.Data`, reached here through the ``data`` Reference:
 
 ======================  ==============================  ==========================
 Reference               Cells                           File
 ======================  ==============================  ==========================
-model_point_file        data.model_point_table()        model_point_table.csv
+model_point_file        data.model_point_table()        model_point_table_sec.csv
 mort_table_file         data.mort_table()               mort_table.csv
 lapse_table_file        data.lapse_table()              lapse_table.csv
 ======================  ==============================  ==========================
+
+.. rubric:: Two clocks
+
+``t`` counts months from the **valuation date**, 0-based, the clock
+``basiclife.BasicTerm_SE`` runs on: ``t = 0`` is the valuation month for every model
+point, however old the policy, month ``t`` runs from time ``t`` to time ``t + 1``, and the
+frame is ``t = 0 .. proj_len() - 1``, where :func:`proj_len` counts the months from the
+valuation date to the end of the projection: the endowment's maturity, the bond's
+limiting age, or the month a withdrawal election exhausts the bond's units, whichever
+comes first. Row ``t`` is the same month for every point, so the frames of a block line
+up and sum row by row.
+
+``duration_mth(t)`` counts **policy months**, the months the policy has been in force at
+time ``t``: ``duration_mth(t) = duration_mth_init() + t``, where
+:func:`duration_mth_init` is read from the model point — positive for a policy in force at
+the valuation date, 0 for one issued at it, ``-k`` for one issued ``k`` months later, at
+most ten years later. Everything contractual reads it: the completed policy years
+``duration(t) = duration_mth(t) // 12``, the contractual 1-based label
+``policy_year(t) = duration(t) + 1``, the lapse table's key and the guarantee dates', the
+attained age ``age(t) = age_at_entry() + duration(t)``, the mortality table's, the
+declaration in the twelfth month of each policy year, the guarantee-imminent window, the
+single premium in the issue month, and the end of cover, :func:`cover_end_mth`. The
+worked example's bond, model point 1, is in its sixth policy year at attained age 60 at
+``t = 0``, where :mod:`~.WP_UK_S` opens it at its own ``t = 60``.
+
+One input reads the valuation clock instead: expense inflation,
+``inflation_factor(t) = (1 + inflation_rate) ** (t // 12)``, stepping on each anniversary
+of the valuation date, so that the maintenance charge is in valuation-date pounds for every
+point alike (USLIB-SEC-PLAN.md D7; UKLIB-SEC-PLAN.md §9 item 4). :mod:`~.WP_UK_S` inflates
+from issue, so its in-force points carry five and twenty years of it at their first
+projected month. The fund return and the bonus rate are levels of the model point, the
+same on either clock. WP has no acquisition expense and no commission.
+
+On a point issued at ``t = 0`` the two clocks coincide and this model computes what
+:mod:`~.WP_UK_S` computes: every cell the two share agrees at every argument
+:mod:`~.WP_UK_S` evaluates in its sweep, but for those whose meaning changed —
+``pols_if_init``, now the count already in force at the valuation date, ``model_point``, a
+row of another table, and :func:`fund_exhaust_mth`, whose "never" is no longer 0 (*The
+frame ends where the units do*, below). ``tests/test_model_conventions_uk.py`` asserts it
+cell by cell.
+
+.. rubric:: Counts
+
+``pols_if(t)`` is the count that weights row ``t``: ``pols_if_at(t, "BEF_DECR")``, the
+count carried in from ``t - 1`` (``"BEF_NB"``) plus the month's new business,
+:func:`pols_new_biz`, before the month's decrements. A point in force at the valuation
+date opens with :func:`pols_if_init`, its ``policy_count``; one issued at or after the
+valuation date opens with none, and takes its ``policy_count`` as new business in its
+issue month. The recursion's base is :func:`t_entry`, the first month on the books, and
+nothing is counted outside the frame: before issue every count, and so every cash flow, is
+zero, and the survivors of the frame's last month leave as :func:`pols_maturity`, paid on
+the endowment's maturity and on the bond's forced encashment, and paid nothing at the
+bond's limiting age. :mod:`~.WP_UK_S`'s three timings are kept, ``"BEF_DECR"``,
+``"BEF_SURR"`` and ``"AFT_DECR"``, and ``"BEF_NB"`` is the one running in force adds.
+
+.. rubric:: The opening state
+
+A policy in force carries, beside its count, the state :mod:`~.WP_UK_S` carries into the
+month it is valued at, each per policy, so that the count is the one weight on every
+flow, and each measured at the valuation instant, the start of month 0, before any
+month-0 event, which is :mod:`~.WP_UK_S`'s close of the month before:
+
+* :func:`asset_share_init`, the asset share, the retrospective accumulation, floored at
+  0, as :mod:`~.WP_UK_S` floors it;
+* on the bond, :func:`units_init` and :func:`unit_price_init`, the units held and the
+  price the declarations have raised the seed price to; the face value is their product;
+* on the endowment, :func:`attaching_bonus_init`, the reversionary bonuses already
+  attaching, so that the guarantee is the sum assured plus it;
+* :func:`smoothed_payout_init`, the payout the smoothing cap works from, which is 0 where
+  the asset share has floored at 0, the corridor holding the payout to it;
+* :func:`bonus_rate_init`, the rate of the policy year under way;
+* the two cumulants :mod:`~.WP_UK_S` restarts at 0 where its frame opens:
+  :func:`guar_charge_cum_pp_init`, the guarantee charges taken since issue, which the
+  charge's lifetime cap of 2% of the asset share is measured against, and
+  :func:`smoothing_account_init`, the estate's smoothing and guarantee cost on the exits
+  since issue, per policy in force.
+
+Each is history, read from the model point, never recomputed from a Reference, which is
+an assumption from the valuation date on: a fund return, a charge or a smoothing rule
+changed at the valuation date reaches back over no month already run. A policy not yet in
+force carries none of them; its seed price and its first year's bonus rate are issue
+values. No balance is needed at a second instant: a declaration costs the month's own
+opening values, and no annual quantity reads the balance entering the policy year.
+
+.. rubric:: Each chain one cell a month
+
+Four chains carry the state forward and are coupled: the count, the asset share, the
+smoothed payout, which reads the asset share and feeds the withdrawal's share of it back,
+and the endowment's guarantee. :mod:`~.WP_UK_S` runs the asset share through seven cells a
+month, its :func:`asset_share_at` timings, the payout through three and the guarantee
+through two, so that a cold read of the asset share in a late month ran thousands of
+cells deep. Here each chain's month is written in the cell that carries it, reading that
+chain's own month before first and the month's other cells after, :func:`asset_share`,
+:func:`smoothed_payout`, :func:`guar_benefit_pp` and ``pols_if_at(t, "BEF_NB")``, in
+:mod:`~.WP_UK_S`'s order and its floats, so that a chain of calls from month ``t`` back to
+:func:`t_entry` is one cell a month (USLIB-SEC-PLAN.md D5), whichever chain a call meets
+first; :func:`asset_share_at` reads it, a step at a time, as :mod:`~.WP_UK_S`'s does. The
+units, the unit price and the two cumulants were one cell a month already.
+
+.. rubric:: The frame ends where the units do
+
+A level withdrawal election runs a bond's units down, and against a fund whose growth is
+only the declared bonus it eventually cancels the last of them. :func:`fund_exhaust_mth`
+finds the month: one loop in that cell, over the units' own months from :func:`t_entry`,
+ascending, so that each month's units are read once the month before's are known, the far
+read R2 admits, as uslib's ``DIA_US_SEC`` reads its survival to its payout date and
+``ULB_UK_SEC`` its fund to exhaustion. It returns a policy month, and its "never" is a
+month past cover, where :mod:`~.WP_UK_S`'s was 0, which on the valuation clock is a real
+month. :func:`proj_len` ends the frame the month before, where the survivors are encashed,
+paid ``FV + FB`` (:func:`is_forced_encashment`). The search reads the units chain, so
+nothing the units read may read the frame: :func:`is_active`, which every chain reads, is
+the policy-clock end of cover alone, :func:`cover_end_mth`, and in the months after an
+exhaustion and before that end a bond is in cover and holds no count, its frame having
+ended.
 
 .. rubric:: Naming
 
 Cells names follow lifelib's ``basiclife.BasicTerm_S`` wherever that model has an
 analogue — ``pols_*`` for policy counts, plural nouns for cash flows, ``*_rate`` for
 rates, ``*_pp`` for per-policy amounts, ``claims(t, kind)`` and ``claim_pp(t, kind)``
-with an uppercase ``kind`` string. The technical notes use compact symbols instead. The
-mapping is:
+with an uppercase ``kind`` string. What running in force adds is named as
+``basiclife.BasicTerm_SE`` names it: ``duration_mth`` read from the model point,
+``policy_count``, ``pols_new_biz``, ``pols_if_at``'s ``"BEF_NB"`` timing, ``is_active`` and
+``result_pols``. ``duration_mth_init``, the policy months completed at the valuation date,
+takes ``UL_US_S``'s name; ``t_entry`` is this model's own, and each opening-state cell is
+the cell it opens with ``_init`` added. The technical notes use compact symbols instead.
+The mapping is:
 
 =========================  ==============================  ==========================
 Notes symbol               Cells                           Meaning
 =========================  ==============================  ==========================
 chassis                    chassis()                       UWP_bond or CWP_endowment
-t                          (the cells argument)            Policy month index, 0-based
+t                          (the cells argument)            Months from the valuation
+(none)                     duration_mth(t)                 Policy months at time t
+(none)                     duration_mth_init()             Policy months at t = 0
+(none)                     t_entry()                       First month on the books
+(none)                     is_active(t)                    Whether month t is in cover
+(none)                     cover_end_mth()                 Policy month cover ends
 t // 12 + 1                policy_year(t)                  Contractual policy year label
-(none)                     duration(t)                     Completed policy years, t // 12
-(none)                     duration_mth(t)                 Months elapsed since issue, = t
+(none)                     duration(t)                     Completed policy years
 (none)                     is_declaration_month(t)         The twelfth month of a policy year
 (none)                     declaration_month(t)            That month, for the year holding t
 x                          age_at_entry()                  Entry age (ANB)
 x + duration(t)            age(t)                          Attained age (ANB)
-duration_ifo               duration_inforce()              Completed years at valuation
-(none)                     proj_start()                    First projected t, = 12 x duration_ifo
 n                          policy_term()                   Endowment term in years
-(none)                     proj_len()                      Policy months from issue, exclusive end
-(none)                     fund_exhaust_mth()              Month the bond's units run out
+(none)                     proj_len()                      Months to the frame's end
+(none)                     fund_exhaust_mth()              Policy month the units run out
 (none)                     is_forced_encashment()          Whether the run ends there
 P(t)                       premium_pp(t)                   Premium received at BOM
 W(t)                       wd_pp(t)                        Partial withdrawal at BOM
@@ -121,17 +240,23 @@ c_amc                      amc_rate                        Annual management cha
 c_g                        guar_charge_rate(t)             Guarantee/smoothing charge, annual
 (monthly)                  guar_charge_rate_mth(t)         The same, monthly
 CumGC(t)                   guar_charge_cum_pp(t)           Cumulative guarantee charge
+(CumGC at t = 0)           guar_charge_cum_pp_init()       Charges taken before t = 0
 AS(t)                      asset_share(t)                  Asset share at the end of month t
 (the steps)                asset_share_at(t, timing)       The asset share inside month t
 AS(t-1)                    asset_share_at(t, "BEF_PREM")   The balance month t opens with
+(AS at t = 0)              asset_share_init()              Asset share at the valuation
 M(t)                       misc_surplus_pp(t)              Estate distributions; 0 in base
 Q(t)                       unit_price(t)                   With-profits unit price
+(Q at t = 0)               unit_price_init()               Unit price at the valuation
 U(t)                       units(t)                        Units held
+(U at t = 0)               units_init()                    Units held at the valuation
 FV(t), G(t)                guar_benefit_pp(t)              Guaranteed benefit
 FV(t-1), G(t-1)            guar_benefit_open(t)            The guarantee month t opens with
+G - SA                     attaching_bonus_init()          Reversionary bonus at t = 0
 (pre-MVR value)            policy_value_pp(t)              Guaranteed benefit + final bonus
 (opening value)            policy_value_open(t)            The pre-MVR value at its open
 b, b_rev                   bonus_rate(t)                   Declared annual bonus rate
+(b at t = 0)               bonus_rate_init()               The rate of the year under way
 b_supp                     bonus_supportable(t)            Rate the guarantee-fill implies
 theta, kappa               guar_fill_target, bonus_speed   Bonus-rule parameters
 CB(t)                      cost_of_bonus_pp(t)             Cost of the declared bonus
@@ -145,9 +270,11 @@ w_m(t)                     surr_rate_mth(t)                Monthly rate, exercis
 (table)                    surr_rate_base(t)               Table annual surrender rate
 (spike)                    guarantee_exercise(t)           MVR-free encashment on the date
 sigma                      smooth_cap                      Year-on-year smoothing cap
-(monthly bounds)           smooth_cap_dn_mth(), _up_mth()  Its twelfth roots
+(monthly floor)            smooth_cap_dn_mth()             Its twelfth roots, down
+(monthly ceiling)          smooth_cap_up_mth()             and up
 S(t)                       smoothed_payout(t)              Smoothed target payout
 S(t-1)                     smoothed_payout_open(t)         The payout month t opens with
+(S at t = 0)               smoothed_payout_init()          The payout at the valuation
 (cap step)                 smoothed_payout_capped(t)       After the cap, before the corridor
 FB(t), TB(t)               final_bonus_pp(t)               Final or terminal bonus
 MVR(t)                     mvr_pp(t)                       Market value reduction, unapplied
@@ -155,20 +282,26 @@ MVR(t)                     mvr_pp(t)                       Market value reductio
 (guarantee dates)          is_guarantee_date(t)            MVR-free anniversary month
 g_db                       death_benefit_factor            Bond death uplift, 1.01
 i_sv, v_sv                 surr_disc_rate                  Endowment surrender discount
+(none)                     policy_count()                  Policies the point stands for
 l(t)                       pols_if(t)                      In force at the start of month t
-(none)                     pols_if_at(t, timing)           BEF_DECR / BEF_SURR / AFT_DECR
+(l at t = 0)               pols_if_init()                  Count in force at t = 0
+(none)                     pols_new_biz(t)                 Policies issued in month t
+(none)                     pols_if_at(t, timing)           BEF_NB / BEF_DECR / BEF_SURR / AFT_DECR
 (none)                     pols_death(t)                   Deaths in month t
 (none)                     pols_surr(t)                    Surrenders at the end of month t
 (none)                     pols_maturity(t)                Maturities, or the truncation
 (payouts)                  claim_pp(t, kind)               Payout per claim by kind
 SM(t)                      smoothing_account(t)            Cumulative smoothing cost
+(SM at t = 0)              smoothing_account_init()        The same before t = 0, per policy
 (cash flows)               premiums, claims, withdrawals   Probability-weighted flows
 E(t)                       expenses(t)                     Maintenance expense
+(none)                     inflation_factor(t)             Expense inflation factor
 ST x l                     shareholder_transfers(t)        Transfer outgo
 (none)                     net_cf(t)                       Net cash flow, income positive
+(none)                     result_pols()                   The counts, month by month
 =========================  ==============================  ==========================
 
-Six names needed care.
+Six names needed care in :mod:`~.WP_UK_S`, and keep their reasons here.
 
 ``G`` is the guaranteed benefit on the endowment chassis and ``FV`` the unit face value
 on the bond chassis, but every rule that consumes them — the bonus cost, the mortality
@@ -222,6 +355,7 @@ tracked in :func:`smoothing_account`, which the base model accumulates without r
 contractual discipline rather than arithmetic convenience: the shareholder transfer is
 charged to asset shares *after* the charges and *before* the mortality charge, and the
 mortality charge's sum at risk is measured on the balance after the transfer.
+:func:`asset_share` writes the same steps inline, in the same order and floats.
 
 .. rubric:: The bonus hardens, and that is what makes guarantees expensive
 
@@ -235,7 +369,9 @@ choices with no public calibration rather than parameters someone measured.
 The base projection holds the model point's snapshot rate level, as the notes specify.
 :func:`bonus_supportable` and the smoothed setting rule are implemented and switched off
 behind ``bonus_rule_on``, so the revision module is available for scenario work
-without disturbing the reproduction of the worked example.
+without disturbing the reproduction of the worked example. With it on, the year under way
+at the valuation date keeps :func:`bonus_rate_init`, as :mod:`~.WP_UK_S` keeps its first
+projected year's, and each later year's rate is set at its declaration.
 
 .. rubric:: Smoothing: the cap, then the corridor
 
@@ -263,9 +399,10 @@ test is a *portfolio* property — a proportion of policies within the range —
 single-policy model cannot express it, so the deterministic corridor is a **[std]**
 reading of it.
 
-Two things the cap cannot say. It is skipped in the first projected month of a
-new-business cell, where the opening payout ``S`` is nil and the cap would clamp the
-payout to nil with it. And on a
+Two things the cap cannot say. It is skipped where there is no previous payout to work
+from: in a new-business cell's issue month, where the opening payout ``S`` is nil and the
+cap would clamp the payout to nil with it, and in any month that opens on a nil payout,
+as a policy in force whose asset share has floored at nil does. And on a
 **premium-paying** policy it is only loosely meaningful: a firm's ±10% discipline is a
 *like-for-like* comparison between successive maturity cohorts — this year's payout on a
 25-year endowment against last year's — not a comparison of one policy's own payout
@@ -273,8 +410,8 @@ across its own durations. A regular-premium asset share grows far faster than 10
 in early durations because premiums, not investment return, dominate it, so the cap's
 upper bound binds and the corridor floor is what actually sets the payout: exactly 80% of
 the asset share for most of the first dozen policy years on the endowment cell shipped
-here - ``t = 0`` is the one month where the cap is skipped, so the payout there is the
-asset share itself. Later the corridor floor stops binding and the capped path alone
+here — its issue month is the one month where the cap is skipped, so the payout there is
+the asset share itself. Later the corridor floor stops binding and the capped path alone
 carries the payout up towards the asset share at maturity. The single-premium bond
 the worked example uses has no such problem, which is why the notes can state the cap
 plainly.
@@ -365,6 +502,18 @@ guaranteed annuity option module on legacy pension cells (long interest-rate
 optionality that needs the stochastic layer to mean anything), estate reattributions and
 special bonuses, and the fund-level excess of actual expenses over capped charges, which
 a single-policy model cannot see.
+
+.. rubric:: The contract's bounds
+
+What running in force adds is the contract's own bounds, which :func:`proj_len` holds a
+point to: an issue age of ``issue_age_min``, 18, or more, the youngest the mortality table
+rates, though the bond admits issue from 3 months; the bond's cover from issue to
+``omega_age`` and the endowment's to a maturity no later than it, so that every attained
+age in cover is one the table rates; and a policy still in cover at the valuation date.
+``Data`` bounds future new business by ``future_horizon_mth``, 120 months. And
+:func:`proj_len` holds every Reference a formula reads through a bound, a power or a
+product to its domain, NaN and the infinities outside each, its docstring naming each
+domain and its reason.
 """
 
 from modelx.serialize.jsonvalues import *
@@ -381,7 +530,11 @@ _spaces = []
 # Cells
 
 def model_point():
-    """The selected model point as a Series."""
+    """The selected model point as a Series, a row of *model_point_table_sec.csv*.
+
+    ``Data`` checks the table as it reads it, so every column a formula reads here is a
+    number or a code in its range.
+    """
     return data.model_point_table().loc[point_id]                    # noqa: F821
 
 
@@ -392,7 +545,7 @@ def chassis():
     are a 5% *daily* and a 10% quarterly movement with a 2.5% gap trigger, and a monthly
     grid can express none of them - a daily limit needs a daily step, and a trigger that
     fires between two monthly points is invisible to this projection.  See the Space
-    docstring.
+    docstring.  ``Data`` refuses any other code as it reads the table.
     """
     v = model_point()["chassis"]
     if v not in ("UWP_bond", "CWP_endowment"):
@@ -407,7 +560,11 @@ def is_unitised():
 
 
 def age_at_entry():
-    """x: the entry age of the model point, age nearest birthday **[std]**."""
+    """x: the entry age of the model point, age nearest birthday **[std]**.
+
+    ``Data`` holds it to a whole number of years, which :mod:`~.WP_UK_S`'s ``int`` would
+    otherwise truncate, and :func:`proj_len` to ``issue_age_min`` or more.
+    """
     return int(model_point()["age_at_entry"])
 
 
@@ -416,20 +573,13 @@ def sex():
     return model_point()["sex"]
 
 
-def duration_inforce():
-    """Completed policy **years** at the valuation date; 0 on a new-business cell.
-
-    A policy attribute, carried on the model point in the unit a contract speaks in;
-    :func:`proj_start` converts it to the grid's months.  The worked example is an
-    in-force bond at duration 5, so its projection opens at ``t = 60`` - the first month
-    of its sixth policy year - with the carried-in state as that month's opening
-    balances.
-    """
-    return int(model_point()["duration_inforce"])
-
-
 def premium_single_pp():
-    """The single premium of the bond chassis; a pricing input on an in-force cell."""
+    """The single premium of the bond chassis, paid in the issue month.
+
+    A contract fact, on a policy in force as on one not yet issued: :func:`premium_pp`
+    receives it in the issue month alone, ``duration_mth(t) == 0``, which a policy in force
+    at the valuation date has passed, and the withdrawal election is a share of it.
+    """
     return float(model_point()["premium_single"])
 
 
@@ -443,9 +593,20 @@ def sum_assured():
     return float(model_point()["sum_assured"])
 
 
-def attaching_bonus():
-    """Reversionary bonuses already attaching at the valuation date (endowment chassis)."""
-    return float(model_point()["attaching_bonus"])
+def attaching_bonus_init():
+    """G - SA at the valuation date: the reversionary bonuses attaching (endowment).
+
+    :mod:`~.WP_UK_S`'s ``attaching_bonus`` column, renamed to D6's vocabulary: the bonuses
+    every declaration before the valuation date has added to the sum assured, measured
+    before any month-0 event, so the guarantee month 0 opens with is ``sum_assured() +
+    attaching_bonus_init()``.  On a policy valued on an anniversary it includes the
+    declaration of the twelfth month just ended.  History, read from the model point:
+    the rates declared at the declarations of their day, which no ``bonus_rate`` set at
+    the valuation date reaches back to.  0 on a bond, whose bonus is in its unit price,
+    on a policy not yet in force, and on an endowment in force 11 months or fewer, before
+    its first declaration, which ``Data`` requires.
+    """
+    return float(model_point()["attaching_bonus_init"])
 
 
 def policy_term():
@@ -454,34 +615,52 @@ def policy_term():
 
 
 def units_init():
-    """U: the units held at the valuation date (bond chassis)."""
-    return float(model_point()["units"])
+    """U at the valuation date: the units held entering month 0 (bond chassis).
+
+    :mod:`~.WP_UK_S`'s ``units`` column, renamed to D6's vocabulary: on a bond in force the
+    units its premiums bought less those its withdrawals cancelled, before any month-0
+    event, so :mod:`~.WP_UK_S`'s ``units`` of the month before.  Above 0 on a bond in force,
+    which ``Data`` requires, a bond whose units are spent being encashed; 0 on a policy
+    not yet in force, whose premium buys its units in its issue month, and on the
+    endowment, which holds none.
+    """
+    return float(model_point()["units_init"])
 
 
 def unit_price_init():
-    """Q: the with-profits unit price at the valuation date (bond chassis).
+    """Q at the valuation date: the with-profits unit price month 0 opens with (bond).
 
-    On the anchor cell it is ``1.02^5 = 1.104081`` - five declarations at 2% on a unit
-    seeded at £1.0000.
+    On the anchor cell in force at duration 5 it is ``1.02^5 = 1.104081`` - five
+    declarations at 2% on a unit seeded at £1.0000.  History on a bond in force: the
+    declarations of its day raised it, which no ``bonus_rate`` set at the valuation date
+    reaches back to.  On a policy not yet in force it is the **seed price** its premium
+    buys units at, an issue value, which ``Data``'s check that such a policy holds no
+    opening state exempts.  A finite number above 0, which ``Data`` requires.
     """
     return float(model_point()["unit_price_init"])
 
 
 def asset_share_init():
-    """AS: the asset share carried into the projection.
+    """AS at the valuation date: the asset share month 0 opens with.
 
     A retrospective accumulation, and the model point's most important number: it is
-    what the payout machinery is measured against, and nobody is ever paid it.
+    what the payout machinery is measured against, and nobody is ever paid it.  On a
+    policy in force, :mod:`~.WP_UK_S`'s close of the month before, floored at 0 as
+    :mod:`~.WP_UK_S` floors it; 0 is a state the down scenario reaches, and ``Data``
+    accepts it.  0 on a policy not yet in force, which ``Data`` requires.
     """
     return float(model_point()["asset_share_init"])
 
 
 def smoothed_payout_init():
-    """S: the smoothed payout carried in; the benchmark the year-on-year cap works from.
+    """S at the valuation date: the smoothed payout month 0 opens with.
 
-    On the anchor cell it is £29,500 against an asset share of £30,000 - the payout is
-    already a little below the asset share, which is what the smoothing cap does after a
-    good year.
+    The benchmark the year-on-year cap works from.  On the anchor cell it is £29,500
+    against an asset share of £30,000 - the payout is already a little below the asset
+    share, which is what the smoothing cap does after a good year.  0 legitimately where
+    the asset share has floored at 0, the corridor holding the payout to the asset share,
+    and then the cap is skipped in month 0 as in a new-business cell's issue month.  0 on a
+    policy not yet in force, which ``Data`` requires.
     """
     return float(model_point()["smoothed_payout_init"])
 
@@ -489,7 +668,8 @@ def smoothed_payout_init():
 def guarantee_years():
     """The policy anniversaries at which an exit is MVR-free, as a tuple of years.
 
-    Read from a semicolon-separated model point column, empty on the endowment chassis.
+    Read from a semicolon-separated model point column, empty on the endowment chassis,
+    which ``Data`` requires, as it requires each year to be a whole number, 1 or more.
     """
     v = model_point()["guarantee_dates"]
     if pd.isna(v):                                                   # noqa: F821
@@ -501,7 +681,7 @@ def wd_rate():
     """The partial withdrawal taken each year, as a fraction of the original premium.
 
     Zero in the base run; the MVR-free allowance is 5% a year, and a withdrawing cell
-    takes the whole of it.
+    takes the whole of it.  ``Data`` holds it from 0 to 1.
     """
     return float(model_point()["wd_rate"])
 
@@ -526,10 +706,13 @@ def fund_return():
     A **scenario level** rather than a best estimate: the notes' worked example is a
     one-year, two-scenario comparison, and the shipped scenario cells hold their own
     return for the whole projection, so the first projected year reproduces the notes
-    exactly and the remainder shows what that scenario implies if sustained.
+    exactly and the remainder shows what that scenario implies if sustained.  A level, so
+    the same on the valuation clock as on the policy clock, and nothing is re-based.
 
     Asset shares, final bonuses and MVR incidence all key off this one number, and a
     deterministic run understates guarantee cost because the cost is convex in it.
+    ``Data`` holds it to a finite number above -1, where the monthly return has a real
+    value.
 
     Read the down cell's tail for what it is.  A single year at -15% is a market shock;
     sixty consecutive years at -15% is not a scenario anyone would value against, and the
@@ -541,92 +724,430 @@ def fund_return():
 
 
 def bonus_rate_init():
-    """The declared regular or reversionary bonus rate the model point carries.
+    """The declared bonus rate of the policy year under way at the valuation date.
 
-    2.00% on the bond chassis and 1.50% compound on the endowment, both **[std]**:
-    declarations are not published in firms' principles and practices documents.
+    :mod:`~.WP_UK_S`'s ``bonus_rate`` column, renamed to D6's vocabulary: 2.00% on the bond
+    chassis and 1.50% compound on the endowment, both **[std]**: declarations are not
+    published in firms' principles and practices documents.  It is the rate of every
+    policy year in the base run, and with ``bonus_rule_on`` the rate of the year under way
+    at the valuation date, as :mod:`~.WP_UK_S`'s is the rate of its first projected year;
+    the setting rule takes each later year's from it.  On a policy not yet in force, the
+    rate of its first policy year, an issue value.  A finite number, zero or more, the
+    declared bonus being floored at 0, which ``Data`` requires.
     """
-    return float(model_point()["bonus_rate"])
+    return float(model_point()["bonus_rate_init"])
+
+
+def guar_charge_cum_pp_init():
+    """CumGC at the valuation date: the guarantee charges taken per policy since issue.
+
+    :func:`guar_charge_cum_pp`'s value entering month 0, the charges of every month to the
+    end of month -1, which the charge's lifetime cap of 2% of the asset share is measured
+    against in month 0.  :mod:`~.WP_UK_S` restarts it at 0 where its frame opens, so a bond
+    it reopens in force charges on where its own projection from issue has stopped: the
+    down scenario's bond issued at the valuation date stops charging at month 88, and
+    reopened at month 60 without its charges it would charge again.  History, read from
+    the model point, never rebuilt from today's charge and cap.  0 on a policy not yet in
+    force, which ``Data`` requires.
+    """
+    return float(model_point()["guar_charge_cum_pp_init"])
+
+
+def smoothing_account_init():
+    """SM at the valuation date: the estate's smoothing cost since issue, per policy.
+
+    :func:`smoothing_account`'s value entering month 0 over the policies then in force:
+    the excess of every payout over the asset share it released, on the exits of every
+    month to the end of month -1, carried per policy in force so that the count is the one
+    weight, and :func:`smoothing_account` opens at it times :func:`pols_if_init`.
+    :mod:`~.WP_UK_S` restarts the account at 0 where its frame opens.  Of either sign: it is
+    negative where payouts have fallen short of the asset shares.  History, read from the
+    model point.  0 on a policy not yet in force, which ``Data`` requires.
+    """
+    return float(model_point()["smoothing_account_init"])
+
+
+def policy_count():
+    """The number of policies the model point stands for, its ``policy_count`` column.
+
+    A point in force at the valuation date counts the policies in force then, before any
+    month-0 event; any other point counts the policies it issues. Either way the count
+    enters the projection once: as :func:`pols_if_init` for the first, as
+    :func:`pols_new_biz` in the issue month for the second. It is the one weight on every
+    flow: every opening-state column is per policy.
+    """
+    return float(model_point()["policy_count"])
 
 
 def pols_if_init():
-    """Initial number of policies in force; 1.0 on a single-policy model point."""
-    return float(model_point()["pols_if_init"])
+    """Policies in force at the valuation date, before any month-0 event.
 
-
-def proj_start():
-    """The first projected month: ``12 x duration_inforce()``, the elapsed months.
-
-    ``t`` is 0-based, so a cell in force at duration 5 opens its frame at ``t = 60`` -
-    the first month of the sixth policy year - and a new-business cell opens it at
-    ``t = 0``.  Because the conversion is a whole number of years, the frame always
-    opens on a policy anniversary, which is what keeps the declaration months aligned
-    with the contract.
+    ``policy_count()`` for a point already in force at ``t = 0``
+    (``duration_mth_init() > 0``), and 0 for one issued at or after it, whose policies
+    enter through :func:`pols_new_biz` in the issue month instead, as in
+    ``basiclife.BasicTerm_SE``. So on a point issued at ``t = 0`` this is 0, and
+    ``pols_if(0)`` is the issued count.
     """
-    return 12 * duration_inforce()
+    return policy_count() if duration_mth_init() > 0 else 0.0
 
 
-def fund_exhaust_mth():
-    """The first projected month in which the bond's unit fund is exhausted; 0 if never.
+def duration_mth_init():
+    """Completed policy months at the valuation date, the ``duration_mth`` column.
 
-    A level withdrawal election runs the unit holding down, and against a fund whose
-    growth is only the declared bonus it eventually cancels the last unit.  This locates
-    that month so :func:`proj_len` can stop before it.  Zero on the endowment chassis
-    and on any bond cell taking no withdrawals, which is the ordinary case.
-
-    Zero is safe as the "never" sentinel even though ``t = 0`` is a real month: the
-    withdrawal is capped at the fund it is cancelled out of, so a bond written at
-    ``t = 0`` still holds the units its single premium bought at the end of it.
+    The policy's age in months at ``t = 0``: 60 for the worked example's bond, in force
+    five years, 0 for one issued at the valuation date, and -13 for one to be issued 13
+    months after it, which ``Data`` admits up to ``future_horizon_mth`` months ahead. It is
+    read as ``basiclife.BasicTerm_SE`` reads it, and is the one fact the policy clock takes
+    from the model point; a point may be valued in any month of its policy year, where
+    :mod:`~.WP_UK_S` opens a frame on an anniversary only.
     """
-    if not is_unitised() or wd_rate() <= 0.0:
-        return 0
-    for t in range(proj_start(), 12 * (omega_age - age_at_entry())):  # noqa: F821
-        if units(t) <= 1e-9:
-            return t
-    return 0
+    return int(model_point()["duration_mth"])
 
 
-def proj_len():
-    """The number of policy months projected from issue: the frame's exclusive end.
+def t_entry():
+    """The first month the policy is on the books: ``max(0, -duration_mth_init())``.
 
-    The frame is ``range(proj_start(), proj_len())``, so the last projected month is
-    ``proj_len() - 1``.  It is twelve times the endowment's term, or twelve times the
-    whole-of-life bond's limiting age - cut short where a withdrawal election has
-    exhausted the unit fund, since a bond with no units is not a bond.
+    0 for a point in force at the valuation date or issued at it, ``k`` for one issued
+    ``k`` months later.  It is the base of every recursion: the count, the asset share,
+    the units, the unit price, the guarantee, the smoothed payout and the two cumulants
+    open there, from the opening state, and none reads a month before it.
+    :func:`fund_exhaust_mth` searches the units from it.
+    """
+    return max(0, -duration_mth_init())
+
+
+def is_active(t):
+    """Whether month t is inside cover: issued, and short of the end of cover.
+
+    ``0 <= duration_mth(t) < cover_end_mth()``.  False before issue and from the month the
+    endowment matures or the bond reaches ``omega_age``.  Outside cover every balance,
+    count, flow and charge is 0, every flag False, and no table is read at a policy year
+    or an attained age the policy does not have.
+
+    It reads the end of cover alone, on the policy clock, not :func:`proj_len`: the frame
+    also ends where a withdrawal election exhausts the bond's units, which
+    :func:`fund_exhaust_mth` finds by projecting the units, and the units, through every
+    chain they read, read this.  So in the months after an exhaustion and before the
+    limiting age a bond is in cover; there the counts are 0, because the frame has ended.
+    """
+    return 0 <= duration_mth(t) < cover_end_mth()
+
+
+def cover_end_mth():
+    """The policy month cover ends: the endowment's maturity or the bond's limiting age.
+
+    ``12 x policy_term()`` on the endowment, which matures at the end of policy month
+    ``12n - 1``, and ``12 x (omega_age - age_at_entry())`` on the whole-of-life bond, whose
+    cover runs to the limiting age.  :mod:`~.WP_UK_S`'s frame from issue but for the
+    exhaustion, on the policy clock: :func:`is_active` is false from ``duration_mth(t) =
+    cover_end_mth()`` on.  ``omega_age`` is read as an ``int``, which :func:`proj_len` holds
+    it to be first: a whole number written as a float, ``120.0``, makes the frame ``120``
+    makes, in whole months.
     """
     if not is_unitised():
         return 12 * policy_term()
-    horizon = 12 * (omega_age - age_at_entry())                      # noqa: F821
+    return 12 * (int(omega_age) - age_at_entry())                    # noqa: F821
+
+
+def fund_exhaust_mth():
+    """The policy month in which a bond's withdrawals cancel its last unit.
+
+    The first month on the books whose closing units, :func:`units`, are at or below
+    ``1e-9``, :mod:`~.WP_UK_S`'s test, as a policy month, ``duration_mth(t)``: the month the
+    withdrawal election, capped at the unit fund, takes the last of it.  That month is not
+    projected: the bond is encashed at the end of the month before, which is the frame's
+    last (:func:`proj_len`, :func:`is_forced_encashment`).  On the endowment, and on a
+    bond taking no withdrawals, the units never run out, and so on a bond whose withdrawals
+    the declared bonus outruns.
+
+    The search is one loop in this cell, over the units' own months from :func:`t_entry`
+    to the end of cover, ascending, so that it reads each month's units once those of the
+    month before are known: the far read R2 admits, as ``DIA_US_SEC``'s survival to its
+    payout date is and ``ULB_UK_SEC``'s fund to its exhaustion, and the only one this model
+    makes but the bonus rate's, the policy month being formed from
+    :func:`duration_mth_init` rather than read.  It reads the units of the month of
+    exhaustion, one past the frame's last, as :mod:`~.WP_UK_S`'s search does.  It starts at
+    :func:`t_entry`, not at 0, because a bond issued later holds no units before its issue
+    month, which a search from 0 would read as exhausted at once.
+
+    "Never" is ``cover_end_mth() + 1``, a month past cover.  :mod:`~.WP_UK_S`'s was 0, safe
+    there because its month 0 is a bond's issue month, which the single premium funds; on
+    the valuation clock month 0 is any month of a bond's life, including the one its last
+    units are withdrawn in, and a policy month of 0 is a real month too.
+    """
+    if not is_unitised() or wd_rate() <= 0.0:
+        return cover_end_mth() + 1
+    for t in range(t_entry(), cover_end_mth() - duration_mth_init()):
+        if units(t) <= 1e-9:
+            return duration_mth_init() + t
+    return cover_end_mth() + 1
+
+
+def proj_len():
+    """The number of months from the valuation date to the end of the frame.
+
+    ``min(cover_end_mth(), fund_exhaust_mth()) - duration_mth_init()``: the endowment's
+    maturity, the bond's limiting age, or the month a withdrawal election exhausts its
+    units, whichever comes first, counted from the valuation date rather than from issue.
+    720 for the worked example's bond, in force 60 months of 780; 343 for the withdrawing
+    bond, whose units run out at policy month 403; 300 for the endowment issued at the
+    valuation date; and the frame from issue plus ``k`` for a policy issued ``k`` months
+    after it.  The frame is ``t = 0, 1, ..., proj_len() - 1``; ``proj_len()`` is its
+    exclusive end and the row count of :func:`result_cf`.
+
+    These raise here, naming the point, rather than project nothing, a frame the contract
+    does not have, or one that no value of a Reference defines, each checked in this order:
+
+    * ``issue_age_min`` that is not a whole number, 0 or more, below ``2**53``: an age,
+      which a NaN would switch off, every comparison with it failing;
+    * a policy issued below ``issue_age_min``, 18, the youngest age the mortality table
+      rates, though the bond admits issue from 3 months;
+    * ``omega_age`` that is not a whole number below ``2**53``, above ``issue_age_min`` and
+      at most a year past the mortality table's last age, ``Data.mort_age_last() + 1``,
+      since cover reads attained ages to ``omega_age - 1``: the limiting age sizes every
+      bond's frame, and a NaN, an infinity or a fraction of a year would leave the frame's
+      months no whole number;
+    * a bond issued at or past ``omega_age``, which has no cover from issue, and an
+      endowment maturing past it, at ``age_at_entry() + policy_term()``, whose last
+      attained ages the table would not rate: :mod:`~.WP_UK_S` bounds no term, and reads
+      them at ``omega_age``;
+    * a policy whose cover had ended by the valuation date, at or past
+      :func:`cover_end_mth`, which an in-force extract should not carry;
+    * any point while a Reference is off its domain, which the message names. NaN and the
+      infinities are outside every one:
+
+      - ``mort_be_factor``, finite, 0 or more: a factor on a probability, read inside the
+        mortality cap's ``min``, where an infinity reads as certain death and below 0 a
+        rate is negative;
+      - ``amc_rate`` and ``guar_charge_rate_base``, from 0 to 1: charges, each taken
+        monthly as ``1 - (1 - c)^(1/12)``, which has no real value past 1; and together
+        at most the whole asset share a month, ``amc_rate_mth()`` and the guarantee
+        charge's monthly rate summing to 1 or less, which the charges' factor on the
+        balance, ``1 - c_amc_m - c_g_m``, reads as one;
+      - ``guar_charge_cap``, from 0 to 1, the share of the asset share the charges may
+        reach, which a NaN would switch off, its comparison failing;
+      - ``misc_surplus_rate``, finite, 0 or more: an estate distribution, added to the
+        asset share before its floor at 0, which would read a NaN as an exhausted share;
+      - ``prem_alloc_rate``, from 0 to 1, the share of a premium that buys units;
+      - ``death_benefit_factor``, finite, 0 or more: the bond's uplift, read inside the
+        mortality charge's ``max(0, ...)``, which would lose a NaN;
+      - ``shareholder_transfer_divisor``, finite, above 0: the cost of bonus is divided by
+        it;
+      - ``surr_disc_rate``, finite, above -1: the endowment's bonus cost is discounted at
+        ``(1 + i)^years``;
+      - ``smooth_cap``, from 0 to 1: the cap's twelfth roots, ``(1 - sigma)^(1/12)`` and
+        ``(1 + sigma)^(1/12)``, read inside the cap's ``max`` and ``min``, which a NaN would
+        be lost through;
+      - ``corridor_lo``, from 0 to 1, and ``corridor_hi``, finite, 1 or more: the target
+        corridor, which must include 100% of the asset share, read inside the corridor's
+        ``max`` and ``min``;
+      - ``bonus_rule_on``, True or False, the switch;
+      - ``guar_fill_target``, finite, 0 or more, a share of the projected asset share
+        raised to ``1/m``; ``bonus_speed``, from 0 to 1, the share of the gap a year's
+        declaration closes; ``bonus_change_cap``, finite, 0 or more, the clamp a NaN would
+        be lost through; and ``bonus_horizon``, a whole number of years, 1 or more, below
+        ``2**53``, the bond's ``m``, which the rule divides by;
+      - ``mvr_deterrent_factor`` and ``guarantee_imminent_factor``, finite, 0 or more:
+        multipliers of a probability, read inside :func:`surr_rate`'s ``min(1.0, ...)``,
+        its bound first as in :mod:`~.WP_UK_S`, which reads a NaN as certain surrender;
+      - ``guarantee_exercise_rate``, from 0 to 1, a probability, read the same way;
+      - ``expense_maint``, finite, 0 or more: below 0 an income;
+      - ``inflation_rate``, finite, -1 or more: below -1 the inflation factor changes sign
+        each year;
+
+    * a bond whose units run out in its first month on the books, month 0 for a bond in
+      force, its issue month for one not yet in force: the frame would end before it
+      began.
+
+    The rules read this Space's References, which ``Data`` cannot see, so they are checked
+    here.  They are the contract a compiled model's caches are sized from: a frame of at
+    most ``omega_age - issue_age_min`` years and the future horizon, and attained ages from
+    18 to ``omega_age - 1`` on the mortality table.  Every report reads this cell first,
+    and so does every count, so no point outside them is projected.  Each check is a
+    comparison written out, a finite bound the largest float, 1.7976931348623157e308, and
+    a whole one ``2**53``, so that a compiled cell runs it in C, and each Reference is
+    printed as the compiled model will type it: ``issue_age_min``, ``omega_age`` and
+    ``bonus_horizon`` through ``int()`` once they are whole numbers, and every other
+    through ``float()``; ``omega_age`` is then read as the ``int`` it is.  A value a
+    formula computes past the floats, from References and an opening state each in its
+    domain, is refused in the cell where it first is, naming the point: the premium, the
+    asset share and the parts of its month that a Reference multiplies, the units, the
+    unit price, the guarantee, the death uplift, the cost of bonus and its transfer, the
+    two cumulants, each flow and the net cash flow.  So is a power past the floats, which
+    Python's ``**`` raises as ``OverflowError``, naming neither the point nor the
+    Reference, and C's ``pow`` gives as an infinity: the inflation factor, the bonus rule's
+    growth to its horizon and the endowment's discount on its bonus cost, which below the
+    smallest float is refused too, since the cost divides by it (``PA_UK_SEC``'s form,
+    *Record — M11*).
+    """
+    if not (issue_age_min > -9007199254740992.0                       # noqa: F821
+            and issue_age_min < 9007199254740992.0                    # noqa: F821
+            and issue_age_min == issue_age_min // 1):                 # noqa: F821
+        raise ValueError(f"point_id {point_id}: issue_age_min must be a whole number "  # noqa: F821
+                         f"below 2**53, not {float(issue_age_min)}")  # noqa: F821
+    if issue_age_min < 0:                                            # noqa: F821
+        raise ValueError(f"point_id {point_id}: issue_age_min must be 0 or more, "  # noqa: F821
+                         f"not {int(issue_age_min)}")                # noqa: F821
+    x = age_at_entry()
+    if x < issue_age_min:                                            # noqa: F821
+        raise ValueError(f"point_id {point_id}: the issue age, {x}, is below "  # noqa: F821
+                         f"issue_age_min, {int(issue_age_min)}")     # noqa: F821
+    if not (omega_age > -9007199254740992.0                           # noqa: F821
+            and omega_age < 9007199254740992.0                        # noqa: F821
+            and omega_age == omega_age // 1):                         # noqa: F821
+        raise ValueError(f"point_id {point_id}: omega_age must be a whole number "  # noqa: F821
+                         f"below 2**53, not {float(omega_age)}")     # noqa: F821
+    if not (omega_age > issue_age_min                                # noqa: F821
+            and omega_age <= data.mort_age_last() + 1):               # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: omega_age must be above issue_age_min, "  # noqa: F821
+            f"{int(issue_age_min)}, and at most {data.mort_age_last() + 1}, a year past "  # noqa: F821
+            f"mort_table.csv's last age, not {int(omega_age)}")      # noqa: F821
+    if is_unitised():
+        if cover_end_mth() <= 0:
+            raise ValueError(f"point_id {point_id}: the issue age, {x}, is at or past "  # noqa: F821
+                             f"omega_age, {int(omega_age)}: the bond has no cover")  # noqa: F821
+    elif x + policy_term() > omega_age:                              # noqa: F821
+        raise ValueError(
+            f"point_id {point_id}: the endowment matures at age {x + policy_term()}, "  # noqa: F821
+            f"past omega_age, {int(omega_age)}, whose attained ages mort_table.csv "  # noqa: F821
+            f"may not rate")
+    d = duration_mth_init()
+    if d >= cover_end_mth():
+        raise ValueError(
+            f"point_id {point_id}: duration_mth {d} is at or past the end of cover, "  # noqa: F821
+            f"policy month {cover_end_mth()}")
+    if not (mort_be_factor >= 0.0                                    # noqa: F821
+            and mort_be_factor <= 1.7976931348623157e308):            # noqa: F821
+        raise ValueError(f"point_id {point_id}: mort_be_factor must be a finite number, "  # noqa: F821
+                         f"0 or more, not {float(mort_be_factor)}")  # noqa: F821
+    if not (amc_rate >= 0.0 and amc_rate <= 1.0):                    # noqa: F821
+        raise ValueError(f"point_id {point_id}: amc_rate must be a number from 0 to 1, "  # noqa: F821
+                         f"not {float(amc_rate)}")                   # noqa: F821
+    if not (guar_charge_rate_base >= 0.0 and guar_charge_rate_base <= 1.0):  # noqa: F821
+        raise ValueError(f"point_id {point_id}: guar_charge_rate_base must be a number "  # noqa: F821
+                         f"from 0 to 1, not {float(guar_charge_rate_base)}")  # noqa: F821
+    charged = amc_rate_mth() + (1.0 - (1.0 - guar_charge_rate_base) ** (1.0 / 12.0))  # noqa: F821
+    if not charged <= 1.0:
+        raise ValueError(
+            f"point_id {point_id}: amc_rate and guar_charge_rate_base must together "  # noqa: F821
+            f"charge at most the whole asset share in a month, their monthly rates summing "
+            f"to 1 or less, not {charged}, under amc_rate {float(amc_rate)} and "  # noqa: F821
+            f"guar_charge_rate_base {float(guar_charge_rate_base)}")  # noqa: F821
+    if not (guar_charge_cap >= 0.0 and guar_charge_cap <= 1.0):      # noqa: F821
+        raise ValueError(f"point_id {point_id}: guar_charge_cap must be a number from 0 "  # noqa: F821
+                         f"to 1, not {float(guar_charge_cap)}")      # noqa: F821
+    if not (misc_surplus_rate >= 0.0                                 # noqa: F821
+            and misc_surplus_rate <= 1.7976931348623157e308):         # noqa: F821
+        raise ValueError(f"point_id {point_id}: misc_surplus_rate must be a finite "  # noqa: F821
+                         f"number, 0 or more, not {float(misc_surplus_rate)}")  # noqa: F821
+    if not (prem_alloc_rate >= 0.0 and prem_alloc_rate <= 1.0):      # noqa: F821
+        raise ValueError(f"point_id {point_id}: prem_alloc_rate must be a number from 0 "  # noqa: F821
+                         f"to 1, not {float(prem_alloc_rate)}")      # noqa: F821
+    if not (death_benefit_factor >= 0.0                              # noqa: F821
+            and death_benefit_factor <= 1.7976931348623157e308):      # noqa: F821
+        raise ValueError(f"point_id {point_id}: death_benefit_factor must be a finite "  # noqa: F821
+                         f"number, 0 or more, not {float(death_benefit_factor)}")  # noqa: F821
+    if not (shareholder_transfer_divisor > 0.0                       # noqa: F821
+            and shareholder_transfer_divisor <= 1.7976931348623157e308):  # noqa: F821
+        raise ValueError(f"point_id {point_id}: shareholder_transfer_divisor must be a "  # noqa: F821
+                         f"finite number above 0, not "
+                         f"{float(shareholder_transfer_divisor)}")    # noqa: F821
+    if not (surr_disc_rate > -1.0                                    # noqa: F821
+            and surr_disc_rate <= 1.7976931348623157e308):            # noqa: F821
+        raise ValueError(f"point_id {point_id}: surr_disc_rate must be a finite number "  # noqa: F821
+                         f"above -1, not {float(surr_disc_rate)}")   # noqa: F821
+    if not (smooth_cap >= 0.0 and smooth_cap <= 1.0):                # noqa: F821
+        raise ValueError(f"point_id {point_id}: smooth_cap must be a number from 0 to 1, "  # noqa: F821
+                         f"not {float(smooth_cap)}")                 # noqa: F821
+    if not (corridor_lo >= 0.0 and corridor_lo <= 1.0):              # noqa: F821
+        raise ValueError(f"point_id {point_id}: corridor_lo must be a number from 0 to 1, "  # noqa: F821
+                         f"not {float(corridor_lo)}")                # noqa: F821
+    if not (corridor_hi >= 1.0                                       # noqa: F821
+            and corridor_hi <= 1.7976931348623157e308):               # noqa: F821
+        raise ValueError(f"point_id {point_id}: corridor_hi must be a finite number, 1 "  # noqa: F821
+                         f"or more, not {float(corridor_hi)}")       # noqa: F821
+    if not (bonus_rule_on == True or bonus_rule_on == False):        # noqa: F821,E712
+        raise ValueError(f"point_id {point_id}: bonus_rule_on must be True or False, "  # noqa: F821
+                         f"not {bonus_rule_on!r}")                   # noqa: F821
+    if not (guar_fill_target >= 0.0                                  # noqa: F821
+            and guar_fill_target <= 1.7976931348623157e308):          # noqa: F821
+        raise ValueError(f"point_id {point_id}: guar_fill_target must be a finite "  # noqa: F821
+                         f"number, 0 or more, not {float(guar_fill_target)}")  # noqa: F821
+    if not (bonus_speed >= 0.0 and bonus_speed <= 1.0):              # noqa: F821
+        raise ValueError(f"point_id {point_id}: bonus_speed must be a number from 0 to 1, "  # noqa: F821
+                         f"not {float(bonus_speed)}")                # noqa: F821
+    if not (bonus_change_cap >= 0.0                                  # noqa: F821
+            and bonus_change_cap <= 1.7976931348623157e308):          # noqa: F821
+        raise ValueError(f"point_id {point_id}: bonus_change_cap must be a finite "  # noqa: F821
+                         f"number, 0 or more, not {float(bonus_change_cap)}")  # noqa: F821
+    if not (bonus_horizon > -9007199254740992.0                       # noqa: F821
+            and bonus_horizon < 9007199254740992.0                    # noqa: F821
+            and bonus_horizon == bonus_horizon // 1):                 # noqa: F821
+        raise ValueError(f"point_id {point_id}: bonus_horizon must be a whole number "  # noqa: F821
+                         f"below 2**53, not {float(bonus_horizon)}")  # noqa: F821
+    if bonus_horizon < 1:                                            # noqa: F821
+        raise ValueError(f"point_id {point_id}: bonus_horizon must be 1 or more, not "  # noqa: F821
+                         f"{int(bonus_horizon)}")                    # noqa: F821
+    if not (mvr_deterrent_factor >= 0.0                              # noqa: F821
+            and mvr_deterrent_factor <= 1.7976931348623157e308):      # noqa: F821
+        raise ValueError(f"point_id {point_id}: mvr_deterrent_factor must be a finite "  # noqa: F821
+                         f"number, 0 or more, not {float(mvr_deterrent_factor)}")  # noqa: F821
+    if not (guarantee_exercise_rate >= 0.0                           # noqa: F821
+            and guarantee_exercise_rate <= 1.0):                      # noqa: F821
+        raise ValueError(f"point_id {point_id}: guarantee_exercise_rate must be a number "  # noqa: F821
+                         f"from 0 to 1, not {float(guarantee_exercise_rate)}")  # noqa: F821
+    if not (guarantee_imminent_factor >= 0.0                         # noqa: F821
+            and guarantee_imminent_factor <= 1.7976931348623157e308):  # noqa: F821
+        raise ValueError(f"point_id {point_id}: guarantee_imminent_factor must be a "  # noqa: F821
+                         f"finite number, 0 or more, not "
+                         f"{float(guarantee_imminent_factor)}")       # noqa: F821
+    if not (expense_maint >= 0.0                                     # noqa: F821
+            and expense_maint <= 1.7976931348623157e308):             # noqa: F821
+        raise ValueError(f"point_id {point_id}: expense_maint must be a finite number, "  # noqa: F821
+                         f"0 or more, not {float(expense_maint)}")   # noqa: F821
+    if not (inflation_rate >= -1.0                                   # noqa: F821
+            and inflation_rate <= 1.7976931348623157e308):            # noqa: F821
+        raise ValueError(f"point_id {point_id}: inflation_rate must be a finite number, "  # noqa: F821
+                         f"-1 or more, not {float(inflation_rate)}")  # noqa: F821
     exhaust = fund_exhaust_mth()
-    if exhaust:
-        return min(horizon, exhaust)
-    return horizon
+    if exhaust <= max(d, 0):
+        raise ValueError(
+            f"point_id {point_id}: the bond's units run out in its first month on the "  # noqa: F821
+            f"books, policy month {exhaust}, so its frame would end before it began")
+    return min(cover_end_mth(), exhaust) - d
 
 
 def is_forced_encashment():
-    """Whether the bond's projection ends because the unit fund has been exhausted.
+    """Whether the bond's projection ends because its units have been exhausted.
 
     It changes what the survivors at the end of the projection are paid.  A fund-
     exhaustion ending is a **real contractual event** - the last units are cancelled and
     the bond is encashed - so the survivors are paid out.  A limiting-age ending is a
-    modelling truncation, and paying anything there would invent a claim.
+    modelling truncation, and paying anything there would invent a claim.  True where
+    :func:`fund_exhaust_mth` finds a month inside cover.
     """
-    return (is_unitised() and fund_exhaust_mth() > 0
-            and proj_len() == fund_exhaust_mth())
+    return is_unitised() and fund_exhaust_mth() < cover_end_mth()
 
 
 def duration(t):
-    """Completed policy years at the start of month t: ``t // 12``; 0 in the first year."""
-    return t // 12
+    """Completed policy years at the start of month t: ``duration_mth(t) // 12``.
+
+    0 throughout the first policy year, and negative before issue, where nothing reads it.
+    """
+    return duration_mth(t) // 12
 
 
 def duration_mth(t):
-    """Months elapsed from issue at the start of month t; equal to t.
+    """Completed policy months at the start of month t, the **policy** clock.
 
-    ``t`` is 0-based and counts from issue, so the identity is trivial - the cells
-    exists so the monthly models in this library share one vocabulary.
+    ``duration_mth_init() + t``: ``t`` counts months from the valuation date and
+    ``duration_mth(t)`` months from issue, and the two move together.  A closed form,
+    where ``basiclife.BasicTerm_SE`` adds one a month by recursion: the same numbers,
+    without a call chain as long as the frame.  Negative before issue.  The declaration
+    cycle, the guarantee dates, the single premium and the end of cover read it.
     """
-    return t
+    return duration_mth_init() + t
 
 
 def age(t):
@@ -639,12 +1160,11 @@ def age(t):
 
 
 def policy_year(t):
-    """The contractual policy year containing month t: the 1-based label ``t // 12 + 1``.
+    """The contractual policy year containing month t: the 1-based label ``duration(t) + 1``.
 
-    ``t`` is the 0-based month index; the policy year is the 1-based label a contract
-    speaks in, and it is what the guarantee dates, the declaration cycle and the lapse
-    table are keyed by.  Derived here rather than indexed by, so that no schedule is
-    read a row out.
+    A contractual label derived from the policy clock, never the index itself: the
+    guarantee dates, the declaration cycle and the lapse table are keyed by it.  0 or less
+    before issue, where nothing reads a table or a date by it.
     """
     return duration(t) + 1
 
@@ -652,23 +1172,30 @@ def policy_year(t):
 def is_declaration_month(t):
     """Whether month t ends on a policy anniversary, and so carries a declaration.
 
-    ``(t + 1) mod 12 = 0``.  The bonus declaration is the governing discretion cycle and
-    it is **annual**: firms declare once a year, and a declaration permanently hardens
-    the guarantee.  So the grid runs monthly and the declaration does not - it fires in
-    the twelfth month of each policy year and nowhere else, which is what keeps this a
-    change of grid rather than a change of product.
+    ``(duration_mth(t) + 1) mod 12 = 0``, the twelfth month of a policy year, on the policy
+    clock: :mod:`~.WP_UK_S` tests ``(t + 1)``, which on the valuation clock would put a
+    bond valued mid-year's declarations in the wrong months.  The bonus declaration is the
+    governing discretion cycle and it is **annual**: firms declare once a year, and a
+    declaration permanently hardens the guarantee.  So the grid runs monthly and the
+    declaration does not - it fires in the twelfth month of each policy year and nowhere
+    else, which is what keeps this a change of grid rather than a change of product.
+    False outside cover.
     """
-    return (t + 1) % 12 == 0
+    return is_active(t) and (duration_mth(t) + 1) % 12 == 0
 
 
 def declaration_month(t):
     """The month whose end carries the declaration for the policy year containing t.
 
-    ``12 x duration(t) + 11``.  Every month of a policy year reads the rate declared at
-    that month, so a declared rate is a property of the policy year rather than of the
-    month.
+    A **valuation** month, ``t + 11 - duration_mth(t) % 12``: ``t`` itself in a
+    declaration month, and up to 11 months ahead of it otherwise, as uslib's
+    ``WholeLife_US_SEC`` reads its ``anniv_mth``.  :mod:`~.WP_UK_S` returns the **policy**
+    month ``12 x duration(t) + 11``, which :func:`bonus_rate` passes back as ``t``, the
+    same number only where the two clocks coincide.  Every month of a policy year reads the
+    rate declared at that month, so a declared rate is a property of the policy year
+    rather than of the month.
     """
-    return 12 * duration(t) + 11
+    return t + 11 - duration_mth(t) % 12
 
 
 def is_guarantee_date(t):
@@ -679,7 +1206,7 @@ def is_guarantee_date(t):
     and pays the full guaranteed benefit plus final bonus, which is the option
     :func:`guarantee_exercise` is exercising.  In the other eleven months of the same
     policy year the window is shut and an exit bears the market value reduction like any
-    other - a distinction an annual grid could not draw.
+    other - a distinction an annual grid could not draw.  False outside cover.
     """
     return is_declaration_month(t) and policy_year(t) in guarantee_years()
 
@@ -690,11 +1217,22 @@ def premium_pp(t):
     A twelfth of the annual regular premium on the endowment chassis - the model point
     carries the premium per year, the unit a policy document states it in, and it is
     collected monthly by direct debit **[std]** - plus the single premium in the issue
-    month, ``t = 0``, which an in-force cell never reaches, so it is not double counted.
+    month, ``duration_mth(t) == 0``, on the policy clock: :mod:`~.WP_UK_S` adds it at
+    ``t == 0``, which on the valuation clock is every policy's valuation month, so every
+    bond in force would pay its single premium again.  0 outside cover.  A premium past
+    the largest float, the single premium and the regular premium's twelfth summed, is
+    refused in its issue month, naming both.
     """
+    if not is_active(t):
+        return 0.0
     p = premium_regular_pp() / 12.0
-    if t == 0:
+    if duration_mth(t) == 0:
         p += premium_single_pp()
+        if not p - p == 0.0:
+            raise ValueError(
+                f"point_id {point_id}: the premium premium_pp({t}) is {p}, not a finite "  # noqa: F821
+                f"number, from the single premium {premium_single_pp()} and the regular "
+                f"premium's twelfth {premium_regular_pp() / 12.0}")
     return p
 
 
@@ -715,8 +1253,10 @@ def wd_pp(t):
     measured against: the *unit* fund, not the pre-MVR policy value, because a partial
     withdrawal cancels units and the final bonus is only paid on full encashment.  The
     residual final bonus reaches the policyholder in the encashment that
-    :func:`is_forced_encashment` marks.
+    :func:`is_forced_encashment` marks.  0 outside cover.
     """
+    if not is_active(t):
+        return 0.0
     w = wd_rate() * premium_single_pp() / 12.0
     if w <= 0.0:
         return 0.0
@@ -729,7 +1269,7 @@ def wd_as_pp(t):
     Pro rata to the **pre-MVR policy value** the month opens with, so a withdrawal
     takes the same proportion of the asset share as it takes of what the policy is worth
     - not the same cash amount.  Zero where nothing is withdrawn or the policy value is
-    nil.
+    nil.  A product past the largest float is refused in the month it first is.
     """
     w = wd_pp(t)
     if w <= 0.0:
@@ -737,7 +1277,13 @@ def wd_as_pp(t):
     pv = policy_value_open(t)
     if pv <= 0.0:
         return 0.0
-    return asset_share_at(t, "BEF_PREM") * w / pv
+    v = asset_share_at(t, "BEF_PREM") * w / pv
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the asset share's withdrawal wd_as_pp({t}) is {v}, not a "  # noqa: F821
+            f"finite number, from the opening asset share {asset_share_at(t, 'BEF_PREM')}, "
+            f"the withdrawal {w} and the policy value {pv}")
+    return v
 
 
 def guar_charge_rate(t):
@@ -748,17 +1294,21 @@ def guar_charge_rate(t):
     with rather than on its own closing one, which is what keeps the charge from
     depending on the balance it is being deducted from; on this grid it is tested every
     month rather than once a year, so the charge switches off the month the cumulative
-    overtakes the threshold instead of at the following anniversary.
+    overtakes the threshold instead of at the following anniversary.  The cumulative the
+    first month on the books opens with is :func:`guar_charge_cum_pp_init`, the charges
+    taken before the valuation date, where :mod:`~.WP_UK_S` opens at 0.
 
     Note what the cap is a fraction *of*.  The notes set it against the **current** asset
     share, not against a level struck once at first breach, so on a fund that keeps
     growing the threshold grows with it: the charge stops the year the cumulative
     overtakes it and resumes the year after, when the larger asset share has moved the
     threshold back above.  That is the rule as written; a cap frozen at first breach
-    would be a different rule and a materially different charge.
+    would be a different rule and a materially different charge.  0 outside cover.
     """
+    if not is_active(t):
+        return 0.0
     prev_as = asset_share_at(t, "BEF_PREM")
-    prev_cum = guar_charge_cum_pp(t - 1) if t > proj_start() else 0.0
+    prev_cum = guar_charge_cum_pp(t - 1) if t > t_entry() else guar_charge_cum_pp_init()
     if prev_as > 0.0 and prev_cum >= guar_charge_cap * prev_as:      # noqa: F821
         return 0.0
     return guar_charge_rate_base                                     # noqa: F821
@@ -791,13 +1341,46 @@ def guar_charge_pp(t):
 def guar_charge_cum_pp(t):
     """CumGC(t): cumulative guarantee and smoothing deductions to the end of month t.
 
-    Nil before the first projected month, so the accumulation opens at zero rather
-    than reading a row below the frame.
+    Since issue: :func:`guar_charge_cum_pp_init`, the charges taken before the valuation
+    date, at :func:`t_entry`, and the month's charge added in each month after, one cell a
+    month.  :mod:`~.WP_UK_S` opens at nil where its frame opens, so on a policy it reopens
+    in force the cap's test reads only the charges since, and the charge runs on where
+    the policy's own history has stopped it.  0 outside cover.  A cumulative that leaves
+    the floats is refused in the month it first does, by
+    :func:`guar_charge_cum_refusal`.
     """
-    if t < proj_start():
+    if not is_active(t):
         return 0.0
-    prev = guar_charge_cum_pp(t - 1) if t > proj_start() else 0.0
-    return prev + guar_charge_pp(t)
+    prev = guar_charge_cum_pp(t - 1) if t > t_entry() else guar_charge_cum_pp_init()
+    v = prev + guar_charge_pp(t)
+    if not v - v == 0.0:
+        return guar_charge_cum_refusal(t)
+    return v
+
+
+def guar_charge_cum_refusal(t):
+    """The refusal of a cumulative guarantee charge past the floats in month t, in a cell
+    of its own.
+
+    :func:`guar_charge_cum_pp` is a chain, which holds a frame of each cell it recurses
+    through at each level, and the frame of a compiled cell holds the code that formats
+    each of its messages, run or not; so the chain calls this cell only on the error path,
+    and the message is formatted here (``ULB_UK_SEC``'s form, *Record — M10*).  It takes
+    the month alone, recomputes the cumulative from the same cells, the same float, and
+    refuses it where it is not a finite number, naming the month, the charges carried in
+    and the month's charge; where it is finite it returns it, and outside cover 0, as
+    :func:`guar_charge_cum_pp` does.
+    """
+    if not is_active(t):
+        return 0.0
+    prev = guar_charge_cum_pp(t - 1) if t > t_entry() else guar_charge_cum_pp_init()
+    v = prev + guar_charge_pp(t)
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the cumulative guarantee charge guar_charge_cum_pp({t}) "  # noqa: F821
+            f"is {v}, not a finite number, from the charges carried in, {prev}, and the "
+            f"month's charge, {guar_charge_pp(t)}")
+    return v
 
 
 def misc_surplus_pp(t):
@@ -805,9 +1388,16 @@ def misc_surplus_pp(t):
 
     Miscellaneous surplus and estate distributions are allocated annually where a firm
     operates them; the base model allocates none, so the rate is a monthly one only in
-    the sense that nil is nil at any frequency.
+    the sense that nil is nil at any frequency.  A distribution past the largest float,
+    which only a rate past every return makes, is refused in the month it first is.
     """
-    return misc_surplus_rate * asset_share_at(t, "BEF_PREM")         # noqa: F821
+    v = misc_surplus_rate * asset_share_at(t, "BEF_PREM")            # noqa: F821
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the estate distribution misc_surplus_pp({t}) is {v}, not "  # noqa: F821
+            f"a finite number, from misc_surplus_rate {float(misc_surplus_rate)} on the "  # noqa: F821
+            f"asset share {asset_share_at(t, 'BEF_PREM')}")
+    return v
 
 
 def fund_return_mth():
@@ -815,7 +1405,8 @@ def fund_return_mth():
 
     The effective conversion of the scenario's annual return, so twelve months of it
     compound back to the annual figure exactly.  A nominal ``r/12`` would not, and on a
-    -15% scenario the gap is not small.
+    -15% scenario the gap is not small.  ``Data`` refuses a ``fund_return`` of -1 or less,
+    where this has no real value.
     """
     return (1.0 + fund_return()) ** (1.0 / 12.0) - 1.0
 
@@ -825,9 +1416,10 @@ def asset_share_at(t, timing):
 
     ``"BEF_PREM"``
         the balance the month **opens** with: ``AS(t-1)``, or the
-        carried-in :func:`asset_share_init` in the first projected
-        month.  Everything that needs the opening asset share reads it
-        here, so no cells indexes a row below the frame.
+        carried-in :func:`asset_share_init` in the first month on the
+        books, :func:`t_entry`.  Everything that needs the opening asset
+        share reads it here, so no cells indexes a month before the
+        books open.
 
     ``"BEF_RETURN"``
         the opening balance plus the start-of-month premium, less the
@@ -848,16 +1440,20 @@ def asset_share_at(t, timing):
 
     ``"AFT_MC"``
         after the mortality charge and any estate distribution; the
-        closing asset share of the month, and the same number as
-        :func:`asset_share`.
+        closing asset share of the month before its floor at 0, which
+        :func:`asset_share` applies.
 
     The steps are exposed individually because their order is contractual discipline
     rather than arithmetic convenience, and the order survives the change of grid
     unchanged: return, then charges, then the transfer, then the mortality charge on the
-    balance the transfer left.
+    balance the transfer left.  :func:`asset_share` writes the same steps inline, for the
+    chain; each timing here reads it at ``t - 1``, a month back, through ``"BEF_PREM"``.
+    0 outside cover, at every timing.
     """
     if timing == "BEF_PREM":
-        if t <= proj_start():
+        if not is_active(t):
+            return 0.0
+        if t == t_entry():
             return asset_share_init()
         return asset_share(t - 1)
     if timing == "BEF_RETURN":
@@ -891,12 +1487,55 @@ def asset_share(t):
     being met entirely by the estate, which is what :func:`smoothing_account` then
     records.
 
-    Nil before the frame opens: the carried-in balance is the *opening* value of the
-    first projected period, ``asset_share_at(t, "BEF_PREM")``, not a row of its own.
+    Written here inline, the month's premium and withdrawal, fund return, charges,
+    shareholder transfer, mortality charge and estate distribution in
+    :func:`asset_share_at`'s order and its floats, on the opening balance, the
+    carried-in :func:`asset_share_init` at :func:`t_entry` and the month before's
+    ``AS(t-1)`` after it, read first: so the chain of calls from month t back to
+    :func:`t_entry` is one cell a month, where :mod:`~.WP_UK_S`'s ``max(0,
+    asset_share_at(t, "AFT_MC"))`` runs through its six timings to ``asset_share(t-1)``,
+    seven cells a month, 5,042 deep cold in its last month on the worked example's bond.
+    ``asset_share_at(t, "AFT_MC")`` floored is this, bit for bit.  0 outside cover.
+
+    A balance whose month leaves the floats is refused there, before its floor, which
+    would read ``-inf`` or a NaN as an exhausted share, by :func:`asset_share_refusal`.
     """
-    if t < proj_start():
+    if not is_active(t):
         return 0.0
-    return max(0.0, asset_share_at(t, "AFT_MC"))
+    opened = asset_share_init() if t == t_entry() else asset_share(t - 1)
+    before = opened + premium_pp(t) - wd_as_pp(t)
+    after_return = before * (1.0 + fund_return_mth())
+    after_charge = after_return * (1.0 - amc_rate_mth() - guar_charge_rate_mth(t))
+    after_st = after_charge - shareholder_transfer_pp(t)
+    after_mc = after_st - mort_charge_pp(t) + misc_surplus_pp(t)
+    if not after_mc - after_mc == 0.0:
+        return asset_share_refusal(t)
+    return max(0.0, after_mc)
+
+
+def asset_share_refusal(t):
+    """The refusal of an asset share past the floats in month t, in a cell of its own.
+
+    :func:`asset_share` is a chain, and calls this cell only on the error path, so that
+    the message is formatted in this cell's frame and in no frame the chain holds
+    (``ULB_UK_SEC``'s form, *Record — M10*).  It takes the month alone, reads the month's
+    closing balance before its floor from :func:`asset_share_at`, the same float, and
+    refuses it where it is not a finite number, naming the month and what makes it: the
+    opening balance, the premium, ``fund_return``, the shareholder transfer and the
+    mortality charge, any of which may be the cause.  Where it is finite it returns the
+    balance floored, :func:`asset_share`'s value, and outside cover 0, as it does.
+    """
+    if not is_active(t):
+        return 0.0
+    v = asset_share_at(t, "AFT_MC")
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the asset share of month {t} before its floor, "  # noqa: F821
+            f"asset_share_at({t}, 'AFT_MC'), is {v}, not a finite number, from the "
+            f"opening asset share {asset_share_at(t, 'BEF_PREM')}, the premium "
+            f"{premium_pp(t)}, fund_return {fund_return()}, the shareholder transfer "
+            f"{shareholder_transfer_pp(t)} and the mortality charge {mort_charge_pp(t)}")
+    return max(0.0, v)
 
 
 def unit_price(t):
@@ -906,15 +1545,39 @@ def unit_price(t):
     other eleven: the price is a step function of the policy year, because the
     declaration that moves it is an annual act of discretion.  It **never decreases** -
     the non-negative bonus is a contractual floor, which is what makes a declaration
-    irreversible.  Constant on the endowment chassis, where the guarantee is carried as
-    an amount rather than a price.  The first projected month opens at the carried-in
-    price, and because the frame opens on an anniversary that price is the one the
-    previous declaration left.
+    irreversible.  The first month on the books opens at :func:`unit_price_init`, the
+    price the declarations before the valuation date left, or a new policy's seed price;
+    one cell a month after it.  The endowment carries its guarantee as an amount rather
+    than a price, and no formula reads this on it.  0 outside cover.  A price that leaves
+    the floats is refused in the month it first does, by :func:`unit_price_refusal`.
     """
-    if t < proj_start():
-        return unit_price_init()
-    q = unit_price_init() if t == proj_start() else unit_price(t - 1)
-    return q * (1.0 + bonus_rate(t)) if is_declaration_month(t) else q
+    if not is_active(t):
+        return 0.0
+    q = unit_price_init() if t == t_entry() else unit_price(t - 1)
+    v = q * (1.0 + bonus_rate(t)) if is_declaration_month(t) else q
+    if not v - v == 0.0:
+        return unit_price_refusal(t)
+    return v
+
+
+def unit_price_refusal(t):
+    """The refusal of a unit price past the floats in month t, in a cell of its own.
+
+    :func:`unit_price`'s, on its error path alone (``ULB_UK_SEC``'s form, *Record —
+    M10*): it takes the month alone, recomputes the price from the same cells, the same
+    float, and refuses it where it is not a finite number, naming the month, the price the
+    month opens with and the bonus rate declared; where it is finite it returns it, and
+    outside cover 0, as :func:`unit_price` does.
+    """
+    if not is_active(t):
+        return 0.0
+    q = unit_price_init() if t == t_entry() else unit_price(t - 1)
+    v = q * (1.0 + bonus_rate(t)) if is_declaration_month(t) else q
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the unit price unit_price({t}) is {v}, not a finite "  # noqa: F821
+            f"number, from the opening price {q} and the bonus rate {bonus_rate(t)}")
+    return v
 
 
 def units(t):
@@ -922,18 +1585,47 @@ def units(t):
 
     Bought with the month's premium at the price it opens with and cancelled to fund
     the month's withdrawal.  Constant in the base run, where the bond is single premium
-    and nothing is withdrawn.  Nil on the endowment chassis, which carries its guarantee
-    as an amount rather than as units at a price.
+    and nothing is withdrawn after its issue month.  The first month on the books opens
+    with :func:`units_init`, the units held before the valuation date, or none on a policy
+    not yet in force, whose single premium buys its units in its issue month; one cell a
+    month after it.  Nil on the endowment chassis, which carries its guarantee as an
+    amount rather than as units at a price, and outside cover.  Units that leave the
+    floats are refused in the month they first do, by :func:`units_refusal`.
     """
-    if not is_unitised():
+    if not is_unitised() or not is_active(t):
         return 0.0
-    if t < proj_start():
-        return units_init()
-    u = units_init() if t == proj_start() else units(t - 1)
-    q = unit_price_init() if t == proj_start() else unit_price(t - 1)
+    u = units_init() if t == t_entry() else units(t - 1)
+    q = unit_price_init() if t == t_entry() else unit_price(t - 1)
     if q <= 0.0:
         return u
-    return u + prem_alloc_rate * premium_pp(t) / q - wd_pp(t) / q    # noqa: F821
+    v = u + prem_alloc_rate * premium_pp(t) / q - wd_pp(t) / q       # noqa: F821
+    if not v - v == 0.0:
+        return units_refusal(t)
+    return v
+
+
+def units_refusal(t):
+    """The refusal of units past the floats in month t, in a cell of its own.
+
+    :func:`units`'s, on its error path alone (``ULB_UK_SEC``'s form, *Record — M10*): it
+    takes the month alone, recomputes the units from the same cells, the same float, and
+    refuses them where they are not a finite number, naming the month, the units and the
+    price the month opens with and its premium; where finite it returns them, and elsewhere
+    what :func:`units` returns, under its guards.
+    """
+    if not is_unitised() or not is_active(t):
+        return 0.0
+    u = units_init() if t == t_entry() else units(t - 1)
+    q = unit_price_init() if t == t_entry() else unit_price(t - 1)
+    if q <= 0.0:
+        return u
+    v = u + prem_alloc_rate * premium_pp(t) / q - wd_pp(t) / q       # noqa: F821
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the units held units({t}) are {v}, not a finite "  # noqa: F821
+            f"number, from the opening units {u} at the price {q} and the premium "
+            f"{premium_pp(t)}")
+    return v
 
 
 def guar_benefit_pp(t):
@@ -945,29 +1637,87 @@ def guar_benefit_pp(t):
     one cells: every rule that consumes it - the bonus cost, the mortality charge's sum
     at risk, the final bonus, the MVR - treats them identically, so keeping two names
     would duplicate five rules to no purpose.
+
+    The endowment's is written here inline, on the guarantee the month opens with, the
+    carried-in ``sum_assured() + attaching_bonus_init()`` at :func:`t_entry` and ``G(t-1)``
+    after it, so that its chain is one cell a month, where :mod:`~.WP_UK_S`'s runs through
+    :func:`guar_benefit_open`, two.  0 outside cover.  A guarantee that leaves the floats
+    is refused in the month it first does, by :func:`guar_benefit_refusal`.
     """
+    if not is_active(t):
+        return 0.0
     if is_unitised():
-        return units(t) * unit_price(t)
-    if t < proj_start():
-        return sum_assured() + attaching_bonus()
-    g = guar_benefit_open(t)
-    return g * (1.0 + bonus_rate(t)) if is_declaration_month(t) else g
+        v = units(t) * unit_price(t)
+    else:
+        g = (sum_assured() + attaching_bonus_init()) if t == t_entry() else (
+            guar_benefit_pp(t - 1))
+        v = g * (1.0 + bonus_rate(t)) if is_declaration_month(t) else g
+    if not v - v == 0.0:
+        return guar_benefit_refusal(t)
+    return v
+
+
+def guar_benefit_refusal(t):
+    """The refusal of a guaranteed benefit past the floats in month t, in a cell of its
+    own.
+
+    :func:`guar_benefit_pp`'s, on its error path alone (``ULB_UK_SEC``'s form, *Record —
+    M10*): it takes the month alone, recomputes the guarantee from the same cells, the same
+    float, and refuses it where it is not a finite number, naming the month and what makes
+    it, the units and the price on the bond and on the endowment the guarantee the month
+    opens with and the bonus rate; where finite it returns it, and outside cover 0, as
+    :func:`guar_benefit_pp` does.
+    """
+    if not is_active(t):
+        return 0.0
+    if is_unitised():
+        v = units(t) * unit_price(t)
+        if not v - v == 0.0:
+            raise ValueError(
+                f"point_id {point_id}: the guaranteed benefit guar_benefit_pp({t}) is {v}, "  # noqa: F821
+                f"not a finite number, from {units(t)} units at the price {unit_price(t)}")
+        return v
+    g = (sum_assured() + attaching_bonus_init()) if t == t_entry() else (
+        guar_benefit_pp(t - 1))
+    v = g * (1.0 + bonus_rate(t)) if is_declaration_month(t) else g
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the guaranteed benefit guar_benefit_pp({t}) is {v}, "  # noqa: F821
+            f"not a finite number, from the opening guarantee {g} and the bonus rate "
+            f"{bonus_rate(t)}")
+    return v
 
 
 def guar_benefit_open(t):
     """The guaranteed benefit month t **opens** with: ``FV(t-1)`` or ``G(t-1)``.
 
-    The carried-in guarantee in the first projected month - the unit face value the
-    model point holds on the bond chassis, the sum assured plus attaching reversionary
-    bonuses on the endowment - and the previous month's closing value after that.  A
-    declaration is measured against the value its own month opens with, and the
-    withdrawal is capped at it.
+    The carried-in guarantee in the first month on the books - the unit face value of
+    :func:`units_init` at :func:`unit_price_init` on the bond chassis, the sum assured plus
+    :func:`attaching_bonus_init` on the endowment - and the previous month's closing value
+    after that.  A declaration is measured against the value its own month opens with,
+    and the withdrawal is capped at it.  0 outside cover.  An opening guarantee past the
+    largest float, the product or the sum of two opening columns, is refused in the first
+    month on the books.
     """
-    if t > proj_start():
+    if not is_active(t):
+        return 0.0
+    if t > t_entry():
         return guar_benefit_pp(t - 1)
     if is_unitised():
-        return units_init() * unit_price_init()
-    return sum_assured() + attaching_bonus()
+        v = units_init() * unit_price_init()
+        if not v - v == 0.0:
+            raise ValueError(
+                f"point_id {point_id}: the guarantee the books open with, "  # noqa: F821
+                f"guar_benefit_open({t}), is {v}, not a finite number, from {units_init()} "
+                f"units at the price {unit_price_init()}")
+        return v
+    v = sum_assured() + attaching_bonus_init()
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the guarantee the books open with, guar_benefit_open({t}), "  # noqa: F821
+            f"is {v}, not a finite number, from the sum assured {sum_assured()} and the "
+            f"attaching bonus {attaching_bonus_init()}")
+    return v
 
 
 def policy_value_pp(t):
@@ -1003,21 +1753,49 @@ def bonus_supportable(t):
     net return.  Everything in the rule is annual, because the rate it sets is: the grid
     is monthly but the discretion cycle is not.  Read only at a declaration month, and
     only when ``bonus_rule_on`` is set.
+
+    The growth factor ``(1 + r_e)^m`` is raised once and read twice, the float
+    :mod:`~.WP_UK_S` raises twice, and ``bonus_horizon`` is read as the ``int`` it is.  A
+    factor past the largest float, which only a return or a horizon past every bond's
+    makes, is refused, naming the point and the References: Python's power raises
+    ``OverflowError`` there, naming neither, and C's gives an infinity
+    (``PA_UK_SEC``'s form, *Record — M11*).  So is a rate past the floats, which a
+    projected asset share or a target past them makes.
     """
-    m = (bonus_horizon if is_unitised()                              # noqa: F821
+    m = (int(bonus_horizon) if is_unitised()                         # noqa: F821
          else max(1, policy_term() - policy_year(t)))
     r_e = fund_return() - amc_rate - guar_charge_rate(t)             # noqa: F821
-    proj = asset_share_at(t, "BEF_PREM") * (1.0 + r_e) ** m
+    try:
+        grown = (1.0 + r_e) ** m
+    except OverflowError:
+        raise ValueError(
+            f"point_id {point_id}: the bonus rule's growth factor (1 + r_e)^m in "  # noqa: F821
+            f"bonus_supportable({t}) is past the largest float, under fund_return "
+            f"{fund_return()}, amc_rate {float(amc_rate)}, the guarantee charge's rate "  # noqa: F821
+            f"{guar_charge_rate(t)} and a horizon of {m} years") from None
+    if not abs(grown) <= 1.7976931348623157e308:
+        raise ValueError(
+            f"point_id {point_id}: the bonus rule's growth factor (1 + r_e)^m in "  # noqa: F821
+            f"bonus_supportable({t}) is past the largest float, under fund_return "
+            f"{fund_return()}, amc_rate {float(amc_rate)}, the guarantee charge's rate "  # noqa: F821
+            f"{guar_charge_rate(t)} and a horizon of {m} years")
+    proj = asset_share_at(t, "BEF_PREM") * grown
     p = premium_regular_pp()
     if p > 0.0:
         if abs(r_e) < 1e-12:
             proj += p * m
         else:
-            proj += p * (1.0 + r_e) * ((1.0 + r_e) ** m - 1.0) / r_e
+            proj += p * (1.0 + r_e) * (grown - 1.0) / r_e
     gb = guar_benefit_open(t)
     if gb <= 0.0 or proj <= 0.0:
         return 0.0
-    return (guar_fill_target * proj / gb) ** (1.0 / m) - 1.0         # noqa: F821
+    v = (guar_fill_target * proj / gb) ** (1.0 / m) - 1.0            # noqa: F821
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the supportable bonus rate bonus_supportable({t}) is {v}, "  # noqa: F821
+            f"not a finite number, from the projected asset share {proj}, guar_fill_target "
+            f"{float(guar_fill_target)} and the guarantee the month opens with, {gb}")  # noqa: F821
+    return v
 
 
 def bonus_rate(t):
@@ -1025,9 +1803,9 @@ def bonus_rate(t):
 
     A declared rate is a property of the **policy year**, not of the month, so every
     month of a year reads the rate set at that year's :func:`declaration_month`.  The
-    base projection holds the model point's snapshot rate level, which is what the notes
-    do.  With ``bonus_rule_on`` set, the smoothed setting rule applies once a year
-    instead::
+    base projection holds the model point's rate level, :func:`bonus_rate_init`, which is
+    what the notes do.  With ``bonus_rule_on`` set, the smoothed setting rule applies once
+    a year instead::
 
         b(y) = max(0, b(y-1) + clamp(kappa (b_supp - b(y-1)), -1%, +1%))
 
@@ -1035,14 +1813,29 @@ def bonus_rate(t):
     and the plus or minus one percent is the gradual-change discipline firms state in
     their principles and practices, which is a discipline **per declaration** and would
     be a different rule applied twelve times a year.
+
+    The policy year under way at the valuation date keeps :func:`bonus_rate_init`, as
+    :mod:`~.WP_UK_S`'s first projected year keeps its column, and each later year's rate is
+    set at its declaration, from the year before's, ``bonus_rate(d - 12)``, a valuation
+    month a year back.  A month before its year's declaration reads it ahead, up to 11
+    months, the anniversary read R2 admits, bounded by the frame: where the frame ends
+    before the year's declaration, as a forced encashment ends it mid-year, no
+    declaration is made, and the year reads the rate declared before it, where
+    :mod:`~.WP_UK_S` reads past its frame.  The bound changes nothing but the
+    ``bonus_rate`` column of ``result_payout`` in such a year's months: no other cell reads
+    the rate outside a declaration month.  0 outside cover.
     """
+    if not is_active(t):
+        return 0.0
     if not bonus_rule_on:                                            # noqa: F821
+        return bonus_rate_init()
+    if duration(t) <= duration(t_entry()):
         return bonus_rate_init()
     d = declaration_month(t)
     if t != d:
+        if d >= proj_len():
+            return bonus_rate(d - 12)
         return bonus_rate(d)
-    if duration(t) <= duration(proj_start()):
-        return bonus_rate_init()
     prev = bonus_rate(d - 12)
     step = bonus_speed * (bonus_supportable(d) - prev)               # noqa: F821
     step = max(-bonus_change_cap, min(bonus_change_cap, step))       # noqa: F821
@@ -1058,15 +1851,42 @@ def cost_of_bonus_pp(t):
     endowment it is the declared addition to the guarantee discounted to the declaration
     date at the surrender-basis rate, over the ``policy_term() - policy_year(t)`` years
     still to run, since the addition is not payable until maturity; the survivorship
-    discount is omitted **[std]**.
+    discount is omitted **[std]**.  A cost that leaves the floats raises ``ValueError``
+    here, in the month it first does, naming the point and what makes it; so does a
+    discount past the largest float or below the smallest, which only a
+    ``surr_disc_rate`` near its domain's edges makes, naming the Reference.
     """
     if not is_declaration_month(t):
         return 0.0
     if is_unitised():
-        return bonus_rate(t) * guar_benefit_open(t)
-    delta = guar_benefit_pp(t) - guar_benefit_open(t)
-    years = max(0, policy_term() - policy_year(t))
-    return delta / (1.0 + surr_disc_rate) ** years                   # noqa: F821
+        v = bonus_rate(t) * guar_benefit_open(t)
+    else:
+        delta = guar_benefit_pp(t) - guar_benefit_open(t)
+        years = max(0, policy_term() - policy_year(t))
+        try:
+            discount = (1.0 + surr_disc_rate) ** years               # noqa: F821
+        except OverflowError:
+            raise ValueError(
+                f"point_id {point_id}: the endowment's discount on its bonus cost, "  # noqa: F821
+                f"(1 + surr_disc_rate)^{years} in cost_of_bonus_pp({t}), is past the "
+                f"largest float, under surr_disc_rate {float(surr_disc_rate)}") from None  # noqa: F821
+        if not discount <= 1.7976931348623157e308:
+            raise ValueError(
+                f"point_id {point_id}: the endowment's discount on its bonus cost, "  # noqa: F821
+                f"(1 + surr_disc_rate)^{years} in cost_of_bonus_pp({t}), is past the "
+                f"largest float, under surr_disc_rate {float(surr_disc_rate)}")  # noqa: F821
+        if not discount > 0.0:
+            raise ValueError(
+                f"point_id {point_id}: the endowment's discount on its bonus cost, "  # noqa: F821
+                f"(1 + surr_disc_rate)^{years} in cost_of_bonus_pp({t}), is 0.0, below the "
+                f"smallest float, under surr_disc_rate {float(surr_disc_rate)}")  # noqa: F821
+        v = delta / discount
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the cost of bonus cost_of_bonus_pp({t}) is {v}, not a "  # noqa: F821
+            f"finite number, from the bonus rate {bonus_rate(t)} and the guarantee the "
+            f"month opens with, {guar_benefit_open(t)}")
+    return v
 
 
 def shareholder_transfer_pp(t):
@@ -1075,9 +1895,17 @@ def shareholder_transfer_pp(t):
     One ninth of the cost of bonus, so that shareholders receive a tenth of each
     distribution and policyholders nine tenths.  It is a real cash outflow from the fund
     and is reported as its own line, not netted into anything.  Like the cost it is
-    taken from, it falls in the declaration month and is nil in the other eleven.
+    taken from, it falls in the declaration month and is nil in the other eleven.  A
+    transfer past the largest float, which only a divisor near 0 makes, is refused in the
+    month it first is.
     """
-    return cost_of_bonus_pp(t) / shareholder_transfer_divisor        # noqa: F821
+    v = cost_of_bonus_pp(t) / shareholder_transfer_divisor           # noqa: F821
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the shareholder transfer shareholder_transfer_pp({t}) is "  # noqa: F821
+            f"{v}, not a finite number, from the cost of bonus {cost_of_bonus_pp(t)} over "
+            f"shareholder_transfer_divisor {float(shareholder_transfer_divisor)}")  # noqa: F821
+    return v
 
 
 def mort_rate(t):
@@ -1090,10 +1918,21 @@ def mort_rate(t):
     mortality being heavier than insured experience.  :func:`mort_rate_mth` is what the
     projection decrements and charges by.  Capped at 1, the bound second,
     ``min(q, 1.0)``, so that a missing input, a NaN, stays NaN, where ``min(1.0, q)``
-    would read it as 1.
+    would read it as 1: :mod:`~.WP_UK_S`'s cap, and no departure.
+
+    Zero outside cover, where ``age(t)`` is not an age the policy reaches.  Inside it, this
+    is the one cell that reads ``Data.mort_table``, at :mod:`~.WP_UK_S`'s key, its age
+    bounded by ``omega_age``, which in cover it never reaches.  An age outside the table's,
+    ``Data.mort_age_first`` to ``Data.mort_age_last``, raises ``ValueError``, naming the
+    point and the age, where :mod:`~.WP_UK_S`'s lookup raised ``KeyError``.
     """
-    x = min(age(t), omega_age)                                       # noqa: F821
-    return min(float(data.mort_table().loc[                          # noqa: F821
+    if not is_active(t):
+        return 0.0
+    x = min(age(t), int(omega_age))                                  # noqa: F821
+    if x < data.mort_age_first() or x > data.mort_age_last():        # noqa: F821
+        raise ValueError(f"point_id {point_id}: mort_table.csv has no rate at "  # noqa: F821
+                         f"attained age {x}")
+    return min(float(data.mort_table().loc[                         # noqa: F821
         (sex(), x), "mort_rate"]) * mort_be_factor, 1.0)             # noqa: F821
 
 
@@ -1112,11 +1951,18 @@ def death_guar_pp(t):
     ``g_db x FV(t)`` on the bond chassis, where the death benefit carries a 101% uplift,
     and ``G(t)`` on the endowment.  Only the guaranteed element enters the sum at risk
     **[std]**: the final bonus is not guaranteed, so charging for it would charge the
-    asset share for a benefit the fund has not promised.
+    asset share for a benefit the fund has not promised.  An uplifted guarantee past the
+    largest float is refused in the month it first is.
     """
-    if is_unitised():
-        return death_benefit_factor * guar_benefit_pp(t)             # noqa: F821
-    return guar_benefit_pp(t)
+    if not is_unitised():
+        return guar_benefit_pp(t)
+    v = death_benefit_factor * guar_benefit_pp(t)                    # noqa: F821
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the guaranteed death benefit death_guar_pp({t}) is {v}, "  # noqa: F821
+            f"not a finite number, from death_benefit_factor "
+            f"{float(death_benefit_factor)} on the guarantee {guar_benefit_pp(t)}")  # noqa: F821
+    return v
 
 
 def mort_charge_pp(t):
@@ -1127,8 +1973,11 @@ def mort_charge_pp(t):
     between charged and actual mortality accrue to the estate, which is why this is a
     charge rather than a claim.  In the eleven months before a declaration the sum at
     risk is measured against the guarantee as it then stands; the declaration month's
-    charge is the first to carry the hardened one.
+    charge is the first to carry the hardened one.  0 outside cover, where no mortality
+    rate is read.
     """
+    if not is_active(t):
+        return 0.0
     return mort_rate_mth(t) * max(0.0, death_guar_pp(t)
                                   - asset_share_at(t, "AFT_ST"))
 
@@ -1161,10 +2010,11 @@ def smoothed_payout_capped(t):
     down scenario does.
 
     The cap is **skipped where there is no previous payout** to compare against - the
-    first month of a new-business cell, where the opening ``S`` is nil and the cap
-    would otherwise clamp the payout to nil and leave the corridor to do all the work.
-    See the Space docstring on what the cap can and cannot say about a premium-paying
-    policy.
+    issue month of a new-business cell, where the opening ``S`` is nil and the cap
+    would otherwise clamp the payout to nil and leave the corridor to do all the work,
+    and any month that opens on a nil payout.  See the Space docstring on what the cap can
+    and cannot say about a premium-paying policy.  :func:`smoothed_payout` writes the
+    same clamp inline, for the chain.
     """
     prev = smoothed_payout_open(t)
     if prev <= 0.0:
@@ -1185,23 +2035,38 @@ def smoothed_payout(t):
     The regulatory target-range test is a *portfolio* property, a proportion of policies
     within the range, which a single-policy model cannot express; the deterministic
     corridor is a **[std]** reading of it.
+
+    Written here inline, :func:`smoothed_payout_capped`'s clamp and then the corridor, in
+    its order and its floats, on the payout the month opens with, the carried-in
+    :func:`smoothed_payout_init` at :func:`t_entry` and ``S(t-1)`` after it, read first:
+    so the payout's chain from month t back to :func:`t_entry` is one cell a month, where
+    :mod:`~.WP_UK_S`'s runs through the cap and the opening payout, three.  0 outside
+    cover.
     """
-    if t < proj_start():
-        return smoothed_payout_init()
+    if not is_active(t):
+        return 0.0
+    prev = smoothed_payout_init() if t == t_entry() else smoothed_payout(t - 1)
     as_t = asset_share(t)
+    if prev <= 0.0:
+        capped = as_t
+    else:
+        capped = max(smooth_cap_dn_mth() * prev,
+                     min(smooth_cap_up_mth() * prev, as_t))
     lo = corridor_lo * as_t                                          # noqa: F821
     hi = corridor_hi * as_t                                          # noqa: F821
-    return max(lo, min(hi, smoothed_payout_capped(t)))
+    return max(lo, min(hi, capped))
 
 
 def smoothed_payout_open(t):
     """S(t-1): the smoothed payout month t **opens** with.
 
-    The carried-in benchmark in the first projected month - nil on a new-business
-    cell, which is what switches the cap off there - and the previous month's closing
-    payout after that.
+    The carried-in :func:`smoothed_payout_init` in the first month on the books - nil on a
+    new-business cell, which is what switches the cap off in its issue month - and the
+    previous month's closing payout after that.  0 outside cover.
     """
-    if t > proj_start():
+    if not is_active(t):
+        return 0.0
+    if t > t_entry():
         return smoothed_payout(t - 1)
     return smoothed_payout_init()
 
@@ -1294,7 +2159,15 @@ def claim_pp(t, kind):
     """
     base = guar_benefit_pp(t) + final_bonus_pp(t)
     if kind == "DEATH":
-        return death_benefit_factor * base if is_unitised() else base  # noqa: F821
+        if not is_unitised():
+            return base
+        v = death_benefit_factor * base                              # noqa: F821
+        if not v - v == 0.0:
+            raise ValueError(
+                f"point_id {point_id}: the death claim claim_pp({t}, DEATH) is {v}, not a "  # noqa: F821
+                f"finite number, from death_benefit_factor {float(death_benefit_factor)} on "  # noqa: F821
+                f"the guarantee and final bonus {base}")
+        return v
     if kind == "SURRENDER":
         if not is_unitised():
             return max(0.0, min(smoothed_payout(t), base))
@@ -1324,12 +2197,17 @@ def surr_rate_base(t):
     """The table **annual** surrender rate applying in month t **[std]**.
 
     Read from the chassis's own row of the lapse table, whose key is the **contractual
-    policy year** - a 1-based label, so month t reads row ``policy_year(t)``; policy
-    years beyond the table take its last row.  A drafting construction: no public UK
-    with-profits lapse experience was retrieved.
+    policy year** - a 1-based label, so month t reads row ``policy_year(t)``, on the
+    policy clock; policy years beyond the table take its last row,
+    ``Data.lapse_last_year``, which checks the table first.  A drafting construction: no
+    public UK with-profits lapse experience was retrieved.  0 outside cover, where no
+    policy year is read.
     """
+    if not is_active(t):
+        return 0.0
+    last = data.lapse_last_year(chassis())                           # noqa: F821
     tbl = data.lapse_table().loc[chassis()]                          # noqa: F821
-    y = min(policy_year(t), int(tbl.index.max()))
+    y = min(policy_year(t), last)
     return float(tbl.loc[y, "lapse_rate"])
 
 
@@ -1371,10 +2249,14 @@ def guarantee_imminent(t):
     """0.8 in the twelve months before a guarantee date **[std]**: policyholders wait.
 
     The run-up, not the calendar year: any month from which the next guarantee date is
-    between one and twelve months away.  On the annual grid this was the single period
-    before a guarantee-date period, which is the same window counted in years.
+    between one and twelve months away, on the policy clock, ``0 < 12g - 1 -
+    duration_mth(t) <= 12`` for a guarantee year ``g``, whose date ends policy month
+    ``12g - 1``; :mod:`~.WP_UK_S` measures from ``t``, which on the valuation clock would
+    put the window in the wrong months of a policy in force.  On the annual grid this was
+    the single period before a guarantee-date period, which is the same window counted in
+    years.
     """
-    if any(0 < 12 * g - 1 - t <= 12 for g in guarantee_years()):
+    if any(0 < 12 * g - 1 - duration_mth(t) <= 12 for g in guarantee_years()):
         return guarantee_imminent_factor                             # noqa: F821
     return 1.0
 
@@ -1383,10 +2265,14 @@ def surr_rate(t):
     """w(t): the **annual** ordinary surrender rate applying in month t.
 
     The table rate times the two diffuse behavioural multipliers - the MVR deterrent and
-    the guarantee-imminent suppression - capped at 1.  The guarantee-date exercise is
-    *not* in here: it is a dated one-off rather than a rate per year, and it enters
-    through :func:`surr_rate_mth`.
+    the guarantee-imminent suppression - capped at 1, :mod:`~.WP_UK_S`'s bound first,
+    ``min(1.0, ...)``, whose order a surrender rate keeps (USLIB-SEC-PLAN.md §5.1, step
+    6).  The guarantee-date exercise is *not* in here: it is a dated one-off rather than a
+    rate per year, and it enters through :func:`surr_rate_mth`.  0 outside cover, where
+    no policy year is read.
     """
+    if not is_active(t):
+        return 0.0
     return min(1.0, surr_rate_base(t) * mvr_deterrent(t)
                * guarantee_imminent(t))
 
@@ -1405,46 +2291,90 @@ def surr_rate_mth(t):
 
 
 def pols_if(t):
-    """l(t): the number of policies in force at the **start** of month t.
+    """l(t): the number of policies in force at the **start** of month t, the row's weight.
 
-    ``pols_if(proj_start()) == pols_if_init()``, and it is the weight on every flow of
-    that same ``result_cf()`` row.  Zero outside the frame.
+    ``pols_if_at(t, "BEF_DECR")``: the count carried in from month t - 1, plus month t's
+    new business, before month t's decrements.  On a point issued at ``t = 0`` that is
+    exactly :mod:`~.WP_UK_S`'s ``pols_if``, the notes' ``l(t)``.  It is
+    ``basiclife.BasicTerm_SE``'s ``BEF_DECR`` count, not its ``pols_if``.  Zero outside the
+    frame: before issue, and from ``t = proj_len()`` on.
     """
-    if t < proj_start() or t >= proj_len():
-        return 0.0
-    if t == proj_start():
-        return pols_if_init()
-    return pols_if_at(t - 1, "AFT_DECR")
+    return pols_if_at(t, "BEF_DECR")
 
 
 def pols_if_at(t, timing):
     """The number of policies in force at a point inside month t.
 
+    ``"BEF_NB"``
+        The count carried in from month t - 1, before month t's new
+        business: the survivors of month t - 1's deaths and surrenders,
+        out of month t - 1's ``"BEF_DECR"`` count.  At :func:`t_entry`,
+        the first month on the books, it is :func:`pols_if_init`, the
+        count in force at the valuation date (0 for a point issued at or
+        after it), and the recursion reads no earlier month.  Zero outside
+        the frame, so the survivors of its last month leave as
+        :func:`pols_maturity`.
+
     ``"BEF_DECR"``
-        the start of the month, before any decrement; :func:`pols_if`.
+        ``"BEF_NB"`` plus :func:`pols_new_biz`: l(t), the count that
+        weights month t, which :func:`pols_if` returns.
 
     ``"BEF_SURR"``
         after deaths, before surrenders - the processing order is death
         before surrender **[std]**.
 
     ``"AFT_DECR"``
-        the end-of-month count, and zero in the last projected month
+        the end-of-month count, ``"BEF_NB"`` at t + 1 exactly, one product
+        in one order, and zero in the last projected month
         ``proj_len() - 1``, where the endowment matures and the bond
-        projection is truncated.
+        projection is truncated or encashed.
+
+    ``"BEF_NB"`` is the one timing running in force adds, as ``basiclife.BasicTerm_SE``
+    names it; the other three are :mod:`~.WP_UK_S`'s, and any other raises.  ``"BEF_NB"``
+    forms month t - 1's ``"BEF_DECR"`` count itself, as ``"BEF_NB"`` plus
+    :func:`pols_new_biz` at t - 1, the same sum in the same order, and its deaths and
+    surrenders inline, rather than calling for it, so the chain of calls from month t back
+    to :func:`t_entry` is one cell a month, where :mod:`~.WP_UK_S`'s ``pols_if`` runs
+    through ``"AFT_DECR"`` and ``"BEF_SURR"``, three: a compiled model runs that chain on
+    the C stack.
     """
+    if timing == "BEF_NB":
+        if not is_active(t) or t >= proj_len():
+            return 0.0
+        if t == t_entry():
+            return pols_if_init()
+        return ((pols_if_at(t - 1, "BEF_NB") + pols_new_biz(t - 1))
+                * (1.0 - mort_rate_mth(t - 1)) * (1.0 - surr_rate_mth(t - 1)))
     if timing == "BEF_DECR":
-        return pols_if(t)
+        return pols_if_at(t, "BEF_NB") + pols_new_biz(t)
     if timing == "BEF_SURR":
+        if not is_active(t):
+            return 0.0
         return pols_if(t) * (1.0 - mort_rate_mth(t))
     if timing == "AFT_DECR":
-        if t < proj_start() or t >= proj_len() - 1:
+        if not is_active(t) or t >= proj_len() - 1:
             return 0.0
-        return pols_if_at(t, "BEF_SURR") * (1.0 - surr_rate_mth(t))
+        return pols_if_at(t + 1, "BEF_NB")
     raise ValueError("invalid timing")
 
 
+def pols_new_biz(t):
+    """The number of policies issued in month t: ``policy_count()`` in the issue month.
+
+    The issue month is the one with ``duration_mth(t) == 0``: ``t = 0`` for a point
+    issued at the valuation date, ``t = k`` for one issued ``k`` months later.  A point
+    already in force at the valuation date has none.
+    """
+    return policy_count() if duration_mth(t) == 0 else 0.0
+
+
 def pols_death(t):
-    """Deaths in month t, against the in force at its start."""
+    """Deaths in month t, against the in force at its start.
+
+    Zero outside cover, before any rate is read.
+    """
+    if not is_active(t):
+        return 0.0
     return pols_if(t) * mort_rate_mth(t)
 
 
@@ -1453,8 +2383,11 @@ def pols_surr(t):
 
     Carries the guarantee-date encashment as well as the ordinary rate, so the exits of
     a guarantee-date month are visibly larger than its neighbours' - which is the point
-    of dating the exercise rather than spreading it.
+    of dating the exercise rather than spreading it.  Zero outside cover, before any rate
+    is read.
     """
+    if not is_active(t):
+        return 0.0
     return pols_if_at(t, "BEF_SURR") * surr_rate_mth(t)
 
 
@@ -1464,6 +2397,7 @@ def pols_maturity(t):
     On the endowment chassis these are genuine maturities and are paid.  On the bond
     chassis they are paid where the projection ends in a forced encashment and pay
     nothing where it ends at the limiting age - see :func:`is_forced_encashment`.
+    Non-zero in the frame's last month alone, ``t = proj_len() - 1``.
     """
     if t != proj_len() - 1:
         return 0.0
@@ -1471,25 +2405,58 @@ def pols_maturity(t):
 
 
 def inflation_factor(t):
-    """The expense inflation factor in month t: ``(1 + pi)^duration(t)`` **[std]**.
+    """The expense inflation factor in month t: ``(1 + pi)^(t // 12)`` **[std]**.
 
-    Steps on the policy anniversary rather than monthly: the expense assumption is
-    quoted per year and inflates per year.  One through the first policy year.
+    On the **valuation** clock: 1 through the first year from the valuation date, and
+    stepping on each anniversary of it, for every point alike, so that the maintenance
+    expense is in valuation-date pounds (USLIB-SEC-PLAN.md D7).  :mod:`~.WP_UK_S` inflates
+    from issue, ``(1 + pi)^duration(t)``, which on a policy in force would inflate today's
+    expense by the years the policy has already run; on a point issued at ``t = 0`` the two
+    are the same.  The expense assumption is quoted per year and inflates per year.  A
+    factor past the largest float, which only an ``inflation_rate`` past every rate of
+    inflation makes, is refused in the month it first is, naming the point and the
+    Reference: Python's power raises ``OverflowError`` there, naming neither, and C's gives
+    an infinity (``PA_UK_SEC``'s form, *Record — M11*).
     """
-    return (1.0 + inflation_rate) ** duration(t)                     # noqa: F821
+    try:
+        factor = (1.0 + inflation_rate) ** (t // 12)                 # noqa: F821
+    except OverflowError:
+        raise ValueError(
+            f"point_id {point_id}: the inflation factor inflation_factor({t}) is past the "  # noqa: F821
+            f"largest float, under inflation_rate {float(inflation_rate)}") from None  # noqa: F821
+    if not factor <= 1.7976931348623157e308:
+        raise ValueError(
+            f"point_id {point_id}: the inflation factor inflation_factor({t}) is past the "  # noqa: F821
+            f"largest float, under inflation_rate {float(inflation_rate)}")  # noqa: F821
+    return factor
 
 
 def premiums(t):
-    """Premium income at the start of month t, an inflow."""
-    return premium_pp(t) * pols_if(t)
+    """Premium income at the start of month t, an inflow.
+
+    A total past the largest float is refused in the month it first is, naming the
+    premium and the count.
+    """
+    v = premium_pp(t) * pols_if(t)
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the premiums premiums({t}) are {v}, not a finite number, "  # noqa: F821
+            f"from premium_pp({t}) {premium_pp(t)} on pols_if({t}) {pols_if(t)} policies")
+    return v
 
 
 def withdrawals(t):
     """Partial withdrawals paid at the start of month t.
 
     An owner election rather than a claim, which is why it has its own name and column.
+    A total past the largest float is refused in the month it first is.
     """
-    return wd_pp(t) * pols_if(t)
+    v = wd_pp(t) * pols_if(t)
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the withdrawals withdrawals({t}) are {v}, not a finite "  # noqa: F821
+            f"number, from wd_pp({t}) {wd_pp(t)} on pols_if({t}) {pols_if(t)} policies")
+    return v
 
 
 def claims(t, kind=None):
@@ -1497,29 +2464,51 @@ def claims(t, kind=None):
 
     ``"DEATH"``, ``"SURRENDER"`` and ``"MATURITY"`` weight :func:`claim_pp` by the
     corresponding decrement.  ``"GUARANTEE"`` is not a separate outgo: a guarantee-date
-    exit *is* a surrender, paid MVR-free, so it is already inside the surrender line.
+    exit *is* a surrender, paid MVR-free, so it is already inside the surrender line.  A
+    claim of a kind, or the total, past the largest float is refused in the month it
+    first is, naming what makes it.
     """
     if kind is None:
-        return sum(claims(t, k) for k in ("DEATH", "SURRENDER", "MATURITY"))
+        v = sum(claims(t, k) for k in ("DEATH", "SURRENDER", "MATURITY"))
+        if not v - v == 0.0:
+            raise ValueError(
+                f"point_id {point_id}: the claims claims({t}) are {v}, not a finite number, "  # noqa: F821
+                f"from the death, surrender and maturity claims {claims(t, 'DEATH')}, "
+                f"{claims(t, 'SURRENDER')} and {claims(t, 'MATURITY')}")
+        return v
     if kind == "DEATH":
-        return claim_pp(t, "DEATH") * pols_death(t)
-    if kind == "SURRENDER":
-        return claim_pp(t, "SURRENDER") * pols_surr(t)
-    if kind == "MATURITY":
-        return claim_pp(t, "MATURITY") * pols_maturity(t)
-    raise ValueError("invalid kind")
+        n = pols_death(t)
+    elif kind == "SURRENDER":
+        n = pols_surr(t)
+    elif kind == "MATURITY":
+        n = pols_maturity(t)
+    else:
+        raise ValueError("invalid kind")
+    v = claim_pp(t, kind) * n
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the claims claims({t}, {kind}) are {v}, not a finite "  # noqa: F821
+            f"number, from claim_pp({t}, {kind}) {claim_pp(t, kind)} on {n} policies")
+    return v
 
 
 def expenses(t):
     """E(t): the maintenance expense in month t **[std]**.
 
     £30 a policy a year - a twelfth of it each month - inflating at 3% on each
-    anniversary.  Where a fund's actual expenses exceed the capped charge taken from
-    asset shares, the excess falls to the estate - a fund-level flow a single-policy
-    model cannot see.
+    anniversary of the valuation date.  Where a fund's actual expenses exceed the capped
+    charge taken from asset shares, the excess falls to the estate - a fund-level flow a
+    single-policy model cannot see.  An expense past the largest float, which only an
+    ``expense_maint`` and an inflation factor near it make, is refused in the month it
+    first is, naming the References.
     """
-    return (expense_maint / 12.0                                     # noqa: F821
-            * inflation_factor(t) * pols_if(t))
+    v = expense_maint / 12.0 * inflation_factor(t) * pols_if(t)      # noqa: F821
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the expenses expenses({t}) are {v}, not a finite number, "  # noqa: F821
+            f"from expense_maint {float(expense_maint)} and inflation_rate "  # noqa: F821
+            f"{float(inflation_rate)}, on pols_if({t}) {pols_if(t)} policies")  # noqa: F821
+    return v
 
 
 def shareholder_transfers(t):
@@ -1528,13 +2517,20 @@ def shareholder_transfers(t):
     The transfer on the month's declared bonus - nil except in a declaration month -
     weighted by the in force, plus a ninth of the final bonus actually paid on the
     month's claims, which arises whenever a claim does.  The same 90:10 split applied at
-    the point the non-guaranteed part is handed over.
+    the point the non-guaranteed part is handed over.  A total past the largest float is
+    refused in the month it first is.
     """
     on_declaration = shareholder_transfer_pp(t) * pols_if(t)
     exits = pols_death(t) + pols_surr(t) + pols_maturity(t)
     on_final_bonus = (final_bonus_pp(t) * exits
                       / shareholder_transfer_divisor)                # noqa: F821
-    return on_declaration + on_final_bonus
+    v = on_declaration + on_final_bonus
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the shareholder transfers shareholder_transfers({t}) are "  # noqa: F821
+            f"{v}, not a finite number, from the transfer on the declaration "
+            f"{on_declaration} and on the final bonus {on_final_bonus}")
+    return v
 
 
 def smoothing_cost(t):
@@ -1543,11 +2539,19 @@ def smoothing_cost(t):
     Each exiting policy is paid its smoothed payout while the asset share it earned is
     released; the difference falls on the estate.  Positive in a month when guarantees
     or smoothing pay more than the policies earned - which on a guarantee-date month is
-    both the largest exit and the deepest shortfall at once.
+    both the largest exit and the deepest shortfall at once.  A total past the largest
+    float is refused in the month it first is.
     """
-    return (smoothing_cost_pp(t, "DEATH") * pols_death(t)
-            + smoothing_cost_pp(t, "SURRENDER") * pols_surr(t)
-            + smoothing_cost_pp(t, "MATURITY") * pols_maturity(t))
+    v = (smoothing_cost_pp(t, "DEATH") * pols_death(t)
+         + smoothing_cost_pp(t, "SURRENDER") * pols_surr(t)
+         + smoothing_cost_pp(t, "MATURITY") * pols_maturity(t))
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the smoothing cost smoothing_cost({t}) is {v}, not a "  # noqa: F821
+            f"finite number, from the costs per policy on the month's deaths, surrenders "
+            f"and maturities, {smoothing_cost_pp(t, 'DEATH')}, "
+            f"{smoothing_cost_pp(t, 'SURRENDER')} and {smoothing_cost_pp(t, 'MATURITY')}")
+    return v
 
 
 def smoothing_account(t):
@@ -1557,13 +2561,48 @@ def smoothing_account(t):
     recycling it into credited returns; one insurer operates that recycling, feeding it
     back subject to a maximum annual deduction from asset shares [S5].
 
-    The balance opens at zero in the first projected month rather than reading a row
-    below the frame.
+    Since issue: at :func:`t_entry` the cost of the exits before the valuation date,
+    :func:`smoothing_account_init` per policy times :func:`pols_if_init`, the policies in
+    force at it, and each month's cost added after, one cell a month.  :mod:`~.WP_UK_S`
+    opens at nil where its frame opens.  A sum over the exits of the count, it is 0
+    outside the frame, as the count is: before issue, and from ``t = proj_len()`` on.  It
+    asks for the frame before it reads the month before, so that a cold call meets the
+    frame's search for the units' exhaustion at its own month, not at the foot of the
+    account's chain, where the search's reads of the asset share for the bonus rule would
+    run beneath every month of it.  An account that leaves the floats is refused in the
+    month it first does, by :func:`smoothing_account_refusal`.
     """
-    if t < proj_start():
+    if not is_active(t) or t >= proj_len():
         return 0.0
-    prev = smoothing_account(t - 1) if t > proj_start() else 0.0
-    return prev + smoothing_cost(t)
+    prev = (smoothing_account(t - 1) if t > t_entry()
+            else smoothing_account_init() * pols_if_init())
+    v = prev + smoothing_cost(t)
+    if not v - v == 0.0:
+        return smoothing_account_refusal(t)
+    return v
+
+
+def smoothing_account_refusal(t):
+    """The refusal of a smoothing account past the floats in month t, in a cell of its
+    own.
+
+    :func:`smoothing_account`'s, on its error path alone (``ULB_UK_SEC``'s form, *Record
+    — M10*): it takes the month alone, recomputes the account from the same cells, the
+    same float, and refuses it where it is not a finite number, naming the month, the
+    account carried in and the month's cost; where finite it returns it, and outside the
+    frame 0, as :func:`smoothing_account` does.
+    """
+    if not is_active(t) or t >= proj_len():
+        return 0.0
+    prev = (smoothing_account(t - 1) if t > t_entry()
+            else smoothing_account_init() * pols_if_init())
+    v = prev + smoothing_cost(t)
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the smoothing account smoothing_account({t}) is {v}, "  # noqa: F821
+            f"not a finite number, from the account carried in, {prev}, and the month's "
+            f"cost, {smoothing_cost(t)}")
+    return v
 
 
 def net_cf(t):
@@ -1571,22 +2610,40 @@ def net_cf(t):
 
     Premiums less claims, withdrawals, expenses and shareholder transfers.  The asset
     share appears nowhere in it: it is a state variable, not a cash flow, and the
-    payouts it drives are already in ``claims``.
+    payouts it drives are already in ``claims``.  A net flow that leaves the floats, a
+    flow past them among its terms, raises ``ValueError`` here, naming the point and the
+    flows.
     """
-    return (premiums(t) - claims(t) - withdrawals(t)
-            - expenses(t) - shareholder_transfers(t))
+    v = (premiums(t) - claims(t) - withdrawals(t)
+         - expenses(t) - shareholder_transfers(t))
+    if not v - v == 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the net cash flow net_cf({t}) is {v}, not a finite "  # noqa: F821
+            f"number, from premiums {premiums(t)}, claims {claims(t)}, withdrawals "
+            f"{withdrawals(t)}, expenses {expenses(t)} and shareholder transfers "
+            f"{shareholder_transfers(t)}")
+    return v
 
 
 def check_pols_roll_fwd_resid(t):
-    """The in-force roll-forward residual in month t; zero everywhere."""
-    return (pols_if(t) - pols_if(t + 1)
+    """The in-force roll-forward residual in month t; zero everywhere.
+
+    ``pols_if(t) - pols_if(t+1)``, plus the new business of month t + 1, which is no part
+    of month t's movement, less the month's deaths, surrenders and maturities.
+    """
+    return (pols_if(t) - pols_if(t + 1) + pols_new_biz(t + 1)
             - pols_death(t) - pols_surr(t) - pols_maturity(t))
 
 
 def check_pols_roll_fwd():
-    """True when the in-force roll-forward closes in every projected month."""
-    return all(abs(check_pols_roll_fwd_resid(t)) <= 1e-10 * max(pols_if_init(), 1.0)
-               for t in range(proj_start(), proj_len()))
+    """True when the in-force roll-forward closes in every month of the frame.
+
+    The tolerance scales with the policies the point stands for, ``policy_count()``, in
+    force at the valuation date or issued after it, since the residual accumulates
+    rounding on that many policies.
+    """
+    return all(abs(check_pols_roll_fwd_resid(t)) <= 1e-10 * max(policy_count(), 1.0)
+               for t in range(proj_len()))
 
 
 def check_asset_share_roll_fwd_resid(t):
@@ -1612,9 +2669,9 @@ def check_asset_share_roll_fwd_resid(t):
 
 
 def check_asset_share_roll_fwd():
-    """True when the asset share recursion closes in every projected month."""
+    """True when the asset share recursion closes in every month of the frame."""
     return all(abs(check_asset_share_roll_fwd_resid(t)) <= 1e-8
-               for t in range(proj_start(), proj_len()))
+               for t in range(proj_len()))
 
 
 def check_fb_mvr_exclusive():
@@ -1626,7 +2683,7 @@ def check_fb_mvr_exclusive():
     exit.
     """
     return all(min(final_bonus_pp(t), mvr_pp(t)) <= 1e-9
-               for t in range(proj_start(), proj_len()))
+               for t in range(proj_len()))
 
 
 def check_mvr_bound():
@@ -1636,7 +2693,7 @@ def check_mvr_bound():
     ``max(0, GB - AS)``.  The bound is a conduct rule, not a modelling nicety.
     """
     return all(mvr_pp(t) <= max(0.0, guar_benefit_pp(t) - asset_share(t)) + 1e-9
-               for t in range(proj_start(), proj_len()))
+               for t in range(proj_len()))
 
 
 def check_fund_nonneg():
@@ -1650,7 +2707,7 @@ def check_fund_nonneg():
     :func:`proj_len` stops at exhaustion; this asserts that they worked.
     """
     return all(units(t) >= -1e-9 and asset_share(t) >= -1e-9
-               for t in range(proj_start(), proj_len()))
+               for t in range(proj_len()))
 
 
 def check_payout_corridor():
@@ -1659,7 +2716,7 @@ def check_payout_corridor():
     Deterministic at model-point level; the regulatory test is a portfolio property that
     a single-policy model cannot express.
     """
-    for t in range(proj_start(), proj_len()):
+    for t in range(proj_len()):
         as_t = asset_share(t)
         if as_t <= 0.0:
             continue
@@ -1683,16 +2740,18 @@ def check_declaration_is_annual():
     month, so the face value falls between declarations for a reason that has nothing to
     do with discretion.  On the endowment chassis, which holds no units, it is the
     guaranteed benefit itself.  Either way the cost of bonus and the shareholder transfer
-    it feeds must be nil outside a declaration month.
+    it feeds must be nil outside a declaration month.  The months checked are those of
+    the frame on the books, from :func:`t_entry`: before a policy is issued it holds no
+    price and no guarantee to move.
 
     Tolerances are relative to the quantity, since these are money amounts and a price
     rather than probabilities.
     """
-    for t in range(proj_start(), proj_len()):
+    for t in range(t_entry(), proj_len()):
         if is_declaration_month(t):
             continue
         if is_unitised():
-            opening = unit_price(t - 1) if t > proj_start() else unit_price_init()
+            opening = unit_price(t - 1) if t > t_entry() else unit_price_init()
             moved = unit_price(t)
         else:
             opening = guar_benefit_open(t)
@@ -1705,17 +2764,18 @@ def check_declaration_is_annual():
 
 
 def result_cf():
-    """Result table of cashflows, indexed by the 0-based month t.
+    """Result table of cashflows, one row per month ``t = 0 .. proj_len() - 1``.
 
-    The frame is ``range(proj_start(), proj_len())``, so the first row is the first
-    projected month and the last is ``proj_len() - 1``.
+    Row 0 is the valuation month for every model point, so the frames of a block line up
+    and sum row by row.  A point issued after the valuation date has zeros until its issue
+    month.  The columns are :mod:`~.WP_UK_S`'s.
 
     ``pols_if`` is the start-of-month count that weights every flow on the row.  The
     asset share is published beside them as ``asset_share`` because it is what the
     payouts are measured against - but it is a state variable, not a cash flow, and it
     is not part of ``net_cf``.
     """
-    ts = list(range(proj_start(), proj_len()))
+    ts = list(range(proj_len()))
     return pd.DataFrame(                                             # noqa: F821
         {
             "pols_if": [pols_if(t) for t in ts],
@@ -1735,16 +2795,17 @@ def result_cf():
 
 
 def result_payout():
-    """Result table of the payout machinery, indexed by the 0-based month t.
+    """Result table of the payout machinery, one row per month ``t = 0 .. proj_len() - 1``.
 
     The asset share against the guaranteed benefit and the smoothed payout, and the
     final bonus and market value reduction the gap between them produces.  Every column
     is an end-of-month value, on the same frame as :func:`result_cf`.  ``bonus_rate`` is
     the **annual** rate declared for the policy year the month falls in, so it repeats
     across twelve rows and steps once a year; ``cost_of_bonus_pp`` and
-    ``shareholder_transfer_pp`` beside it are nil in eleven of those twelve.
+    ``shareholder_transfer_pp`` beside it are nil in eleven of those twelve.  A point
+    issued after the valuation date has zeros until its issue month.
     """
-    ts = list(range(proj_start(), proj_len()))
+    ts = list(range(proj_len()))
     return pd.DataFrame(                                             # noqa: F821
         {
             "asset_share": [asset_share(t) for t in ts],
@@ -1766,12 +2827,38 @@ def result_payout():
     )
 
 
+def result_pols():
+    """Result table of policy counts, one row per month ``t = 0 .. proj_len() - 1``.
+
+    The same rows as :func:`result_cf`: the counts it weights its rows by, and how they
+    move, as ``basiclife.BasicTerm_SE``'s ``result_pols`` sets them out.  ``pols_if``, the
+    count of month t, and ``pols_new_biz``, the part of it issued in month t; then month
+    t's decrements in processing order, deaths and surrenders, the guarantee-date
+    encashment among them, and the survivors of the frame's last month, matured, encashed
+    or truncated.  Row by row, ``pols_if`` at ``t + 1`` is ``pols_if`` less its deaths,
+    surrenders and maturities of month t, plus the new business of month ``t + 1``.
+    """
+    ts = list(range(proj_len()))
+    return pd.DataFrame(                                             # noqa: F821
+        {
+            "pols_if": [pols_if(t) for t in ts],
+            "pols_new_biz": [pols_new_biz(t) for t in ts],
+            "pols_death": [pols_death(t) for t in ts],
+            "pols_surr": [pols_surr(t) for t in ts],
+            "pols_maturity": [pols_maturity(t) for t in ts],
+        },
+        index=pd.Index(ts, name="t"),                                # noqa: F821
+    )
+
+
 # ---------------------------------------------------------------------------
 # References
 
 data = ("Interface", ("..", "Data"), "auto")
 
 point_id = 1
+
+issue_age_min = 18
 
 omega_age = 120
 

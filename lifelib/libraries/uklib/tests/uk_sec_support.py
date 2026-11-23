@@ -1724,6 +1724,75 @@ def _ip_cohorts(s_model, table):
     return pd.DataFrame(rows, columns=list(_IP_COHORTS))
 
 
+def _wp_units(s, d):
+    """``WP_UK_S``'s units held entering month ``d``: its ``units(d - 1)``, the close of the
+    month before, or where S's frame opens, at ``proj_start()``, its own opening units, the
+    ``units`` column.  0 on the endowment, which holds none."""
+    return s.units(d - 1) if d > s.proj_start() else s.units_init()
+
+
+def _wp_price(s, d):
+    """``WP_UK_S``'s unit price entering month ``d``: its ``unit_price(d - 1)``, which the
+    declarations before month ``d`` have raised, or where S's frame opens its own
+    ``unit_price_init``, the seed price on new business."""
+    return s.unit_price(d - 1) if d > s.proj_start() else s.unit_price_init()
+
+
+def _wp_attaching(s, d):
+    """``WP_UK_S``'s attaching bonus entering month ``d``, on the endowment: the guarantee
+    month ``d`` opens with, its ``guar_benefit_open(d)``, less the sum assured, every
+    declaration before month ``d`` in it.  0 on the bond, whose bonus is in its price."""
+    if s.is_unitised():
+        return 0.0
+    return s.guar_benefit_open(d) - s.sum_assured()
+
+
+def _wp_charges(s, d):
+    """``WP_UK_S``'s guarantee charges taken per policy before month ``d``: its
+    ``guar_charge_cum_pp(d - 1)``, the cumulant the charge's cap reads in month ``d``, or 0
+    where S's frame opens, where S restarts it, on new business and on its points in
+    force alike."""
+    return s.guar_charge_cum_pp(d - 1) if d > s.proj_start() else 0.0
+
+
+def _wp_smoothing(s, d):
+    """``WP_UK_S``'s smoothing account entering month ``d``, per policy in force then.
+
+    S's ``smoothing_account(d - 1)``, the estate's cost on the exits before month ``d``,
+    over its count in force, ``pols_if(d)``: per policy, so that the count is the one
+    weight.  0 where S's frame opens, where S restarts the account, and where no policy
+    is in force, which has no policy to carry it.
+    """
+    count = s.pols_if(d)
+    if d <= s.proj_start() or count <= 0:
+        return 0.0
+    return s.smoothing_account(d - 1) / count
+
+
+# WP_UK_SEC's opening state (D6; UKLIB-SEC-PLAN.md §6.5): what WP_UK_S carries into month d,
+# its close of month d - 1, each per policy, so that policy_count is the one weight.  The
+# asset share, S's asset_share_at(d, "BEF_PREM"); the units and the unit price, S's of month
+# d - 1 (_wp_units, _wp_price); on the endowment the attaching bonus, the guarantee month d
+# opens with less the sum assured (_wp_attaching); the smoothed payout month d opens with,
+# S's smoothed_payout_open(d); the bonus rate of the policy year under way, S's own
+# bonus_rate(d); and the two cumulants S restarts at 0 where its frame opens, the
+# guarantee charges taken (_wp_charges) and the smoothing account per policy in force
+# (_wp_smoothing).  At a twin's source_mth, S's frame opening, these are what S itself
+# assumes there: its own columns, the units, the price, the attaching bonus, the asset
+# share and the payout carried in, its bonus_rate, and 0 for both cumulants, on new
+# business and on S's points in force at 60 and 240 alike.
+_WP_STATE = {
+    "asset_share_init": lambda s, d: s.asset_share_at(d, "BEF_PREM"),
+    "units_init": _wp_units,
+    "unit_price_init": _wp_price,
+    "attaching_bonus_init": _wp_attaching,
+    "smoothed_payout_init": lambda s, d: s.smoothed_payout_open(d),
+    "bonus_rate_init": lambda s, d: s.bonus_rate(d),
+    "guar_charge_cum_pp_init": _wp_charges,
+    "smoothing_account_init": _wp_smoothing,
+}
+
+
 SEC_SPECS: dict[str, SecSpec] = {
     # Term's state is seven columns (_TERM_STATE above) and the waiver pipeline, a long
     # companion, wop_pipeline_sec.csv, keyed (point_id, lag), lag the months before the
@@ -2116,6 +2185,87 @@ SEC_SPECS: dict[str, SecSpec] = {
         exempt=frozenset({"claim_duration_months"}),
         companions={"inforce_cohorts_sec.csv": _ip_cohorts},
         derived_refs={(1, 40): {"rpi_rate": 0.05}, (4, 30): {"rpi_rate": 0.12}},
+    ),
+    # WP's state is eight columns per policy (_WP_STATE above), with no companion: the asset
+    # share, the units and the unit price, the endowment's attaching bonus, the smoothed
+    # payout and the bonus rate of the year under way, S's columns of those names under D6's
+    # (units, attaching_bonus and bonus_rate become units_init, attaching_bonus_init and
+    # bonus_rate_init), and the two cumulants S restarts at 0 where its frame opens, the
+    # guarantee charges taken and the smoothing account.  pols_if_init becomes policy_count
+    # (the default), and duration_inforce, S's elapsed policy years, is dropped for
+    # duration_mth, 60 on S's bonds 1 to 4 and 240 on its endowment 6, whose twins are T2's
+    # in-force twins.  S's point 7, the down scenario's bond issued at the valuation date
+    # with the withdrawal election, is the bond variant the future row and T1 on a bond
+    # need (UKLIB-SEC-PLAN.md §6.5): S's other new business is the endowment, which the
+    # product closes to new business.  The derived rows reach the product's months on both
+    # cells: the bond's declaration in month 0, 71; the down scenario as its market value
+    # reduction turns on, 68, the smoothing cap's floor binding, as its corridor's ceiling
+    # binds, 92, on its guarantee date, 119, the encashment in month 0, and with its asset
+    # share floored at 0, 242, its payout 0 with it; the 5% bond in a month its charge cap
+    # binds, 487; the withdrawing bond in its last month, 402, a one-row frame ended by
+    # forced encashment; the endowment at its first declaration, 11, and at maturity, 299,
+    # a one-row frame; the worked example's bond at the limiting age, 779, a one-row frame;
+    # and the bond variant past its charge cap, 100, its charges stopped at 88.  The future
+    # row is the bond variant issued 13 months after the valuation date: more than a year
+    # on and off a valuation anniversary, so that the months before issue read policy years
+    # -1 and 0, where a missing guard would show.  T2's splice grid is built from this spec
+    # in a temporary table, not committed.
+    #
+    # And five rows S reaches only under References of their own (derived_refs), since at
+    # S's References each history is what today's References rebuild, and C2 would freeze
+    # no path that reads a column rather than a Reference.  The cumulants under the -15%
+    # and +5% cells: the bond variant at 60 and the 5% bond at 300, each from S under a
+    # guarantee charge of 0.2%, twice today's, so that the variant's charges stop at 62
+    # where today's would at 88, and the 5% bond's at 207 where today's would at 487.  The
+    # bond and the endowment at 150 from S under the bonus rule, its unit price 1.48623 and
+    # its guarantee 22,091.61 where the rates held level give 1.268242 and 23,912.36, and the
+    # year's rate the rule declared, 5.69% and 0.60%.  And the worked example's bond at 156
+    # from S under a smoothing cap of 5%, its payout held below its asset share and its
+    # smoothing account run below 0.  At the shipped References the committed model projects
+    # each from that history at today's.
+    #
+    # T1 holds on WP at any count: S charges no acquisition expense, and every flow is the
+    # count times a per-policy amount.  It skips four S cells besides the default three:
+    #   proj_start: S's first projected month on the policy clock, 60 on S's bonds in force.
+    #     Every SEC frame opens at t = 0 (D3), which the conventions assert.
+    #   duration_inforce: S's elapsed policy years, which duration_mth replaces (D6).
+    #   attaching_bonus: S's accessor of the endowment's bonuses at its frame's opening,
+    #     which attaching_bonus_init replaces, reading the same column renamed.
+    #   fund_exhaust_mth: S returns 0 where a bond's units never run out, which on the
+    #     valuation clock is a real month; SEC returns a month past cover, so the two differ
+    #     on every point that never exhausts, the endowment among them.  Where the units do
+    #     run out, on point 7, both return the policy month, 267;
+    #     test_with_profits_uk_sec.py compares it there and holds the new "never".
+    #
+    # Phase 2 sizes its caches from the contract:
+    #   t 0..1,344: a bond issued at issue_age_min, 18, to omega_age, 120, a cover of
+    #     1,224 months, or an endowment maturing at omega_age, issued future_horizon_mth, 120
+    #     months, after the valuation date, a frame of 1,344 months, t 0..1,343, and the
+    #     roll-forward's t + 1, 1,344.  The exhaustion search reads the units of the month
+    #     they run out, the month after the frame's last, which is a month of cover and so
+    #     inside it.  A contract Reference for the largest omega_age, 121, the table's last
+    #     age plus one, adds 12 (UKLIB-SEC-PLAN.md §6.6, Record — M10).
+    # proj_len() refuses an issue age below issue_age_min, a bond issued at or past
+    # omega_age, an endowment maturing past it, and a policy at or past the end of cover,
+    # each naming the point.
+    "WP_UK_SEC": SecSpec(
+        twin="WP_UK_S",
+        column_map={"duration_inforce": None, "units": "units_init",
+                    "attaching_bonus": "attaching_bonus_init",
+                    "bonus_rate": "bonus_rate_init"},
+        duration_of=lambda row: 12 * int(row["duration_inforce"]),
+        derived=((1, 71), (2, 68), (2, 92), (2, 119), (2, 242), (3, 487), (4, 402),
+                 (5, 11), (5, 299), (1, 779), (7, 100)),
+        future=((7, 13),),
+        state=_WP_STATE,
+        twin_state=_WP_STATE,
+        exempt=frozenset({"proj_start", "duration_inforce", "attaching_bonus",
+                          "fund_exhaust_mth"}),
+        derived_refs={(7, 60): {"guar_charge_rate_base": 0.002},
+                      (3, 300): {"guar_charge_rate_base": 0.002},
+                      (1, 150): {"bonus_rule_on": True},
+                      (5, 150): {"bonus_rule_on": True},
+                      (1, 156): {"smooth_cap": 0.05}},
     ),
 }
 
