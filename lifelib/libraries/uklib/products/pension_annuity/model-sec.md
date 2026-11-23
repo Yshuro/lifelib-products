@@ -213,7 +213,8 @@ year and a month of death, and a negative month of death reads as a life that ne
 120 months on and the first policy year's, is held at both its ends. A column some points
 never read, such as a scenario point's rating or start year, is still held on every
 point, as `PA_UK_S`'s reader holds it; refusing it only where it is read is carried into
-the C step, where its refusal by point is reworked (USLIB-SEC-PLAN.md §7.12, M23).
+M12, the C step, as SPIA's C step reworked its refusals by point (USLIB-SEC-PLAN.md §7.9,
+*Record — M23*, *Refusal by point*).
 
 A contract at or past its stop rule, `duration_mth ≥ stop_mth()`, reads, but `proj_len()`
 refuses it, naming the point: the stop is the product's rule, not the table's. So does a

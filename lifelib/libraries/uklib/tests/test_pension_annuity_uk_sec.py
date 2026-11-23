@@ -619,9 +619,9 @@ def _sweep(proj):
     a product over every month before each time point, quadratic in the frame, about 110 MB
     of modelx's dependency graph on a point on the table basis, which held in the module's
     swept models took its peak past 4 GB (measured at M11), and SPIA's sweep leaves it out
-    too (USLIB-SEC-PLAN.md §7.12).  Its residual is evaluated instead at every
-    :data:`SAMPLED`-th time point and at the frame's close, so that a comparison still
-    holds S's residual against this model's there.  The whole check runs on every
+    too (USLIB-SEC-PLAN.md §7.9, *Record — M11*).  Its residual is evaluated instead at
+    every :data:`SAMPLED`-th time point and at the frame's close, so that a comparison
+    still holds S's residual against this model's there.  The whole check runs on every
     committed row in the conventions, on every twin in T1, and on every splice row in the
     rules test (:func:`_rule_breaches`).
     """
