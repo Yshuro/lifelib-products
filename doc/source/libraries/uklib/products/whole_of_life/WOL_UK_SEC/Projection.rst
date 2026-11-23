@@ -8,7 +8,11 @@ Cells Descriptions
 
 .. autofunction:: model_point
 
+.. autofunction:: point_id
+
 .. autofunction:: cell
+
+.. autofunction:: cell_code
 
 .. autofunction:: age_at_entry
 
@@ -16,11 +20,15 @@ Cells Descriptions
 
 .. autofunction:: smoker
 
+.. autofunction:: mort_schedule
+
 .. autofunction:: sum_assured
 
 .. autofunction:: premium_mth
 
 .. autofunction:: escalation
+
+.. autofunction:: escalation_code
 
 .. autofunction:: cessation_mths
 
@@ -86,6 +94,10 @@ Cells Descriptions
 
 .. autofunction:: prem_cum_pp
 
+.. autofunction:: prem_cum_pp_py
+
+.. autofunction:: prem_cum_pp_refusal
+
 .. autofunction:: in_moratorium
 
 .. autofunction:: payments_made
@@ -98,6 +110,8 @@ Cells Descriptions
 
 .. autofunction:: lapse_rate_base
 
+.. autofunction:: lapse_last_year
+
 .. autofunction:: lapse_rate
 
 .. autofunction:: lapse_rate_mth
@@ -106,11 +120,19 @@ Cells Descriptions
 
 .. autofunction:: pols_pu
 
+.. autofunction:: pols_pu_py
+
 .. autofunction:: pu_benefit
+
+.. autofunction:: pu_benefit_py
+
+.. autofunction:: pu_benefit_refusal
 
 .. autofunction:: pols_all
 
 .. autofunction:: pols_if_at
+
+.. autofunction:: pols_if_py
 
 .. autofunction:: pols_new_biz
 

@@ -1441,6 +1441,21 @@ def _ulb_claims_total(name, args):
     return args
 
 
+def _wol_claims_total(name, args):
+    """``WOL_UK_S``'s ``claims`` keys as ``WOL_UK_SEC`` takes them at stage ``"EC"`` (R9,
+    R12).
+
+    S's ``claims(t, kind=None)`` is cached under ``(t, None)`` where S asks for the total,
+    which its ``net_cf`` does: SEC's code ``ALL``, so ``None`` is mapped to ``"ALL"``,
+    which :func:`codes` then turns into the int, as it turns S's kinds, benefits and
+    timings.  Every other key, and every other cell's arguments, pass as they are, SEC's
+    own codes among them, where a comparison of two SEC models passes it SEC's keys.
+    """
+    if name == "claims" and len(args) == 2 and args[1] is None:
+        return (args[0], "ALL")
+    return args
+
+
 def _wol_paid_up_cover(s, d):
     """``WOL_UK_S``'s paid-up cover entering month ``d``, per paid-up policy.
 
@@ -1944,17 +1959,26 @@ SEC_SPECS: dict[str, SecSpec] = {
     #     agree as a whole.  Each column it shares with S is a cell T1 compares at every
     #     month, and test_whole_of_life_uk_sec.py compares the report itself with S's, on
     #     every column both hold.
+    # At stage EC (M6), S's timings and kinds are SEC's int codes, BEF_NB to AFT_DECR,
+    # DEATH to PAID_UP for the benefits and DEATH to LAPSE for the claims, DEATH one code in
+    # both, which codes maps, and S's claims(t, None) keys, the kind=None total its net_cf
+    # caches, are SEC's code ALL: the spec's twin_arg_map, _wol_claims_total, maps None to
+    # "ALL", and codes maps it and the rest.  S's label accessors stay S's, called by
+    # reporting and T1 alone, sex() and smoker() now refusing any value but their codes as
+    # cell() and escalation() refuse theirs: each returns the column of its own name, and
+    # mort_basis() the cell's through the registry's "reporting_columns" map.
     #
-    # Phase 2 sizes its caches from the contract:
-    #   t 0..1,356: a policy issued at issue_age_min, 18, to the largest omega_age
-    #     proj_len() accepts, 121, a year past mort_table.csv's last age, a cover of 1,236
-    #     months, issued future_horizon_mth, 120 months, after the valuation date: a frame
-    #     of 1,356 months, t 0..1,355, and the roll-forward's t + 1, 1,356, where it reads
-    #     the month after the frame.  At the shipped omega_age of 120 the frame is 1,344.
-    #     The C step carries a contract Reference for the largest omega_age, 121, from which
-    #     it derives the t cache, as ULB's compile step derives its own.
-    # proj_len() refuses an issue age below issue_age_min, one at or past omega_age, and a
-    # point at or past the limiting age at the valuation date, each naming the point.
+    # Phase 2 sizes its caches from the contract (spec_sec.py holds each derivation):
+    #   t 0..1,357: a policy issued at issue_age_min, 18, to omega_age_max, 121, the largest
+    #     omega_age proj_len() accepts, a year past mort_table.csv's last age, a cover of
+    #     1,236 months, issued future_horizon_mth, 120 months, after the valuation date: a
+    #     frame of 1,356 months, t 0..1,355, its month after, and the roll-forward's t + 1
+    #     there;
+    #   y 2..103, the policy years whose openings the four blocked chains read, to the
+    #     policy year of the longest cover's last month.
+    # proj_len() refuses an issue age below issue_age_min, an omega_age above
+    # omega_age_max, one at or past omega_age, and a point at or past the limiting age at
+    # the valuation date, each naming the point.
     "WOL_UK_SEC": SecSpec(
         twin="WOL_UK_S",
         derived=((1, 6), (1, 166), (3, 200), (4, 186), (6, 12), (7, 300)),
@@ -1964,6 +1988,7 @@ SEC_SPECS: dict[str, SecSpec] = {
         exempt=frozenset({"result_pols"}),
         derived_refs={(4, 120): {"rpi_rate": 0.05}, (6, 120): {"esc_take_up": 0.5},
                       (3, 180): {"lapse_crossover_beta": 100.0}},
+        twin_arg_map=_wol_claims_total,
     ),
     # PA's state is six columns per contract (_PA_STATE above), with no companion: each
     # life's survival, the payments made to date on every stream, and on RPI-linked

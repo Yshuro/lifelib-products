@@ -120,7 +120,11 @@ MODELS = {
                   {**MONTHLY, "age_basis": ANB, "twin": "IP_UK_S", "stage": "E"}),
     "WOL_UK_S": ("products/whole_of_life/WOL_UK_S", {**MONTHLY, "age_basis": ALB}),
     "WOL_UK_SEC": ("products/whole_of_life/WOL_UK_SEC",
-                   {**MONTHLY, "age_basis": ALB, "twin": "WOL_UK_S", "stage": "E"}),
+                   {**MONTHLY, "age_basis": ALB, "twin": "WOL_UK_S", "stage": "EC",
+                    "param": "idx",
+                    "reporting": ("cell", "escalation", "mort_basis", "sex", "smoker"),
+                    "reporting_columns": {"mort_basis": ("cell", {"O50": "population",
+                                                                  "UW": "assured"})}}),
     # Savings
     "ULB_UK_S": ("products/unit_linked_bond/ULB_UK_S", {**MONTHLY, "age_basis": ALB}),
     "ULB_UK_SEC": ("products/unit_linked_bond/ULB_UK_SEC",
