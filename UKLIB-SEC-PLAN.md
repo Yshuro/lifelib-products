@@ -8,15 +8,17 @@ workflow's run 43 (§3, *Record — M0*), and so is Term's in-force step, M1, by
 the unit-linked bond's, M9, by run 48 (§6.6, *Record — M9*). The owner's fix to Term's
 waiver incidence is done, by run 49 (§6.1, *Record — the waiver's incidence base*). So are
 critical illness's compile step, M4, by run 51 (§6.2, *Record — M4*), the unit-linked
-bond's, M10, by run 52 (§6.6, *Record — M10*), and whole of life's in-force step, M5, by
-run 53 (§6.4, *Record — M5*). The pension annuity's in-force step, M11, has landed, and so
-has the rework of Term and critical illness to the owner's decision below, their run under
-way. On 2026-11-23 the owner decided that an anniversary or a review falling at the
+bond's, M10, by run 52 (§6.6, *Record — M10*), whole of life's in-force step, M5, by run
+53 (§6.4, *Record — M5*), and the pension annuity's, M11, by run 54 (§6.7, *Record —
+M11*). On 2026-11-23 the owner decided that an anniversary or a review falling at the
 valuation date is the projection's first event, made at today's References, each opening
-column holding the state before it (D6). Every SEC model built so far now follows it,
-superseding the rule *Record — M3* states, that such an event counts as made. Like
-USLIB-SEC-PLAN.md, this document is both the specification and the record: each milestone
-records what it actually did, including where the implementation departed from the plan.
+column holding the state before it (D6). Term and critical illness were reworked to it,
+also by run 54 (§6.1, *Record — the anniversary at the valuation date*), so every SEC model
+built so far follows it. The compile steps of whole of life and the pension annuity, M6 and
+M12, and the in-force steps of income protection and with-profits, M7 and M13, are under
+way, two in each stream (§7). Like USLIB-SEC-PLAN.md, this document is both the
+specification and the record: each milestone records what it actually did, including where
+the implementation departed from the plan.
 
 Every number in it was measured in this repository, under modelx 0.33.0 and pandas 3.0.5
 as USLIB-SEC-PLAN.md's were, or is quoted from USLIB-SEC-PLAN.md, and each is given with
@@ -1330,6 +1332,138 @@ formatted message. Each refusal on a chain lives in a cell of its own, which the
 calls only on the error path, with the values the message names. M4's and M10's
 builders were told so while building.
 
+#### Record — the anniversary at the valuation date, decided 2026-11-23
+
+The owner decided the question M5's review raised. An anniversary or a review falling at
+the valuation date is the projection's first event, made at today's References, each
+opening column holding the state before it.
+- This is D6 as USLIB-SEC-PLAN.md precised it at its M7, and the instant M9's template
+  states (§6.6, *Record — M9*).
+- Term (M1) and CI (M3) had counted such an event as made (*Record — M3*), as M5 first
+  did too.
+- The unit-linked bond (M9) and the pension annuity (M11) already followed it. Whole of
+  life was built to it in M5's rework (§6.4, *Record — M5*), and Term and CI were reworked
+  to it here.
+
+It was built in four commits:
+- `Term_UK_SEC` (`3658494`);
+- `CI_UK_SEC` (`b428654`);
+- the review's gaps, closed in Term (`a111617`) and in CI (`1be71b4`).
+
+No refreeze was needed: the projected numbers moved by rounding only.
+
+**The change.**
+- *Term.*
+  - `idx_factor` and `idx_prem_factor` count anniversaries from month 0 on, so an
+    anniversary at the valuation date steps at `t = 0`, at today's `rpi_rate`, caps and
+    take-up.
+  - The generator reads S in month `d − 1`. Point 9's columns go from 1.03^5 and 1.045^5
+    to 1.03^4 and 1.045^4.
+  - `Data` gains a first-year rule, rule 8: the factors are 1 at 12 months or fewer. An
+    extract written the old way at 12 months would otherwise take the first increase
+    twice. The later rules are renumbered 9 to 15.
+- *CI.*
+  - The index factors are as Term's. Point 8's columns go to 1.03^2 and 1.045^2.
+  - `review_prem_factor`, `review_prem_change` and `ci_sel_factor` count the reviews
+    made before month 0 as `(d − 1) // P`.
+  - A review in the valuation month is made at `t = 0`, at today's change. It opens its
+    window at that change, and closes an open latch at today's threshold and η.
+  - The generator reads S at `d − 1`. `review_prem_shock_init` holds the previous
+    review's change, and is never read on a review month.
+  - The rules move with the instant:
+    - no review history at `d ≤ P`;
+    - one review at `P < d ≤ 2P`;
+    - `Data`'s first-year rule at 12 months or fewer.
+  - At C, `int(review_period_mths)` made a local a Python object, which C3 caught. The
+    period is read raw, as Term's `select_factor` reads its own.
+- *A twin S cannot give.* An indexed S point opened in force on an anniversary has no
+  twin, since S takes no step where its frame opens and `Data` refuses a factor below 1.
+  The generator refuses to write one, naming the point. No shipped S point is such a
+  point.
+- *Extracts written under the old rule.* Each page warns that one is refused only at
+  month 12, at P, and at 2P where the first review's change was not 0. At later
+  anniversaries and reviews it passes every rule, and takes the month-0 step twice.
+
+**What moved**, comparing every cached value at the shipped References, before (`40029f9`)
+and after:
+
+| Rows | Values differing | Where | Largest relative difference |
+|---|---|---|---|
+| Term, committed | 1,345 of 231,363 | point 9, 9 cells | 5.2e−15, on `net_cf` |
+| CI, committed | 1,218 of 255,628 | point 8 | 2.2e−15 |
+| Term, core grid | 2,294 | 3 rows | 5.2e−15 |
+| CI, core grid | 3,581 | 4 rows | 4.0e−14: 1.4e−14 on a `net_cf` of −0.35 |
+
+- The cause is the order of evaluation. Each factor is now S's 1.03^4 times SEC's
+  1.03^(n + 1), where it was 1.03^5 times 1.03^n.
+- The opening columns move by design.
+- C2 reproduces for Term, CI and ULB, and the stack is unchanged.
+- M22's guards raise at the shifted exponents in both engines: at `t` = 12, 12 and 60,
+  where it was 24, 24 and 120.
+
+**The K14 tests**, each figure worked by hand:
+- *Term point 9 under an RPI of 5% set at the valuation date.*
+  - Its columns, 1.03^4 and 1.045^4, are S's at 3% in month 59.
+  - The cover at `t = 0` is 150,000 × 1.03^4 × 1.05 = 177,267.64, where the old instant
+    gave 173,891.11.
+  - Restated on the first anniversary, it is S at 5% from month 12, in every cell.
+- *CI point 8 under 5%.* The cover at `t = 0` is 111,394.50, where the old instant gave
+  109,272.70.
+- *CI's reviews,* with the history from S at a review change of 10%, and today's
+  References a change of 15%, a threshold of 8% and η of 20%:
+  - *valued on the first review, month 60:* no history, and the premium at `t = 0` is
+    63.25. The window's lapse is 0.18, and the latch closes at 1.2;
+  - *valued on the second, month 120:* a factor of 1.1, a latch closed at 1.1 and a change
+    of 0.10, and the premium is 69.575. The next review takes it to 80.01125.
+
+**The review.**
+- One agent built it, injecting 17 faults, 5 in Term and 12 in CI, all caught.
+- A second agent reviewed it, injecting 15 faults, of which 13 were caught.
+  - It found the model and the generator right. It checked the generator by hand against
+    S at months 0, 1, 11, 12, 13, 24, 59, 60, 61, 119, 120, 121 and 180, on CI's points,
+    an indexed reviewable variant and Term's. The same checks fail 81 times against
+    `40029f9`.
+  - It compiled both models and held them to modelx on the new edges.
+  - It found four gaps:
+    - CI's one-review rule untested at its new lower edge, month 61, where the page
+      claimed both ends;
+    - docstrings stating the old rule. On Term point 9 they gave 168,826.32 for policy
+      year 6, where the model pays 173,891.11;
+    - the no-history rule held at its new edge for the review factor alone;
+    - the twin S cannot give, neither stated nor refused.
+- The builder closed all four, with 4 faults more caught.
+
+At landing, `1be71b4` ran its gate here in three jobs:
+- the full grids without the compile tests: Term 415 passed in 179 s, CI 625 in 210 s;
+- the `term_assurance` and `critical_illness` shards, 13 and 14 passed. The stack is as
+  before: Term's cold call ran on 192 KiB and not on 128, CI's on 160 and not on 144;
+- the conventions, harness and S suites: 667 passed, in 400 s;
+- the generators' checks for all five SEC models;
+- the harness check;
+- doccheck at 0 warnings;
+- the scaffolding at 0 files.
+
+A case-insensitive search of both regenerated tables, for every publisher, product and
+document code their `sources.md` cite, finds none.
+
+In CI, the Tests workflow's run 54 on `1be71b4` ran 97 jobs (§6.7, *Record — M11*). The
+rework's legs passed at the first attempt:
+- the `cython_uk` legs: Term's 13 tests in 189 s on Ubuntu and 181 s on Windows, and CI's
+  14 in 160 s on both;
+- `sec_uk`'s legs for Term, the full grid on Ubuntu in 4.1 min and the core on Windows in
+  3.8 and on macOS in 1.9, and for CI in 4.2, 4.0 and 3.5.
+
+The compiled cold call's stack is as it was. Term's ran on 384 KiB and not on 256 on
+Ubuntu, and on 256 and not on 192 on Windows. CI's ran on 384 and not on 256, and on 224
+and not on 192.
+
+**Carried.**
+- An instant that moves moves every rule keyed on it. Each is tried at both its new edges.
+- A generator refuses a row the SEC model cannot give as S's twin, rather than writing one
+  T2 would fail.
+- The core-reach test names the branches the decision adds: an increase or a review at
+  `t = 0` (*Record — M5*).
+
 ### 6.2 Critical illness — `CI_UK_SEC` (E: M, C: M)
 
 *Today:* policy clock from issue, new business only, no in-force column; frame
@@ -1429,6 +1563,9 @@ fingerprint, alone (`d0d32ad`). It ran beside ULB's in-force step, M9, one in ea
   - the opening state's six cells.
 - *The opening state* (D6), six columns, each documented in `model-sec.md` with its
   instant. A review or an anniversary that falls in the valuation month counts as made.
+  *Superseded on 2026-11-23:* by the owner's decision such an event is month 0's own, and
+  each column holds the state before it (§6.1, *Record — the anniversary at the valuation
+  date*).
   - `idx_factor_init` and `idx_prem_factor_init`, the RPI increases already given;
   - `review_prem_factor_init`, the premium factor the reviews made so far have given;
   - `ci_sel_latched_init`, 0 or 1, and `ci_sel_factor_init`, read only when the latch is
@@ -2795,6 +2932,195 @@ the survival recursion by year if the margin is gone.
 True through `bool(nan)`; `death_mth` truncating a fraction and reading a negative month
 as a life that never dies; `int()` truncating ages, frequency, guarantee and `start_year`;
 no bounds on ages, the guarantee, `vp_pct`, the rating or the dependant's share.
+
+#### Record — M11, done 2026-11-23
+
+Built in three commits, as U1 and §7 ask: `PA_UK_S` copied with only `_name` changed
+(`66a6ccd`), the enhancement (`2d94685`), and the Phase 1 fingerprint frozen alone
+(`ac28cb6`). The review's fixes followed in six commits more (`976090b` to
+`fb17d7b`). Among them were a refreeze that adds one point and changes no other line
+(`d6e3844`), and S's swap test moved into `tmp_path` (`9e00f9c`). Its chassis is
+`SPIA_US_SEC` (USLIB-SEC-PLAN.md §7.9). It ran beside WOL's in-force step, M5, and the
+compile steps of CI and ULB, M4 and M10, two in each stream (§7).
+- One agent built it, injecting 15 faults, all caught.
+- A second agent reviewed it against this note, the plan and USLIB-SEC-PLAN.md, injecting
+  39 faults of its own in 40 runs, of which 32 were caught.
+  - It found no wrong number on the committed points.
+  - It found three wrong models that passed every test, the fingerprint included, each
+    hidden by parameters that coincide on every point:
+    - fixed escalation compounding at the RPI, every fixed point escalating at 3%, the
+      shipped RPI;
+    - the value-protection balance netting δ·P instead of v·P, every point with value
+      protection having v = δ = 0.5;
+    - the last survivor's netting in advance dropped, its one point paying in advance
+      having a dependant who never dies.
+  - It found these gaps besides:
+    - the depth test missing the table basis's longest cover, a 1,380-month guarantee at
+      age 50, which runs the deepest chain;
+    - a peak of 4.4 GB, from S's quadratic survival check held in module-scoped sweeps,
+      against SPIA's carried rule and macos-latest's 7 GB;
+    - `omega_age` 115.0 breaking every report;
+    - three powers leaving the floats inside accepted domains with an `OverflowError` that
+      names nothing, and DOMAINS accepting an edge on `proj_len()` alone;
+    - three branches no row reached: a dependant older than the annuitant, the
+      dependant's leg at δ = 0, and the first-year rule at month 1;
+    - C2 freezing neither bound of the LPI;
+    - two doc errors.
+- The builder fixed all of them, with 27 faults more caught.
+- The reviewer verified the rework with 18 faults of its own, of which 16 were caught.
+  `fb17d7b` pins the two it missed, `Data` rule 14 given slack, and moves the depth
+  test's rows issued 120 months on to the full grid.
+
+**What exists now.**
+- *`PA_UK_SEC` at stage E*, on SPIA's chassis:
+  - `stop_mth()` is the policy-clock end of the obligation, and
+    `proj_len() = stop_mth() − duration_mth_init()`. A point at or past the stop is
+    refused, as is a contract owing nothing.
+  - `BEF_NB` is a closed form. The count is never decremented, and mortality is per life.
+  - `pols_if` is a closing measure, so the registry marks the model `closing_pols_if`.
+  - `timing`, `mort_basis`, `vp_basis` and `escalation_type` are decoded into seven flags
+    at E, as §6.7 asks.
+  - `cum_annuity_pp(k, kind)` is parted by clock:
+    - the annuitant's kind keeps `k`, based at the static key `max(d, 0)`: a loop on level
+      and fixed escalation, the column on RPI-linked;
+    - `"ALL"` is `cum_annuity_all(t)`, which raises for a key before the valuation date.
+  - `next_payment_mth` is a closed form returning a policy month. The proportionate
+    payment's instalment is A(policy year)/m. This removes R2's one far read.
+- *The opening state* (D6), six columns, each measured at the start of month 0, before
+  any month-0 event, and documented with that instant:
+  - `lives_if_init_1` and `lives_if_init_2`, each life's survival;
+  - `cum_annuity_all_init`, the payments to date;
+  - on RPI-linked escalation:
+    - `annual_income_init`, the annuitant's income of the policy year under way, before δ
+      and before month 0's anniversary, also after the annuitant's death;
+    - `rpi_peak_init`, the ratchet's peak relative to the latest index;
+    - `cum_annuity_pp_init`, the annuitant's payments as if alive, read with first-death
+      value protection.
+- *`Data`* refuses §6.7's S defects, a rating below 1, and an RPI-linked opening income
+  more than half a cent below `annual_income` (rule 14), which the LPI floor and the
+  ratchet make unreachable.
+- *The committed rows*, 23 points:
+  - S's 10 as twins;
+  - 9 derived rows, at months 17, 16, 120, 24, 30, 101, 170, 575 and 635;
+  - one future row, starting 13 months on;
+  - three under References of their own (`derived_refs`): the catch-up point at 60
+    under an RPI of −2%, the LPI point at 42 under 8%, and point 7 at 54 under −2%, the
+    floor.
+- *The splice's variants* reach what no S point holds: the table basis paying in advance
+  (20), v ≠ δ (23), value protection on a single life (24), a dependant older than the
+  annuitant (25), and δ = 0 (26).
+- *Beside the model:* `run_sec.py`, `model-sec.md`, the generated pages, uklib's
+  `index.md` row and the `sec_uk` job's `pension_annuity` legs.
+- *Tests.* By default 410 pass and 375 skip, in 284 s, at a peak of 2.8 GB. On the full grid 782 pass in
+  1,043 s, at a peak of 2.6 GB.
+
+**Departures and precisions.**
+- *The decodes come at E.* Term, CI and ULB kept text until C.
+- *`proj_len()` refuses more:*
+  - an issue age below `issue_age_min`, 0;
+  - a guarantee above 1,380 months;
+  - a contract owing nothing, SPIA's rule;
+  - twelve Reference domains, each checked only on the bases that read it.
+- *Past the floats.* An income or a total of payments past the largest float is refused
+  where it first appears. `inflation_factor`, `rpi_index`, `improve_factor` and
+  `expenses` refuse where they leave the floats, naming the point and the References.
+- *`omega_age` is read as an int.* A whole float projects as the int does.
+- *Rules 15 and 16 compare exactly, where rule 14 allows half a cent.* Before payment and
+  in the first policy year, the opening income is no history but the contract's own first
+  year's, which the model reads in year one on a catch-up point. An extract writes the same
+  number in both columns. Rule 14's history is computed and rounded by the extract's own
+  system.
+- *δ = 0 with the dependant alive owes nothing.* It projects zeros, and is not refused.
+- *A column some points never read* is still held on every point, as S's reader holds it.
+- *`result_pols`* puts `pols_if` and `pols_new_biz` first, as SPIA does.
+- *T2 and T3 skip `payment_surv_mth`*, SPIA's form. `annual_income_init`, `rpi_index`
+  and `rpi_peak` are compared scaled, and keys before the valuation date are skipped
+  through `arg_map`.
+- *The splice leaves out states that owe nothing*: S point 8 from month 577, and variants
+  14 to 16. The every-state test sets them aside and shows that each is refused.
+- *S's survival check is sampled in the module-scoped sweeps*, at every 25th key and the
+  frame's close. Each splice row runs the whole check, and the rules test runs it on every
+  core row. A residual fault at a key the sample skips is caught there and by the
+  conventions.
+- *The LPI's bounds are held by tests, not by C2.* C2 reads at the shipped References,
+  where neither bound binds. Row 23 freezes the floor's history beside row 22's cap. The
+  bounds themselves are held by a test of their own and by T2's RPI sets. Fingerprinting
+  a `derived_refs` row under its own References would change the shared tool, so it joins
+  M15's `derived_refs` item.
+- *A static test* finds no tuple, text or generator in any computed cell outside §6.7's C
+  list.
+- *S's swap test* writes the lighter mortality table beside a copy of the model in
+  `tmp_path`, as WOL's does (*Record — M5*).
+
+**Measured for K6.**
+- The deepest chain is 1,391 cells: `net_cf` in the last month, on the table basis under
+  a 1,380-month guarantee, on points 2, 6, 7 and 8. That is 1,379 cells back to
+  `t_entry()`, plus 12. The scenario shapes reach 1,386 and 1,387.
+  - K12 estimated about 1,510, assuming chains run back to `t = 0`. They stop at
+    `t_entry()`.
+  - Issued 120 months on, each shape runs as deep as issued now, since improvement is
+    dated on the policy clock and inflation is on no chain.
+- The committed sweep passes under a recursion limit of 7.
+- The peak fell from 4.4 GB to 2.8 GB with the survival check sampled.
+- At landing, `fb17d7b` ran its gate here in three jobs:
+  - the full grid: 785 passed, in 1,036 s;
+  - the conventions, harness and S suites: 829 passed, in 406 s;
+  - the generators' checks for PA, WOL, ULB, CI and Term;
+  - the harness check;
+  - doccheck at 0 warnings;
+  - the scaffolding at 0 files.
+
+  A case-insensitive search of `model_point_table_sec.csv`, for every publisher, product,
+  document code and host `pension_annuity/sources.md` cites, finds none.
+
+In CI, the Tests workflow's run 54 on `1be71b4`, which carries the rework of Term and CI to
+the month-0 rule as well (§6.1), ran 97 jobs. M11's legs passed at the first attempt:
+- `sec_uk`'s three PA legs: the full grid on Ubuntu in 23.3 min, and the core on Windows and
+  on macOS in 6.8 each;
+- the `test` job on Python 3.14 and Ubuntu, 7,128 passed and 114 skipped in 37 min 30 s,
+  its harness step agreeing.
+
+Of the other jobs, the `test` job on Python 3.14 and macOS was never given a runner, and was
+cancelled after 79 minutes in the queue. Two more macOS legs were still running when this
+record was written. Every other job passed.
+
+**Faults.** Each was injected into a copy of its own.
+- The builder: 15, then 27 on the rework and 4 with the last items, all caught.
+- The review: 39, in 40 runs. Seven were missed:
+  - the three wrong models;
+  - the dependant older than the annuitant;
+  - the dependant's leg kept at δ = 0;
+  - the first-year rule from month 2;
+  - the LPI floor dropped, by C2.
+
+  Each is caught since the rework, the last by its own test rather than C2.
+- The verification: 18, of which two were missed: rule 14 given £1 and 1% of slack. Both
+  are caught since `fb17d7b`.
+
+**Carried into M12 and after.**
+- *For M12*, beyond §6.7's C list:
+  - M22's form on `inflation_factor`, `rpi_index` and `improve_factor`;
+  - `cum_annuity_pp`'s string kinds:
+    - `"ANNUITANT"` on the policy clock, at its static base;
+    - `"ALL"` through `cum_annuity_all`, refused before the valuation date's key;
+    - any other kind refused;
+  - `payment_freq`'s tuple;
+  - C4 on the RPI rows, fixed point 2 among them, and on variants 20 and 23 to 26, which
+    C2 cannot freeze;
+  - the LPI-bounds test run compiled, each ItemSpace made after its References are set
+    (K7);
+  - a refusal narrowed to the points that read its column, M23's refusal by point;
+  - the caches at E's sizes: `t` 1,502, `k` 1,382, `y` and `a` 117, `x` 116;
+  - the 1,391-cell chain's stack measured compiled first. If it needs more than
+    256 KiB here, it is blocked by policy year (*Record — M10*).
+- *The template, for every later product:*
+  - Two parameters a formula could confuse, such as an escalation rate and the RPI, or a
+    protected share and the dependant's, differ on some core row.
+  - A quadratic check in a module-scoped sweep is sampled. Each splice row runs it whole,
+    and a test on every core row runs it everywhere.
+  - Each domain edge accepted projects its reports.
+  - A rule tying two amounts of money compares to a cent. It is tried a cent outside and
+    half a cent inside.
 
 ---
 
