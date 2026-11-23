@@ -1376,16 +1376,28 @@ def _wol_premiums_paid(s, d):
     return s.prem_cum_pp(d - 1) if d > 0 else 0.0
 
 
-def _wol_premium(s, d):
-    """``WOL_UK_S``'s monthly premium of the policy year under way at month ``d``.
+def _wol_cover(s, d):
+    """``WOL_UK_S``'s cover before month ``d``'s events: that of month ``d - 1``.
 
-    S's ``premium_pp(d)`` while premiums are payable, and once they have ceased, the last
-    one paid, S's ``premium_pp`` of the last premium-paying month, which the in-force
-    crossover carries back over the premium-paying months.  On a point paying for life,
-    ``premium_pp(d)``.
+    The opening state is measured at the start of month 0, before any month-0 event, so on
+    a point valued on an anniversary the cover is the year the anniversary closes, and its
+    increase is the in-force model's first event (USLIB-SEC-PLAN.md D6, as precised at
+    uslib's M7).  Off an anniversary it is month ``d``'s cover; at issue, S's at 0.
     """
+    return s.cover_pp(d - 1 if d > 0 else 0)
+
+
+def _wol_premium(s, d):
+    """``WOL_UK_S``'s monthly premium before month ``d``'s events: that of month ``d - 1``.
+
+    S's ``premium_pp(d - 1)`` while premiums were payable then, at the same instant as the
+    cover (:func:`_wol_cover`), and once they have ceased, the last one paid, S's
+    ``premium_pp`` of the last premium-paying month.  At issue, S's ``premium_pp(0)``.
+    """
+    if d <= 0:
+        return s.premium_pp(0)
     cessation = s.cessation_mths()
-    return s.premium_pp(min(d, cessation - 1) if cessation > 0 else d)
+    return s.premium_pp(min(d, cessation) - 1 if cessation > 0 else d - 1)
 
 
 def _wol_crossover(s, d):
@@ -1404,9 +1416,10 @@ def _wol_crossover(s, d):
 # d, each per policy or a count, so that policy_count and the paid-up count are the only
 # weights.  The paid-up strand, S's pols_pu(d) and its cover per paid-up policy
 # (_wol_paid_up_cover); the premiums paid to the end of month d - 1 (_wol_premiums_paid);
-# the cover and premium of the policy year under way, S's cover_pp(d) and its premium
-# (_wol_premium), the history of increases S rebuilds from issue at today's rpi_rate,
-# esc_fixed_cover and esc_take_up; and the crossover, where it fell before month d
+# the cover and premium before month d's events, S's of month d - 1 (_wol_cover,
+# _wol_premium), the history of increases S rebuilds from issue at today's rpi_rate,
+# esc_fixed_cover and esc_take_up, an anniversary at month d being the in-force model's
+# first event, at today's References; and the crossover, where it fell before month d
 # (_wol_crossover), which S searches for again from issue.  At a twin's source_mth, 0 on
 # every S point, these are what S itself assumes at issue: no paid-up policy, nothing
 # paid, the sum assured and the premium at issue, and no crossover.
@@ -1414,7 +1427,7 @@ _WOL_STATE = {
     "pols_pu_init": lambda s, d: s.pols_pu(d),
     "pu_benefit_pp_init": _wol_paid_up_cover,
     "prem_cum_pp_init": _wol_premiums_paid,
-    "cover_pp_init": lambda s, d: s.cover_pp(d),
+    "cover_pp_init": _wol_cover,
     "premium_pp_init": _wol_premium,
     "crossover_mth_init": _wol_crossover,
 }
@@ -1617,8 +1630,8 @@ SEC_SPECS: dict[str, SecSpec] = {
     # WOL's state is six columns (_WOL_STATE above), with no companion: the paid-up
     # strand's count and its cover per paid-up policy, which need no cohort of conversion
     # months, since paid-up policies neither lapse nor escalate; the premiums paid; the
-    # cover and premium of the policy year under way; and the crossover, if it fell before
-    # the valuation date.  pols_if_init becomes
+    # cover and premium before month 0's events, the year an anniversary at the valuation
+    # date closes; and the crossover, if it fell before the valuation date.  pols_if_init becomes
     # policy_count (the default), the full-cover count, and every S point is new business.
     # The derived rows are the anchor cell at 6, inside its moratorium and its first
     # policy year, its refund reading the premiums paid and its commission still due; the
@@ -1636,9 +1649,10 @@ SEC_SPECS: dict[str, SecSpec] = {
     # And three rows S reaches only under References of its own (derived_refs), since at
     # S's References each history is what today's References rebuild, so that C2 would
     # freeze no path that reads a column rather than a Reference: the RPI point at 120,
-    # from S under an RPI of 5%, its cover and premium 1.05 and 1.075 to the tenth power;
-    # the underwritten increasing point at 120, from S under a take-up of a half, its
-    # increases 2.5% and 5% a year; and the pro-rata paid-up point at 180, from S under a
+    # from S under an RPI of 5%, its cover and premium 1.05 and 1.075 to the ninth power,
+    # the year its tenth anniversary, at the valuation date, closes; the underwritten
+    # increasing point at 120, from S under a take-up of a half, its increases 2.5% and 5% a
+    # year; and the pro-rata paid-up point at 180, from S under a
     # crossover stress of 100, which lapses every policy past its crossover at policy month
     # 166 and so converts the whole full-cover strand to paid-up there: a point paid-up
     # entirely, its policy_count 0.  At the shipped References the committed model

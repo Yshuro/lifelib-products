@@ -53,8 +53,8 @@ against £8.10 per £1,000 of cover — is the scale of the error a basis mix-up
 interface: ``policy_count`` and ``duration_mth``, as in ``basiclife.BasicTerm_SE``, and
 the opening state of a point in force, the paid-up strand's ``pols_pu_init`` and
 ``pu_benefit_pp_init``, the premiums paid, ``prem_cum_pp_init``, the cover and premium
-of the policy year under way, ``cover_pp_init`` and ``premium_pp_init``, and the
-crossover, if it fell before the valuation date, ``crossover_mth_init``.
+before month 0's events, ``cover_pp_init`` and ``premium_pp_init``, and the crossover, if
+it fell before the valuation date, ``crossover_mth_init``.
 :func:`model_point_table` refuses a table that lacks one, repeats a ``point_id``, holds a
 count, a duration or a state no policy can have, or a policy to be issued more than
 ``future_horizon_mth`` months after the valuation date, 120 as shipped: future new
@@ -152,8 +152,10 @@ def model_point_table():
     11. a policy not yet in force, ``duration_mth`` 0 or less, holds the issue values: no
         paid-up policy, no paid-up cover and no premium paid, the sum assured and the
         premium at issue as its cover and premium, and no crossover, ``-1``;
-    12. a policy in force fewer than 12 months, before its first anniversary, holds the
-        sum assured and the premium at issue, no increase having been given;
+    12. a policy in force 12 months or fewer holds the sum assured and the premium at
+        issue: the columns are measured before month 0's events, so on the first
+        anniversary they are still the first year's, the increase it makes the
+        projection's;
     13. on a level point the cover and the premium are the sum assured and the premium at
         issue, which never move; on an escalating one they are those or more, each
         increase being floored at 0;
@@ -292,12 +294,13 @@ def model_point_table():
         raise ValueError(f"{name}: crossover_mth_init must be -1 on a policy not yet in "
                          f"force, duration_mth 0 or less; it is not at point_id {bad}")
     for column in ("cover_pp_init", "premium_pp_init"):
-        bad = table.index[(months > 0) & (months < 12)
+        bad = table.index[(months > 0) & (months <= 12)
                           & (state[column] != issue[column])].tolist()
         if bad:
             raise ValueError(f"{name}: {column} must be {at_issue[column]} on a policy in "
-                             f"force fewer than 12 months, before its first anniversary; "
-                             f"it is not at point_id {bad}")
+                             f"force 12 months or fewer, whose columns are its first "
+                             f"policy year's, the first anniversary's increase being the "
+                             f"projection's; it is not at point_id {bad}")
     level = table["escalation"] == "level"
     for column in ("cover_pp_init", "premium_pp_init"):
         bad = table.index[level & (state[column] != issue[column])].tolist()

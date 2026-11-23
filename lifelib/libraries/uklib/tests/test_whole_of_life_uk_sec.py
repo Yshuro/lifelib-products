@@ -8,9 +8,10 @@ and ``duration_mth(t)`` counts the months the policy has been in force,
 valuation date, in any month of its policy year, one issued at it, or one to be issued
 after it, as in ``basiclife/BasicTerm_SE``.  A policy in force opens with two counts, the
 full-cover ``policy_count`` and the paid-up ``pols_pu_init``, the library's first
-two-strand count, and with four columns of state beside them, each measured at the
-valuation instant: the paid-up cover per paid-up policy, the premiums paid, and the cover
-and premium of the policy year under way.
+two-strand count, and with five columns of state beside them, each measured at the
+valuation instant, before month 0's events: the paid-up cover per paid-up policy, the
+premiums paid, the cover and premium of the year an anniversary at the valuation date
+closes, and the crossover, if it fell before the valuation date.
 
 The worked example is not restated here.  On a point issued at the valuation date the two
 clocks coincide and the model is ``WOL_UK_S``, and ``test_model_conventions_uk.py``
@@ -389,8 +390,8 @@ IN_COVER_ONLY = ("age", "duration", "policy_year", "mort_rate_mth", "lapse_rate_
 # WOL_UK_S's, each of which the symbol map must name.
 STATE = ("pols_pu_init", "pu_benefit_pp_init", "prem_cum_pp_init", "cover_pp_init",
          "premium_pp_init", "crossover_mth_init")
-NEW_CELLS = ("policy_count", "duration_mth_init", "t_entry", "is_active", "limit_mth",
-             "pols_new_biz", *STATE)
+NEW_CELLS = ("policy_count", "duration_mth_init", "duration_init", "t_entry", "is_active",
+             "limit_mth", "pols_new_biz", *STATE)
 
 INFLATION = 0.03        # the shipped inflation_rate, which the inflation test reads
 
@@ -817,8 +818,7 @@ IN_FRAME = {
     "the suicide window": lambda x, t: (
         _active(x, t) and x.cell() == "UW" and x.duration_mth(t) < x.suicide_mths),
     "an increase": lambda x, t: (
-        _active(x, t) and x.esc_cover_step() > 0.0
-        and x.duration(t) > x.duration(x.t_entry())),
+        _active(x, t) and x.esc_cover_step() > 0.0 and x.duration(t) > x.duration_init()),
     "premiums ceasing": lambda x, t: (
         x.cessation_mths() > 0 and x.duration_mth(t) == x.cessation_mths()),
     "commission": lambda x, t: x.commissions(t) > 0.0,
@@ -1334,9 +1334,9 @@ def test_a_point_restated_a_month_on_continues_its_own_flows(tmp_path):
     the committed table is restated a month on, opened with what this model carries into
     its month 1: the full-cover count, ``pols_if_at(1, "BEF_NB")``; the paid-up count,
     ``pols_pu(1)``, and its cover per paid-up policy, ``pu_benefit(1) / pols_pu(1)``; the
-    premiums paid, ``prem_cum_pp(0)``; the cover, ``cover_pp(1)``; and the premium,
-    ``premium_pp(1)``, or once the premiums have ceased by month 1 the last one paid; and
-    the crossover, if it fell in month 0 or before.  The
+    premiums paid, ``prem_cum_pp(0)``; the cover and the premium before month 1's events,
+    ``cover_pp(0)`` and ``premium_pp(0)``, or once the premiums have ceased the last one
+    paid; and the crossover, if it fell in month 0 or before.  The
     restatement must continue the point's own frames, its row ``t`` the point's row
     ``t + 1``, in ``result_cf`` and ``result_pols``, every flow among them, to 1e-9
     relative, floored at 1e-9 for what a state read back from the CSV an ulp off moves
@@ -1359,8 +1359,8 @@ def test_a_point_restated_a_month_on_continues_its_own_flows(tmp_path):
                 continue
             cessation, d = p.cessation_mths(), p.duration_mth_init()
             crossover = p.crossover_mth()
-            premium = (p.premium_pp(1) if cessation <= 0 or d + 1 < cessation
-                       else p.premium_pp(0) if d + 1 == cessation else p.premium_pp_init())
+            premium = (p.premium_pp(0) if cessation <= 0 or d < cessation
+                       else p.premium_pp_init())
             paid_up = p.pols_pu(1)
             top += 1
             row = table.loc[[label]].assign(
@@ -1368,7 +1368,7 @@ def test_a_point_restated_a_month_on_continues_its_own_flows(tmp_path):
                 policy_count=p.pols_if_at(1, _code(p, "BEF_NB")),
                 pols_pu_init=paid_up,
                 pu_benefit_pp_init=p.pu_benefit(1) / paid_up if paid_up > 0 else 0.0,
-                prem_cum_pp_init=p.prem_cum_pp(0), cover_pp_init=p.cover_pp(1),
+                prem_cum_pp_init=p.prem_cum_pp(0), cover_pp_init=p.cover_pp(0),
                 premium_pp_init=premium,
                 crossover_mth_init=crossover if 0 <= crossover <= d else -1)
             row.index = pd.Index([top], name="point_id")
@@ -1459,8 +1459,9 @@ def _drop(column):
 
 
 _NOT_YET = "on a policy not yet in force, duration_mth 0 or less; it is not at point_id"
-_FIRST_YEAR = ("on a policy in force fewer than 12 months, before its first anniversary; "
-               "it is not at point_id")
+_FIRST_YEAR = ("on a policy in force 12 months or fewer, whose columns are its first "
+               "policy year's, the first anniversary's increase being the projection's; it "
+               "is not at point_id")
 _EARLIEST = ("before the first policy month a converted policy can be in force at, half "
              "of cessation_months, rounded up; it is not at point_id")
 _CROSS_WHOLE = ("{file}: crossover_mth_init must be a whole number of months, -1 or more, "
@@ -1607,9 +1608,9 @@ MALFORMED = [
     ("an escalated cover below the sum assured", _set("cover_pp_init", [11], 4999.0),
      "{file}: cover_pp_init must be the sum assured or more on an escalating point, each "
      "increase being floored at 0; it is not at point_id [11]"),
-    ("an escalated premium below the premium at issue", _set("premium_pp_init", [12], 100.0),
+    ("an escalated premium below the premium at issue", _set("premium_pp_init", [16], 100.0),
      "{file}: premium_pp_init must be the premium at issue or more on an escalating point, "
-     "each increase being floored at 0; it is not at point_id [12]"),
+     "each increase being floored at 0; it is not at point_id [16]"),
     ("a paid-up count without the variant", _set("pols_pu_init", [9], 0.1),
      "{file}: pols_pu_init must be 0 on a point without the pro-rata paid-up variant; it "
      "is not at point_id [9]"),
@@ -1627,6 +1628,12 @@ MALFORMED = [
     ("a paid-up cover on no paid-up policy", _set("pols_pu_init", [10], 0.0),
      "{file}: pu_benefit_pp_init must be 0 where no paid-up policy is in force, "
      "pols_pu_init 0; it is not at point_id [10]"),
+    # The first year's history at its last month: an increase on the first anniversary,
+    # read after month 0's step, where the columns are measured before it.
+    ("a cover on the first anniversary", _set("cover_pp_init", [12], 157500.0),
+     f"{{file}}: cover_pp_init must be the sum assured {_FIRST_YEAR} [12]"),
+    ("a premium on the first anniversary", _set("premium_pp_init", [12], 111.375),
+     f"{{file}}: premium_pp_init must be the premium at issue {_FIRST_YEAR} [12]"),
     # The first year's history at its first month: an increase a month after issue.
     ("a cover a month after issue",
      _then(_set("duration_mth", [14], 1), _set("cover_pp_init", [14], 5150.0)),
@@ -2202,8 +2209,10 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
     times the premiums due; on a level point a third of a cent past the premiums due, an
     extract rounded to the cent; the paid-up cover at the sum assured's share at the first
     conversion and at today's cover's share of the payments made; and an odd cessation, 239
-    months, at its first paid-up month, 120, where the two shares meet.  The extra rows are
-    copies of committed rows under labels of their own, 21 to 29.
+    months, at its first paid-up month, 120, where the two shares meet.  And the first
+    year's rule at its edge: a month past the first anniversary, its first increase in the
+    columns.  The extra rows are copies of committed rows under labels of their own, 21 to
+    30.
     """
     committed = _committed()
     crossover = _label(committed, "derived", 1, 166)
@@ -2226,7 +2235,10 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
                              "prem_cum_pp_init": 3600.0,
                              "pu_benefit_pp_init": 5000.0 * 120 / 239,
                              "crossover_mth_init": -1}),
-              29: (_label(committed, "derived", 1, 6), {"prem_cum_pp_init": 180.004})}
+              29: (_label(committed, "derived", 1, 6), {"prem_cum_pp_init": 180.004}),
+              30: (_label(committed, "derived", 6, 12),
+                   {"duration_mth": 13, "cover_pp_init": 157500.0,
+                    "premium_pp_init": 111.375, "prem_cum_pp_init": 1215.0 + 111.375})}
 
     def edit(table):
         extra = []
@@ -2282,6 +2294,8 @@ def test_the_edges_of_the_in_force_interface_are_accepted(sec_model, tmp_path):
         assert (odd.cessation_mths(), odd.duration_mth(0)) == (239, 120)
         refund = _point(model, 29)
         assert refund.benefit_pp(0, _code(refund, "NON_ACC")) == 180.004 + 30.0
+        second = _point(model, 30)
+        assert (second.duration_init(), second.cover_pp(0)) == (1, 157500.0)
     finally:
         model.close()
 
@@ -2721,92 +2735,77 @@ def test_the_committed_rows_continue_their_s_points(sec_model, s_model):
     assert not found, found[:20]
 
 
-def _window_sweep(proj, months):
-    """Evaluate on an S point every cell keyed by a month at each of ``months``, alone.
-
-    Each cell with a ``t`` parameter is called at each of ``months`` with every timing of
-    S's and every kind the cell takes, and no report and no check is called: so what S
-    caches from the first of ``months`` on is those months and the months their
-    recursions and look-aheads read, and a comparison that reads S's cache,
-    :func:`uk_sec_support.twin_mismatches`, compares those months alone.
-    """
-    domains = {"timing": ("BEF_DECR", "BEF_LAPSE", "AFT_DECR")}
-    kinds = {"benefit_pp": BENEFITS, "claims": (*KINDS, None)}
-    for name, cells in proj.cells.items():
-        params = list(cells.parameters)
-        if "t" not in params:
-            continue
-        options = [months if param == "t" else kinds[name] if param == "kind"
-                   else domains[param] for param in params]
-        for args in itertools.product(*options):
-            cells(*args)
-
-
-# Where each committed row read under References of its own parts from S under them at the
-# shipped References: the RPI and the take-up step the cover and the premium at the next
-# policy anniversary, at the shipped values from then on, so those rows are S's to their
-# next anniversary, in every cell but the steps themselves, and S's in their counts
-# throughout, since neither moves a decrement; the stress lapses nothing on a point with no
-# full cover, so the row paid-up entirely is S's throughout, but in the lapse rates
-# themselves, which multiply no policy.
-UNDER_REFS_UNTIL = {("WOL-000004", 120): 12, ("WOL-000006", 120): 12,
-                    ("WOL-000003", 180): None}
-UNDER_REFS_STEPS = frozenset({"esc_cover_step", "esc_prem_step"})
+# Whether each committed row read under References of its own is S's under them through its
+# whole frame at the shipped References.  Rows 15 and 16 are valued on their tenth
+# anniversary, whose increase is the projection's first event, made at today's References,
+# so they part from S under theirs at t = 0, in the cover and the premium and all that
+# reads them, and are S's in their counts throughout, since neither moves a decrement.
+# The stress lapses nothing on a point with no full cover, so row 17, paid-up entirely, is
+# S's throughout, but in the lapse rates themselves, which weight no policy.
+UNDER_REFS_THROUGHOUT = {("WOL-000004", 120): False, ("WOL-000006", 120): False,
+                         ("WOL-000003", 180): True}
 UNDER_REFS_RATES = frozenset({"lapse_rate", "lapse_rate_mth"})
 
 
 def test_the_committed_rows_under_references_of_their_own_are_s_under_them(sec_model):
-    """Each row read from S under References of its own is S's under them, as far as they
-    reach, and today's References' after (§6.4, K14).
+    """Each row read from S under References of its own holds S's history under them, and
+    projects today's References from the valuation date on (§6.4, K14).
 
     At S's References each history is what today's References rebuild, so the spec reads
     three rows from S under References of their own, which its ``derived_refs`` records
     (:data:`UNDER_REFS`): the RPI point at 120 under an RPI of 5%, its cover and premium
-    1.05 and 1.075 to the tenth power; the underwritten increasing point at 120 under a
-    take-up of a half, its increases 2.5% and 5% a year; and the paid-up point at 180 under
-    a stress of 100, paid-up entirely.  At the shipped References the committed model
-    projects each from that history: the first two S's under their References to the next
-    policy anniversary, at ``t = 12``, in every cell S evaluates in those months and both
-    reports' rows, to 1e-9 relative with no absolute floor but on the residual, but those
-    expense inflation moves (:func:`_continues_s`), and from that anniversary at today's
-    increases, where S's continue at its own; the third S's under its stress over the whole
-    frame, but in the lapse rates, which on a point with no full cover multiply nothing.
-    The history is history.  And with each row's References set in both models the row is
-    S's in every month of its frame.  Each Reference is set on a model just read (K7).
+    1.05 and 1.075 to the ninth power, the year its tenth anniversary closes; the
+    underwritten increasing point at 120 under a take-up of a half, its increases 2.5% and
+    5% a year; and the paid-up point at 180 under a stress of 100, paid-up entirely.  Each
+    row's opening state is S's under them before month 0's events: the premiums paid to
+    the end of month ``d - 1`` and the cover and premium of that month.  At the shipped
+    References the committed model projects each from that history: the first two make
+    their tenth anniversary's increase at ``t = 0`` at today's References, the cover S's of
+    month ``d - 1`` times ``1 +`` today's step, where S under theirs steps at its own, and
+    their counts are S's throughout (:data:`UNDER_REFS_THROUGHOUT`); the third is S's under
+    its stress over the whole frame, in every cell S evaluates and both reports, to 1e-9
+    relative with no absolute floor but on the residual, but in the lapse rates, which on a
+    point with no full cover multiply nothing, and those expense inflation moves
+    (:func:`_continues_s`).  The history is history.  And with each row's References set in
+    both models the row is S's in every month of its frame.  Each Reference is set on a
+    model just read (K7).
     """
-    assert set(UNDER_REFS) == set(UNDER_REFS_UNTIL), UNDER_REFS
+    assert set(UNDER_REFS) == set(UNDER_REFS_THROUGHOUT), UNDER_REFS
+    counts = ["pols_if", "pols_pu", "pols_death", "pols_lapse", "pols_convert"]
     for (policy, d), refs in UNDER_REFS.items():
         s_point = int(policy.rsplit("-", 1)[1])
         row = _row(sec_model, "derived", s_point, d)
-        until = UNDER_REFS_UNTIL[(policy, d)]
         s = mx.read_model(model_path(TWIN), name=_name("under"))
         try:
             for ref, value in refs.items():
                 setattr(s.Projection, ref, value)
             sp = _point(s, s_point)
-            end = sp.proj_len() if until is None else d + until
-            _window_sweep(sp, range(d, end))
-            exempt = SPLICE_EXEMPT | INFLATION_CELLS | UNDER_REFS_STEPS
-            if until is None:
-                exempt = exempt | UNDER_REFS_RATES
-            found = twin_mismatches(sp, row, t_offset=d, exempt=exempt | RESIDUALS,
-                                    atol=0.0, codes=codes(row))
-            others = exempt | (set(sp.cells) - RESIDUALS)
-            found += twin_mismatches(sp, row, t_offset=d, exempt=others, codes=codes(row))
-            keep = [c for c in sp.result_cf().columns if c not in INFLATED]
-            pols = [c for c in sp.result_pols().columns if c not in UNDER_REFS_RATES]
-            for report, columns in (("result_cf", keep), ("result_pols", pols)):
-                found += [f"{report}: {line}" for line in frame_mismatches(
-                    sp.cells[report]().loc[d:end - 1], row.cells[report]().loc[:end - d - 1],
-                    t_offset=d, columns=columns, atol=0.0)]
-            assert not found, (policy, d, found[:20])
-            counts = ["pols_if", "pols_pu", "pols_death", "pols_lapse", "pols_convert"]
+            _sweep_s(sp)
+            assert (row.prem_cum_pp_init(), row.cover_pp_init(), row.premium_pp_init()) == (
+                sp.prem_cum_pp(d - 1), sp.cover_pp(d - 1), sp.premium_pp(d - 1)), policy
             assert frame_mismatches(sp.result_pols(), row.result_pols(), t_offset=d,
                                     columns=counts, atol=0.0) == [], (policy, d)
-            if until is not None:
-                step = row.cover_pp(until) / row.cover_pp(until - 1)
-                assert step == pytest.approx(1.0 + row.esc_cover_step(), rel=1e-12)
-                assert sp.cover_pp(d + until) / sp.cover_pp(d + until - 1) != step
+            if UNDER_REFS_THROUGHOUT[(policy, d)]:
+                exempt = SPLICE_EXEMPT | INFLATION_CELLS | UNDER_REFS_RATES
+                found = twin_mismatches(sp, row, t_offset=d, exempt=exempt | RESIDUALS,
+                                        atol=0.0, codes=codes(row))
+                found += twin_mismatches(sp, row, t_offset=d,
+                                         exempt=exempt | (set(sp.cells) - RESIDUALS),
+                                         codes=codes(row))
+                keep = [c for c in sp.result_cf().columns if c not in INFLATED]
+                pols = [c for c in sp.result_pols().columns if c not in UNDER_REFS_RATES]
+                for report, columns in (("result_cf", keep), ("result_pols", pols)):
+                    found += [f"{report}: {line}" for line in frame_mismatches(
+                        sp.cells[report](), row.cells[report](), t_offset=d,
+                        columns=columns, atol=0.0)]
+                assert not found, (policy, d, found[:20])
+            else:
+                for name, step in (("cover_pp", row.esc_cover_step()),
+                                   ("premium_pp", row.esc_prem_step())):
+                    mine, theirs = row.cells[name](0), sp.cells[name](d)
+                    assert mine == pytest.approx(sp.cells[name](d - 1) * (1.0 + step),
+                                                 rel=1e-12), (policy, name)
+                    assert mine != pytest.approx(theirs, rel=1e-9), (policy, name)
         finally:
             s.close()
         sec = mx.read_model(model_path(SEC), name=_name("under_sec"))
@@ -2824,12 +2823,14 @@ def test_the_committed_rows_under_references_of_their_own_are_s_under_them(sec_m
 
 
 def _rpi_history(path, months, premium=30.0, cover=5000.0, cessation=240):
-    """The cover, the premium and the premiums paid entering policy month ``months`` of
-    a policy whose RPI at each anniversary ``y`` was ``path[y - 1]``, as the contract
+    """The cover, the premium and the premiums paid before policy month ``months``' events
+    on a policy whose RPI at each anniversary ``y`` was ``path[y - 1]``, as the contract
     gives them: the cover up by the RPI floored at 0 and capped at 10%, the premium by 1.5
     times it capped at 15%, at each anniversary, and a premium paid at the start of each
-    month to cessation.  ``(cover, premium, premiums paid)``, the premium the last one paid
-    once premiums have ceased."""
+    month to cessation.  ``(cover, premium, premiums paid)``: the cover and premium of
+    month ``months - 1``, an anniversary at ``months`` being the projection's, the premium
+    the last one paid once premiums have ceased, and the premiums paid to the end of month
+    ``months - 1``."""
     paid = 0.0
     for m in range(months):
         if m and m % 12 == 0:
@@ -2838,11 +2839,6 @@ def _rpi_history(path, months, premium=30.0, cover=5000.0, cessation=240):
             premium *= 1.0 + min(max(1.5 * r, 0.0), 0.15)
         if m < cessation:
             paid += premium
-    if months % 12 == 0 and months:
-        r = path[months // 12 - 1]
-        cover *= 1.0 + min(max(r, 0.0), 0.10)
-        if months < cessation:
-            premium *= 1.0 + min(max(1.5 * r, 0.0), 0.15)
     return cover, premium, paid
 
 
@@ -2964,20 +2960,56 @@ def test_the_fixed_increases_taken_up_are_read_from_the_model_point(sec_model):
     given, though they are history, a fact of the contract, as the RPI's are.  The cover and
     premium columns carry them on the fixed variant as on the RPI one: the committed row of
     the underwritten increasing point at 120, read from S under a take-up of a half, holds a
-    cover of 150,000 x 1.025^10 and a premium of 101.25 x 1.05^10, and at today's take-up of
-    1 its cover steps by 5% and its premium by 10% at each anniversary after, from those.
-    With the take-up raised to 1 at the valuation date in ``WOL_UK_S`` the whole history
-    would be 1.05^10 and 1.1^10.
+    cover of 150,000 x 1.025^9 and a premium of 101.25 x 1.05^9, the year its tenth
+    anniversary, at the valuation date, closes; and at today's take-up of 1 its cover steps
+    by 5% and its premium by 10% at that anniversary, ``t = 0``, and each after, from
+    those.  With the take-up raised to 1 at the valuation date in ``WOL_UK_S`` the whole
+    history would be 1.05^10 and 1.1^10.
     """
     row = _row(sec_model, "derived", 6, 120)
-    assert row.cover_pp_init() == pytest.approx(150000.0 * 1.025 ** 10, rel=1e-12)
-    assert row.premium_pp_init() == pytest.approx(101.25 * 1.05 ** 10, rel=1e-12)
-    for t, years in ((0, 0), (11, 0), (12, 1), (60, 5)):
+    assert row.cover_pp_init() == pytest.approx(150000.0 * 1.025 ** 9, rel=1e-12)
+    assert row.premium_pp_init() == pytest.approx(101.25 * 1.05 ** 9, rel=1e-12)
+    for t, years in ((0, 1), (11, 1), (12, 2), (60, 6)):
         assert row.cover_pp(t) == pytest.approx(row.cover_pp_init() * 1.05 ** years,
                                                 rel=1e-12), t
         assert row.premium_pp(t) == pytest.approx(row.premium_pp_init() * 1.1 ** years,
                                                   rel=1e-12), t
     assert row.cover_pp(0) != pytest.approx(150000.0 * 1.05 ** 10, rel=1e-6)
+
+
+def test_an_anniversary_at_the_valuation_date_is_the_projection_s_first_event(sec_model):
+    """The columns are measured before month 0's events, and the anniversary's increase is
+    the projection's, at today's References (D6, as precised at uslib's M7; K14).
+
+    Point 12, the underwritten increasing point valued on its first anniversary, ``d =
+    12``, holds the first year's cover and premium, 150,000 and 101.25, which ``WOL_UK_S``
+    gives in policy month 11, and its first increase is made at ``t = 0``.  With the take-up
+    set to a half at the valuation date the increase is a half of 5% on the cover and of
+    10% on the premium, so the point projects a cover of 150,000 x 1.025 = 153,750 and a
+    premium of 101.25 x 1.05 = 106.3125, through policy year 2, and steps again at ``t =
+    12``; read after month 0's step, as the instant first was, the columns would hold
+    157,500 and 111.375, at the take-up of 1 the history does not have.  At the shipped
+    take-up of 1 the point is ``WOL_UK_S``'s month 12, as T2 holds.  The take-up is set on
+    a model just read (K7).
+    """
+    model = mx.read_model(model_path(SEC), name=_name("instant"))
+    try:
+        model.Projection.esc_take_up = 0.5
+        row = _row(model, "derived", 6, 12)
+        assert (row.duration_mth_init(), row.duration_init()) == (12, 0)
+        assert (row.cover_pp_init(), row.premium_pp_init()) == (150000.0, 101.25)
+        for t in (0, 11):
+            assert row.cover_pp(t) == pytest.approx(153750.0, rel=1e-15), t
+            assert row.premium_pp(t) == pytest.approx(106.3125, rel=1e-15), t
+        assert row.cover_pp(12) == pytest.approx(153750.0 * 1.025, rel=1e-15)
+        assert (round(row.cover_pp(0), 2), round(row.premium_pp(0), 2)) == (153750.0, 106.31)
+        assert row.prem_cum_pp(0) == row.prem_cum_pp_init() + row.premium_pp(0) == (
+            1215.0 + row.premium_pp(0))
+    finally:
+        model.close()
+    shipped = _row(sec_model, "derived", 6, 12)
+    assert shipped.cover_pp(0) == pytest.approx(157500.0, rel=1e-15)
+    assert shipped.premium_pp(0) == pytest.approx(111.375, rel=1e-15)
 
 
 def test_the_paid_up_strand_is_read_from_the_model_point(sec_model, spliced, tmp_path):

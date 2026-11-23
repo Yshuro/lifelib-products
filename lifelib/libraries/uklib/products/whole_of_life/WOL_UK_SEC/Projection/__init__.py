@@ -124,9 +124,11 @@ start of month 0, before any month-0 event:
   :func:`crossover_mth` reports rather than searching the months before the valuation
   date again;
 * :func:`cover_pp_init` and :func:`premium_pp_init`, the cash sum in force and the monthly
-  premium of the policy year under way, after every increase already given: on the
+  premium before month 0's events, after every increase already given: on the
   escalating variants the history :mod:`~.WOL_UK_S` rebuilds from issue at today's
-  ``rpi_rate``, ``esc_fixed_cover`` and ``esc_take_up``. Once premiums have ceased,
+  ``rpi_rate``, ``esc_fixed_cover`` and ``esc_take_up``. On a point valued on an
+  anniversary they are the year it closes: the anniversary's increase is the
+  projection's first event, at today's References. Once premiums have ceased,
   :func:`premium_pp_init` is the last premium paid.
 
 Each is history, read from the model point, never recomputed from a Reference, which is
@@ -160,6 +162,7 @@ y                          policy_year(t)                  Policy year containin
 (none)                     duration(t)                     Completed policy years, y - 1
 (none)                     duration_mth(t)                 Policy months at month t
 (none)                     duration_mth_init()             Policy months at t = 0
+(none)                     duration_init()                 Policy years the columns hold
 (none)                     t_entry()                       First month on the books
 (none)                     is_active(t)                    Whether month t is in cover
 omega                      omega_age                       Limiting age, 120
@@ -168,10 +171,10 @@ omega                      omega_age                       Limiting age, 120
 (none)                     policy_count()                  Policies the point stands for
 SA                         sum_assured()                   Sum assured at outset
 SA(t)                      cover_pp(t)                     Sum assured in force in month t
-(SA at t = 0)              cover_pp_init()                 Cover of the year under way
+(SA at t = 0)              cover_pp_init()                 Cover before month 0
 P                          premium_mth()                   Monthly premium at outset
 P(t)                       premium_pp(t)                   Monthly premium due in month t
-(P at t = 0)               premium_pp_init()               Premium of the year under way
+(P at t = 0)               premium_pp_init()               Premium before month 0
 T_cess                     cessation_mths()                Premium-paying policy months
 CumPrem(t)                 prem_cum_pp(t)                  Premiums paid, end of month t
 (CumPrem at t = 0)         prem_cum_pp_init()              Premiums paid to month -1
@@ -425,7 +428,7 @@ def premium_mth():
     A model point input, not a rate-table lookup: no insurer publishes whole of life
     premium rate tables, so any shipped scale would be a **[std]** snapshot calibrated
     to the handful of public quote anchors.  On a point in force, :func:`premium_pp_init`
-    is the premium of the policy year under way at the valuation date.
+    is the premium before month 0's events.
     """
     return float(model_point()["premium_mth"])
 
@@ -568,27 +571,32 @@ def prem_cum_pp_init():
 
 
 def cover_pp_init():
-    """SA at the valuation date: the cash sum in force in the policy year under way.
+    """SA at the valuation date: the cash sum in force before month 0's events.
 
-    The sum assured at issue after every increase already given: on a valuation on an
-    anniversary, the cover of the year it opens.  On the level cells it is the sum assured
-    at issue; on the escalating ones it is history, the increases the RPI or the fixed
-    step gave at the take-up of their day, which :mod:`~.WOL_UK_S` rebuilds from issue at
-    today's ``rpi_rate``, ``esc_fixed_cover`` and ``esc_take_up``.  :func:`cover_pp` steps
-    it on each anniversary after the valuation date at today's References.  The sum
-    assured on a point not yet in force, which ``Data`` requires.
+    The sum assured at issue after every increase already given, measured at the start of
+    month 0, before any month-0 event: the cover of policy month ``duration_mth_init() -
+    1``'s year.  On a point valued on an anniversary that is the year the anniversary
+    closes, and the anniversary's increase is the projection's first event, made at
+    today's References (USLIB-SEC-PLAN.md D6, as precised at uslib's M7: a fixing at month
+    0 itself reads the assumptions of the valuation date).  On the level cells it is the
+    sum assured at issue; on the escalating ones it is history, the increases the RPI or
+    the fixed step gave at the take-up of their day, which :mod:`~.WOL_UK_S` rebuilds from
+    issue at today's ``rpi_rate``, ``esc_fixed_cover`` and ``esc_take_up``.
+    :func:`cover_pp` steps it on each anniversary from month 0 on at today's References.
+    The sum assured on a point not yet in force, which ``Data`` requires.
     """
     return float(model_point()["cover_pp_init"])
 
 
 def premium_pp_init():
-    """P at the valuation date: the monthly premium of the policy year under way.
+    """P at the valuation date: the monthly premium before month 0's events.
 
     The premium at issue after every increase already given, :func:`cover_pp_init`'s
-    counterpart: the premium due in month 0 while premiums are payable, and once they have
-    ceased, the last premium paid, which :func:`crossover_mth` carries back over the
-    premium-paying months.  History, as the cover is.  The premium at issue on a point not
-    yet in force, which ``Data`` requires.
+    counterpart, measured at the same instant: the premium of policy month
+    ``duration_mth_init() - 1``'s year, so that on a point valued on an anniversary the
+    anniversary's increase is the projection's, as the cover's is; once premiums have
+    ceased, the last premium paid.  History, as the cover is.  The premium at issue on a
+    point not yet in force, which ``Data`` requires.
     """
     return float(model_point()["premium_pp_init"])
 
@@ -838,6 +846,20 @@ def proj_len():
     return limit_mth() - d
 
 
+def duration_init():
+    """The completed policy years the opening cover and premium hold.
+
+    Those of policy month ``duration_mth_init() - 1``, the month before the valuation date,
+    on a point in force, since :func:`cover_pp_init` and :func:`premium_pp_init` are
+    measured before month 0's events, and 0 on a point not yet in force, whose columns are
+    the issue values: ``(max(duration_mth_init(), 1) - 1) // 12``.  The cover and the
+    premium step once for each anniversary from there to month t,
+    ``duration(t) - duration_init()``, so that an anniversary at the valuation date steps
+    them at ``t = 0``, at today's References.
+    """
+    return (max(duration_mth_init(), 1) - 1) // 12
+
+
 def duration(t):
     """Completed policy years at the start of month t: ``duration_mth(t) // 12``.
 
@@ -984,11 +1006,12 @@ def esc_prem_step():
 def cover_pp(t):
     """SA(t): the sum assured or cash sum in force in month t.
 
-    :func:`cover_pp_init`, the cover of the policy year under way at :func:`t_entry`, the
-    sum assured at issue on a point not yet in force, times ``(1 + step)`` for each policy
-    anniversary since, ``duration(t) - duration(t_entry())``, so it steps at policy
-    anniversaries on the policy clock.  The increases before the valuation date are
-    history, carried in, and those after it are projected at today's step.  On the RPI
+    :func:`cover_pp_init`, the cover before month 0's events, the sum assured at issue on
+    a point not yet in force, times ``(1 + step)`` for each policy anniversary since,
+    ``duration(t) - duration_init()``, so it steps at policy anniversaries on the policy
+    clock.  The increases before the valuation date are history, carried in, and those
+    from it on are projected at today's step, an anniversary at the valuation date's
+    among them.  On the RPI
     variant the cash sum **continues to index after premiums cease at 90**, which is why
     this carries no cessation test - the premium step, being applied to a zero premium,
     stops of its own accord.  Zero outside cover.
@@ -999,7 +1022,7 @@ def cover_pp(t):
     """
     if not is_active(t):
         return 0.0
-    cover = cover_pp_init() * (1.0 + esc_cover_step()) ** (duration(t) - duration(t_entry()))
+    cover = cover_pp_init() * (1.0 + esc_cover_step()) ** (duration(t) - duration_init())
     if not cover - cover == 0.0:
         raise ValueError(
             f"point_id {point_id}: the cover cover_pp({t}) is {cover}, not a finite "  # noqa: F821
@@ -1013,9 +1036,9 @@ def premium_pp(t):
 
     Due in policy months ``duration_mth(t) < cessation_mths()`` - the T_cess premiums of
     the premium-paying period - and zero from policy month ``cessation_mths()`` on.  Then
-    :func:`premium_pp_init`, the premium of the policy year under way at :func:`t_entry`,
-    the premium at issue on a point not yet in force, times ``(1 + step)`` for each policy
-    anniversary since.  Zero too on a paid-up policy, which is carried as a separate
+    :func:`premium_pp_init`, the premium before month 0's events, the premium at issue on a
+    point not yet in force, times ``(1 + step)`` for each policy anniversary since,
+    ``duration(t) - duration_init()``, as the cover steps.  Zero too on a paid-up policy, which is carried as a separate
     population strand rather than as a premium of zero, so it does not appear here, and
     zero outside cover.
 
@@ -1026,7 +1049,7 @@ def premium_pp(t):
         return 0.0
     if cessation_mths() > 0 and duration_mth(t) >= cessation_mths():
         return 0.0
-    p = premium_pp_init() * (1.0 + esc_prem_step()) ** (duration(t) - duration(t_entry()))
+    p = premium_pp_init() * (1.0 + esc_prem_step()) ** (duration(t) - duration_init())
     if not p - p == 0.0:
         raise ValueError(
             f"point_id {point_id}: the premium premium_pp({t}) is {p}, not a finite "  # noqa: F821
@@ -1155,8 +1178,8 @@ def crossover_mth():
         return -1
     paid = prem_cum_pp_init()
     for m in range(d, last):
-        paid = paid + premium_pp_init() * (1.0 + g) ** (m // 12 - d // 12)
-        if paid > cover_pp_init() * (1.0 + c) ** (m // 12 - d // 12):
+        paid = paid + premium_pp_init() * (1.0 + g) ** (m // 12 - duration_init())
+        if paid > cover_pp_init() * (1.0 + c) ** (m // 12 - duration_init()):
             return m
     return -1
 

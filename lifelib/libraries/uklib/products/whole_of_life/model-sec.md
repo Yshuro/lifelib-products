@@ -125,9 +125,10 @@ of them restated as the in-force interface under `basiclife/BasicTerm_SE`'s name
 clock column, a second count and five columns of opening state. The two counts are the
 only weights on the flows, and every state column is per policy. Each is measured at the
 valuation instant, the start of month 0, before any month-0 event (USLIB-SEC-PLAN.md D6).
-An anniversary that falls at the valuation date is already passed at that instant: the
-cover and the premium of month 0 are those of the year it opens. Each state column is
-history: what the contract has given, charged or converted, never re-derived from a
+An anniversary that falls at the valuation date is month 0's event, the projection's
+first: the cover and premium columns hold the policy year it closes, and its increase is
+made at `t = 0` at today's References, as a fixing at month 0 reads the assumptions of the
+valuation date (D6, as precised at uslib's M7). Each state column is history: what the contract has given, charged or converted, never re-derived from a
 Reference, which is an assumption from the valuation date on, so that a Reference changed
 there reaches back over no increase, premium or conversion already made
 (UKLIB-SEC-PLAN.md K14, §9 item 5):
@@ -139,7 +140,7 @@ there reaches back over no increase, premium or conversion already made
 | `pols_pu_init` | paid-up policies, 0 or more | the start of month 0 | the policies already converted to paid-up by the pro-rata paid-up value, the second strand's count |
 | `pu_benefit_pp_init` | pounds per paid-up policy | the start of month 0 | the paid-up cash sum each carries on average: each policy's `SA × N_paid / N_expected` at the month it converted, averaged over the strand |
 | `prem_cum_pp_init` | pounds per policy on full cover | the end of month −1, before month 0's premium | the premiums paid since issue, which the moratorium and suicide refunds pay back and the crossover stress compares with the cover |
-| `cover_pp_init` | pounds | the policy year under way at the valuation date; on an anniversary, the one it opens | the cash sum in force, after every increase the RPI or the fixed step has already given |
+| `cover_pp_init` | pounds | the start of month 0, before its events: the policy year of month −1, which on an anniversary is the year it closes | the cash sum in force, after every increase the RPI or the fixed step has already given |
 | `premium_pp_init` | pounds a month | as `cover_pp_init` | the premium of that policy year, after every increase already given; once premiums have ceased, the last premium paid |
 | `crossover_mth_init` | a policy month, or −1 | the valuation date | the policy month the premiums paid first exceeded the cover, if that was before the valuation date, and −1 if it was not: a crossover in month 0 or later is the projection's |
 
@@ -155,7 +156,9 @@ valuation date steps at today's References, and one at or before it is the histo
 columns carry:
 
 - `cover_pp(t)` and `premium_pp(t)` open at `cover_pp_init()` and `premium_pp_init()` and
-  take `1 + step` for each anniversary after `t_entry()`, `duration(t) − duration(t_entry())`;
+  take `1 + step` for each anniversary since the columns' year, `duration(t) −
+  duration_init()`, `duration_init()` being the policy years of month −1, so that an
+  anniversary at the valuation date steps them at `t = 0`;
 - `prem_cum_pp(t)` opens at `prem_cum_pp_init()` plus month `t_entry()`'s premium and adds
   each month's after;
 - `pols_pu(t)` and `pu_benefit(t)` open at `pols_pu_init()` and at
@@ -223,9 +226,9 @@ assurance's `N`; the entry age is a finite number, the amounts zero or more and 
 counts whole, 0 or more; and a pro-rata paid-up point has a premium cessation date, which
 its paid-up value is measured to. Then the history: a point not yet in force holds the
 issue values, no paid-up policy, no paid-up cover, no premium paid and no crossover, the
-sum assured and the premium at issue; a point in force fewer than 12 months, before its first anniversary,
-holds the issue cover and premium, no increase having been given; a level point holds them
-always, and an escalating one those or more, each increase floored at 0; the paid-up strand
+sum assured and the premium at issue; a point in force 12 months or fewer holds the issue
+cover and premium, its columns its first policy year's, the first anniversary's increase
+being the projection's; a level point holds them always, and an escalating one those or more, each increase floored at 0; the paid-up strand
 is empty without the variant, and before the earliest policy month a converted policy can
 be in force at, half of `cessation_months` rounded up; and the paid-up cover per policy is
 0 where no paid-up policy is in force. The amounts are held to the contract, to the cent,
@@ -292,10 +295,10 @@ writes it.
 | 9 | derived | S point 1 at S month 166 | the anchor cell in its crossover month, £4,980 paid |
 | 10 | derived | S point 3 at S month 200 | the paid-up point with its strand in force, each paid-up policy carrying £3,294.64 |
 | 11 | derived | S point 4 at S month 186 | the RPI point past its crossover, its cover £7,789.84 and premium £58.06 |
-| 12 | derived | S point 6 at S month 12 | the underwritten increasing point on its first anniversary, its first increases given |
+| 12 | derived | S point 6 at S month 12 | the underwritten increasing point on its first anniversary, its columns the first year's and its first increase at `t = 0` |
 | 13 | derived | S point 7 at S month 300 | the male smoker as its premiums cease |
 | 14 | future | S point 4, 13 months on | to be issued at `t = 13` |
-| 15 | derived | S point 4 at S month 120, `WOL_UK_S` run under an RPI of 5% | the RPI point with a cover of `5,000 × 1.05^10` and a premium of `30 × 1.075^10` |
+| 15 | derived | S point 4 at S month 120, `WOL_UK_S` run under an RPI of 5% | the RPI point with a cover of `5,000 × 1.05^9` and a premium of `30 × 1.075^9`, its tenth anniversary's increase at `t = 0` |
 | 16 | derived | S point 6 at S month 120, `WOL_UK_S` run under a take-up of 0.5 | the underwritten increasing point with increases of 2.5% on the cover and 5% on the premium |
 | 17 | derived | S point 3 at S month 180, `WOL_UK_S` run under a crossover stress of 100 | the paid-up point paid-up entirely: `policy_count` 0, and 0.285193 paid-up policies |
 
@@ -305,12 +308,12 @@ projection from there: point 10 opens with 0.180202 policies on full cover, 0.05
 paid-up and £6,000 of premiums paid. At the shipped References the escalating rows'
 history is what today's References rebuild, and no shipped point is paid-up entirely, so
 three rows are read from `WOL_UK_S` run under References of their own, which the spec's
-`derived_refs` records: points 15 to 17. At the shipped References points 15 and 16 project
-`WOL_UK_S` under theirs up to their next anniversary, at `t = 12`, and today's increases from
-then on; point 17, with no full cover for its stress to lapse, projects `WOL_UK_S` under its
-stress throughout, but in the lapse rates themselves, which weight no policy. A test asserts
-each. A derived row's `policy_id` is the S row's with
-the month appended, `WOL-000003-M200`, and a future row's carries the months to issue,
+`derived_refs` records: points 15 to 17. Points 15 and 16 are valued on their tenth
+anniversary, so at the shipped References they make its increase at `t = 0` at today's
+References and part from `WOL_UK_S` under theirs there, their counts S's throughout; point
+17, with no full cover for its stress to lapse, projects `WOL_UK_S` under its stress
+throughout, but in the lapse rates themselves, which weight no policy. A test asserts each.
+A derived row's `policy_id` is the S row's with the month appended, `WOL-000003-M200`, and a future row's carries the months to issue,
 `WOL-000004-F13`. Row `t` of a generated point is month `t + source_mth` of its S point.
 
 ## Counts and timings
@@ -377,18 +380,17 @@ eligibility are zero or false outside cover, before any table or rate is read.
 Each formula that tested `t` against a contractual event now tests the policy clock, and
 each recursion opens at `t_entry()` from the opening state. Where `WOL_UK_S`'s test would
 have stayed correct on the valuation clock, it moved anyway, so that cover has one
-definition. Eleven cells are new — `policy_count`, `duration_mth_init`, `t_entry`,
-`is_active`, `limit_mth`, `pols_new_biz` and the five accessors of the opening state — and
-none of `WOL_UK_S`'s 61 is gone. One Reference is new, `issue_age_min`.
+definition. Thirteen cells are new — `policy_count`, `duration_mth_init`, `duration_init`,
+`t_entry`, `is_active`, `limit_mth`, `pols_new_biz` and the six accessors of the opening
+state — and none of `WOL_UK_S`'s 61 is gone. One Reference is new, `issue_age_min`.
 
 | Cells | `WOL_UK_S` | `WOL_UK_SEC` | Why |
 |---|---|---|---|
 | `duration_mth`, `duration` | `t`, `t // 12` | `duration_mth_init() + t`, `duration_mth(t) // 12` | The policy clock, opened from the model point |
-| `proj_len`; `limit_mth`, new | `12 × (omega_age − entry_age)`, from issue | `limit_mth() − duration_mth_init()`, from the valuation date; raises at or past the limiting age, outside the contract's bounds and on a Reference off its domain | The frame starts at the valuation date |
+| `proj_len`; `limit_mth`, new | `12 × (omega_age − entry_age)`, from issue | `limit_mth() − duration_mth_init()`, from the valuation date, `limit_mth()` reading `omega_age` as an `int`; raises at or past the limiting age, outside the contract's bounds and on a Reference off its domain | The frame starts at the valuation date; a whole float, `120.0`, makes the frame 120 does |
 | `pols_if`, `pols_if_at`, `pols_if_init` | `pols_if` a recursion of its own, one cell a month, from the column's 1.0 at `t = 0`, which the timings read | `pols_if` is `"BEF_DECR"`, the `"BEF_NB"` chain plus the month's new business, one cell a month from `t_entry()`; `pols_if_init()` is 0 unless in force | Policies in force at the valuation date open the count; new business joins it in its issue month |
 | `pols_pu`, `pu_benefit` | from 0 at `t = 0` | from `pols_pu_init()` and `pols_pu_init() × pu_benefit_pp_init()` at `t_entry()` | The paid-up strand in force is history |
-| `cover_pp`, `premium_pp` | `SA` and `P` times `(1 + step)^(t // 12)` | `cover_pp_init()` and `premium_pp_init()` times `(1 + step)` for each anniversary after `t_entry()`; a value past the floats refused in its month | The increases already given are history |
-| `limit_mth`, new | — | `12 × (int(omega_age) − entry age)` | A whole float, `120.0`, makes the frame 120 does |
+| `cover_pp`, `premium_pp`; `duration_init`, new | `SA` and `P` times `(1 + step)^(t // 12)` | `cover_pp_init()` and `premium_pp_init()` times `(1 + step)` for each anniversary since the columns' year, an anniversary at the valuation date the first; a value past the floats refused in its month | The increases already given are history, and one at month 0 is the projection's, at today's References |
 | `benefit_pp`, `pu_benefit`, `premiums`, `claims`, `expenses`, `commissions`, `net_cf` | unchecked | a value past the floats refused in its month, naming the point and what makes it | An expense of 1.7e308 inflated at 100% a year, each in its domain, made `WOL_UK_S`'s expenses infinite at `t = 48` with every check passing |
 | `prem_cum_pp` | the schedule summed from `t = 0` | from `prem_cum_pp_init()` at `t_entry()`; past the floats refused | The premiums already paid are history |
 | `premium_pp`, `lapse_rate`, `in_moratorium`, `payments_made`, `benefit_pp` | cessation, the moratorium, the suicide window and the payments made on `t` | each on `duration_mth(t)` | A contractual event falls on a policy month |
@@ -567,14 +569,17 @@ raise the same error.
   committed table is what `WOL_UK_S` generates.
 - **The product's own facts**: the two clocks on the shipped points; the committed rows, in
   force and issued later, continuing their S points at the shipped assumptions but for
-  inflation, and the rows read under References of their own continuing `WOL_UK_S` under
-  them to their next anniversary, or throughout, and with those References set in both,
+  inflation, and the rows read under References of their own holding `WOL_UK_S`'s history
+  under them, its counts throughout, and with those References set in both, `WOL_UK_S`
   throughout; each history column read, not recomputed, the cover and the premium on an
   RPI history no flat rate gives and on the fixed increases at a take-up of their day, the
   premiums paid, which move the stressed lapses and the crossover, and which the
   moratorium refunds as read, to the cent, the paid-up count and cover, and the crossover,
-  on the RPI point restated after crossings under an RPI of 0 and of 8%
-  (UKLIB-SEC-PLAN.md K14); expense inflation and mortality improvement on the
+  on the RPI point restated after crossings under an RPI of 0 and of 8%; and the instant
+  the columns are measured at, before month 0's events, so that point 12, valued on its
+  first anniversary, makes its first increase at `t = 0` at a take-up of a half set at the
+  valuation date, a cover of 153,750 and a premium of 106.31, where columns read after
+  that step would hold 157,500 and 111.38 (UKLIB-SEC-PLAN.md K14); expense inflation and mortality improvement on the
   valuation clock, which only these tests see, and where improvement gives way to the
   truncation check; the crossover a policy month, `WOL_UK_S`'s on every row it reaches; the
   moratorium, the suicide window and commission on the policy clock; the acquisition

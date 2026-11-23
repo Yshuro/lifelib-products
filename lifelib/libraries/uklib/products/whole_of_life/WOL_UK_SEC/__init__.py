@@ -83,11 +83,13 @@ variant's converting rather than terminating once half the premiums are paid.
 
 **In force.** A point in force opens with two counts, ``policy_count`` on full cover and
 ``pols_pu_init`` paid-up, and with the facts of its contract that :mod:`~.WOL_UK_S` would
-recompute from flat References, each measured at the valuation instant: the paid-up cover
-per paid-up policy; the premiums paid since issue, which the moratorium refunds and the
-crossover compares with the cover; and the cover and the premium of the policy year under
-way, after every increase the RPI or the fixed step has already given. Each is history,
-which no Reference changed at the valuation date reaches back to. ``result_pols()`` sets
+recompute from flat References, each measured at the valuation instant, before month 0's
+events: the paid-up cover per paid-up policy; the premiums paid since issue, which the
+moratorium refunds and the crossover compares with the cover; the cover and the premium,
+after every increase the RPI or the fixed step has already given, an anniversary at the
+valuation date being the projection's first event; and the crossover, if it fell before
+the valuation date. Each is history, which no Reference changed at the valuation date
+reaches back to. ``result_pols()`` sets
 out the counts on both strands: in force, new business and each decrement, month by month.
 
 **What is sourced and what is not.** The contractual mechanics are sourced: the
