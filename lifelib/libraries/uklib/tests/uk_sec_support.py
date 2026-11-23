@@ -999,7 +999,9 @@ class SecSpec:
         name must be one of the References of S's ``Projection``.  Each companion's rows
         for such a row are built under the row's References too, from the row alone
         (:func:`build_sec_table`), so that a companion holds the state of the run its row
-        was read from.  Empty by default.
+        was read from; its builder must then be row-local, writing rows keyed by the
+        ``point_id`` of the rows it is given and no others, which :func:`build_sec_table`
+        checks.  Empty by default.
     ``future``
         ``(S point_id, k)`` pairs; each S point must be new business.
     ``state``
@@ -2208,9 +2210,13 @@ def build_sec_table(spec, s_model):
     each ``derived_refs`` row alone, under that row's References, set on S's
     ``Projection`` and restored after it in a ``finally`` as for the row itself; its
     frames are joined in that order, an empty one left out, on a default index.  So a
-    companion gives each row the state of the run the row was read from, and a builder
-    builds the rows of the table it is given and no others.  A spec with no
-    ``derived_refs`` calls each builder once, on the whole table, as it always has.
+    companion gives each row the state of the run the row was read from.  Joined, the
+    frames must hold no row twice, so each builder must be row-local: every row it writes
+    carries the ``point_id`` of a row it was given (:func:`_check_row_local`).  A builder
+    that writes rows of its own on every call, as uslib's re-based scenario sets write
+    every scenario, would write them again for each ``derived_refs`` row, and is refused,
+    by its name, rather than joined.  A spec with no ``derived_refs`` calls each builder
+    once, on the whole table, as it always has, and holds it to nothing more.
 
     Every S point's ``result_cf()`` is projected, to find its first row.  Pass a model whose
     points are already swept, the instance T1 swept, and that costs nothing.
@@ -2355,12 +2361,50 @@ def build_sec_table(spec, s_model):
             if not isinstance(frame, pd.DataFrame):
                 raise TypeError(f"the builder of {filename} returned a "
                                 f"{type(frame).__name__}, not a DataFrame")
+        if spec.derived_refs:
+            _check_row_local(filename, build, parts, table, shipped)
         kept = [frame for frame in parts if len(frame)]
         frame = parts[0]
         if len(parts) > 1 and kept:
             frame = pd.concat(kept, ignore_index=True)
         companions[filename] = frame
     return table, companions
+
+
+def _check_row_local(filename, build, parts, table, shipped):
+    """Refuse a companion builder that writes rows beyond those it is given.
+
+    ``parts`` are the frames ``build`` wrote for ``filename``: the first for the rows read
+    from S as it ships, ``table.iloc[:shipped]``, then one for each ``derived_refs`` row
+    alone, in the table's order (:func:`build_sec_table`).  Joined, they must hold no row
+    twice.  So each row of each frame must carry a ``point_id``, and it must be one of the
+    rows that frame was built for: the frames' rows then belong to different points.  A
+    builder that writes rows of its own on every call, keyed by anything else or by points
+    it was not given, would write them once more for each ``derived_refs`` row; it raises
+    ``ValueError``, naming the file, the builder and the rows at fault.  An empty frame
+    holds nothing to repeat.
+    """
+    name = getattr(build, "__name__", repr(build))
+    given = [table.iloc[:shipped]] + [table.iloc[[i]] for i in range(shipped, len(table))]
+    for frame, rows in zip(parts, given):
+        if not len(frame):
+            continue
+        if "point_id" not in frame.columns:
+            raise ValueError(
+                f"{filename}: its builder {name} is not row-local: it wrote rows without "
+                f"a point_id.  A spec with derived_refs builds each such row's companion "
+                f"rows from that row alone, under its References, and joins them to the "
+                f"rest, so a builder must write rows only for the point_ids it is given; "
+                f"one that writes rows of its own on every call would write them again "
+                f"for each derived_refs row")
+        stray = sorted(set(frame["point_id"].tolist()) - set(rows["point_id"].tolist()))
+        if stray:
+            raise ValueError(
+                f"{filename}: its builder {name} is not row-local: given {len(rows)} "
+                f"rows, it wrote rows of point_id {stray}, which it was not given.  A spec "
+                f"with derived_refs builds each such row's companion rows from that row "
+                f"alone, under its References, and joins them to the rest, so a builder "
+                f"must write rows only for the point_ids it is given")
 
 
 _read_names = itertools.count(1)

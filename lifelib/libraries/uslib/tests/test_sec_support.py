@@ -824,6 +824,29 @@ def test_build_sec_table_rejects_a_spec_that_does_not_fit_the_s_table(s_model, c
         build_sec_table(dataclasses.replace(SPEC, **change), s_model)
 
 
+def test_a_scenario_companion_is_refused_beside_a_derived_refs_row():
+    """A companion builder that is not row-local cannot sit beside ``derived_refs``.
+
+    FIA's re-based scenario set, ``_fia_rebased_scenarios``, writes every scenario on each
+    call, keyed by scenario and month, not by point.  Given a ``derived_refs`` row, the
+    generator calls it on the shipped rows and again on that row alone, so the joined
+    ``rate_scenario_sec.csv`` would hold each scenario twice, with nothing to say so.  The
+    generator refuses the builder instead, naming the file and the builder
+    (``uk_sec_support``'s copy has a test of each kind of fault).  FIA's spec as shipped,
+    without ``derived_refs``, is T6's in ``test_fixed_indexed_annuity_us_sec.py``.
+    """
+    s = _read("fia", model_path("FIA_US_S"))
+    try:
+        spec = dataclasses.replace(
+            SEC_SPECS["FIA_US_SEC"],
+            derived_refs={(4, 61): {"net_consideration_ratio": 0.88375}})
+        with pytest.raises(ValueError, match="rate_scenario_sec.csv: its builder "
+                                             "_fia_rebased_scenarios is not row-local"):
+            build_sec_table(spec, s)
+    finally:
+        s.close()
+
+
 def _policy_ids(s_model, table):
     """A companion built from the SEC table: one row per SEC point and its policy."""
     return table[["point_id", "policy_id", "source_mth"]]
