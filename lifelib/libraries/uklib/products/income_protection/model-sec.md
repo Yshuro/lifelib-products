@@ -989,7 +989,10 @@ run, and move the compile tests to the full grid, which the `cython_uk` job's Li
 run: its Windows legs, which run the default, would then run no compiled comparison with
 MSVC. The peak is inside the 7 GB of the smallest CI runner, the macOS `sec_uk` legs,
 which run without the compile tests, by 1.6 GB; releasing the committed points once swept
-would take 2 GB off it and add their sweep again to each test that reads them.
+would take 2 GB off it and add their sweep again to each test that reads them. On the full
+grid, `UKLIB_SEC_FULL=1`, the module takes 2,981 s at a peak of 7.0 GB, and the
+`cython_uk` job's `income_protection` shard, the compile tests alone on the full grid as
+that job's Linux leg runs them, 1,460 s at a peak of 3.3 GB, inside the job's hour.
 
 ```bash
 python -m pytest tests/test_income_protection_uk_sec.py -q
