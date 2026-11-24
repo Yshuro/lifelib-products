@@ -4965,40 +4965,40 @@ def test_each_refusal_cell_computes_its_chain_s_value_bit_for_bit(sec_model):
 
 
 # The References under which the cumulant of the guarantee charges leaves the floats after
-# its first month: the whole asset share charged a month at 50% a year and capped at all of
-# it, no management charge, and an estate distribution of the charge's own monthly rate,
-# which, at a fund return of 0, holds the asset share level near the largest float while the
-# cumulant grows by the charge.  Without it a cumulant below its cap, the asset share it
-# opens the month with, cannot pass the largest float by a month's charge, a share of the
-# asset share after its return, before the asset share does.
-CUMULANT_REFS = {"amc_rate": 0.0, "guar_charge_cap": 1.0, "guar_charge_rate_base": 0.5,
-                 "misc_surplus_rate": 1.0 - 0.5 ** (1.0 / 12.0)}
+# its first month: the whole asset share charged a month, guar_charge_rate_base 1, and no
+# management charge, so that the asset share closes every month at nil.  The charge stops
+# once the cumulant reaches its cap, a share of the asset share the month opens with, but
+# the cap is not tested on a nil asset share, so on the endowment, which pays a premium
+# every month, the cumulant grows by each month's premium, charged in full, with no estate
+# distribution.
+CUMULANT_REFS = {"amc_rate": 0.0, "guar_charge_rate_base": 1.0}
 
 
 def _cumulant(value):
-    """The bond at 71 at a fund return of 0, its asset share 1.79e308 and the cumulant of
-    its charges opening at ``value``."""
-    return {"fund_return": 0.0, "asset_share_init": 1.79e308,
-            "guar_charge_cum_pp_init": value}
+    """The endowment at 150, its asset share and payout nil, paying 6e307 a year, the
+    cumulant of its charges opening at ``value``."""
+    return {"asset_share_init": 0.0, "smoothed_payout_init": 0.0,
+            "premium_regular": 6e307, "guar_charge_cum_pp_init": value}
 
 
 # Each chain with a refusal cell of its own taken past the floats after its first month on
 # the books, as (case, the committed row, its columns changed, the References, the chain,
 # the month, what the month is, the message after the point's label): mid-year, on a
 # declaration and on an anniversary where the chain moves there.  The bond at 71 (8) opens
-# on a declaration, and its month 1 is an anniversary, 2 mid-year, 12 a declaration and 13 an
-# anniversary; the down scenario's bond at 92 (10) opens mid-year, and its month 3 is a
-# declaration and 4 an anniversary; and the endowment at 150 (23) declares in month 5.  The
-# asset share is opened near the largest float, and grows past it by its return; the units
-# are bought on by a regular premium at a price near the smallest float; the unit price,
-# on a bond holding few units, and the endowment's guarantee are raised by a declaration,
-# which alone moves them; the bond's guarantee is its units at a price near 1.7e8, bought on
-# by a premium; the smoothing account opens near the largest float on 1e305 policies, whose
-# exits add a month's cost; and the cumulant is the guarantee charges' (CUMULANT_REFS).
-# Each value is the middle, in log space, of the values whose first month past the floats
-# is the one named, measured at M14 by bisection, or the middle of that window, read off the
-# charges, for the cumulant, so that each holds a few months' growth either side of its
-# edge.  The month 0 refusals are PAST_THE_FLOATS'.
+# on a declaration, and its month 1 is an anniversary, 2 mid-year, 12 a declaration and 13
+# an anniversary; the down scenario's bond at 92 (10) opens mid-year, and its month 3 is a
+# declaration and 4 an anniversary; and the endowment at 150 (23) is mid-year in month 3,
+# declares in month 5 and reaches its anniversary in month 6.  The asset share is opened
+# near the largest float, and grows past it by its return; the units are bought on by a
+# regular premium at a price near the smallest float; the unit price, on a bond holding few
+# units, and the endowment's guarantee are raised by a declaration, which alone moves them;
+# the bond's guarantee is its units at a price near 1.7e8, bought on by a premium; the
+# smoothing account opens near the largest float on 1e305 policies, whose exits add a
+# month's cost; and the cumulant is the guarantee charges' on the endowment, each month's
+# premium charged in full (CUMULANT_REFS).  Each value is the middle, in log space, of the
+# values whose first month past the floats is the one named, measured at M14 by bisection,
+# or the middle of that window, read off the charges, for the cumulant, so that each holds a
+# few months' growth either side of its edge.  The month 0 refusals are PAST_THE_FLOATS'.
 _AS = ("the asset share of month {t} before its floor, asset_share_at({t}, 'AFT_MC'), is "
        "inf, not a finite number, from the opening asset share ")
 _UNITS = "the units held units({t}) are inf, not a finite number, from the opening units "
@@ -5034,12 +5034,12 @@ CHAINS_PAST = [
      {}, "guar_benefit_pp", 13, "anniversary", _GUARANTEE),
     ("the endowment's guarantee on a declaration", 23, {"sum_assured": 1.792e308}, {},
      "guar_benefit_pp", 5, "declaration", _GUARANTEE),
-    ("the cumulant mid-year", 8, _cumulant(1.543e308), CUMULANT_REFS, "guar_charge_cum_pp",
-     2, "mid-year", _CUMULANT),
-    ("the cumulant on a declaration", 8, _cumulant(5.38e307), CUMULANT_REFS,
-     "guar_charge_cum_pp", 12, "declaration", _CUMULANT),
-    ("the cumulant on an anniversary", 8, _cumulant(4.376e307), CUMULANT_REFS,
-     "guar_charge_cum_pp", 13, "anniversary", _CUMULANT),
+    ("the cumulant mid-year", 23, _cumulant(1.622e308), CUMULANT_REFS,
+     "guar_charge_cum_pp", 3, "mid-year", _CUMULANT),
+    ("the cumulant on a declaration", 23, _cumulant(1.5216e308), CUMULANT_REFS,
+     "guar_charge_cum_pp", 5, "declaration", _CUMULANT),
+    ("the cumulant on an anniversary", 23, _cumulant(1.4714e308), CUMULANT_REFS,
+     "guar_charge_cum_pp", 6, "anniversary", _CUMULANT),
     ("the smoothing account mid-year", 10, {**_CROWD, "smoothing_account_init": 1761.9}, {},
      "smoothing_account", 2, "mid-year", _ACCOUNT),
     ("the smoothing account on a declaration", 10,

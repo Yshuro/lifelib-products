@@ -919,11 +919,15 @@ at −1 and at `2**53`, as ints and as floats, as in modelx, read at 121 and 121
   each in its opening month and, from an opening state, columns and References each in its
   domain, mid-year, on a declaration month and on an anniversary where its chain moves
   there. The unit price and the endowment's guarantee move on a declaration alone. The
-  cumulant of the charges is capped by the asset share it is charged on, so it leaves the
-  floats after its first month only where an estate distribution holds that asset share
-  level near the largest float, as the test's does. Each refusal cell repeats its chain's
-  formula, branch by branch, and a test holds it to its chain, bit for bit, in every month
-  of every committed point, since C4 compares two engines that would share a drift.
+  cumulant of the charges stops growing at its cap, a share of the asset share the month
+  opens with, but the cap is not tested on a nil asset share: an endowment with a nil
+  asset share, `guar_charge_rate_base` 1, `amc_rate` 0 and premiums of 6e307 a year, with
+  no estate distribution, has its whole premium charged each month and closes each month
+  at nil, and a cumulant carried in near the largest float is refused mid-year at month 3,
+  on its declaration at 5 and on its anniversary at 6. Each refusal cell repeats its
+  chain's formula, branch by branch, and a test holds it to its chain, bit for bit, in
+  every month of every committed point, since C4 compares two engines that would share a
+  drift.
 - A power past the largest float, or below the smallest, which Python's float power
   refuses with `OverflowError` where C's `pow` gives an infinity: the inflation factor,
   the bonus rule's growth and the endowment's discount call Python's own power where
