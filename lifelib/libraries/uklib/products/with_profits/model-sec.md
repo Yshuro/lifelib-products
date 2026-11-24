@@ -998,7 +998,18 @@ at a peak of 3.6 GB, on a machine shared with other builds, each comparing what 
 So the default run is about half a minute over. Moving the every-state test's main and
 rule sets to the full grid saved about 30 s; moving the splice's rule and bound sets there
 too would save about a minute more, but leave no core row declaring under the rule or
-holding the surrender rate at its bound, which the review asked for.
+holding the surrender rate at its bound, which the review asked for. The C step (M14) adds
+the representation's tests, about half a minute, which hold the compiled form in a run
+with no compiler and so stay in the default run, and the compile tests, which run in the
+default run too where modelx-cython and a compiler are at hand. Without them, `-m "not
+cython"`, as the `sec_uk` legs run it, the default run takes about 380 s here, at a peak of
+3.6 GB; with them, the model built once, about 750 s, at a peak of 4.0 GB, the build two
+minutes of it; and the full grid, its compile tests comparing the whole grid, about
+1,850 s, at a peak of 4.2 GB, on a machine shared with other builds. So the run the
+`sec_uk` legs make is about 80 s over, the representation's tests about half a minute of
+it and a busier machine than M13's the rest; moving those tests to the full grid would
+leave a run without a compiler no hold on the compiled form, so the cuts that remain are
+M13's, at the cost above.
 
 **Branches the core reaches.** A test asserts the core reaches each branch, keyed by the
 set of References it runs under where the set matters. A withdrawal is capped at the unit
