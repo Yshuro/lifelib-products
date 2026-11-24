@@ -64,7 +64,9 @@ and the two cumulants, are carried a policy year at a time, so that a cold call 
 longest cover runs on a small C stack; and every cell but the three reports,
 ``model_point`` and the three label accessors returns a C ``bint``, ``long long`` or
 ``double``, the seven checks among them, cached as a single value or in a C array sized
-from the contract. modelx reads and runs the same formulas, and computes the same numbers.
+from the shipped contract, ``proj_len()`` refusing, by point, a cover or a frame longer
+than the arrays hold. modelx reads and runs the same formulas, and computes the same
+numbers.
 ``products/with_profits/model-sec.md`` says how to compile and run it, and what the
 compiled model does not do as modelx does: it clears no cache when a Reference is set, so
 every Reference is set on a model just imported.

@@ -845,7 +845,7 @@ copied five times, and finds no ItemSpace but the base alive after each collecti
 which the interpreter's recursion limit does not count, so the compiled model needs no
 limit raised. What it needs is stack. The deepest call the contract allows is a cold one
 in the last month of the longest cover, a bond or an endowment issued at 18, now or 120
-months on, 1,236 months from issue at the contract's largest limiting age, 121, with the
+months on, 1,236 months from issue to 121, the longest cover `proj_len()` admits, with the
 bonus rule and the estate's distribution on. One cell a month, as the in-force step left
 the eight chains, compiled with gcc and issued now, each head cold in an ItemSpace of its
 own, on the bond, the endowment and a bond withdrawing 1% a year alike: the count's heads,
@@ -1029,13 +1029,18 @@ at its bound, which the review asked for. The C step (M14) adds the representati
 tests, about half a minute, which hold the compiled form in a run with no compiler and so
 stay in the default run, and the compile tests, which run in the default run too where
 modelx-cython and a compiler are at hand. Without them, `-m "not cython"`, as the `sec_uk`
-legs run it, the default run takes about 380 s here, at a peak of 3.6 GB; with them, the
-model built once, about 750 s, at a peak of 4.0 GB, the build two minutes of it; and the
-full grid, its compile tests comparing the whole grid, about 1,850 s, at a peak of 4.2 GB,
-on a machine shared with other builds. So the run the `sec_uk` legs make is about 80 s
-over, the representation's tests about half a minute of it and a busier machine than M13's
-the rest; moving those tests to the full grid would leave a run without a compiler no hold
-on the compiled form, so the cuts that remain are M13's, at the cost above.
+legs run it, the default run took about 380 s here, at a peak of 3.6 GB, and after the
+review's rework, which adds the withdrawing bond's chains to the default run, about half a
+minute, two core rows whose units run out at the end of cover, and the caches' bounds,
+about 440 s, at a peak of 3.8 GB; with them, the model built once, about 840 s, at a peak
+of 4.2 GB, the build two minutes of it; and the full grid, its compile tests comparing the
+whole grid, about 1,850 s before the rework, at a peak of 4.2 GB, on a machine shared with
+other builds, the rework's runs beside another session's tests. So the run the `sec_uk`
+legs make is about 140 s over: the representation's tests about half a minute of it, the
+withdrawing bond's chains another, and a busier machine than M13's the rest. Moving either
+to the full grid would leave a run without a compiler no hold on the compiled form, or the
+default run none on the depth of the withdrawing bond's chains, which the review asked
+for, so the cuts that remain are M13's, at the cost above.
 
 **Branches the core reaches.** A test asserts the core reaches each branch, keyed by the
 set of References it runs under where the set matters. A withdrawal is capped at the unit
