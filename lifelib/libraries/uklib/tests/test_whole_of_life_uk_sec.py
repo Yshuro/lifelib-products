@@ -104,8 +104,8 @@ and counted cell is nonzero (``CORE_POINTS``), and the full grid the rest; the c
 chains run on the paid-up shape by default and on the other three with the full grid; and
 so on, each test's docstring saying which.  A compile test is never skipped, since a skip
 fails the cython_uk job: those that compare the committed table under References of their
-own compare by default the rows those References move (``_c4_rows``), and the whole table
-with the full grid.  They are never dropped: one leg of the CI
+own compare by default the rows each set is for (``_c4_rows``), and the whole table with
+the full grid.  They are never dropped: one leg of the CI
 matrix sets it, and ``UKLIB_SEC_FULL=1 python -m pytest -m sec_full
 lifelib/libraries/uklib/tests/test_whole_of_life_uk_sec.py`` runs them alone.  Each
 splice row is released once it has been read (``_release``), as ``run_sec.py --block``
@@ -4702,9 +4702,9 @@ def test_the_sec_model_reads_the_s_tables_in_place(sec_model, s_model):
 # The policy month of each S point's and variant's crossover and first capped month, read
 # off S at the shipped References: the static properties of the grid read them.
 CROSSOVER = {1: 166, 2: 166, 3: 166, 4: 185, 5: -1, 6: 642, 7: 222, 8: 185, 9: 166,
-             10: -1, 11: 642, 12: 166}
+             10: -1, 11: 642, 12: 166, 13: 239}
 CAP = {1: 480, 2: 480, 3: 480, 4: 480, 5: 888, 6: 888, 7: 432, 8: 480, 9: 480, 10: 360,
-       11: 852, 12: 480}
+       11: 852, 12: 480, 13: 480}
 
 
 def test_the_core_grid_reaches_every_branch(spliced, splice_records):
@@ -4718,9 +4718,11 @@ def test_the_core_grid_reaches_every_branch(spliced, splice_records):
     an entry age of its own; and each kind of valuation month: the first policy year, on an
     anniversary, in the month before one, mid-year, inside the moratorium and at its last
     month, at the crossover and past it, at cessation and past it, the first conversion, the
-    cap and the last month before the limiting age.  And of some core future case: issued
-    off the valuation anniversaries and on them, more than a year on, at the horizon, on
-    each cell, with the paid-up value and with RPI increases.
+    cap and the last month before the limiting age, and a crossover in the last premium
+    month, the crossover search's last, valued at or before it.  And of some core future
+    case: issued off the valuation anniversaries and on them, more than a year on, at the
+    horizon, on each cell, with the paid-up value and with RPI increases, and a crossover in
+    the last premium month, which the search from issue reaches in its last month.
 
     Then, on the splice's model, of some core row, each of :data:`AT_VALUATION` and
     :data:`IN_FRAME`, what no column of the table shows: every opening-state column in use,
@@ -4782,6 +4784,8 @@ def test_the_core_grid_reaches_every_branch(spliced, splice_records):
             flag(p, "variant_paid_up") and d == cessation(p) // 2 - 1),
         "at the cap": lambda k, p, d: d == CAP[p],
         "in the last month before the limiting age": lambda k, p, d: d == COVER[p] - 1,
+        "a crossover in its last premium month": lambda k, p, d: (
+            0 <= CROSSOVER[p] == cessation(p) - 1 and d <= CROSSOVER[p]),
     }
     futures = {
         "issued off the anniversaries": lambda p, k: k % 12 != 0,
@@ -4793,6 +4797,8 @@ def test_the_core_grid_reaches_every_branch(spliced, splice_records):
         "the paid-up value": lambda p, k: flag(p, "variant_paid_up"),
         "RPI increases": lambda p, k: at(p, "escalation") == "rpi",
         "fixed increases": lambda p, k: at(p, "escalation") == "fixed_5pct",
+        "a crossover in its last premium month": lambda p, k: (
+            0 <= CROSSOVER[p] == cessation(p) - 1),
     }
     missing = [what for what, holds in splices.items()
                if not any(holds(*case) for case in CORE_SPLICES)]
@@ -6448,28 +6454,118 @@ def _wol_c4_also(proj):
 C4_CHUNK = 20
 
 # The committed rows a C4 comparison under References other than the shipped ones reads by
-# default: the rows those References move.  Under an RPI of its own, the RPI rows: the twin,
-# the row past its crossover, the row issued 13 months on and the row read under an RPI of
-# 5%.  Under a take-up, those and the fixed increases' rows: the twin, the row on its first
-# anniversary and the row read under a take-up of a half.  Under a stress, the paid-up
-# rows: the twin, the row with its strand in force and the row paid-up entirely.  And on an
-# anniversary, the three rows valued on one.  The full grid compares the whole committed
-# table under each set, as the cython_uk job's Linux legs run it (UKLIB_SEC_FULL=1).  A
-# compile test is never skipped, since a skip fails that job, so the default run compares
-# these rows rather than none: the eight comparisons of the whole table took about 100 s of
-# the default run (UKLIB-SEC-PLAN.md U6).
+# default, by the References set.  An RPI moves the RPI rows alone, and a take-up the
+# escalating rows alone, so under each the default compares every row it moves: under an
+# RPI, of its own, of -2% or of 25%, the RPI rows, the twin, the row past its crossover,
+# the row issued 13 months on and the row read under an RPI of 5%; under a take-up, those
+# and the fixed increases' rows, the twin, the row on its first anniversary and the row
+# read under a take-up of a half.  A stress of 100 moves 15 of the 17 committed rows, every
+# row on which the premiums paid pass the cover while premiums are due; the default
+# compares four of them: the paid-up rows, where a stressed lapse converts, the twin, the
+# row with its strand in force and the row paid-up entirely, read under the stress; and the
+# RPI row past its crossover, without the paid-up value, stressed from its first month,
+# where a stressed lapse terminates.  The anniversary's References, an RPI and a take-up,
+# move the seven escalating rows; the default compares the three valued on an
+# anniversary, whose month-0 increase the test is for, the other four being compared under
+# an RPI and under a take-up on their own.  So what the default leaves out under the stress
+# and the anniversary's References is combinations, rows whose every branch another default
+# comparison reaches, on the Windows legs alone, which run the default.  The full grid
+# compares the whole committed table under each set, as the cython_uk job's Linux legs run
+# it (UKLIB_SEC_FULL=1).  A compile test is never skipped, since a skip fails that job, so
+# the default run compares these rows rather than none: the eight comparisons of the whole
+# table took about 100 s of the default run (UKLIB-SEC-PLAN.md U6).  A test holds each
+# selection to what modelx says of the rows (test_the_c4_comparisons_ask_every_code_and_
+# their_rows).
 RPI_ROWS = (4, 11, 14, 15)
 ESCALATING_ROWS = (*RPI_ROWS, 6, 12, 16)
 PAID_UP_ROWS = (3, 10, 17)
+STRESSED_ROWS = (*PAID_UP_ROWS, 11)
 ANNIVERSARY_ROWS = (12, 15, 16)
 OWN_REFS_ROWS = {"rpi_rate": RPI_ROWS, "esc_take_up": ESCALATING_ROWS,
-                 "lapse_crossover_beta": PAID_UP_ROWS}
+                 "lapse_crossover_beta": STRESSED_ROWS}
 
 
 def _c4_rows(labels):
     """The committed table under ``UKLIB_SEC_FULL=1``, and its rows ``labels`` otherwise."""
     rows = _committed()
     return rows if SEC_FULL else rows.loc[list(labels)]
+
+
+class _Asked:
+    """A stand-in for a point, which records what :func:`_wol_c4_also` asks of it: each
+    cell's calls, as (month, code), over a frame of ``months``, the codes read from the
+    model's own References, ``refs``."""
+
+    def __init__(self, months, refs):
+        self.months, self.refs, self.asked = months, refs, {}
+        self.cells = {name: self._cell(name) for name in ("pols_if_at", "benefit_pp",
+                                                           "claims")}
+
+    def _cell(self, name):
+        return lambda t, code: self.asked.setdefault(name, set()).add((t, code))
+
+    def proj_len(self):
+        return self.months
+
+
+def test_the_c4_comparisons_ask_every_code_and_their_rows(sec_model):
+    """C4's ``also`` asks every code in every month, and each default selection is what
+    modelx says of the committed rows.
+
+    Nothing in a comparison shows what it leaves out: dropped from :func:`_wol_c4_also`, a
+    code is simply not compared, and dropped from a selection, a row.  So
+    :func:`_wol_c4_also` is run on a stand-in point (:class:`_Asked`), over a frame of five
+    months, with the model's References read as the spec test reads them: it must ask
+    ``pols_if_at``, ``benefit_pp`` and ``claims`` at every code inside the one inner width
+    ``spec_sec.py`` gives, in every month of the frame and the month after it.  And each
+    selection of :data:`OWN_REFS_ROWS` and :data:`ANNIVERSARY_ROWS` is derived in modelx
+    from the committed points: under each RPI the comparisons set, of 5%, -2% and 25%, the
+    rows whose steps move are :data:`RPI_ROWS`, and under a take-up of a half
+    :data:`ESCALATING_ROWS`; the stress's rows are the paid-up ones and those in force past
+    their crossover with lapses running, each of whose lapse rates the stress moves; and the
+    anniversary's are the escalating rows valued on an anniversary.
+    """
+    source, _ = _comment("spec_sec.py")
+    sizes = ast.literal_eval(source)["spaces"]["Projection"]["cells_param_size"]
+    (width,) = {size[1] for size in sizes.values() if isinstance(size, tuple)}
+    stand_in = _Asked(5, _references("Projection"))
+    _wol_c4_also(stand_in)
+    every = {(t, code) for t in range(6) for code in range(width)}
+    for cell in ("pols_if_at", "benefit_pp", "claims"):
+        assert stand_in.asked.get(cell) == every, (cell, sorted(stand_in.asked.get(cell, ())))
+
+    labels = dict(zip(sec_model.Data.model_point_table().index, point_keys(sec_model)))
+    points = {label: projection(sec_model, key) for label, key in labels.items()}
+
+    def steps(p):
+        return p.esc_cover_step(), p.esc_prem_step()
+
+    def moved(refs, of):
+        model = mx.read_model(model_path(SEC), name=_name("moved"))
+        try:
+            for ref, value in refs.items():
+                setattr(model.Projection, ref, value)
+            return sorted(label for label, key in labels.items()
+                          if of(projection(model, key)) != of(points[label]))
+        finally:
+            model.close()
+
+    for rpi in (0.05, -0.02, 0.25):
+        assert moved({"rpi_rate": rpi}, steps) == sorted(RPI_ROWS), rpi
+    assert moved({"esc_take_up": 0.5}, steps) == sorted(ESCALATING_ROWS)
+    stressed = sorted(label for label, p in points.items() if p.pu_variant() or (
+        p.duration_mth_init() > 0 and p.crossover_mth_init() >= 0 and p.lapse_rate(0) > 0))
+    assert stressed == sorted(STRESSED_ROWS), stressed
+
+    def lapses(p):
+        return [p.lapse_rate(t) for t in range(p.proj_len())]
+    stress_moves = moved({"lapse_crossover_beta": 100.0}, lapses)
+    assert set(STRESSED_ROWS) <= set(stress_moves), stress_moves
+    level = _code(points[1], "LEVEL")
+    anniversaries = sorted(label for label, p in points.items()
+                           if p.escalation_code() != level and p.duration_mth_init() > 0
+                           and p.duration_mth_init() % 12 == 0)
+    assert anniversaries == sorted(ANNIVERSARY_ROWS), anniversaries
 
 
 @pytest.mark.cython
@@ -6641,10 +6737,11 @@ def test_the_compiled_model_computes_what_modelx_computes_where_each_cap_binds(
     fully under the same References, and the compiled model must agree at every argument
     modelx caches, identically on x86-64 and to 1e-12 relative elsewhere.  No other compiled
     test reaches these sides of the ``min`` and the ``max``.  By default the cap's rows are
-    the male smoker's, whose capped months the core grid does not reach, as it reaches the
-    anchor cell's and the underwritten point's, and the RPI's are the committed RPI rows
-    (:data:`RPI_ROWS`); with the full grid, all three capped points' and the whole
-    committed table.
+    the male smoker's: the core grid's rows reach each capped point's capped months, the
+    male smoker's row at 300 among them, but none is restated about a cap, and the row five
+    months into the capped year, opened on one policy, is this test's alone; the RPI's rows
+    are the committed RPI rows (:data:`RPI_ROWS`), the only ones an RPI moves.  With the
+    full grid, all three capped points' rows and the whole committed table.
     """
     build = sec_build(SEC)
     if case == "the mortality cap":
@@ -6792,10 +6889,10 @@ def test_the_compiled_model_computes_what_modelx_computes_under_a_row_s_own_refe
     100, paid-up entirely, its ``policy_count`` 0.  C4 on the committed points compares
     them at the shipped References; under their own, set on the compiled model as on modelx
     before either computes, each continues S's path, which other rows' References leave
-    untaken: so the committed rows each set moves (:data:`OWN_REFS_ROWS`), the whole
-    committed table with the full grid, are swept fully under it, and the compiled model
-    must agree everywhere, the point paid-up entirely and the rows past cessation among
-    them.
+    untaken: so the committed rows :data:`OWN_REFS_ROWS` gives each set, every row the RPI
+    and the take-up move and four of those the stress moves, and the whole committed table
+    with the full grid, are swept fully under it, and the compiled model must agree
+    everywhere, the point paid-up entirely and the rows past cessation among them.
     """
     build = sec_build(SEC)
     (ref,) = refs

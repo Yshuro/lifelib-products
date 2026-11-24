@@ -1126,11 +1126,19 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   the committed table under each of the three sets of References its rows were read from;
   and on the rows valued on an anniversary under an RPI of 8% and a take-up of a half,
   each stepping its cover and premium at `t = 0`. Each comparison under References other
-  than the shipped ones reads by default the committed rows they move, the RPI rows, the
-  escalating rows, the paid-up rows or the three anniversary rows, and the male smoker's
-  capped rows, and the whole committed table and every capped point with the full grid,
-  as the `cython_uk` job's Linux legs run them: a compile test is never skipped, a skip
-  failing that job. Then the five labels' text; the refusals,
+  than the shipped ones reads by default some of the committed rows, and the whole table
+  and every capped point with the full grid, as the `cython_uk` job's Linux legs run
+  them: a compile test is never skipped, a skip failing that job. Under an RPI, the four
+  RPI rows, every row an RPI moves, and under a take-up the seven escalating rows, every
+  row it moves; under the stress of 100, which moves 15 of the 17, four, the paid-up rows,
+  where a stressed lapse converts, and the RPI row past its crossover, where one
+  terminates; under the anniversary's References, which move the seven escalating rows,
+  the three valued on an anniversary, the other four being compared under an RPI and a
+  take-up of their own; and at the mortality cap the male smoker's rows, restated about
+  its cap, which no core row is. So the default leaves out combinations, rows whose every
+  branch another default comparison reaches, on the Windows legs alone. A test derives each
+  selection from the committed points in modelx, and holds `_wol_c4_also` to asking every
+  code inside the one width in every month. Then the five labels' text; the refusals,
   message for message, each value past the floats, a kind named by its code, the overflows
   of the five powers, each of the crossover search's four guards among them, the future
   horizon at −1, 12.5 and `2**53`, set in the child as every space's References are, the
@@ -1147,8 +1155,9 @@ C step's review). Without them it is inside the five minutes U6 budgets, as at t
 in-force step, which recorded 207 s and 2.0 GB; with them it is past it. At the C step it
 took 543 s to 587 s: the eight C4 comparisons of the whole committed table under
 References other than the shipped ones, about 100 s of it, now compare by default the rows
-those References move, and the whole table with the full grid, which the `cython_uk`
-job's Linux legs run. What is left is the build, about 70 s, and about 200 s of
+each set is for, every row an RPI or a take-up moves and some of those the stress and the
+anniversary's References move, and the whole table with the full grid, which the
+`cython_uk` job's Linux legs run. What is left is the build, about 70 s, and about 200 s of
 comparison: the splice grid's core, the contract's extremes, every decoded value, keys
 written as floats, the caps' rows, the labels, the refusals and the stack. A compile test
 is never skipped, since a skip fails that job, so a cut to the five minutes would take
