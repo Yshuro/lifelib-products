@@ -457,24 +457,26 @@ cash flow.
 
 Three cells recurse month by month: survival, :func:`lives_if`, on the table basis; the
 payments to date on every stream, :func:`cum_annuity_all`; and the annuitant's,
-``cum_annuity_pp(k, ANNUITANT)``. Called cold in the last month of the longest cover, one
-cell a month ran 1,380 cells back to :func:`t_entry` or the valuation date's key, and a
-compiled model runs such a chain on the C stack, which the interpreter's recursion limit
-does not count: it needed 244 to 276 KiB of it, compiled with gcc, past the 256 KiB the C
-step allows itself (UKLIB-SEC-PLAN.md K12). So each is blocked by policy year, in
-``ULB_UK_SEC``'s form: within a policy year it runs one cell a month, as before, and at
+``cum_annuity_pp(k, ANNUITANT)``. Called cold in the last month of the longest cover, at the
+shipped limiting age, 115, one cell a month ran 1,380 cells back to :func:`t_entry` or the
+valuation date's key, and at the contract's largest, ``omega_age_max``, 116, it would run
+1,392; and a compiled model runs such a chain on the C stack, which the interpreter's
+recursion limit does not count: it needed 244 to 276 KiB of it, compiled with gcc, past the
+256 KiB the C step allows itself (UKLIB-SEC-PLAN.md K12). So each is blocked by policy year,
+in ``ULB_UK_SEC``'s form: within a policy year it runs one cell a month, as before, and at
 the time point or key that opens a year it reads the year's opening, :func:`lives_if_py`,
 :func:`cum_annuity_all_py` or :func:`cum_annuity_pp_py`, which walks the year before in
-ascending order, asking the monthly cell of each of its months, so that each finds the
-month before cached, and returns the year's last month's step, the cell's own float, so no
-number moves. A cold read then runs one cell a month back to its year's first time point
-and two cells a year before that: 239 cells and at most 12 more, and 52 to 76 KiB of C
-stack. And no cell such a chain recurses through formats a message: a compiled cell's C
-frame holds the code of every message it formats, whether its branch runs or not, so a
-refusal that names values sits in a cell of its own, which the chain's cell calls on its
-error path alone, :func:`annual_income_refusal`, :func:`cum_annuity_all_refusal` and
-:func:`cum_annuity_pp_refusal`, and ``cum_annuity_pp(k, ALL)``'s refusal of a key before
-the valuation date's sits in :func:`cum_annuity_pp_all`.
+ascending order, asking the monthly cell of each of its months, so that each finds the month
+before cached, and returns the year's last month's step, the cell's own float, so no number
+moves. A cold read then runs one cell a month back to its year's first time point and two
+cells a year before that: at the shipped limiting age 239 cells and at most 12 more,
+and 52 to 76 KiB of C stack, and at 116, 241 and at most 12 more. And no
+cell such a chain recurses through formats a message: a compiled cell's C frame holds the
+code of every message it formats, whether its branch runs or not, so a refusal that names
+values sits in a cell of its own, which the chain's cell calls on its error path alone,
+:func:`annual_income_refusal`, :func:`cum_annuity_all_refusal` and
+:func:`cum_annuity_pp_refusal`, and ``cum_annuity_pp(k, ALL)``'s refusal of a key before the
+valuation date's sits in :func:`cum_annuity_pp_all`.
 
 .. rubric:: Codes
 
@@ -547,8 +549,8 @@ no bound, as the in-force step held it to none: there a limiting age above
 ``omega_age_max`` projects in modelx, and in the compiled model a frame longer than 1,392
 months from the start date, a life issued younger than ``omega_age - omega_age_max``,
 raises a bare ``IndexError`` at its first policy month past 1,393, where the caches end.
-Raising ``omega_age_max`` or the horizon, or lowering ``issue_age_min``, needs the caches
-derived again and the model rebuilt.
+Raising ``omega_age_max`` or the horizon needs the caches derived again and the model
+rebuilt; :func:`proj_len` refuses an ``issue_age_min`` below 0.
 """
 
 from modelx.serialize.jsonvalues import *
@@ -1361,19 +1363,19 @@ def proj_len():
     is a comparison written out, a finite bound the largest float, 1.7976931348623157e308,
     and a whole one ``2**53``, so that a compiled cell runs it in C, and each Reference is
     printed as the compiled model types it: ``issue_age_min``, ``omega_age``,
-    ``omega_age_max`` and ``mort_table_year`` through ``int()`` once they are whole
-    numbers, and every other through ``float()``; the two improvement ages ship as floats,
-    90.0 and 110.0, so that the compiled model holds a fraction as modelx reads it.  A value a formula computes past the floats, from References and
-    columns each in its domain, is refused in the cell where it first is: the income, in
-    :func:`annual_income` and :func:`annual_income_init`; the payments to date, in
-    :func:`cum_annuity_pp` and :func:`cum_annuity_all`; the three powers,
-    :func:`inflation_factor`, :func:`rpi_index` and :func:`improve_factor`; and the
-    maintenance, in :func:`expenses`.  On the scenario basis an ``omega_age`` above
-    ``omega_age_max`` is not refused, as the in-force step refused none, and in the
-    compiled model a frame longer than the caches raises a bare ``IndexError`` where modelx
-    projects (the Space docstring).  ``omega_age_max`` raised, ``issue_age_min`` lowered
-    or ``Data.future_horizon_mth`` raised needs the caches derived again and the model
-    rebuilt.
+    ``omega_age_max`` and ``mort_table_year`` through ``int()`` once they are whole numbers,
+    and every other through ``float()``; the two improvement ages ship as floats, 90.0 and
+    110.0, so that the compiled model holds a fraction as modelx reads it.  A value a
+    formula computes past the floats, from References and columns each in its domain, is
+    refused in the cell where it first is: the income, in :func:`annual_income` and
+    :func:`annual_income_init`; the payments to date, in :func:`cum_annuity_pp` and
+    :func:`cum_annuity_all`; the three powers, :func:`inflation_factor`, :func:`rpi_index`
+    and :func:`improve_factor`; and the maintenance, in :func:`expenses`.  On the scenario
+    basis an ``omega_age`` above ``omega_age_max`` is not refused, as the in-force step
+    refused none, and in the compiled model a frame longer than the caches raises a bare
+    ``IndexError`` where modelx projects (the Space docstring).  ``omega_age_max`` or
+    ``Data.future_horizon_mth`` raised needs the caches derived again and the model rebuilt;
+    ``issue_age_min`` cannot go below 0, the first rule above.
     """
     if not (issue_age_min > -9007199254740992.0                       # noqa: F821
             and issue_age_min < 9007199254740992.0                    # noqa: F821
@@ -1907,8 +1909,8 @@ def lives_if(t, life):
     the same product in the same order, bit for bit: the recursion blocked by policy year
     (UKLIB-SEC-PLAN.md K12), so that a cold read runs one cell a month back to its year's
     first time point and two cells a year from there, where one cell a month back to
-    :func:`t_entry` would run the contract's longest cover, 1,380 months, on the compiled
-    model's C stack.
+    :func:`t_entry` would run the contract's longest cover, 1,392 months at its largest
+    limiting age, on the compiled model's C stack.
     """
     if life == 2 and not is_joint():
         return 0.0
@@ -1939,9 +1941,10 @@ def lives_if_py(y, life):
 
     :func:`lives_if` reads it on the table basis at a time point that opens policy year
     ``y``, after :func:`t_entry` and up to the frame's closing time point, ``t =
-    proj_len()``, so ``y`` runs from 2 to the policy year of that point, 116 at the
-    contract's longest cover, 1,380 months from issue at ``issue_age_min``, 0, to the
-    limiting age, 115 (``spec_sec.py``); no other cell reads it.
+    proj_len()``, so ``y`` runs from 2 to the policy year of that point, 117 at the
+    contract's longest cover, 1,392 months from issue at ``issue_age_min``, 0, to its
+    largest limiting age, ``omega_age_max``, 116 (``spec_sec.py``); no other cell reads
+    it.
     """
     d = duration_mth_init()
     first = max(t_entry(), 12 * (y - 2) - d)
@@ -2097,7 +2100,7 @@ def cum_annuity_all_py(y):
     inst(last) [max(C, l_a) + delta (1 - l_a) l_d w](last)``, the inline step of
     :func:`cum_annuity_all`, bit for bit; :func:`cum_annuity_all` refuses it where it is not
     a finite number.  :func:`cum_annuity_all` reads it at a time point that opens policy
-    year ``y`` after :func:`t_entry`, so ``y`` runs from 2 to 116 at the contract's longest
+    year ``y`` after :func:`t_entry`, so ``y`` runs from 2 to 117 at the contract's longest
     cover, as :func:`lives_if_py`'s does; no other cell reads it.
     """
     d = duration_mth_init()
@@ -2200,7 +2203,7 @@ def cum_annuity_pp_py(y):
     valuation date's key, the static base ``max(duration_mth_init(), 0)``, falls inside
     the year, at the base, below which the payments to date are the loop's or the opening
     state's.  :func:`cum_annuity_pp` reads it at a key that opens a policy year, other than
-    the base, so ``y`` runs from 2 to 116, the policy year of the stop rule's key, 1,380 at
+    the base, so ``y`` runs from 2 to 117, the policy year of the stop rule's key, 1,392 at
     the contract's longest cover; no other cell reads it.
     """
     base = max(duration_mth_init(), 0)

@@ -1694,27 +1694,27 @@ def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path, k, cold_n
     """Called cold, each chain runs one cell a month within its policy year, and two cells a
     year before it, back to ``t_entry()``, no more (D5, as blocked at M12).
 
-    No number shows how deep a chain runs, and a compiled model runs it on the C stack, so
-    a chain of two cells a month, which gives the same numbers, needs twice the stack on
-    every platform (F7); ``PA_UK_S``'s payments to date recurse from the start, however old
-    the contract.  One cell a month, this model's ran 1,391 cells at the longest cover, and
+    No number shows how deep a chain runs, and a compiled model runs it on the C stack, so a
+    chain of two cells a month, which gives the same numbers, needs twice the stack on every
+    platform (F7); ``PA_UK_S``'s payments to date recurse from the start, however old the
+    contract.  One cell a month, this model's ran 1,391 cells at the longest cover, and
     compiled needed 244 to 276 KiB of C stack, past what the C step allows
     (UKLIB-SEC-PLAN.md §6.7, *Record -- M12*).  So survival and the payments to date are
     blocked by policy year, each year's opening a cell that walks the year before in
     ascending order (``lives_if_py``, ``cum_annuity_all_py``, ``cum_annuity_pp_py``).  On a
-    model just read, nothing is cached, so modelx's stack trace counts how deep a call
-    runs, against that chain (:func:`_chain`) and :data:`CHAIN_OVERHEAD` more, with
-    modelx's recursion limit where the module leaves it: each chain head of each of
-    :data:`SHAPES`, in the last month of the frame, each on a read of its own and called
-    first.  At each shape's longest cover, 1,392 months from the start at the contract's
-    largest limiting age, :data:`OMEGA_MAX`, every life issued at the youngest age its basis
-    projects, and on the table basis a guarantee to that month (:func:`_longest_cover`),
-    issued ``k`` months after the valuation date; each row's frame is asserted after.  Issued now, the calls are the module's :func:`cold_now`,
-    which the chain-text test reads too.  Each shape's deepest call is its measure in
-    :data:`SHAPE_DEPTHS`, so that a shape left out, or a chain grown, fails here; the
-    deepest of all, :data:`DEEPEST_SHAPE`'s, is the longest chain the compiled stack test
-    runs.  A chain left one cell a month runs about 1,140 cells past the bound, and one
-    walked descending the same.
+    model just read, nothing is cached, so modelx's stack trace counts how deep a call runs,
+    against that chain (:func:`_chain`) and :data:`CHAIN_OVERHEAD` more, with modelx's
+    recursion limit where the module leaves it: each chain head of each of :data:`SHAPES`,
+    in the last month of the frame, each on a read of its own and called first.  At each
+    shape's longest cover, 1,392 months from the start at the contract's largest limiting
+    age, :data:`OMEGA_MAX`, every life issued at the youngest age its basis projects, and on
+    the table basis a guarantee to that month (:func:`_longest_cover`), issued ``k`` months
+    after the valuation date; each row's frame is asserted after.  Issued now, the calls are
+    the module's :func:`cold_now`, which the chain-text test reads too.  Each shape's
+    deepest call is its measure in :data:`SHAPE_DEPTHS`, so that a shape left out, or a
+    chain grown, fails here; the deepest of all, :data:`DEEPEST_SHAPE`'s, is the longest
+    chain the compiled stack test runs.  A chain left one cell a month runs about 1,140
+    cells past the bound, and one walked descending the same.
 
     Issued 120 months on, each chain runs as deep as issued now, and the same measures
     hold, so those rows run with ``UKLIB_SEC_FULL=1`` alone (:data:`DEPTH_DELAYS`).  The
@@ -1918,23 +1918,24 @@ def test_no_cell_a_chain_recurses_through_formats_a_refusal(sec_model, cold_now)
     A compiled cell's C frame holds the code that formats each of its messages, whether a
     run reaches it or not, and a chain holds a frame of each cell it recurses through at
     each level.  On CI's Ubuntu runner, a refusal formatted inside ``Term_UK_SEC``'s
-    recursive waiver cell had its cold call at the longest cover need 512 KiB to 1 MiB,
-    and 256 to 384 once the cell held none (K12).  So every refusal of this model whose
-    message is formatted sits in a cell no chain recurses through: the income, the payments
-    to date on every stream and the annuitant's call ``annual_income_refusal``,
+    recursive waiver cell had its cold call at the longest cover need 512 KiB to 1 MiB, and
+    256 to 384 once the cell held none (K12).  So every refusal of this model whose message
+    is formatted sits in a cell no chain recurses through: the income, the payments to date
+    on every stream and the annuitant's call ``annual_income_refusal``,
     ``cum_annuity_all_refusal`` and ``cum_annuity_pp_refusal`` on their error paths alone,
     and ``cum_annuity_pp(k, ALL)``'s refusal of a key before the valuation date's sits in
     ``cum_annuity_pp_all``.  On a model just read, at each shape's longest cover, issued
-    now, each chain head of :data:`SHAPES` and :data:`YEAR_HEADS` is called cold in the
-    last month, under modelx's stack trace (:func:`cold_now`, the depth test's calls), and
-    the ``Projection`` cells on the stack at its deepest point are counted.  A cell held there twice or more is one the chain recurses
-    through, at every month or every year, or at both of its ends.  None of them may build
-    text anywhere in its formula, at a raise, in an error branch or into a local, nor raise
-    other than one exception on one string constant (:func:`_text_faults`): the frame holds
-    a message's code whether or not its branch runs.  A cell held once costs its frame
-    once, as ``mort_rate_base_at``, whose refusal names an age outside the table, does at
-    the chain's foot.  Every cell of :data:`CHAIN_CELLS` must be among those checked, or
-    the test would check less than it says.
+    now, each chain head of :data:`SHAPES` and :data:`YEAR_HEADS` is called cold in the last
+    month, under modelx's stack trace (:func:`cold_now`, the depth test's calls), and the
+    ``Projection`` cells on the stack at its deepest point are counted.  A cell held there
+    twice or more is one the chain recurses through, at every month or every year, or at
+    both of its ends.  None of them may build text anywhere in its formula, at a raise, in
+    an error branch or into a local, nor raise other than one exception on one string
+    constant (:func:`_text_faults`): the frame holds a message's code whether or not its
+    branch runs.  A cell held once costs its frame once, as ``mort_rate_base_at``, whose
+    refusal names an age outside the table, does at the chain's foot.  Every cell of
+    :data:`CHAIN_CELLS` must be among those checked, or the test would check less than it
+    says.
     """
     assert {cell for _, _, cell, _, year_head, _, _, _ in cold_now if year_head} == {
         cell for _, cell, _ in YEAR_HEADS}
@@ -7540,27 +7541,26 @@ def test_the_longest_cover_runs_cold_on_a_one_megabyte_stack(sec_build, tmp_path
     On the rows of :func:`_longest_cover`, each shape of :data:`SHAPES` at its longest
     cover, 1,392 months from the start at the contract's largest limiting age,
     :data:`OMEGA_MAX`, every life issued at the youngest age its basis projects, the table
-    basis under a 1,392-month guarantee, starting now and 120 months on: the worked example and the last-survivor point on the scenario basis, the worked
-    example's table twin, the RPI catch-up, the LPI and the rated single life on the table
-    basis.  Each of :data:`STACK_HEADS`, cold in the last month, runs the chains back to
-    ``t_entry()``, one cell a month within the policy year and two a year before it,
-    survival and the payments to date being blocked by policy year: 253 cells deep in
-    modelx at the longest cover
+    basis under a 1,392-month guarantee, starting now and 120 months on: the worked example
+    and the last-survivor point on the scenario basis, the worked example's table twin, the
+    RPI catch-up, the LPI and the rated single life on the table basis.  Each of
+    :data:`STACK_HEADS`, cold in the last month, runs the chains back to ``t_entry()``, one
+    cell a month within the policy year and two a year before it, survival and the payments
+    to date being blocked by policy year: 253 cells deep in modelx at the longest cover
     (:func:`test_every_chain_runs_one_cell_a_month_from_a_cold_start`).  Each runs in an
     ItemSpace of its own, on a copy of its row, so that each is cold: in one ItemSpace the
     second would run on the first's caches, a few cells deep.  Compiled they run on the C
-    stack, which the interpreter's recursion limit does not count, and one cell a month
-    they needed 244 to 276 KiB of it here, 52 to 76 blocked (UKLIB-SEC-PLAN.md §6.7,
-    *Record -- M12*).  1 MiB is the stack MSVC gives an executable's main thread
-    unless the executable asks for more: a host that embeds Python, where python.exe itself
-    asks for 2,000,000 bytes.  A thread whose stack is reserved at 1 MiB stands in for it on
-    every platform (``uk_sec_support.run_compiled``), and in one each call runs cold and
-    returns modelx's number, identically on x86-64 (``uk_sec_support.exact_here``) and to
-    1e-12 elsewhere.  A stack too small kills the child, and the test fails naming the
-    stack.  The thread's stack is read back too, from Windows or from glibc, and must be at
-    most 1 MiB and a page: a stand-in larger than asked for would stand for nothing.  And
-    the calls run again on the child's main thread, which is what ``run_sec.py --cython``
-    runs on.
+    stack, which the interpreter's recursion limit does not count, and one cell a month they
+    needed 244 to 276 KiB of it here, 52 to 76 blocked (UKLIB-SEC-PLAN.md §6.7, *Record --
+    M12*).  1 MiB is the stack MSVC gives an executable's main thread unless the executable
+    asks for more: a host that embeds Python, where python.exe itself asks for 2,000,000
+    bytes.  A thread whose stack is reserved at 1 MiB stands in for it on every platform
+    (``uk_sec_support.run_compiled``), and in one each call runs cold and returns modelx's
+    number, identically on x86-64 (``uk_sec_support.exact_here``) and to 1e-12 elsewhere.  A
+    stack too small kills the child, and the test fails naming the stack.  The thread's
+    stack is read back too, from Windows or from glibc, and must be at most 1 MiB and a
+    page: a stand-in larger than asked for would stand for nothing.  And the calls run again
+    on the child's main thread, which is what ``run_sec.py --cython`` runs on.
 
     The calls run first at each size of :data:`STACK_KIB`, before anything is asserted,
     and every size's outcome goes into a warning, which the job's summary shows, and into

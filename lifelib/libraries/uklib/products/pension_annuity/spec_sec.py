@@ -21,9 +21,9 @@
 # basis reads no table, and proj_len holds its omega_age to no bound, as the in-force step
 # held it to none: there a frame longer than 12 * (omega_age_max - issue_age_min) = 1,392
 # months from the start date, a life issued younger than omega_age - omega_age_max, runs
-# past k and y below and raises IndexError, compiled alone.  A change to issue_age_min,
-# omega_age_max or future_horizon_mth needs these sizes recomputed here and the model
-# rebuilt.
+# past k and y below and raises IndexError, compiled alone.  A larger omega_age_max or
+# future_horizon_mth needs these sizes recomputed here and the model rebuilt; proj_len
+# refuses an issue_age_min below 0.
 #
 # t, months from the valuation date.  The longest frame is a life issued at 0, the
 # youngest, to the age stop, 12 * (116 - 0) = 1,392 months, or a guarantee of as many on

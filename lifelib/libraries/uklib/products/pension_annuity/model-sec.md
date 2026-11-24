@@ -231,7 +231,12 @@ and the point whose projection reads the value refuses it, naming itself, where 
 is refused for it: a scenario point whose rating is blank projects, as `PA_UK_S` projects
 it, and a table point whose rating is blank is refused by its own projection (*The
 compiled model*, *What it refuses*). The in-force step held each on every point as the
-table was read.
+table was read. A value no projection reads may be text, so each column is read value by
+value, never through the type pandas gives the whole column: one text in a column of
+flags or numbers leaves pandas reading every value of it as text, where `bool("False")`
+is True and `int("2026.0")` refuses, so that an overlap written `n.a.` on a single life
+would read every joint contract's False as True. Each flag reads True where `str()` of its
+value, lowered, is `true`, and each number through `float()`.
 
 A contract at or past its stop rule, `duration_mth ≥ stop_mth()`, reads, but `proj_len()`
 refuses it, naming the point: the stop is the product's rule, not the table's. So does a
@@ -241,10 +246,12 @@ extract should not carry, as `SPIA_US_SEC` refuses it. The rule reads the lives 
 guarantee: a joint contract whose dependant is alive at a share of 0 projects, owing
 zeros, which is no wrong number. So does a point the contract does
 not issue: a life issued below `Projection.issue_age_min`, 0, since `PA_UK_S` projects any
-age on the scenario basis, a negative one among them; and a guarantee longer than
-`12 × (omega_age − issue_age_min)` months, 1,380, the longest frame from the start date.
-Each bound is a lower-case Reference, the contract a compiled model's caches will be sized
-from: a frame of at most 1,380 months from the start and the horizon. So does a point read
+age on the scenario basis, a negative one among them; on the table basis a limiting age
+above `Projection.omega_age_max`, 116, the shipped table's last age plus one; and a
+guarantee longer than `12 × (omega_age − issue_age_min)` months, 1,380 as shipped and
+1,392 at the bound, the longest frame from the start date. Each bound is a lower-case
+Reference, the contract the compiled model's caches are sized from: a frame of at most
+1,392 months from the start and the horizon (*The compiled model*). So does a point read
 under a Reference outside its domain, each named, NaN and the infinities outside every one,
 since `PA_UK_S` reads several of them through a `min` or a `max` whose bound comes first,
 which keeps the bound where a NaN meets it, or through a power. Each is held on the points
@@ -253,19 +260,20 @@ that read it:
 | Reference | Read on | Domain | Outside it |
 |---|---|---|---|
 | `issue_age_min` | every point | a whole number of years below `2**53`, 0 or more | a NaN switches the bound off, every comparison with it failing; past `2**53` the compiled model's `long long` cannot hold it |
-| `omega_age` | every point | a whole number of years below `2**53`, above `issue_age_min`; on the table basis at most a year past the last age the table rates each covered life's sex at, `Data.mort_age_last()` at its schedule, plus 1, 116 | it sizes every frame; the table is read at attained ages to `omega_age − 1` |
+| `omega_age` | every point | a whole number of years below `2**53`, above `issue_age_min`; on the table basis at most a year past the last age the table rates each covered life's sex at, `Data.mort_age_last()` at its schedule, plus 1, 116, and at most `omega_age_max` | it sizes every frame; the table is read at attained ages to `omega_age − 1` |
+| `omega_age_max` | the table basis | a whole number of years below `2**53` | the contract's largest limiting age, 116, which the caches are sized from; the scenario basis reads no table and is held to no bound |
 | `expense_maint` | every point | finite, 0 or more | an expense |
 | `inflation_rate` | every point | finite, −1 or more | the inflation factor changes sign each year |
 | `annuitant_adj` | the table basis | finite, 0 or more | a mortality rate is negative; an infinity reads through the cap as certain death |
 | `improve_rate_base` | the table basis | finite, below 1 | the improvement factor raises `1 − f` to a power, which at or below 0 has no real value or changes sign |
-| `improve_flat_age`, `improve_taper_age` | the table basis | finite | the ages the scale is flat to and tapers to 0 at |
+| `improve_flat_age`, `improve_taper_age` | the table basis | finite | the ages the scale is flat to and tapers to 0 at, shipped as floats, 90.0 and 110.0, so that a fraction reads in the compiled model as in modelx |
 | `mort_table_year` | the table basis | a whole number below `2**53` | the calendar year the improvement counts from |
 | `esc_fixed_cap` | fixed escalation | finite, 0 or more | a NaN switches the cap off, every comparison with it failing |
 | `rpi_rate` | `lpi5` and `rpi_catchup` | finite, above −1 | the index, `(1 + r)^a`, is a price level, above 0; the LPI floor, `max(0, r)`, its bound first, reads a NaN as no increase |
 | `esc_lpi_cap` | `lpi5` | finite, 0 or more | the cap, `min(cap, …)`, its bound first, which an infinity switches off |
 
 Each check is a comparison written out, a finite bound the largest float and a whole one
-`2**53`, so that the compiled model runs it in C; the three integer References are printed
+`2**53`, so that the compiled model runs it in C; the four integer References are printed
 through `int()` once they are whole, the others through `float()`, and a whole float,
 `omega_age = 115.0`, is read as the whole number it is. Every accepted edge projects
 through its reports. A value a formula computes past the floats from References and
@@ -284,9 +292,12 @@ it reaches it, after projecting the points before it, so `run_sec.py --block` as
 point for its frame before it projects any, and stops before it prints anything.
 
 The mortality table is checked before a value of it is read, in `Data.mort_sexes`, which
-every array, extent and schedule of it asks first: each age a whole number, each sex M or
-F, each sex running over the table's ages, 50 to 115, one row an age, without a gap or a
-repeat, and each rate a number from 0 to 1. A key is read by its
+every array, extent and schedule of it asks first: each age a whole number below `2**53`
+in size, checked before the ages are cast to int64, which would cast a larger float
+without a word, each sex M or F, each sex running over the table's ages, 50 to 115, one
+row an age, without a gap or a repeat, the gaps found in one pass over the ages each sex
+holds, so that a key far from the rest costs no more than the rows, and each rate a
+number from 0 to 1. A key is read by its
 value, so an age written `65.0` is 65. Each refusal names the file, the column and the lines
 at fault: the check reads the file as it stands, one read that `PA_UK_S`'s reader then
 sorts. A read below the table's first age, a life issued younger than 50 on the table
@@ -378,16 +389,18 @@ which walks the year before in ascending order, a cell a month, and returns its 
 month's step, the same float, so that a compiled run's chains fit its stack (*The
 compiled model*). On a model just read, a cold call in the frame's last month runs one
 cell a month back to its policy year's first month, two cells a year before that, back to
-`t_entry()`'s year, and at most 12 cells more, at each shape's longest cover, 1,380 months
-from the start, now, and as deep 120 months on, which the full grid runs: on the scenario
-basis every life issued at 0; on the table basis every life issued at 50, the table's
-first age, whose age stop at 780 months a guarantee of 1,380 months, which `proj_len()`
-accepts, carries to the longest frame. There the chain back to `t_entry()` is 239 cells,
-11 within the last policy year and two in each of the 114 before it, and the deepest call
-a projection makes, a cold `cum_annuity_all(1379)` or claims total on the table basis,
-runs 251 cells deep, on the worked example's table twin, the RPI points and the rated
-life alike, and 247 and 248 on the scenario basis's two shapes. One cell a month, as the
-in-force step left the chains, `net_cf(1379)` ran 1,391 cells deep through survival there.
+`t_entry()`'s year, and at most 12 cells more, at each shape's longest cover, 1,392 months
+from the start at the contract's largest limiting age, `omega_age_max`, 116, now, and as
+deep 120 months on, which the full grid runs: on the scenario basis every life issued at
+0; on the table basis every life issued at 50, the table's first age, whose age stop at
+792 months a guarantee of 1,392 months, which `proj_len()` accepts at that limiting age,
+carries to the longest frame. There the chain back to `t_entry()` is 241 cells, 11 within
+the last policy year and two in each of the 115 before it, and the deepest call a
+projection makes, a cold `cum_annuity_all(1391)` or claims total on the table basis, runs
+253 cells deep, on the worked example's table twin, the RPI points and the rated life
+alike, and 249 and 250 on the scenario basis's two shapes. At the shipped limiting age,
+115, a year shorter, it ran 251 deep on a chain of 239, and one cell a month, as the
+in-force step left the chains, `net_cf(1379)` ran 1,391 cells deep through survival.
 The bound of 12 is the measure, every monthly cell called cold at every code, met with
 nothing to spare, as `ULB_UK_SEC`'s 16 is: the walk's first month reads the year before's
 opening and the table's first rate, as one cell a month did, and adds nothing. Issued
@@ -462,7 +475,7 @@ time (*The compiled model*); none of `PA_UK_S`'s is gone.
 |---|---|---|---|
 | `duration_mth`, `duration` | `t`, `t // 12` | `duration_mth_init() + t`, `duration_mth(t) // 12` | The policy clock, opened from the model point |
 | `t_entry`, `stop_mth`, `is_active`, new | — | `max(0, −duration_mth_init())`; `max(horizon_mths(), guarantee_mths())`; `0 ≤ duration_mth(t) < stop_mth()` | The first month on the books, the stop rule on the policy clock, and cover |
-| `proj_len` | `max(horizon_mths(), guarantee_mths())`, from the start | `stop_mth() − duration_mth_init()`, from the valuation date; raises at or past the stop, owing nothing, outside the contract's bounds and under any of twelve References outside its domain | The frame starts at the valuation date |
+| `proj_len` | `max(horizon_mths(), guarantee_mths())`, from the start | `stop_mth() − duration_mth_init()`, from the valuation date; raises at or past the stop, owing nothing, outside the contract's bounds and under any of thirteen References outside its domain | The frame starts at the valuation date |
 | `is_payment_mth`, `is_payment_pm`, `annuity_pp`, `annuity_pp_pm` | `(t + 1) % step` and `t % step` on `t` | the schedule keyed by the policy month, read at `duration_mth(t)` | A contract in payment 17 months pays at policy months 17, 20, …, whatever `t` they fall at |
 | `mths_since_payment`, `next_payment_mth` | on `t`; a scan month by month to the frame's end | on the policy month; a closed form, returning the policy month or −1 | The proportion rule's one far read, R2's look-ahead, gone |
 | `claims(t, PROP)` | `inst(next(t))` | `A(policy_year(t)) / m` | On arrears the next payment falls in the policy year of month `t` |
@@ -502,19 +515,18 @@ the start of the month dies in it; so S's point 8 owes nothing after policy mont
 
 ## The compiled model
 
-The model compiles under modelx-cython into C-typed code, as `basiclife/BasicTerm_SC`
-does, and modelx reads and runs the same formulas as before. Compiling changed how each
-cell reads its inputs and spells its codes, and how three of its chains reach back in
-time, and no number: what the model computed on each committed point was frozen before
-the change, and it still computes it, to the last bit (*Tests*, below). Cell by cell, at
-every argument a full modelx sweep evaluates, the compiled model computes what modelx
-computes, bit for bit, on the committed points, on the points of the splice grid, which
-take the branches they do not, under each of the splice's RPIs, on the variants no
-committed row holds, at the contract's longest covers, the 1,380-month guarantee among
-them, where the cap on mortality binds, on every value a decoded column holds, on keys
-written as floats, and on the LPI rows under the RPI they were read from. The compile
-tests hold it so on x86-64, and to 1e-12 relative elsewhere, where no run has shown it
-yet.
+The model compiles under modelx-cython into C-typed code, as `basiclife/BasicTerm_SC` does,
+and modelx reads and runs the same formulas as before. Compiling changed how each cell reads
+its inputs and spells its codes, and how three of its chains reach back in time, and no
+number: what the model computed on each committed point was frozen before the change, and it
+still computes it, to the last bit (*Tests*, below). Cell by cell, at every argument a full
+modelx sweep evaluates, the compiled model computes what modelx computes, bit for bit, on
+the committed points, on the points of the splice grid, which take the branches they do not,
+under each of the splice's RPIs, on the variants no committed row holds, at the contract's
+longest covers, the 1,392-month guarantee at its largest limiting age among them, where the
+cap on mortality binds, on every value a decoded column holds, on keys written as floats,
+and on the LPI rows under the RPI they were read from. The compile tests hold it so on
+x86-64, and to 1e-12 relative elsewhere, where no run has shown it yet.
 
 ### Building it
 
@@ -581,7 +593,12 @@ was at uslib's M23:
   formula reads. A month of death left blank, the life surviving the projection, is −1,
   the sentinel `PA_UK_S`'s `death_mth` returns for it. And where a point's value is one
   its projection cannot use, its flag, `<column>_ok`, is 0, and the accessor that reads
-  the value refuses it, naming the point (*What it refuses*).
+  the value refuses it, naming the point (*What it refuses*). Every element is read by its
+  own value, a flag True where `str()` of it, lowered, is `true`, and a number through
+  `float()`, never through `bool()` or `int()` of the value as pandas types it, since a
+  text value one point holds leaves pandas reading the whole column as text (*The in-force
+  interface*); a test writes such text where no projection reads it and holds every other
+  point's every element, bit for bit.
 - **Text, decoded once.** A C cell holds no text, so `Data` decodes each text column into
   the numbers it selects, for every point at once: `timing`, `escalation_type`,
   `vp_basis` and `mort_basis` into a 0/1 flag of each value a formula branches on,
@@ -592,7 +609,10 @@ was at uslib's M23:
   `mort_schedule_2`, the table's sexes numbered from 1 in sorted order, F 1 and M 2, and 0
   for a sex the table lacks, a blank among them, which `mort_schedule(life)` refuses
   where the table basis first reads it. Each decodes as `PA_UK_S` reads the column, which
-  a test holds on every value a column can hold.
+  a test holds on every value a column can hold, and refuses what `PA_UK_S` refuses in its
+  words, naming the point, as every refusal of a value the model point holds does: `point_id
+  5: invalid timing`. A code a cell does not take, a call's error and no value's, keeps
+  `PA_UK_S`'s constant, `invalid kind`, the chain cells raising nothing else.
 - **The mortality table indexed by integers.** It is `mort_table_array`, by schedule and
   attained age, padded from age 0 so that the index is the age, beside each schedule's own
   first and last ages, `mort_age_first` and `mort_age_last`, 50 and 115 for both sexes as
@@ -678,12 +698,12 @@ single value, or a C array the spec sizes from the contract:
 
 | Compiled to | Cells |
 |---|---|
-| a C array of 1,502 by `t`, of `double`, `long long` or `bint` | the 29 cells of `t` alone: every count, factor and cash flow, the payments to date on every stream and their refusal, the balance, the policy clock, its years, the calendar year and the payment months, the checks' residuals, and the flag `is_active` |
-| a C array of 1,502 by 4 | the eight cells of `t` and a life, each life's rates, survival, deaths and attained age; `pols_if_at(t, timing)`; and `claims(t, kind)` |
-| a C array of 1,382 by policy time, or 1,382 by 4 | the schedule, `is_payment_pm(k)` and `annuity_pp_pm(k)`; the annuitant's payments to date and their refusal; `cum_annuity_pp_all(k)`; and `cum_annuity_pp(k, kind)` |
-| a C array of 117 by policy year, or 117 by 4 | the income and its refusal, and the three chains' openings |
-| a C array of 116 by anniversary | `rpi_index(a)` and `rpi_peak(a)` |
-| a C array of 116 by 4, by attained age and life | `mort_rate_base_at(x, life)` |
+| a C array of 1,514 by `t`, of `double`, `long long` or `bint` | the 29 cells of `t` alone: every count, factor and cash flow, the payments to date on every stream and their refusal, the balance, the policy clock, its years, the calendar year and the payment months, the checks' residuals, and the flag `is_active` |
+| a C array of 1,514 by 4 | the eight cells of `t` and a life, each life's rates, survival, deaths and attained age; `pols_if_at(t, timing)`; and `claims(t, kind)` |
+| a C array of 1,394 by policy time, or 1,394 by 4 | the schedule, `is_payment_pm(k)` and `annuity_pp_pm(k)`; the annuitant's payments to date and their refusal; `cum_annuity_pp_all(k)`; and `cum_annuity_pp(k, kind)` |
+| a C array of 118 by policy year, or 118 by 4 | the income and its refusal, and the three chains' openings |
+| a C array of 117 by anniversary | `rpi_index(a)` and `rpi_peak(a)` |
+| a C array of 117 by 4, by attained age and life | `mort_rate_base_at(x, life)` |
 | a C array of 4 by life | `age_at_entry`, `mort_schedule`, `rating_factor`, `death_mth` and `lives_if_init` |
 | one `bint`, `long long` or `double` | the 35 other cells without a parameter: the point's numbers, decodes and flags, its opening state, the ends of its frame, the frequency and the guarantee, and the four checks |
 | a Python object, or `str` | the eight reporting cells |
@@ -729,32 +749,37 @@ sizes its own, which a test holds to the spec's own derivation:
 
 | Parameters | Size | The largest argument |
 |---|---|---|
-| `t` | 1,502 | 1,500. The longest frame is the longest cover, a life issued at 0, `issue_age_min`, to the age stop at the limiting age, 115, or a guarantee of as many months on the table basis, which `proj_len()` admits, starting 120 months after the valuation date, the furthest ahead `Data.future_horizon_mth` admits as shipped: 12 × (115 − 0) + 120 = 1,500 months, `t = 0 … 1,499`, and its closing time point, 1,500. Nothing reads `t + 1` there |
-| `t`, `life`; `t`, `timing`; `t`, `kind` | 1,502 by 4 | `t` as above, by the two lives, the two timings, and the two kinds and the total. Every 2-D cache of a model shares one inner width, the widest, the kinds' four: Cython's unpickle code converts them with one function, and two widths are refused by gcc 14, as uslib's `WholeLife_US_SEC` found (USLIB-SEC-PLAN.md §7.2) |
-| `k`; `k`, `kind` | 1,382; 1,382 by 4 | 1,380, the stop rule's policy month on the longest frame, 12 × (115 − 0), the payments to date's closing key; the schedule is read to 1,379 |
-| `y`; `y`, `life` | 117; 117 by 4 | 116, the policy year of the longest frame's closing time point, 1,380 months from the start, whose opening the three chains read; the income is read to 115. No headroom: 116 is the largest a frame reaches |
-| `a` | 116 | 114, the anniversary of the income's last policy year, read by the index and the peak |
-| `x`, `life` | 116 by 4 | 114, the last attained age below the limiting age, read by the mortality table's one reader from an issue age of 0, below which the reader refuses the age by name |
+| `t` | 1,514 | 1,512. The longest frame is the longest cover, a life issued at 0, `issue_age_min`, to the age stop at the contract's largest limiting age, `omega_age_max`, 116, or a guarantee of as many months on the table basis, which `proj_len()` admits at that limiting age, starting 120 months after the valuation date, the furthest ahead `Data.future_horizon_mth` admits as shipped: 12 × (116 − 0) + 120 = 1,512 months, `t = 0 … 1,511`, and its closing time point, 1,512. Nothing reads `t + 1` there |
+| `t`, `life`; `t`, `timing`; `t`, `kind` | 1,514 by 4 | `t` as above, by the two lives, the two timings, and the two kinds and the total. Every 2-D cache of a model shares one inner width, the widest, the kinds' four: Cython's unpickle code converts them with one function, and two widths are refused by gcc 14, as uslib's `WholeLife_US_SEC` found (USLIB-SEC-PLAN.md §7.2) |
+| `k`; `k`, `kind` | 1,394; 1,394 by 4 | 1,392, the stop rule's policy month on the longest frame, 12 × (116 − 0), the payments to date's closing key; the schedule is read to 1,391 |
+| `y`; `y`, `life` | 118; 118 by 4 | 117, the policy year of the longest frame's closing time point, 1,392 months from the start, whose opening the three chains read; the income is read to 116. No headroom: 117 is the largest a frame reaches |
+| `a` | 117 | 115, the anniversary of the income's last policy year, read by the index and the peak |
+| `x`, `life` | 117 by 4 | 115, the last attained age below the largest limiting age, read by the mortality table's one reader from an issue age of 0, below which the reader refuses the age by name |
 | `life` | 4 | the two lives, widened to the inner width, so that a life of 0 or 3 is refused by the formula in both engines |
 
 **The limiting age the caches hold.** The sizes are derived from three References, the
-contract: `issue_age_min`, 0, below which `proj_len()` refuses a covered life's issue age;
-`omega_age`, the limiting age, 115; and `Data.future_horizon_mth`, 120, past which `Data`
-refuses an annuity to start. `proj_len()` also refuses a guarantee longer than
-`12 × (omega_age − issue_age_min)` months, 1,380, so that no frame outruns the age stop
-of the youngest life the contract issues. `omega_age` itself is not bounded, as
-`SPIA_US_SEC`'s is not: on the scenario basis, which reads no mortality, the in-force step
-projects any limiting age above `issue_age_min`, and on the table basis a year past the
-table's last age, 116, so a bound at the table's last age plus one, `ULB_UK_SEC`'s
-`omega_age_max`, would refuse frames the in-force step projects. So an `omega_age` above
-115, an `issue_age_min` below 0 or a longer horizon lets a report run past the caches in
-the compiled model alone: `t`, `k` or `y` past its size raises `IndexError`, naming
-nothing, where modelx projects. At 116 every frame fits but one that a guarantee, or on
-the scenario basis the age stop, carries past 1,380 months. Each change needs the sizes
-derived again, as `spec_sec.py` derives them, and a rebuild: `t` raised to
-12 × (`omega_age` − `issue_age_min`) + the horizon + 2, `k` to 12 × (`omega_age` −
-`issue_age_min`) + 2, `y` to `omega_age` − `issue_age_min` + 2, `a` to `omega_age` −
-`issue_age_min` + 1, and `x` to `omega_age` + 1.
+contract: `issue_age_min`, 0, below which `proj_len()` refuses a covered life's issue age,
+and refuses itself below 0; `omega_age_max`, the largest limiting age, 116, the shipped
+mortality table's last age plus one; and `Data.future_horizon_mth`, 120, past which `Data`
+refuses an annuity to start. On the table basis `proj_len()` refuses an `omega_age` above
+`omega_age_max`, after the table's own last age plus one, which is the same 116 on the
+shipped table, so that every limiting age the shipped table admits projects, in modelx as
+compiled, and a longer table's limiting age is held to the bound, as `ULB_UK_SEC`'s is
+(UKLIB-SEC-PLAN.md §6.6, *Record — M10*). It refuses a guarantee longer than `12 ×
+(omega_age − issue_age_min)` months, at most 1,392 there, so no frame the table basis
+projects outruns the caches. The scenario basis reads no mortality, and the in-force step
+projected it at any limiting age, so `proj_len()` holds its `omega_age` to no bound, as
+`SPIA_US_SEC` holds its own to none. There an `omega_age` above 116 projects in modelx, and
+in the compiled model a frame longer than 1,392 months from the start, a covered life issued
+younger than `omega_age` − 116, raises a bare `IndexError`, naming nothing, at its first
+policy month past 1,393, where `k`'s cache ends, before any number past it is computed; a
+frame of 1,392 months or less, every frame at a limiting age of 116 or below and every frame
+of a life issued at `omega_age` − 116 or older, runs as in modelx. A larger bound or horizon
+needs the sizes derived again, as `spec_sec.py` derives them, and a rebuild, `issue_age_min`
+being 0, the least `proj_len()` admits: `t` raised to 12 × (`omega_age_max` −
+`issue_age_min`) + the horizon + 2, `k` to 12 × (`omega_age_max` − `issue_age_min`) + 2, `y`
+to `omega_age_max` − `issue_age_min` + 2, `a` to `omega_age_max` − `issue_age_min` + 1, and
+`x` to `omega_age_max` + 1.
 
 ### Two compiler directives
 
@@ -776,7 +801,7 @@ a static test holds the tool's line to the two and no other.
 ### What a compiled run needs
 
 **Memory, and the release.** A compiled `Projection` ItemSpace is a C struct of
-1,379,464 bytes, the type's basic size, which holds every cell's cache, and deleting it,
+1,390,576 bytes, the type's basic size, which holds every cell's cache, and deleting it,
 `del model.Projection[idx]`, frees nothing by itself: an ItemSpace sits in reference
 cycles, and only Python's cyclic collector frees it. That is why `run_sec.py --block`
 collects after each release, in its frame pass and in its projections (*Run it*, above),
@@ -786,12 +811,13 @@ no ItemSpace but the base alive after each collection.
 **Stack, not recursion limit.** A compiled chain of cells calls C to C, on the C stack,
 which the interpreter's recursion limit does not count, so the compiled model needs no
 limit raised: the deepest call the contract allows runs under a limit of 26. What it needs
-is stack. That call is a cold one in the last month of the longest cover, 1,380 months
-from the start, now or 120 months on: on the scenario basis every life issued at 0, and on
-the table basis every life issued at 50, under a guarantee of 1,380 months. One cell a
-month, as the in-force step left survival and the payments to date, the call ran 1,391
-cells deep in modelx, and compiled with gcc each chain head, cold in an ItemSpace of its
-own, needed 244 to 276 KiB of C stack, measured to 4 KiB: `net_cf` 256 to 276, the
+is stack. That call is a cold one in the last month of the longest cover, now or 120
+months on: on the scenario basis every life issued at 0, and on the table basis every life
+issued at 50, under a guarantee to the limiting age's stop. At the shipped limiting age,
+115, 1,380 months from the start, one cell a month, as the in-force step left survival
+and the payments to date, the call ran 1,391 cells deep in modelx, and compiled with gcc
+each chain head, cold in an ItemSpace of its own, needed 244 to 276 KiB of C stack,
+measured to 4 KiB: `net_cf` 256 to 276, the
 payments to date on every stream, the claims and the balance up to 276, and 33 of the 43
 heads above the 256 KiB the C step allows itself, so that the 1 MiB thread holds on every
 runner, where `Term_UK_SEC`'s cold call needed two to four times as much on CI's Ubuntu
@@ -800,18 +826,24 @@ model's chassis, kept a margin of 1.33 to 1.6 times under 1 MiB on gcc (USLIB-SE
 §7.9, *Record — M23*). So the three chains are blocked by policy year (*What compiling
 changed*, above), and no cell they recurse through builds text. Blocked, the call runs
 251 cells deep in modelx, on a chain of 239, one cell a month within its year and two
-cells a year before it, and 12 more, which a test holds. Compiled, every head runs on 52
-to 76 KiB and not on 4 KiB less, issued now and 120 months on alike: on the table basis,
+cells a year before it, and 12 more; at the contract's largest limiting age, 116, 1,392
+months from the start, 253 on a chain of 241, which a test holds. Compiled, at 115,
+every head runs on 52 to 76 KiB and not on 4 KiB less, issued now and 120 months on
+alike: on the table basis,
 survival, the payments to date on every stream and the claims on 76, `net_cf` and the
 obligation measure on 72, the balance on 64 and the survival check's residual on 56; on
 the scenario basis, every head on 52 to 64. A test runs each shape at its longest cover
 in a thread of 1 MiB, the stack Windows gives a program's main thread unless the program
 is linked for more, and again on the main thread, which is where `run_sec.py --cython`
-runs, and records the smallest of its sizes each ran on: 96 KiB here, and not 64. MSVC's
-frames may be larger than gcc's, and the `cython_uk` CI job, which runs the test on
-Windows too, is the check on them. The export recurses in Python instead: the same call
-needs a recursion limit of 517 there, its `net_cf` 496 to 507, and the reports and checks,
-which run in ascending `t`, need 128, so `sample_sec.py` sets 3,000, four times the first
+runs, at the contract's largest limiting age, and records the smallest of its sizes each
+ran on: 96 KiB here, and not 64. MSVC's frames may be larger than gcc's, and the
+`cython_uk` CI job, which runs the test on Windows too, is the check on them. That test
+holds the stack the call needs, not the blocking: with the three chains left one cell a
+month the call runs on 384 KiB here and not on 256, well inside 1 MiB, and passes it, so
+only the depth test, which counts the cells a cold call runs through in modelx, holds the
+chains to their blocks. The export recurses in Python instead: the same call at 116 needs
+a recursion limit of 521 there, its `net_cf` 500 to 507, and the reports and checks, which
+run in ascending `t`, need 128, so `sample_sec.py` sets 3,000, four times the first
 rounded up to the thousand.
 
 ### What it refuses
@@ -828,24 +860,29 @@ in a cell typed `long long` or `double` as in a Python one.
 
 A message prints each Reference as the compiled model holds it: a rate as a float, and an
 age or a year as an int. So a rate written as an int, 2, gives one message in both
-engines. An int Reference, `issue_age_min`, `omega_age`, `mort_table_year`,
-`improve_flat_age` or `improve_taper_age`, is a C `long long` compiled, and a float set on
-it is truncated as it is set, 115.5 to 115, where modelx refuses 115.5 as not a whole
-number, and a NaN or an infinity cannot be set on it at all; so set each as a whole
-number.
+engines. An int Reference, `issue_age_min`, `omega_age`, `omega_age_max` or
+`mort_table_year`, is a C `long long` compiled, and a float set on it is truncated as it
+is set, 115.5 to 115, where modelx refuses 115.5 as not a whole number, and a NaN or an
+infinity cannot be set on it at all; so set each as a whole number. The improvement ages,
+which may be any finite number, ship as floats, 90.0 and 110.0, so that the compiled model
+holds them as `double` and a fraction set on either reads as in modelx.
 
 - What `Data` cannot decode or hold, when the vector is first read, naming every point or
   line at fault: a `point_id` that is not a whole number, or is `2**53` or more in size; an
   age `2**53` or more in size, which an int64 vector cannot hold whole and numpy would cast
-  without a word; a mortality age as large, before the table is cast; and, as since the
-  in-force step, each malformed value of a column every point reads. A key written as a
+  without a word; a mortality age as large, or 1e300, before the table is cast, and a key
+  far from the rest, `2**53 − 1`, as a gap at once; and, as since the in-force step, each
+  malformed value of a column every point reads. A key written as a
   float, an age `65.0`, is read by its value, as `PA_UK_S`'s lookups match it.
 - A value only some points read, by the point that reads it, naming that point, as it
   first reads the value (*The in-force interface*): `point_id 8: rating_multiplier must be
   a number, and a finite one, 1 or more, on the table basis, which reads it; it is not`,
-  on the rated single life written at 0.9. A start year or a month of death that `int()`
-  cannot read below `2**53` in size is refused the same way, by its accessor, on a point
-  that reads it.
+  on the rated single life written at 0.9. A start year that is not a number below
+  `2**53` in size, read through `float()`, and a month of death `2**53` or more in size, are
+  refused the same way, by its accessor, on a point that reads it. A text value of
+  `timing`, `escalation_type`, `vp_basis` or `mort_basis` that is none of `PA_UK_S`'s, a
+  proportionate payment in advance and a fixed escalation past its cap are refused in
+  `PA_UK_S`'s words, naming the point, by the decode or the cell that reads them.
 - A key beyond the mortality table, by the one cell that reads it, where `PA_UK_S`'s
   lookup raised `KeyError`: `point_id 2: mort_table.csv has no rate at attained age 49`,
   on the worked example's table twin issued at 49, a year younger than the table. No
@@ -857,19 +894,28 @@ number.
   as modelx does (uslib's *Record — M22* form), and the one `except` around both turns it
   into the in-force step's message, naming the point and the Reference, in either engine.
   Only a rate past every rate of inflation reaches them: a test does, under an
-  `inflation_rate` and an `rpi_rate` of 1e200 and an `improve_rate_base` of −1e200.
+  `inflation_rate` and an `rpi_rate` of 1e200 and an `improve_rate_base` of −1e200. And
+  each power checks its result, as at stage E, so that a base that is NaN or an infinity,
+  which `proj_len()` refuses as a Reference before any report reaches a power, is refused
+  by the power too on a direct call, in both engines.
+- An `omega_age` above `omega_age_max` on the table basis, by `proj_len()`, which only a
+  mortality table longer than the shipped one, or the bound lowered, can bring about:
+  `point_id 2: omega_age, 116, is above omega_age_max, 115, on the table basis`, under a
+  bound lowered to 115.
 - A timing, a kind or a life no cell takes, by the cell, as `PA_UK_S`'s are: `invalid
   timing`, `invalid kind` and `invalid life`. Each 2-D cache is 4 wide, so a code inside it
   that its cell does not take, a timing past `BEF_DECR`, a kind of the other cell or a
   life of 0 or 3, reaches the formula, which refuses it in both engines, as a test holds.
 
-An argument outside a cache raises `IndexError` in the compiled model alone: `net_cf(1502)`
+An argument outside a cache raises `IndexError` in the compiled model alone: `net_cf(1514)`
 or `net_cf(-1)`, which modelx answers with 0, the month being outside the frame;
 `pols_if_at(t, 4)`, `claims(t, 4)`, `cum_annuity_pp(k, 4)` and `lives_if(t, 4)`, which
 modelx refuses as codes it does not take; and a key, a policy year, an anniversary or an
-attained age past its cache, `cum_annuity_pp(1382, ANNUITANT)`, `annual_income(117)`,
-`lives_if_py(117, 1)`, `rpi_peak(116)` or `mort_rate_base_at(116, 1)`, which modelx computes
-or refuses as at any other. No frame the contract allows reads any of them. An `idx` past
+attained age past its cache, `cum_annuity_pp(1394, ANNUITANT)`, `annual_income(118)`,
+`lives_if_py(118, 1)`, `rpi_peak(117)` or `mort_rate_base_at(117, 1)`, which modelx computes
+or refuses as at any other. No frame the table basis projects reads any of them, nor a
+frame on the scenario basis at a limiting age of 116 or below (*The sample and the
+spec*). An `idx` past
 the last row is refused in both, with an `IndexError` at the first read of a vector, and
 `Projection[-1]` reads every vector at its last element in both, so it is the table's last
 point, under that point's own `point_id()`; the compiled refusal test holds both against
@@ -917,7 +963,9 @@ block took 0.04 to 0.06 s, and asking every point for its frame, the runner's fi
 Measured on 2026-11-23 on a machine shared with other work: 4 CPUs (an Intel Xeon at
 2.30 GHz), a 1-minute load average between 1.45 and 3.99 as the runs started; Linux,
 Python 3.13.18 and gcc 13.3.0, with modelx 0.33.0, modelx-cython 0.1.0, Cython 3.3.1,
-numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
+numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`, made before
+`omega_age_max` raised every cache by a year, which grew the ItemSpace's struct by 0.8%,
+from 1,379,464 bytes to 1,390,576.
 
 ## Tests
 
@@ -971,9 +1019,10 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   `duration_mth(500)` evaluates `duration_mth` once, the policy clock being a closed form,
   and every point's reports and checks run under modelx's recursion limit lowered to 40,
   which a recursion backward over the frame would exceed. Each chain, called cold in the
-  last month at each shape's longest cover, runs one cell a month back to its policy
-  year's first month, two cells a year back to `t_entry()`'s, and at most 12 more, each
-  shape's deepest as measured, 251 on the table basis's; each year's opening, of survival
+  last month at each shape's longest cover, at the contract's largest limiting age, runs
+  one cell a month back to its policy year's first month, two cells a year back to
+  `t_entry()`'s, and at most 12 more, each shape's deepest as measured, 253 on the table
+  basis's; each year's opening, of survival
   and of the payments to date on either clock, is the step of the year's last month, by
   its bits; the schedules at the valuation date's key are S's, bit for bit, and a
   contract valued in its last month runs its reports within 10 cells; no computed cell
@@ -987,23 +1036,28 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   a month on with the state it carries there, continues its own flows.
 - **Validation and regeneration**: each malformed row of the table, 70 cases, is refused
   naming its point, on the committed labels and on an extract's; each value no projection
-  can use in a column only some points read, 15 cases, is refused by a point that reads
-  it, naming it, on an extract's labels, where a point that never reads it projects as on
-  the committed table, in both reports, exactly; each text value no decode knows raises
-  `PA_UK_S`'s message; the horizon is a Reference; a point at its
-  stop, one owing nothing and one the contract does not issue are refused by
-  `proj_len()`, each bound just past it and each moved past a committed point, and
-  `run_sec.py --block` refuses such a point before printing anything; each of twelve
-  References is held to its domain, 105 cases, each edge accepted and its reports
-  projected, and the nearest value past it refused, NaN, the infinities, a fraction,
-  `2**53` and a whole float too; the income, the payments to date, the three powers and
-  the maintenance are refused where they would pass the floats, naming the References;
-  each window of `Data`'s is held at both its ends; each mortality table a
-  reader cannot read, 13 cases, is refused naming its lines, and a read beyond it naming
-  the point; keys written as floats read as `PA_UK_S` reads them; the edges of the
-  interface and of each bound are accepted; every state `PA_UK_S` reaches, as shipped,
-  with the variants and under each RPI, is accepted in payment, but a contract owing
-  nothing, which is refused; and the committed table is what `PA_UK_S` generates.
+  can use in a column only some points read, 16 cases, is refused by a point that reads it,
+  naming it, on an extract's labels, where a point that never reads it projects as on the
+  committed table, in both reports, exactly, and every other point reads every `Data` vector
+  as on the committed table, bit for bit, start years written as floats beside a text one
+  among them; an overlap written as text on the single lives leaves every joint contract's
+  read as committed; each text value no decode knows raises `PA_UK_S`'s message, naming the
+  point; the horizon is a Reference; a point at its stop, one owing nothing and one the
+  contract does not issue are refused by `proj_len()`, each bound just past it and each
+  moved past a committed point, and `run_sec.py --block` refuses such a point before
+  printing anything; each of thirteen References is held to its domain, 119 cases, each edge
+  accepted and its reports projected, and the nearest value past it refused, NaN, the
+  infinities, a fraction, `2**53` and a whole float too, `omega_age_max` bounding the table
+  basis alone; the income, the payments to date, the three powers and the maintenance are
+  refused where they would pass the floats, naming the References, the payments to date at
+  an anniversary as in any other month; each power refuses a base that is no number on a
+  direct call; each window of `Data`'s is held at both its ends; each mortality table a
+  reader cannot read, 16 cases, an age of `2**53`, of 1e300 and one far from the rest among
+  them, is refused naming its lines, and a read beyond it naming the point; keys written as
+  floats read as `PA_UK_S` reads them; the edges of the interface and of each bound are
+  accepted; every state `PA_UK_S` reaches, as shipped, with the variants and under each RPI,
+  is accepted in payment, but a contract owing nothing, which is refused; and the committed
+  table is what `PA_UK_S` generates.
 - **The product's own facts**: the two clocks on the shipped points; the committed rows
   continuing their S points at the shipped assumptions but for inflation, and the three
   read under an RPI of their own continuing S under it, the two LPI rows projected under
@@ -1038,9 +1092,12 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   table states, and each parameterless cell returns a Python number; each label returns
   its column as read or refuses what is not its codes; `spec_sec.py`'s sizes and
   `sample_sec.py`'s recursion limit are what their comments derive, and the sample traces
-  `sex` on a blank; `run_sec.py --cython` rebuilds exactly when a source is newer; and a
+  `sex` on a blank; `run_sec.py --cython` rebuilds exactly when a source is newer; a
   value the vectors cannot hold, a timing, a kind or a life no cell takes, a kind of each
-  cell in the other's among them, is refused.
+  cell in the other's and a third life's month of death among them, is refused; each
+  refusal moved off a chain computes its chain's value, by `float.hex`, at every key of
+  every committed point; and C4's sweep and its `also` ask every cell that takes a code
+  at every code it takes.
 - **C2, the fingerprint**: every committed point computes what the model computed when
   its E step ended, every cell at every argument, frozen at the end of the module by
   `tools/gen_sec_fingerprint.py` before the C step changed anything.
@@ -1049,46 +1106,59 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   `tests/test_compiled_conventions_uk.py`, C3, the typing guard, on the declarations, the
   spec and the generated C; C4 on the committed points; and the release. In this model's
   module, C4 on the splice grid under each of its sets of References, the RPI rows and the
-  fixed point 2 under each RPI among them; on the variants no committed row holds, which
-  C2 cannot freeze; at the contract's longest covers, issued now and 120 months on and in
-  payment in their last month, the 1,380-month guarantee among them; where the cap binds,
-  on S's point 8 from policy month 576 to 599; on every value a decoded column holds; and
-  on keys written as floats; the LPI rows under their own RPI, each ItemSpace made after
-  its References are set; the labels; the refusals, message for message, the income, the
-  payments to date and the three powers past the floats among them, each code no cell
-  takes inside the caches, the `IndexError`s past the caches and an `idx` past the table
-  and of −1; each shape's deepest cold call on a 1 MiB thread and on the main thread; a
-  Reference set late, which clears no cache; and `run_sec.py --cython`, which prints what
-  modelx prints.
+  fixed point 2 under each RPI among them; on the variants no committed row holds, which C2
+  cannot freeze; at the contract's longest covers at its largest limiting age, 116, issued
+  now and 120 months on and in payment in their last month, the 1,392-month guarantee among
+  them; where the cap binds, on S's point 8 from policy month 576 to 599; on every value a
+  decoded column holds; and on keys written as floats, each row with the cells and codes no
+  swept cell reads, and every row of each table counted as compared; the LPI rows under
+  their own RPI, each ItemSpace made after its References are set; the labels; the refusals,
+  message for message, the income, the payments to date at an anniversary and the three
+  powers past the floats and on a base that is no number among them, each code no cell takes
+  inside the caches, the `IndexError`s past the caches and an `idx` past the table and of
+  −1; each shape's deepest cold call on a 1 MiB thread and on the main thread; a Reference
+  set late, which clears no cache; and `run_sec.py --cython`, which prints what modelx
+  prints.
 
-Memory is the module's other cost. A swept point holds its cached values and modelx's
-record of what each read, and `PA_UK_S`'s survival check, which rebuilds survival as a
-product over every month before each time point, holds about 110 MB of that record on a
-point on the table basis. So the module's sweeps evaluate the check's residual at every
-25th time point and the frame's close, the whole check running on each splice row as it
-is scanned, released once read; the splice keeps two S points swept at a time. The
-default run, as CI's `sec_uk` job runs it, without the compile tests, 425 tests, peaks at
-2.7 GB of memory, inside the 7 GB of the smallest CI runner, macOS's, and takes 319 s on
-the shared 4-CPU machine under a 1-minute load of 2 to 4, other builds running beside it,
-near the five minutes UKLIB-SEC-PLAN.md U6 budgets (measured at M12; at M11, 410 tests in
-284 s at 2.9 GB). It took 295 s to 330 s at M11, as the machine's load varied, until the
-depth test's shapes issued 120 months on, which run as deep as those issued now, moved to
-the full grid. The largest part is the core's 44 splice cases, about 110 s, each scanned
+Memory is the module's other cost. A swept point holds its cached values and modelx's record
+of what each read, and `PA_UK_S`'s survival check, which rebuilds survival as a product over
+every month before each time point, holds about 110 MB of that record on a point on the
+table basis. So the module's sweeps evaluate the check's residual at every 25th time point
+and the frame's close, the whole check running on each splice row as it is scanned, released
+once read; the splice keeps two S points swept at a time. The default run, as CI's `sec_uk`
+job runs it, without the compile tests, 452 tests, peaks at 2.7 GB of memory, inside the 7
+GB of the smallest CI runner, macOS's, and takes 354 s on the shared 4-CPU machine under a
+1-minute load of 2, a minute past the five minutes UKLIB-SEC-PLAN.md U6 budgets (measured at
+M12, after its review; at M11, 410 tests in 284 s at 2.9 GB). The C step's tests add the
+minute: the cold calls at the contract's largest limiting age, the representation's, the
+refusals moved by point, each held on every other point, and the review's, each the only
+check of what it holds. It took 295 s to 330 s at M11, as the machine's load varied, until
+the depth test's shapes issued 120 months on, which run as deep as those issued now, moved
+to the full grid. The largest part is the core's 44 splice cases, about 110 s, each scanned
 whole, and none is cut: the core-reach test's predicates are coarser than the faults the
 cases are there for, and the review found that cutting by them would lose
-`rpi_high-point2-d24` and `rpi_low-point7-d25`, which catch a fixed escalation compounded
-at the RPI and the LPI's floor dropped. Then the 105 domain cases, about 25 s, each on a
-model just read, every accepted edge projected, and the cold calls, about 20 s, a read of
-the model afresh for each of 39, which the depth test and the chain-text test share
-rather than make twice.
+`rpi_high-point2-d24` and `rpi_low-point7-d25`, which catch a fixed escalation compounded at
+the RPI and the LPI's floor dropped. Then the 105 domain cases, about 25 s, each on a model
+just read, every accepted edge projected, and the cold calls, about 20 s, a read of the
+model afresh for each of 39, which the depth test and the chain-text test share rather than
+make twice.
 
 The compile tests run where modelx-cython and a C compiler are installed, in a bare
-`pytest` too, and in the `cython_uk` job's `pension_annuity` shard. On the full grid they
-took 989 s here, 604 s of it C4 on the full splice grid, at a peak of 3.1 GB. C4
-sweeps ten rows at a time, and the contract's extremes one at a time, since a sweep's
-record grows as the square of the frame: all eighteen in one read took the module past
-6 GB, and the kernel ended it. The whole module on the full grid, its compile tests
-among them, ran 812 tests in 2,102 s here, at a peak of 4.5 GB.
+`pytest` too, and in the `cython_uk` job's `pension_annuity` shard. A bare `pytest` of the
+module, the build and its twelve compile tests among its 464, took 870 s here at a peak
+of 4.4 GB, under a load of 2, and the review measured 864 s and 4.5 GB under a load of 4
+to 5: the compile tests are 515 s of it, the build's 100 among them, and the peak is the
+splice's swept models still held as C4 sweeps its chunks. The shard, as the `cython_uk`
+job runs it on the full grid, took 986 s here, 585 s of it C4 on the full splice
+grid, at a peak of 3.1 GB. C4 sweeps ten rows at a time, and the contract's extremes
+one at a time, since a sweep's record grows as the square of the frame: all eighteen in
+one read took the module past 6 GB, and the kernel ended it. They are not cut by default.
+U6's five minutes budget the `sec_uk` legs, which install no compiler and skip them, and
+the `cython_uk` legs run them alone. A cut to the rows each set of References moves
+would drop the fixed point 2's rows under the two RPIs, which the RPI moves not at all,
+about 5 s; the rest is the splice grid's branches the committed points
+miss, the caches' ends, the variants C2 cannot freeze and the decoded values, each the
+only compiled check of what it reaches.
 
 ```bash
 python -m pytest tests/test_pension_annuity_uk_sec.py -q

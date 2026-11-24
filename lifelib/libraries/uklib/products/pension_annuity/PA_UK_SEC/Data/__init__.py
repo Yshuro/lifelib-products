@@ -104,23 +104,23 @@ imported, before anything is read.
 
 **The vectors.** The readers return what the files hold, and no
 :mod:`~.PA_UK_SEC.Projection` cell but ``model_point``, a reporting cell, reads them. The
-others read the arrays below instead, one element at a time, a model point's attribute
-being the element at its position, ``data.annual_income()[idx]``. That is what lets the
-model compile to C, as ``basiclife.BasicTerm_SC`` does: each array is a numpy vector or
-table of int64 or float64, which compiles to a typed memoryview, never one of bools,
-objects or text, and each check of a table is an int. Each model point column a projection
-reads is one vector of the column's own name, read element by element, each value by its
-own value whatever type pandas gives the column (USLIB-SEC-PLAN.md R6): ``float()`` of an
-amount or a rate, ``int()`` of the ``float()`` of an age, a month count or a year, so that
-``2026.0`` written as text is 2026, and a flag True where ``str()`` of its value, lowered,
-is ``true``. A column that holds one value pandas cannot read as a number or a flag,
-which a point that never reads the column may hold, is read as text throughout, and
-there ``bool("False")`` is True and ``int("2026.0")`` refuses, so no element is read
-through either. Where a point's value can be one its projection cannot use, a 0/1 vector
-beside it, ``<column>_ok``, says whether it is usable. The text the projection branches on is decoded into 0/1 flags, each with a
-``has_*`` flag that says the value is one :mod:`~.PA_UK_S` names. The mortality table,
-keyed by sex and age, is tabled by schedule, one per sex, and age, padded from age 0, each
-point carrying the schedule of each life's sex:
+others read the arrays below instead, one element at a time, a model point's attribute being
+the element at its position, ``data.annual_income()[idx]``. That is what lets the model
+compile to C, as ``basiclife.BasicTerm_SC`` does: each array is a numpy vector or table of
+int64 or float64, which compiles to a typed memoryview, never one of bools, objects or text,
+and each check of a table is an int. Each model point column a projection reads is one
+vector of the column's own name, read element by element, each value by its own value
+whatever type pandas gives the column (USLIB-SEC-PLAN.md R6): ``float()`` of an amount or a
+rate, ``int()`` of the ``float()`` of an age, a month count or a year, so that ``2026.0``
+written as text is 2026, and a flag True where ``str()`` of its value, lowered, is ``true``.
+A column that holds one value pandas cannot read as a number or a flag, which a point that
+never reads the column may hold, is read as text throughout, and there ``bool("False")`` is
+True and ``int("2026.0")`` refuses, so no element is read through either. Where a point's
+value can be one its projection cannot use, a 0/1 vector beside it, ``<column>_ok``, says
+whether it is usable. The text the projection branches on is decoded into 0/1 flags, each
+with a ``has_*`` flag that says the value is one :mod:`~.PA_UK_S` names. The mortality
+table, keyed by sex and age, is tabled by schedule, one per sex, and age, padded from age 0,
+each point carrying the schedule of each life's sex:
 
 ==================================  =======  ================  ===========================
 Cells                               dtype    Shape             From
