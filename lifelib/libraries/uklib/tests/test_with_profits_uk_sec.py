@@ -152,8 +152,8 @@ SPEC = SEC_SPECS[SEC]
 # variant the spec adds to S's table.
 S_POINTS = (1, 2, 3, 4, 5, 6, 7)
 
-# Six more S points, in the splice's copy of S's table and never in the committed one, each
-# one of S's points changed so as to reach what S's own points cannot:
+# Eleven more S points, in the splice's copy of S's table and never in the committed one,
+# each one of S's points changed so as to reach what S's own points cannot:
 #
 # 8, S point 1 as a woman: the mortality table's female rows, which no S point reads;
 # 9, S point 2 at -40%, the crash the S module uses: the corridor's ceiling binding a
@@ -172,7 +172,12 @@ S_POINTS = (1, 2, 3, 4, 5, 6, 7)
 #   bound, the guarantee less the asset share, from 71;
 # 16, S point 7 at 5% with a 6% withdrawal: under the rule its units run out at policy
 #   month 287, so its frame ends the month before a declaration, the bonus rate's frame
-#   bound at its edge.
+#   bound at its edge;
+# 17, S point 4 withdrawing a little more: its units run out at policy month 779, the last
+#   month of its cover, issued at 55 to 120, which the exhaustion search reads last;
+# 18, S point 4 withdrawing a little more again: its units run out a month earlier, at 778.
+#   Each rate is the middle of the window of rates whose units run out in that month,
+#   measured at M14 by bisection; neither moves with the main set's References.
 #
 # Each variant is (the S point it changes, the columns it changes); the policy_id keeps the
 # generated ids apart.  11 to 13 are new business, so their twins are cases too: an issue
@@ -189,6 +194,8 @@ VARIANTS = {
     15: (1, {"policy_id": "WP-900015", "fund_return": 0.12, "bonus_rate": 0.20}),
     16: (7, {"policy_id": "WP-900016", "fund_return": 0.05, "bonus_rate": 0.02,
              "wd_rate": 0.06}),
+    17: (4, {"policy_id": "WP-900017", "wd_rate": 0.0311508}),
+    18: (4, {"policy_id": "WP-900018", "wd_rate": 0.0311735}),
 }
 
 # T2's months under the main set of References (UKLIB-SEC-PLAN.md §6.5), S months, each
@@ -216,7 +223,7 @@ SPLICE_MTHS = {
 }
 VARIANT_MTHS = {8: (65, 119, 779), 9: (61, 65, 66, 71, 92, 115, 116, 119, 153, 154),
                 10: (71, 119), 11: (1, 441, 442, 443), 12: (1, 196, 197, 198, 302),
-                13: (1, 100, 101, 102, 600), 15: (71, 85)}
+                13: (1, 100, 101, 102, 600), 15: (71, 85), 17: (777,), 18: (777,)}
 
 # The second set's months, with the bonus rule on: each declaration the rule sets, the
 # first in S's frame at 83 on the bonds in force and at 11 and 23 on the bonds issued at the
@@ -307,6 +314,8 @@ CORE_SPLICES = {
     ("derived", 5, 299, "main"): "the endowment's maturity, a one-row frame",
     ("derived", 7, 100, "main"): "the bond variant past its charge cap",
     ("derived", 7, 266, "main"): "the bond variant's last month, floored and exhausted",
+    ("derived", 17, 777, "main"): "units running out in the last month of cover",
+    ("derived", 18, 777, "main"): "units running out a month before the last of cover",
     ("derived", 8, 119, "main"): "a woman on her guarantee date",
     ("derived", 9, 92, "main"): "the -40% crash, the corridor's ceiling binding",
     ("derived", 10, 71, "main"): "a bond on the pension tax basis",
@@ -1387,6 +1396,35 @@ def test_the_exhaustion_search_reads_the_units_to_their_exhaustion_and_no_furthe
         assert p.units(p.proj_len()) <= 1e-9 < p.units(p.proj_len() - 1), label
         exhausting += 1
     assert exhausting >= 4
+
+
+# The rows whose units run out at the end of cover, as {S variant: (the policy month they
+# run out in, the frame from the S month 777 the row is restated at)}: in the last month of
+# cover, 779, which the search reads last, and a month before it.
+LAST_COVERED = {17: (779, 2), 18: (778, 1)}
+
+
+def test_the_exhaustion_search_reads_the_last_month_of_cover(spliced, splice_records):
+    """A bond whose units run out in the last month of its cover is encashed the month
+    before, as ``WP_UK_S`` encashes it.
+
+    The search runs over the months of cover, to policy month ``cover_end_mth() - 1``, its
+    last read: a search a month short reads that month's run-out as "never", and projects
+    the bond to the limiting age, its frame a month longer, its survivors paid the
+    limiting age's benefit rather than encashed.  So on the main set of the splice, two
+    variants of S's withdrawing bond, issued at 55 to 120, whose units run out in policy
+    month 779, the last of cover, and in 778 (:data:`LAST_COVERED`), restated in force at
+    777, each continue S's projection in every cell (T2, the splice test's core cases, and
+    C4 on the splice grid), and each ends its frame the month before its units run out, a
+    forced encashment: two months, and one.
+    """
+    sec = spliced["main"][1]
+    for variant, (month, frame) in LAST_COVERED.items():
+        p = _row(sec, "derived", variant, 777)
+        assert p.cover_end_mth() == 780, variant
+        assert p.fund_exhaust_mth() == month, variant
+        assert p.proj_len() == frame and p.is_forced_encashment(), variant
+        assert p.units(frame) <= 1e-9 < p.units(frame - 1), variant
 
 
 def test_the_policy_clock_is_a_closed_form_and_no_recursion_runs_backward(sec_read):

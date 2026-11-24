@@ -1064,20 +1064,22 @@ contractual bound by a 20% bonus on a 12% return, two variants of S's points.
   266; and the limiting age's last month, 779 — continues the S projection in every cell
   the two share but the frame's length, S's accessors of the columns its frame opens with,
   and the declaration month, a valuation month here, and in `result_cf`, `result_payout`
-  and `result_pols`, to 1e-9 relative with no absolute floor, the residuals and the smoothing
-  cost of an exit, a difference rounding about 0 where the payout is the asset share, at
-  1e-9. `WP_UK_S`'s own in-force rows are spliced as twins, at 60 and 240. The splice runs
-  on two sets of References: an estate distribution on, which ships off, and the MVR
-  deterrent and the guarantee-imminent factor set apart from the factors they ship equal
-  to; and the same with the bonus rule on, on fewer rows, its own months about the rule's
-  declarations. Inflation, the input on the valuation clock, is 0 in both. Variants of S's
-  points, in a copy of S's table that is never committed, reach what S's own cannot: a
-  female life, a −40% crash for the corridor's ceiling, the pension tax basis on a bond,
-  and three bonds issued at the valuation date, at 5% with and without withdrawals and at
-  −15% without, whose charges stop at 442, 197 and 101. The default run takes a core of the
-  grid; a test asserts the core reaches every branch, opening-state column, kind of
-  valuation month and side of every `min` and `max` the full grid reaches. The binding
-  mortality cap is held by a test of its own, under a mortality factor of 2.
+  and `result_pols`, to 1e-9 relative with no absolute floor, the residuals and the
+  smoothing cost of an exit, a difference rounding about 0 where the payout is the asset
+  share, at 1e-9. `WP_UK_S`'s own in-force rows are spliced as twins, at 60 and 240. The
+  splice runs on two sets of References: an estate distribution on, which ships off, and
+  the MVR deterrent and the guarantee-imminent factor set apart from the factors they ship
+  equal to; and the same with the bonus rule on, on fewer rows, its own months about the
+  rule's declarations. Inflation, the input on the valuation clock, is 0 in both. Variants
+  of S's points, in a copy of S's table that is never committed, reach what S's own
+  cannot: a female life, a −40% crash for the corridor's ceiling, the pension tax basis on
+  a bond, three bonds issued at the valuation date, at 5% with and without withdrawals and
+  at −15% without, whose charges stop at 442, 197 and 101, and two withdrawing bonds whose
+  units run out in the last month of cover, 779, which the exhaustion search reads last,
+  and in 778, each restated at 777 and encashed the month before. The default run takes a
+  core of the grid; a test asserts the core reaches every branch, opening-state column,
+  kind of valuation month and side of every `min` and `max` the full grid reaches. The
+  binding mortality cap is held by a test of its own, under a mortality factor of 2.
 - **Future new business**: the bond and the endowment issued 1, 12 and 120 months on, and
   the variants 13 months on, each S's projection moved on, with zeros before issue and no
   table read there.
