@@ -3780,8 +3780,8 @@ def test_each_history_column_is_read_from_the_model_point(s_model, tmp_path, col
                 setattr(sec.Projection, ref, value)
             declared = [_rule_from(_point(sec, row), rate)
                         for row, rate in ((label, mine), (twin.index[0], theirs))]
-            assert declared[0][0] == declared[0][1], declared
-            assert declared[1][0] == declared[1][1], declared
+            assert _declared(*declared[0]), declared
+            assert _declared(*declared[1]), declared
             assert declared[0][0] != declared[1][0], declared
             sec.close()
             sec = None
@@ -3799,12 +3799,54 @@ def test_each_history_column_is_read_from_the_model_point(s_model, tmp_path, col
                 model.close()
 
 
+def _supportable(p, d):
+    """The bonus rule's supportable rate at ``p``'s declaration month ``d``, computed here as
+    technical-notes.md states the rule, never read from ``bonus_supportable``.
+
+    From what the month opens with, the projected asset share and the guarantee, each the
+    close of the month before, or the opening state in the first month on the books; the
+    point's fund return and premium; and the References: the asset share grown ``m``
+    years, the bond's ``bonus_horizon`` or the endowment's term less the policy year the
+    declaration closes, at the return net of the management charge and of the guarantee
+    charge, which stops once the charges taken reach ``guar_charge_cap`` of that asset
+    share, with each year's premium, paid at the year's start, accumulated at it to the
+    horizon; ``guar_fill_target`` of it; and the level rate that grows the guarantee to
+    that.
+    """
+    first = d == p.t_entry()
+    opened = p.asset_share_init() if first else p.asset_share(d - 1)
+    if first:
+        guarantee = (p.units_init() * p.unit_price_init() if p.is_unitised()
+                     else p.sum_assured() + p.attaching_bonus_init())
+    else:
+        guarantee = p.guar_benefit_pp(d - 1)
+    taken = p.guar_charge_cum_pp_init() if first else p.guar_charge_cum_pp(d - 1)
+    charge = (0.0 if opened > 0.0 and taken >= p.guar_charge_cap * opened
+              else p.guar_charge_rate_base)
+    year = (p.duration_mth_init() + d) // 12 + 1
+    m = int(p.bonus_horizon) if p.is_unitised() else max(1, p.policy_term() - year)
+    net = p.fund_return() - p.amc_rate - charge
+    projected = opened * (1.0 + net) ** m + sum(
+        p.premium_regular_pp() * (1.0 + net) ** k for k in range(1, m + 1))
+    if guarantee <= 0.0 or projected <= 0.0:
+        return 0.0
+    return (p.guar_fill_target * projected / guarantee) ** (1.0 / m) - 1.0
+
+
 def _rule_from(p, prev):
-    """``(the rate p declares first in its frame, the rule's step from prev at it)``."""
+    """``(the rate p declares first in its frame, the rule's step from prev at it)``: the
+    step a share, ``bonus_speed``, of the gap to the supportable rate (:func:`_supportable`,
+    computed here), held within ``bonus_change_cap`` and the rate floored at 0."""
     d = p.declaration_month(0)
-    step = p.bonus_speed * (p.bonus_supportable(d) - prev)
+    step = p.bonus_speed * (_supportable(p, d) - prev)
     step = max(-p.bonus_change_cap, min(p.bonus_change_cap, step))
     return p.bonus_rate(d), max(0.0, prev + step)
+
+
+def _declared(got, want):
+    """Whether a declared rate is the rule's computed here: to 1e-12 relative, the sum of
+    premiums and the power taken here in their own order."""
+    return got == pytest.approx(want, rel=1e-12, abs=0.0)
 
 
 # Rows on which D6's declarations are asserted under the rule, at today's References: the
@@ -3819,7 +3861,10 @@ def test_each_declaration_in_the_frame_is_made_at_today_s_references():
     With the bonus rule on, set on the committed model just read, every declaration in the
     frame is the rule's at today's References, from this model's own asset share and
     guarantee, and the first starts from ``bonus_rate_init()``, the rate declared before
-    the valuation date.  On the row valued in a declaration month (:data:`DECLARED`) that
+    the valuation date.  The rule is computed here from the asset share and the guarantee
+    the declaration month opens with and the References (:func:`_supportable`), never read
+    from the model's own ``bonus_supportable``, so a declaration that read another month's
+    asset share, or a rule that drifted from the notes, parts here.  On the row valued in a declaration month (:data:`DECLARED`) that
     declaration is month 0's own event: its rule reads the opening state, the asset share
     the month opens with being ``asset_share_init()`` and the guarantee the units at the
     opening price, and the price steps by it at ``t = 0``.  On the row valued mid-year the
@@ -3835,7 +3880,7 @@ def test_each_declaration_in_the_frame_is_made_at_today_s_references():
             assert p.declaration_month(0) == d0 and p.is_declaration_month(d0), case
             init = p.bonus_rate_init()
             got, want = _rule_from(p, init)
-            assert got == want != init, (case, got, want, init)
+            assert _declared(got, want) and got != init, (case, got, want, init)
             assert [p.bonus_rate(t) for t in range(d0 + 1)] == [got] * (d0 + 1), case
             opened = p.unit_price_init() if d0 == 0 else p.unit_price(d0 - 1)
             assert p.unit_price(d0) == opened * (1.0 + got), case
@@ -3853,7 +3898,7 @@ def test_under_the_rule_a_first_declaration_s_carries_departs_by_d6(spliced):
     every declaration in its frame by the rule at today's References.  So under the rule
     set the twin of S's worked example in force at 60 parts from S at its first
     declaration, policy month 71, ``t = 11``: S keeps the 2% it carries, and this model
-    declares the rule's step from it.  Before it the row is S's in every cell and report
+    declares the rule's step from it, computed here (:func:`_supportable`).  Before it the row is S's in every cell and report
     but the bonus rate, which every month of the year reads from that declaration (T2,
     :func:`_carried_cut`); the price steps apart there.  The departure ``model-sec.md``
     records.  At the shipped References the rule is off, and the committed twins are S's.
@@ -3866,7 +3911,7 @@ def test_under_the_rule_a_first_declaration_s_carries_departs_by_d6(spliced):
     try:
         assert sp.bonus_rate(71) == sp.bonus_rate_init() == p.bonus_rate_init() == 0.02
         got, want = _rule_from(p, p.bonus_rate_init())
-        assert got == want != 0.02, (got, want)
+        assert _declared(got, want) and got != 0.02, (got, want)
         assert p.unit_price(10) == sp.unit_price(70)
         assert p.unit_price(11) == sp.unit_price(70) * (1.0 + got) != sp.unit_price(71)
     finally:
@@ -7556,7 +7601,8 @@ def test_the_compiled_model_declares_in_the_frame_as_modelx_does(sec_build, tmp_
         for case, d0 in DECLARED:
             p = _row(model, *case)
             got, want = _rule_from(p, p.bonus_rate_init())
-            assert p.bonus_rate(d0) == got == want != p.bonus_rate_init(), case
+            assert p.bonus_rate(d0) == got != p.bonus_rate_init(), case
+            assert _declared(got, want), (case, got, want)
     finally:
         model.close()
     found = _c4_chunks(build, _c4_rows(DECLARING_ROWS), RULE_REFS, tmp_path / "declared")
