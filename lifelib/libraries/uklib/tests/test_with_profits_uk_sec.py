@@ -5340,6 +5340,88 @@ def _decoded_twins(tmp_path):
     return s, twins
 
 
+# The guarantee flags' last column, Data.guarantee_year_last, the mortality table's last age
+# plus 2, which a frame reads only on a table that rates age 0 and ends at 102 or before,
+# issue_age_min lowered to 0: a bond issued at 0 to a year past the table's last age, L + 1,
+# reads in its last month the year after its cover's last, L + 2, its guarantee-imminent
+# window's.  The decoded case on such a table: the shipped table cut to ages 0 to
+# LAST_COLUMN_AGE, each sex's rate at 18 standing at every age below it, and S's bond
+# variant issued at the valuation date at 0, withdrawing nothing, its one guarantee date
+# that year, read with omega_age at LAST_COLUMN_AGE + 1, and on SEC issue_age_min at 0.
+LAST_COLUMN_AGE = 60
+LAST_COLUMN_REFS = {"omega_age": LAST_COLUMN_AGE + 1}
+
+
+def _young_table(last):
+    """An edit of *mort_table.csv* that rates ages 0 to ``last``: the shipped rates to
+    ``last``, and each sex's rate at 18 at every age below it."""
+    def edit(table):
+        kept = table[table["age"] <= last]
+        young = [kept[kept["age"] == 18].assign(age=a) for a in range(18)]
+        return pd.concat([*young, kept], ignore_index=True).sort_values(
+            ["sex", "age"], kind="stable", ignore_index=True)
+    return edit
+
+
+def _last_column_pair(tmp_path):
+    """``(S, SEC, SEC's table)`` on :func:`_young_table`'s table: S's bond variant issued at
+    0 with its one guarantee date at the flags' last column, and its twin, generated from
+    it, each read under the References the case needs (:data:`LAST_COLUMN_AGE`)."""
+    edits = {MORT: _young_table(LAST_COLUMN_AGE)}
+    row = _s_table().loc[[7]].astype({"guarantee_dates": object}).assign(
+        age_at_entry=0, wd_rate=0.0, guarantee_dates=str(LAST_COLUMN_AGE + 2),
+        policy_id="WP-800099")
+    row.index = pd.Index([1], name="point_id")
+    s = mx.read_model(temp_inputs(tmp_path / "s", model_path(TWIN), model_points=row,
+                                  edits=edits), name=_name("last_column_s"))
+    for ref, value in LAST_COLUMN_REFS.items():
+        setattr(s.Projection, ref, value)
+    spec = dataclasses.replace(SPEC, derived=(), future=(), derived_refs={})
+    twins, _ = build_sec_table(spec, s)
+    sec = mx.read_model(_sec_inputs(tmp_path / "sec", twins, edits),
+                        name=_name("last_column_sec"))
+    for ref, value in {**LAST_COLUMN_REFS, "issue_age_min": 0}.items():
+        setattr(sec.Projection, ref, value)
+    return s, sec, twins
+
+
+def _decode_mismatches(case, sp, p, s, sec):
+    """Where SEC point ``p``, of model ``sec``, reads a decoded value otherwise than S point
+    ``sp``, of model ``s``, reads its text: the lines
+    :func:`test_every_decode_is_wp_uk_s_own_on_every_value` reports."""
+    found = []
+    calls = [(cell, ()) for cell in DECODING_CELLS]
+    calls += [(cell, (t,)) for cell in MONTHLY_DECODED for t in range(p.proj_len())]
+    for cell, args in calls:
+        want, got = sp.cells[cell](*args), p.cells[cell](*args)
+        if got != want or type(got) is not type(want):
+            found.append(f"{case}: {cell}{args} is {got!r}, S {want!r}")
+    for cell, read in DECODES.items():
+        want, got = read(sp), p.cells[cell]()
+        if got != want or type(got) is not type(want):
+            found.append(f"{case}: {cell}() is {got!r}, S's text gives {want!r}")
+    years = sp.guarantee_years()
+    for y in range(sec.Data.guarantee_year_last() + 3):
+        got = p.is_guarantee_year(y)
+        if got is not (y in years):
+            found.append(f"{case}: is_guarantee_year({y}) is {got!r}, S's years {years}")
+    rates, mort = s.Data.mort_table()["mort_rate"], sec.Data.mort_table_array()
+    row = p.mort_schedule()
+    for a in range(sec.Data.mort_age_first(), sec.Data.mort_age_last() + 1):
+        want = rates.loc[(sp.sex(), a)]
+        if mort[row, a] != want:
+            found.append(f"{case}: row {row} at age {a} is {mort[row, a]!r}, S's rate "
+                         f"{want!r}")
+    lapses, lapse = s.Data.lapse_table()["lapse_rate"], sec.Data.lapse_table_array()
+    code, last = p.chassis_code(), p.lapse_last_year()
+    assert last == int(lapses.loc[sp.chassis()].index.max()), case
+    for y in range(1, last + 1):
+        if lapse[code, y] != lapses.loc[(sp.chassis(), y)]:
+            found.append(f"{case}: lapse row {code} at year {y} is {lapse[code, y]!r}, "
+                         f"S's {lapses.loc[(sp.chassis(), y)]!r}")
+    return found
+
+
 def test_every_decode_is_wp_uk_s_own_on_every_value(tmp_path):
     """``Data`` decodes every value a column can hold as ``WP_UK_S``'s cells read it.
 
@@ -5357,53 +5439,42 @@ def test_every_decode_is_wp_uk_s_own_on_every_value(tmp_path):
     cells that use them, at the values their points carry; this sees every value, on its
     own.  A mortality array off by one age, a lapse clamp a year early, a guarantee flag a
     year off, or a schedule numbered otherwise than ``Data`` numbers it, parts here.
+
+    And the flags' last column, ``Data.guarantee_year_last``, which a frame reaches only on
+    a table that rates age 0 and ends at 102 or before, ``issue_age_min`` lowered to 0: on
+    a copy of the mortality table cut to ages 0 to :data:`LAST_COLUMN_AGE`, a bond issued at
+    0 to a year past the table's last age, its one guarantee date the flags' last year,
+    which its last month's guarantee-imminent window waits for, is held to ``WP_UK_S`` as
+    every decoded case is, that window among its months.  A flag that stops a year short
+    of the array's width parts here, though no shipped table's frame reads that column.
     """
     s, twins = _decoded_twins(tmp_path)
     sec = None
     found = []
     try:
         sec = mx.read_model(_sec_inputs(tmp_path / "sec", twins), name=_name("decoded"))
-        rates = s.Data.mort_table()["mort_rate"]
-        lapses = s.Data.lapse_table()["lapse_rate"]
-        mort, lapse = sec.Data.mort_table_array(), sec.Data.lapse_table_array()
         labels = s.Data.model_point_table().index
         for (base, changes), key, label in zip(DECODED, point_keys(sec), labels,
                                                strict=True):
-            case = f"S point {base} with {changes}"
-            sp, p = _point(s, label), projection(sec, key)
-            calls = [(cell, ()) for cell in DECODING_CELLS]
-            calls += [(cell, (t,)) for cell in MONTHLY_DECODED for t in range(p.proj_len())]
-            for cell, args in calls:
-                want, got = sp.cells[cell](*args), p.cells[cell](*args)
-                if got != want or type(got) is not type(want):
-                    found.append(f"{case}: {cell}{args} is {got!r}, S {want!r}")
-            for cell, read in DECODES.items():
-                want, got = read(sp), p.cells[cell]()
-                if got != want or type(got) is not type(want):
-                    found.append(f"{case}: {cell}() is {got!r}, S's text gives {want!r}")
-            years = sp.guarantee_years()
-            for y in range(sec.Data.guarantee_year_last() + 3):
-                got = p.is_guarantee_year(y)
-                if got is not (y in years):
-                    found.append(f"{case}: is_guarantee_year({y}) is {got!r}, S's years "
-                                 f"{years}")
-            row = p.mort_schedule()
-            for a in range(sec.Data.mort_age_first(), sec.Data.mort_age_last() + 1):
-                want = rates.loc[(sp.sex(), a)]
-                if mort[row, a] != want:
-                    found.append(f"{case}: row {row} at age {a} is {mort[row, a]!r}, S's "
-                                 f"rate {want!r}")
-            code, last = p.chassis_code(), p.lapse_last_year()
-            assert last == int(lapses.loc[sp.chassis()].index.max()), case
-            for y in range(1, last + 1):
-                if lapse[code, y] != lapses.loc[(sp.chassis(), y)]:
-                    found.append(f"{case}: lapse row {code} at year {y} is "
-                                 f"{lapse[code, y]!r}, S's {lapses.loc[(sp.chassis(), y)]!r}")
+            found += _decode_mismatches(f"S point {base} with {changes}", _point(s, label),
+                                        projection(sec, key), s, sec)
         assert {p.is_unitised() for p in (projection(sec, k) for k in point_keys(sec))} == {
             True, False}
     finally:
         if sec is not None:
             sec.close()
+        s.close()
+    s, sec, _ = _last_column_pair(tmp_path / "last_column")
+    try:
+        sp, p = _point(s, 1), _point(sec, 1)
+        end = p.proj_len() - 1
+        assert p.proj_len() == 12 * (LAST_COLUMN_AGE + 1) and p.duration_mth(0) == 0
+        assert sec.Data.guarantee_year_last() == LAST_COLUMN_AGE + 2
+        assert (p.duration_mth(end) + 13) // 12 == sec.Data.guarantee_year_last()
+        assert sp.guarantee_imminent(end) == sp.guarantee_imminent_factor != 1.0
+        found += _decode_mismatches("the flags' last column", sp, p, s, sec)
+    finally:
+        sec.close()
         s.close()
     assert not found, found[:20]
 
@@ -7524,13 +7595,23 @@ def test_the_compiled_model_computes_what_modelx_computes_on_every_decoded_value
     S's table, go beside the build: modelx sweeps them fully, and the compiled model must
     agree everywhere, each label's text, each decode's code and the mortality row it
     selects, and the guarantee flags of each year, among them, which the committed points,
-    all men, reach only in part.
+    all men, reach only in part.  And the case at the flags' last column, on its cut
+    mortality table, under its References (:func:`_last_column_pair`), whose last month
+    reads that column.
     """
     build = sec_build(SEC)
     s, twins = _decoded_twins(tmp_path)
     s.close()
     folder = compiled_case(build, tmp_path / "decoded", model_points=twins)
     found = compiled_mismatches(build, folder, also=_wp_c4_also)
+    s, sec, twins = _last_column_pair(tmp_path / "last_column")
+    sec.close()
+    s.close()
+    folder = compiled_case(build, tmp_path / "decoded_last", model_points=twins,
+                           edits={MORT: _young_table(LAST_COLUMN_AGE)})
+    found += compiled_mismatches(build, folder,
+                                 refs={**LAST_COLUMN_REFS, "issue_age_min": 0},
+                                 also=_wp_c4_also)
     assert not found, _mismatch_lines(found)
 
 
