@@ -293,8 +293,8 @@ writes it.
 | 19 | future | S point 7, 13 months on | to be issued at `t = 13` |
 | 20 | derived | S point 7 at S month 60, `WP_UK_S` run under a guarantee charge of 0.2% | its charges taken at twice today's rate, 147.88, where today's would have taken 74.05 |
 | 21 | derived | S point 3 at S month 300, under a guarantee charge of 0.2% | the 5% bond past its charge cap from 207, where today's rate caps it from 487 |
-| 22 | derived | S point 1 at S month 150, under the bonus rule | a unit price of 1.486230 and a year's rate of 5.69%, where rates held level give 1.268242 and 2% |
-| 23 | derived | S point 5 at S month 150, under the bonus rule | the endowment with 2,091.61 of bonus attaching and a year's rate of 0.60% |
+| 22 | derived | S point 1 at S month 150, under the bonus rule | a unit price of 1.486230 and a rate last declared of 5.66%, at its month 143, where rates held level give 1.268242 and 2% |
+| 23 | derived | S point 5 at S month 150, under the bonus rule | the endowment with 2,091.61 of bonus attaching and a rate last declared of 0.62%, at its month 143 |
 | 24 | derived | S point 1 at S month 156, under a smoothing cap of 5% | the payout held to 43,584.94 below an asset share of 46,540.48, its smoothing account below 0 |
 
 A derived row's `policy_count` is the count `WP_UK_S` carries into that month, its
