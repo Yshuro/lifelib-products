@@ -31,12 +31,16 @@ to.
 :mod:`~.WP_UK_SEC.Data`
     Reads the two assumption CSVs it shares with :mod:`~.WP_UK_S` and its own model point
     table, and holds their filename References. It takes no parameters, so each file is
-    read **once per model**. It checks each table before a value of it is read.
+    read **once per model**. It checks each table before a value of it is read, and hands
+    the projection what the files hold as numpy vectors and arrays of numbers, one element
+    per model point or per key.
 
 :mod:`~.WP_UK_SEC.Projection`
-    The by-policy projection, parameterized by ``point_id``: ``Projection[1]`` is an
-    ItemSpace projecting model point 1. It reaches the input tables through its ``data``
-    Reference, which resolves to the single :mod:`~.WP_UK_SEC.Data` Space.
+    The by-policy projection, parameterized by ``idx``, the position of a model point in
+    the ``Data`` vectors, as ``basiclife.BasicTerm_SC`` is: ``Projection[0]`` is an
+    ItemSpace projecting the table's first row, model point 1, and its ``point_id()`` is
+    that label. It reaches the inputs through its ``data`` Reference, which resolves to
+    the single :mod:`~.WP_UK_SEC.Data` Space.
 
 The split matters for more than tidiness. Because ``Projection`` is parameterized,
 every ``Projection[N]`` is a separate ItemSpace with its own cells cache; readers
@@ -46,6 +50,24 @@ once, however many policies are projected.
 Input data is **external**: CSVs in the model folder's parent directory, read at run
 time rather than stored inside the model. The model folder itself holds no data, so
 the model and its inputs must travel together.
+
+**Compiled.** The model compiles under modelx-cython into C-typed code, as
+``basiclife/BasicTerm_SC`` does, from the two inputs beside it: ``sample_sec.py``, the run
+that types each cell, and ``spec_sec.py``, the length of each cell's cache.
+``Projection``'s cells read every model point attribute a projection cell uses as a C
+number from a ``Data`` vector at ``idx``, and every table as an array indexed by integers,
+the guarantee dates as a flag by point and policy year; a timing or a kind is an int code,
+and the claims total a code of its own, compensated as Python's ``sum`` is; the chassis
+and the sex are decoded into the numbers a formula branches on and reads by; the eight
+chains, the count, the asset share, the payout, the guarantee, the units, the unit price
+and the two cumulants, are carried a policy year at a time, so that a cold call at the
+longest cover runs on a small C stack; and every cell but the three reports,
+``model_point`` and the three label accessors returns a C ``bint``, ``long long`` or
+``double``, the seven checks among them, cached as a single value or in a C array sized
+from the contract. modelx reads and runs the same formulas, and computes the same numbers.
+``products/with_profits/model-sec.md`` says how to compile and run it, and what the
+compiled model does not do as modelx does: it clears no cache when a Reference is set, so
+every Reference is set on a model just imported.
 
 **Projection basis.** Monthly steps on two clocks, with the bonus declaration left on its
 annual cycle. ``t`` counts months from the valuation date, 0-based, as
@@ -140,8 +162,8 @@ Example:
 
     >>> import modelx as mx
     >>> model = mx.read_model("products/with_profits/WP_UK_SEC")
-    >>> model.Projection[11].result_cf()      # the down scenario on its guarantee date
-    >>> model.Projection[11].result_payout()  # its payouts, month by month
+    >>> model.Projection[10].result_cf()      # the eleventh row, model point 11: the
+    >>> model.Projection[10].result_payout()  # down scenario on its guarantee date
 """
 
 from modelx.serialize.jsonvalues import *

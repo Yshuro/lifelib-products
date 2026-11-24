@@ -8,13 +8,19 @@ Cells Descriptions
 
 .. autofunction:: model_point
 
+.. autofunction:: point_id
+
 .. autofunction:: chassis
+
+.. autofunction:: chassis_code
 
 .. autofunction:: is_unitised
 
 .. autofunction:: age_at_entry
 
 .. autofunction:: sex
+
+.. autofunction:: mort_schedule
 
 .. autofunction:: premium_single_pp
 
@@ -34,7 +40,7 @@ Cells Descriptions
 
 .. autofunction:: smoothed_payout_init
 
-.. autofunction:: guarantee_years
+.. autofunction:: is_guarantee_year
 
 .. autofunction:: wd_rate
 
@@ -96,6 +102,8 @@ Cells Descriptions
 
 .. autofunction:: guar_charge_cum_pp
 
+.. autofunction:: guar_charge_cum_pp_py
+
 .. autofunction:: guar_charge_cum_refusal
 
 .. autofunction:: misc_surplus_pp
@@ -106,17 +114,25 @@ Cells Descriptions
 
 .. autofunction:: asset_share
 
+.. autofunction:: asset_share_py
+
 .. autofunction:: asset_share_refusal
 
 .. autofunction:: unit_price
+
+.. autofunction:: unit_price_py
 
 .. autofunction:: unit_price_refusal
 
 .. autofunction:: units
 
+.. autofunction:: units_py
+
 .. autofunction:: units_refusal
 
 .. autofunction:: guar_benefit_pp
+
+.. autofunction:: guar_benefit_pp_py
 
 .. autofunction:: guar_benefit_refusal
 
@@ -150,6 +166,8 @@ Cells Descriptions
 
 .. autofunction:: smoothed_payout
 
+.. autofunction:: smoothed_payout_py
+
 .. autofunction:: smoothed_payout_open
 
 .. autofunction:: final_bonus_pp
@@ -164,6 +182,8 @@ Cells Descriptions
 
 .. autofunction:: surr_rate_base
 
+.. autofunction:: lapse_last_year
+
 .. autofunction:: mvr_deterrent
 
 .. autofunction:: guarantee_exercise
@@ -177,6 +197,8 @@ Cells Descriptions
 .. autofunction:: pols_if
 
 .. autofunction:: pols_if_at
+
+.. autofunction:: pols_if_py
 
 .. autofunction:: pols_new_biz
 
@@ -201,6 +223,8 @@ Cells Descriptions
 .. autofunction:: smoothing_cost
 
 .. autofunction:: smoothing_account
+
+.. autofunction:: smoothing_account_py
 
 .. autofunction:: smoothing_account_refusal
 

@@ -1821,6 +1821,21 @@ _WP_STATE = {
 }
 
 
+def _wp_claims_total(name, args):
+    """``WP_UK_S``'s ``claims`` keys as ``WP_UK_SEC`` takes them at stage ``"EC"`` (R9,
+    R12).
+
+    S's ``claims(t, kind=None)`` is cached under ``(t, None)`` where S asks for the total,
+    which its ``net_cf`` does: SEC's code ``ALL``, so ``None`` is mapped to ``"ALL"``,
+    which :func:`codes` then turns into the int, as it turns S's kinds and timings.  Every
+    other key, and every other cell's arguments, pass as they are, SEC's own codes among
+    them, where a comparison of two SEC models passes it SEC's keys.
+    """
+    if name == "claims" and len(args) == 2 and args[1] is None:
+        return (args[0], "ALL")
+    return args
+
+
 SEC_SPECS: dict[str, SecSpec] = {
     # Term's state is seven columns (_TERM_STATE above) and the waiver pipeline, a long
     # companion, wop_pipeline_sec.csv, keyed (point_id, lag), lag the months before the
@@ -2285,18 +2300,33 @@ SEC_SPECS: dict[str, SecSpec] = {
     #     on every point that never exhausts, the endowment among them.  Where the units do
     #     run out, on point 7, both return the policy month, 267;
     #     test_with_profits_uk_sec.py compares it there and holds the new "never".
+    # At stage EC (M14) a fifth: guarantee_years, S's tuple of the guarantee dates' policy
+    # years, which no C type holds, gives way to is_guarantee_year(y), the one reader of
+    # Data's flag array by point and policy year; is_guarantee_date and guarantee_imminent,
+    # which read it, are compared at every month.  S's timings and kinds are SEC's int
+    # codes, BEF_NB to AFT_DECR and BEF_PREM to AFT_MC for the count's and the asset
+    # share's timings, DEATH to MATURITY for the kinds, which codes maps, and S's
+    # claims(t, None) keys, the kind=None total its net_cf caches, are SEC's code ALL: the
+    # spec's twin_arg_map, _wp_claims_total, maps None to "ALL", and codes maps it and the
+    # rest.  S's label accessors stay S's, called by reporting and T1 alone, sex() now
+    # refusing any value but its codes as chassis() and tax_basis() refuse theirs: each
+    # returns the column of its own name.
     #
-    # Phase 2 sizes its caches from the contract:
-    #   t 0..1,344: a bond issued at issue_age_min, 18, to omega_age, 120, a cover of
-    #     1,224 months, or an endowment maturing at omega_age, issued future_horizon_mth, 120
-    #     months, after the valuation date, a frame of 1,344 months, t 0..1,343, and the
-    #     roll-forward's t + 1, 1,344.  The exhaustion search reads the units of the month
-    #     they run out, the month after the frame's last, which is a month of cover and so
-    #     inside it.  A contract Reference for the largest omega_age, 121, the table's last
-    #     age plus one, adds 12 (UKLIB-SEC-PLAN.md §6.6, Record — M10).
-    # proj_len() refuses an issue age below issue_age_min, a bond issued at or past
-    # omega_age, an endowment maturing past it, and a policy at or past the end of cover,
-    # each naming the point.
+    # Phase 2 sizes its caches from the contract (spec_sec.py holds each derivation):
+    #   t 0..1,357: a bond issued at issue_age_min, 18, to omega_age_max, 121, the largest
+    #     omega_age proj_len() accepts, a year past mort_table.csv's last age, or an
+    #     endowment maturing there, a cover of 1,236 months, issued future_horizon_mth, 120
+    #     months, after the valuation date: a frame of 1,356 months, t 0..1,355, its month
+    #     after, and the roll-forward's t + 1 there.  The exhaustion search reads the units
+    #     in the months of cover alone;
+    #   y 1..104: the policy years whose openings the eight blocked chains read, 2 to 103,
+    #     and the guarantee year the longest cover's last month waits for, 104.
+    # proj_len() refuses an issue age below issue_age_min, an omega_age above
+    # omega_age_max, a bond issued at or past omega_age, an endowment maturing past it,
+    # and a policy at or past the end of cover, each naming the point; and it holds
+    # issue_age_min to 18 or more and omega_age_max to 121 or less, and Data the horizon to
+    # 120 or less, the values the caches are sized from, so that no Reference's value
+    # admits a frame past them.
     "WP_UK_SEC": SecSpec(
         twin="WP_UK_S",
         column_map={"duration_inforce": None, "units": "units_init",
@@ -2309,12 +2339,13 @@ SEC_SPECS: dict[str, SecSpec] = {
         state=_WP_STATE,
         twin_state=_WP_STATE,
         exempt=frozenset({"proj_start", "duration_inforce", "attaching_bonus",
-                          "fund_exhaust_mth"}),
+                          "fund_exhaust_mth", "guarantee_years"}),
         derived_refs={(7, 60): {"guar_charge_rate_base": 0.002},
                       (3, 300): {"guar_charge_rate_base": 0.002},
                       (1, 150): {"bonus_rule_on": True},
                       (5, 150): {"bonus_rule_on": True},
                       (1, 156): {"smooth_cap": 0.05}},
+        twin_arg_map=_wp_claims_total,
     ),
 }
 

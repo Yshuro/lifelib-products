@@ -132,7 +132,8 @@ MODELS = {
                     "param": "idx", "reporting": ("lives", "sex", "wd_pattern")}),
     "WP_UK_S": ("products/with_profits/WP_UK_S", {**MONTHLY, "age_basis": ANB}),
     "WP_UK_SEC": ("products/with_profits/WP_UK_SEC",
-                  {**MONTHLY, "age_basis": ANB, "twin": "WP_UK_S", "stage": "E"}),
+                  {**MONTHLY, "age_basis": ANB, "twin": "WP_UK_S", "stage": "EC",
+                   "param": "idx", "reporting": ("chassis", "sex", "tax_basis")}),
     # Annuity
     "PA_UK_S": ("products/pension_annuity/PA_UK_S", {**MONTHLY, "age_basis": ALB}),
     "PA_UK_SEC": ("products/pension_annuity/PA_UK_SEC",

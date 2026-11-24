@@ -7,10 +7,10 @@
 
 The three input CSVs are read here, **once per model**, and referenced from
 :mod:`~.WP_UK_SEC.Projection` as ``data``. :mod:`~.WP_UK_SEC.Projection` is parameterized by
-``point_id``, so each ``Projection[N]`` is a separate ItemSpace with its own cells
-cache; if the readers lived there, every model point would re-read every file. Holding
-them in an unparameterized Space reads each file once no matter how many policies are
-projected.
+``idx``, the position of a model point in the table, so each ``Projection[i]`` is a
+separate ItemSpace with its own cells cache; if the readers lived there, every model point
+would re-read every file. Holding them in an unparameterized Space reads each file once no
+matter how many policies are projected.
 
 Inputs are **external files**: plain CSVs in the model folder's parent directory,
 ``products/with_profits/``, rather than data stored inside the model. The model folder
@@ -60,7 +60,8 @@ account. :func:`model_point_table` refuses a table that lacks one, repeats a
 issued more than ``future_horizon_mth`` months after the valuation date, 120 as shipped:
 future new business is written over a stated horizon, so that no frame runs longer than
 cover from issue plus that horizon. Set to 0, the Reference refuses future new business
-altogether. It refuses, too, what :mod:`~.WP_UK_S` projects without a word or meets only
+altogether; set above 120 it is itself refused, since the compiled model's caches are
+sized from 120 (``spec_sec.py``) and a longer horizon would admit frames past them. It refuses, too, what :mod:`~.WP_UK_S` projects without a word or meets only
 when a projection reaches it: a code that names no chassis, sex or tax basis, guarantee
 dates that are no anniversaries or that a conventional endowment carries, an age, an
 amount, a rate or a term that is not a number in its range, a fund return at which the
@@ -72,20 +73,99 @@ against its own References.
 
 **Each assumption table is checked before a value of it is read.** Its keys are read by
 their value, so an age written ``70.0`` is age 70, and a key that is not whole, text among
-them, is refused; so are keys that repeat or leave a gap the projection would read. A
-value that is blank, text, infinite or outside its range is refused, whether or not a
-point reads it: ``Projection.mort_rate`` caps the annual rate with ``min``, which keeps
-its first argument unless a later one compares smaller, and no comparison with NaN
-holds, so the cap is written with its bound second and a NaN would stay NaN; but an
-infinity is a number, which the cap reads as 1, certain death, and ``Projection.surr_rate``
-bounds the surrender rate with :mod:`~.WP_UK_S`'s ``min(1.0, ...)``, its bound first, which
-reads a NaN as certain surrender. The check of each table is in the cell the projection
-takes the table's extent from, which it asks before it reads the table:
-:func:`mort_age_first` and :func:`mort_age_last` for the mortality table, and
-:func:`lapse_last_year` for the lapse table. Each refusal names the table's lines, the
-header line 1: the check reads the file as it stands, :func:`mort_table_rows` and
-:func:`lapse_table_rows`, where :mod:`~.WP_UK_S`'s readers, :func:`mort_table` and
-:func:`lapse_table`, sort the tables, and with the order would lose the lines.
+them, or is ``2**53`` or more in size, which int64 would hold inexactly, is refused; so are
+keys that repeat or leave a gap the projection would read, each gap found from the keys a
+group holds, so that a key far from the rest costs no more than the rows. A value that is
+blank, text, infinite or outside its range is refused, whether or not a point reads it:
+``Projection.mort_rate`` caps the annual rate with ``min``, which keeps its first argument
+unless a later one compares smaller, and no comparison with NaN holds, so the cap is
+written with its bound second and a NaN would stay NaN; but an infinity is a number, which
+the cap reads as 1, certain death, and ``Projection.surr_rate`` bounds the surrender rate
+with :mod:`~.WP_UK_S`'s ``min(1.0, ...)``, its bound first, which reads a NaN as certain
+surrender. The check of each table is in the cell the projection takes the table's extent
+from, which it asks before it reads the table: :func:`mort_age_first` and
+:func:`mort_age_last` for the mortality table, and :func:`lapse_last_year` for the lapse
+table. Each refusal names the table's lines, the header line 1: the check reads the file as
+it stands, :func:`mort_table_rows` and :func:`lapse_table_rows`, where :mod:`~.WP_UK_S`'s
+readers, :func:`mort_table` and :func:`lapse_table`, sort the tables, and with the order
+would lose the lines. A read beyond the mortality table's ages is refused by the one
+``Projection`` cell that reads it, naming the point, where :mod:`~.WP_UK_S`'s lookup
+raised ``KeyError``.
+
+**The vectors.** The readers return what the files hold, and no
+:mod:`~.WP_UK_SEC.Projection` cell but ``model_point``, a reporting cell, reads them. The
+others read the arrays below instead, one element at a time, a model point's attribute
+being the element at its position, ``data.sum_assured()[idx]``. That is what lets the
+model compile to C, as ``basiclife.BasicTerm_SC`` does: each array is a numpy vector or
+table of int64 or float64, which compiles to a typed memoryview, never one of bools,
+objects or text, and each extent of a table is an int.
+
+Text the projection needs is decoded here, into the number it selects, for every point at
+once, as :mod:`~.WP_UK_S` reads each value: the chassis into its code, UWP_bond 0 and
+CWP_endowment 1, ``Projection``'s References ``UWP_BOND`` and ``CWP_ENDOWMENT``, which is
+the chassis's row of the lapse table, and stays a code because the rules it selects are
+``Projection``'s; the sex into the point's row of the mortality table, M 0 and F 1, its
+schedule; and the guarantee dates, the text of one policy anniversary or a ``;``-separated
+list of them, into a flag by point and policy year, 1 where the anniversary closing that
+policy year is a guarantee date. The tax basis is no number a formula reads: the fund
+return is supplied on it, and ``Projection.tax_basis`` reports it. And each table keyed by
+more than a number becomes an integer-indexed array. The mortality table, keyed by sex and
+age, is tabled by its two schedules, M before F, and padded from age 0, so that the index
+is the attained age; the lapse table, keyed by chassis and policy year, is tabled by the
+chassis's code and padded at year 0, beside each chassis's last year:
+
+==============================  =======  ================  =================================
+Cells                           dtype    Shape             From
+==============================  =======  ================  =================================
+point_id()                      int64    [point]           the table's index
+chassis_code()                  int64    [point]           ``chassis``, decoded: UWP_bond 0,
+                                                           CWP_endowment 1
+mort_schedule()                 int64    [point]           ``sex``, decoded: M 0, F 1
+age_at_entry()                  int64    [point]           ``age_at_entry``
+premium_single()                float64  [point]           ``premium_single``
+premium_regular()               float64  [point]           ``premium_regular``
+sum_assured()                   float64  [point]           ``sum_assured``
+policy_term()                   int64    [point]           ``policy_term``
+units_init()                    float64  [point]           ``units_init``
+unit_price_init()               float64  [point]           ``unit_price_init``
+attaching_bonus_init()          float64  [point]           ``attaching_bonus_init``
+asset_share_init()              float64  [point]           ``asset_share_init``
+smoothed_payout_init()          float64  [point]           ``smoothed_payout_init``
+wd_rate()                       float64  [point]           ``wd_rate``
+fund_return()                   float64  [point]           ``fund_return``
+bonus_rate_init()               float64  [point]           ``bonus_rate_init``
+policy_count()                  float64  [point]           ``policy_count``
+duration_mth()                  int64    [point]           ``duration_mth``
+guar_charge_cum_pp_init()       float64  [point]           ``guar_charge_cum_pp_init``
+smoothing_account_init()        float64  [point]           ``smoothing_account_init``
+guarantee_year_last()           int      scalar            *mort_table.csv*'s last age
+                                                           plus 2
+guarantee_flags()               int64    [point, year]     ``guarantee_dates``, decoded: 1
+                                                           at each date's policy year
+mort_age_first()                int      scalar            *mort_table.csv*, checked
+mort_age_last()                 int      scalar            *mort_table.csv*
+mort_table_array()              float64  [schedule, age]   *mort_table.csv*
+lapse_last_year()               int64    [chassis]         *lapse_table.csv*, checked
+lapse_table_array()             float64  [chassis, year]   *lapse_table.csv*
+==============================  =======  ================  =================================
+
+**An array is read by element, never whole,** in this Space as in
+:mod:`~.WP_UK_SEC.Projection`. The compiler types an array cell as a memoryview only once
+it has seen that every use of it, in either Space, is an element read: one ``len()``,
+slice, loop over it or numpy call on it anywhere, and the cell compiles as a Python object.
+So an array derived here reads the table's column, never another cell's array, and a width
+comes from a table or an extent's cell.
+
+**What cannot be held is refused** when the table is first read, naming every point or
+line at fault, beside the checks above: a ``point_id`` that is not a whole number below
+``2**53`` in size, when :func:`point_id` is first read, as a refusal reads it; and a
+mortality age or a lapse policy year ``2**53`` or more in size, by the table's check, each
+of which numpy would otherwise cast to int64 inexactly, or to the least int64, without a
+word. :func:`model_point_table` already holds every other whole number a vector carries,
+the ages, the terms, the durations and the guarantee years, below ``2**53``. A guarantee
+year past :func:`guarantee_year_last` is no year a frame reads, and is not tabled: no
+cover runs past the largest limiting age the mortality table admits, a year past its last
+age, and the last month of the longest cover reads the date a year after its own.
 """
 
 from modelx.serialize.jsonvalues import *
@@ -136,9 +216,10 @@ def model_point_table():
     5. no policy is issued more than ``future_horizon_mth`` months after the valuation
        date, so ``duration_mth`` is ``-future_horizon_mth`` or more. At 0 the model takes
        no future new business, and the message says so; a horizon that is not a whole
-       number of months, 0 or more, below ``2**53``, is itself refused, since a NaN one
-       fails every comparison and so would admit every policy, and an infinite one bounds
-       nothing;
+       number of months from 0 to 120 is itself refused, since a NaN one fails every
+       comparison and so would admit every policy, an infinite one bounds nothing, and
+       one above 120 admits frames past the compiled model's caches, which are sized
+       from 120 (``spec_sec.py``);
     6. ``chassis`` is UWP_bond or CWP_endowment, ``sex`` M or F and ``tax_basis`` life_net
        or pension_gross, the codes the formulas branch on and the tables are keyed by,
        which :mod:`~.WP_UK_S` refuses only once a projection reaches them;
@@ -150,7 +231,7 @@ def model_point_table():
        return, ``(1 + r)^(1/12) - 1``, has no real value;
     8. ``guarantee_dates`` is blank or a ``;``-separated list of policy anniversaries, each
        a whole number of years, 1 or more, below ``2**53``, the form
-       ``Projection.guarantee_years`` parses; and it is blank on a conventional endowment,
+       :func:`guarantee_flags` decodes; and it is blank on a conventional endowment,
        which has no guarantee dates, though ``Projection.guarantee_exercise`` and
        ``Projection.guarantee_imminent`` would read any it held;
     9. a conventional endowment has a term, ``policy_term`` 1 or more, which its maturity is
@@ -214,9 +295,9 @@ def model_point_table():
         raise ValueError(f"{name}: duration_mth must be below 2**53 months; it is not at "
                          f"point_id {bad}")
     horizon = future_horizon_mth                                     # noqa: F821
-    if not (horizon >= 0 and horizon < 2.0 ** 53 and horizon % 1 == 0):
-        raise ValueError(f"future_horizon_mth must be a whole number of months, 0 or more, "
-                         f"below 2**53, not {horizon}")
+    if not (horizon >= 0 and horizon <= 120 and horizon % 1 == 0):
+        raise ValueError(f"future_horizon_mth must be a whole number of months from 0 to "
+                         f"120, not {horizon}")
     horizon = int(horizon)
     bad = table.index[months < -horizon].tolist()
     if bad and horizon == 0:
@@ -409,12 +490,15 @@ def mort_age_first():
     sorts it, so that each refusal names the lines at fault, the header line 1.  The
     rules, each over the whole table, the first that fails raising ``ValueError``:
 
-    1. each age is a whole number, read by its value, so ``70.0`` is 70;
+    1. each age is a whole number, read by its value, so ``70.0`` is 70, and below
+       ``2**53`` in size, which int64 holds exactly, the check made before the ages are
+       cast;
     2. each sex is M or F, the codes the model point table gives;
     3. each sex runs over the table's ages from the first to the last, one row an age,
        none below 0: the projection reads a rate at each attained age a policy reaches.
        Every fault is named in one message: an age below 0 and an age a sex repeats each
-       with its lines, and each span of ages a sex lacks;
+       with its lines, and each span of ages a sex lacks, found from the ages each sex
+       holds, so that a key far from the rest costs no more than the rows;
     4. each ``mort_rate`` is a number from 0 to 1, a probability, read by the cap.
     """
     name = mort_table_file                                           # noqa: F821
@@ -424,6 +508,10 @@ def mort_age_first():
     bad = lines[(~(ages % 1 == 0)).to_numpy()].tolist()
     if bad:
         raise ValueError(f"{name}: age must be a whole number; it is not on line {bad}")
+    bad = lines[(~(ages.abs() < 2.0 ** 53)).to_numpy()].tolist()
+    if bad:
+        raise ValueError(f"{name}: age must be below 2**53 in size; it is not on line "
+                         f"{bad}")
     bad = lines[(~tbl["sex"].isin(["M", "F"])).to_numpy()].tolist()
     if bad:
         raise ValueError(f"{name}: sex must be M or F; it is not on line {bad}")
@@ -442,12 +530,11 @@ def mort_age_first():
         for a in sorted(set(run[run.duplicated()])):
             faults.append(f"sex {s}, age {a} repeats on lines "
                           f"{lines[group & (ages == a).to_numpy()].tolist()}")
-        spans = []
-        for a in sorted(set(range(first, last + 1)) - set(run)):
-            if spans and spans[-1][1] == a - 1:
-                spans[-1][1] = a
-            else:
-                spans.append([a, a])
+        spans, before = [], first - 1
+        for a in [*(int(a) for a in sorted(set(run))), last + 1]:
+            if a > before + 1:
+                spans.append([before + 1, a - 1])
+            before = a
         for low, high in spans:
             faults.append(f"no line holds sex {s}, "
                           + (f"ages {low} to {high}" if high > low else f"age {low}"))
@@ -471,21 +558,27 @@ def mort_age_last():
     return int(ages.max())
 
 
-def lapse_last_year(chassis):
-    """The last policy year *lapse_table.csv* gives ``chassis``'s rate for, the table checked.
+def lapse_last_year():
+    """The last policy year *lapse_table.csv* gives each chassis's rate for, the table
+    checked first: int64 [chassis].
 
-    ``Projection.surr_rate_base`` asks it before it reads the table, and reads every
-    later policy year at it, :mod:`~.WP_UK_S`'s ``tbl.index.max()`` on the chassis's own
-    rows.  The check reads the file as it stands, :func:`lapse_table_rows`, so that each
-    refusal names the lines at fault, the header line 1, and runs over the whole table
-    whichever chassis asks.  The rules, the first that fails raising ``ValueError``:
+    Element ``c`` is the last policy year of the chassis whose code is ``c``, UWP_bond 0
+    and CWP_endowment 1, as :func:`chassis_code` numbers each point's.
+    ``Projection.surr_rate_base`` asks it before it reads the table, and reads every later
+    policy year at the chassis's own last, :mod:`~.WP_UK_S`'s ``tbl.index.max()`` on the
+    chassis's own rows; and :func:`lapse_table_array` is sized from the table it checks.
+    The check reads the file as it stands, :func:`lapse_table_rows`, so that each refusal
+    names the lines at fault, the header line 1, and runs over the whole table.  The
+    rules, the first that fails raising ``ValueError``:
 
-    1. each policy year is a whole number, read by its value;
+    1. each policy year is a whole number, read by its value, and below ``2**53`` in size,
+       which int64 holds exactly, the check made before the years are cast;
     2. each chassis is UWP_bond or CWP_endowment, the codes the model point table holds;
     3. each chassis's years run from 1, one row a year, without a gap or a repeat, since
        each policy year from the first is read: every fault named in one message, a year
        below 1 and a repeated one each with its lines, and each span a chassis lacks, a
-       chassis with no line lacking its first year;
+       chassis with no line lacking its first year, found from the years each chassis
+       holds, so that a key far from the rest costs no more than the rows;
     4. each ``lapse_rate`` is a number from 0 to 1, a probability, which the surrender
        rate's ``min`` reads.
     """
@@ -497,6 +590,10 @@ def lapse_last_year(chassis):
     if bad:
         raise ValueError(f"{name}: policy_year must be a whole number; it is not on line "
                          f"{bad}")
+    bad = lines[(~(years.abs() < 2.0 ** 53)).to_numpy()].tolist()
+    if bad:
+        raise ValueError(f"{name}: policy_year must be below 2**53 in size; it is not on "
+                         f"line {bad}")
     bad = lines[(~tbl["chassis"].isin(["UWP_bond", "CWP_endowment"])).to_numpy()].tolist()
     if bad:
         raise ValueError(f"{name}: chassis must be UWP_bond or CWP_endowment; it is not on "
@@ -513,13 +610,14 @@ def lapse_last_year(chassis):
         for y in sorted(set(run[run.duplicated() & (run >= 1)])):
             faults.append(f"chassis {c}, policy_year {y} repeats on lines "
                           f"{lines[mine & (keys == y).to_numpy()].tolist()}")
-        held[c] = sorted(set(run[run >= 1]))
-        spans = []
-        for y in sorted(set(range(1, max(held[c], default=1) + 1)) - set(held[c])):
-            if spans and spans[-1][1] == y - 1:
-                spans[-1][1] = y
-            else:
-                spans.append([y, y])
+        held[c] = [int(y) for y in sorted(set(run[run >= 1]))]
+        spans, before = [], 0
+        for y in held[c]:
+            if y > before + 1:
+                spans.append([before + 1, y - 1])
+            before = y
+        if not held[c]:
+            spans.append([1, 1])
         for low, high in spans:
             faults.append(f"no line holds chassis {c}, "
                           + (f"policy years {low} to {high}" if high > low
@@ -532,7 +630,288 @@ def lapse_last_year(chassis):
     if bad:
         raise ValueError(f"{name}: lapse_rate must be a number from 0 to 1; it is not on "
                          f"line {bad}")
-    return int(held[chassis][-1])
+    out = np.zeros(2, dtype="int64")                                 # noqa: F821
+    for i, c in enumerate(("UWP_bond", "CWP_endowment")):
+        out[i] = held[c][-1]
+    return out
+
+
+def point_id():
+    """The ``point_id`` of every model point, in table order: int64 [point].
+
+    ``Projection`` is indexed by position, ``idx``, so this is how a projection names its
+    point: ``Projection.point_id()`` is the element at ``idx``, and every refusal quotes
+    it.  Read by value, so that a label written ``3.0`` is 3, and refused when it is first
+    read, naming every label at fault, where one is not a whole number, text and a blank
+    among them, or is ``2**53`` or more in size.  A projection that names no point reads
+    no label, and runs.
+    """
+    table = model_point_table()
+    labels = pd.to_numeric(pd.Series(table.index), errors="coerce")  # noqa: F821
+    bad = table.index[~(labels % 1 == 0).to_numpy()].tolist()
+    if bad:
+        raise ValueError(f"{model_point_file}: point_id must be a whole "  # noqa: F821
+                         f"number; {bad} is not")
+    bad = table.index[~(labels.abs() < 2.0 ** 53).to_numpy()].tolist()
+    if bad:
+        raise ValueError(f"{model_point_file}: point_id must be below 2**53 "  # noqa: F821
+                         f"in size; {bad} is not")
+    return labels.to_numpy(dtype="int64")
+
+
+def chassis_code():
+    """The chassis of every model point, as its code: int64 [point].
+
+    UWP_bond 0 and CWP_endowment 1, ``Projection``'s References ``UWP_BOND`` and
+    ``CWP_ENDOWMENT``, and each chassis's row of :func:`lapse_table_array` and
+    :func:`lapse_last_year`.  A code, not the quantities it selects, because the rules it
+    selects, the bond's units and price, its market value reduction and its guarantee
+    dates, the endowment's term and its surrender basis, are ``Projection``'s formulas and
+    References, which this Space cannot read.  :func:`model_point_table` has refused any
+    other chassis, naming the point.
+    """
+    codes = model_point_table()["chassis"].tolist()
+    out = np.zeros(len(codes), dtype="int64")                        # noqa: F821
+    for i in range(len(codes)):
+        out[i] = ("UWP_bond", "CWP_endowment").index(codes[i])
+    return out
+
+
+def mort_schedule():
+    """The mortality table's row for every model point: int64 [point].
+
+    The point's sex, the key :mod:`~.WP_UK_S` reads *mort_table.csv* by beside the age,
+    numbered as :func:`mort_table_array` tables it: M 0 and F 1, in the order
+    :func:`mort_age_first` checks the sexes.  :func:`model_point_table` has refused any
+    other sex, so every point has one of the two, and each is a whole run of the table's
+    ages, which :func:`mort_age_first` checks.
+    """
+    sexes = model_point_table()["sex"].tolist()
+    out = np.zeros(len(sexes), dtype="int64")                        # noqa: F821
+    for i in range(len(sexes)):
+        out[i] = ("M", "F").index(sexes[i])
+    return out
+
+
+def age_at_entry():
+    """The entry age (ANB) of every model point: int64 [point].
+
+    :func:`model_point_table` has refused one that is not a whole number, 0 or more,
+    below ``2**53``.
+    """
+    ages = pd.to_numeric(model_point_table()["age_at_entry"])        # noqa: F821
+    return ages.to_numpy(dtype="int64")
+
+
+def premium_single():
+    """The single premium of every model point, paid in its issue month: float64
+    [point]."""
+    return pd.to_numeric(model_point_table()["premium_single"]).to_numpy(  # noqa: F821
+        dtype="float64")
+
+
+def premium_regular():
+    """The regular annual premium of every model point: float64 [point]."""
+    return pd.to_numeric(model_point_table()["premium_regular"]).to_numpy(  # noqa: F821
+        dtype="float64")
+
+
+def sum_assured():
+    """The basic sum assured of every model point: float64 [point]."""
+    return pd.to_numeric(model_point_table()["sum_assured"]).to_numpy(  # noqa: F821
+        dtype="float64")
+
+
+def policy_term():
+    """The endowment term in years of every model point, 0 on the bond: int64 [point].
+
+    :func:`model_point_table` has refused one that is not a whole number, 0 or more,
+    below ``2**53``.
+    """
+    terms = pd.to_numeric(model_point_table()["policy_term"])        # noqa: F821
+    return terms.to_numpy(dtype="int64")
+
+
+def units_init():
+    """The units held entering month 0, of every model point: float64 [point]."""
+    return pd.to_numeric(model_point_table()["units_init"]).to_numpy(  # noqa: F821
+        dtype="float64")
+
+
+def unit_price_init():
+    """The unit price month 0 opens with, or the seed price, of every model point:
+    float64 [point]."""
+    return pd.to_numeric(                                            # noqa: F821
+        model_point_table()["unit_price_init"]).to_numpy(dtype="float64")
+
+
+def attaching_bonus_init():
+    """The reversionary bonuses attaching at the valuation date, of every model point:
+    float64 [point]."""
+    return pd.to_numeric(                                            # noqa: F821
+        model_point_table()["attaching_bonus_init"]).to_numpy(dtype="float64")
+
+
+def asset_share_init():
+    """The asset share month 0 opens with, of every model point: float64 [point]."""
+    return pd.to_numeric(                                            # noqa: F821
+        model_point_table()["asset_share_init"]).to_numpy(dtype="float64")
+
+
+def smoothed_payout_init():
+    """The smoothed payout month 0 opens with, of every model point: float64 [point]."""
+    return pd.to_numeric(                                            # noqa: F821
+        model_point_table()["smoothed_payout_init"]).to_numpy(dtype="float64")
+
+
+def wd_rate():
+    """The withdrawal taken a year, a share of the original premium, of every model point:
+    float64 [point]."""
+    return pd.to_numeric(model_point_table()["wd_rate"]).to_numpy(  # noqa: F821
+        dtype="float64")
+
+
+def fund_return():
+    """The earned fund return, annual, of every model point: float64 [point]."""
+    return pd.to_numeric(model_point_table()["fund_return"]).to_numpy(  # noqa: F821
+        dtype="float64")
+
+
+def bonus_rate_init():
+    """The bonus rate declared at the last declaration before the valuation date, or the
+    rate a new policy's first declaration starts from, of every model point: float64
+    [point]."""
+    return pd.to_numeric(                                            # noqa: F821
+        model_point_table()["bonus_rate_init"]).to_numpy(dtype="float64")
+
+
+def policy_count():
+    """The ``policy_count`` of every model point: float64 [point].
+
+    :func:`model_point_table` has checked it: a number, zero or more.
+    """
+    return pd.to_numeric(model_point_table()["policy_count"]).to_numpy(  # noqa: F821
+        dtype="float64")
+
+
+def duration_mth():
+    """The ``duration_mth`` of every model point, in whole months: int64 [point].
+
+    :func:`model_point_table` has checked that each is whole and below ``2**53`` in size,
+    so a duration written as ``60.0`` is the int 60.
+    """
+    months = pd.to_numeric(model_point_table()["duration_mth"])      # noqa: F821
+    return months.to_numpy(dtype="int64")
+
+
+def guar_charge_cum_pp_init():
+    """The guarantee charges taken per policy before the valuation date, of every model
+    point: float64 [point]."""
+    return pd.to_numeric(                                            # noqa: F821
+        model_point_table()["guar_charge_cum_pp_init"]).to_numpy(dtype="float64")
+
+
+def smoothing_account_init():
+    """The estate's smoothing cost since issue per policy in force, of every model point:
+    float64 [point]."""
+    return pd.to_numeric(                                            # noqa: F821
+        model_point_table()["smoothing_account_init"]).to_numpy(dtype="float64")
+
+
+def guarantee_year_last():
+    """The last policy year :func:`guarantee_flags` holds: :func:`mort_age_last` plus 2.
+
+    The year after the last a cover can reach.  ``Projection.proj_len`` admits a limiting
+    age, ``omega_age``, of at most a year past the mortality table's last age, and an
+    issue age of 0 or more, so no cover runs past policy year ``mort_age_last() + 1``; and
+    the guarantee-imminent window of a cover's last month, the twelfth of its last policy
+    year, reads the date a year on.  A later guarantee date is one no frame reads, and is
+    not tabled.  122 as shipped.
+    """
+    return mort_age_last() + 2
+
+
+def guarantee_flags():
+    """Whether each policy anniversary of every model point is a guarantee date: int64
+    [point, policy year], 1 or 0.
+
+    Element ``[i, y]`` is 1 where point ``i``'s ``guarantee_dates`` name policy year
+    ``y``, whose anniversary, the end of its twelfth month, is then a date an exit is
+    MVR-free, and 0 elsewhere: year 0, no policy year, every year a point names no date
+    at, and every policy year of a conventional endowment, which carries none.  As wide
+    as :func:`guarantee_year_last` plus one, every year a frame can read, and a date
+    named past it is not tabled, no frame reading it.  Each value is read as
+    :mod:`~.WP_UK_S`'s ``guarantee_years`` reads it, and as :func:`model_point_table`'s
+    eighth rule checks it, ``str()`` of it split at each ``;``, each part stripped and
+    read by its value, a blank part skipped: so ``10``, ``10.0``, `` 10`` and ``10;`` name
+    year 10.  :func:`model_point_table` has refused a value whose parts are not whole
+    numbers, 1 or more, below ``2**53``, and a date on an endowment.
+    """
+    dates = model_point_table()["guarantee_dates"].tolist()
+    last = guarantee_year_last()
+    out = np.zeros((len(dates), last + 1), dtype="int64")            # noqa: F821
+    for i in range(len(dates)):
+        if pd.isna(dates[i]):                                        # noqa: F821
+            continue
+        for s in str(dates[i]).split(";"):
+            if not s.strip():
+                continue
+            y = int(pd.to_numeric(s.strip()))                        # noqa: F821
+            if y <= last:
+                out[i, y] = 1
+    return out
+
+
+def mort_table_array():
+    """The annual mortality rates by sex and attained age, from *mort_table.csv*: float64
+    [schedule, age].
+
+    Row ``s`` is the sex, M 0 and F 1, as :func:`mort_schedule` numbers each point's, and
+    column ``a`` the attained age ``a``: padded from age 0, as ``basiclife.BasicTerm_SC``'s
+    ``mort_table_array`` pads its table, so that the index **is** the age, and
+    :func:`mort_age_last` plus one wide.  The ages below the table's first, 0 to 17 as
+    shipped, hold NaN, which no formula reads: ``Projection.mort_rate`` refuses an age
+    outside the table, naming the point.  Asks :func:`mort_age_first` first, which checks
+    the table: each sex runs over every age from the first to the last, one row an age, so
+    no cell between them is padding, and each rate is a number from 0 to 1.  Read from the
+    one read of the file, :func:`mort_table_rows`, which :mod:`~.WP_UK_S`'s reader sorts.
+    """
+    mort_age_first()
+    last = mort_age_last()
+    tbl = mort_table_rows()
+    ages = pd.to_numeric(tbl["age"]).to_numpy(dtype="int64")         # noqa: F821
+    rates = pd.to_numeric(tbl["mort_rate"]).to_numpy(dtype="float64")  # noqa: F821
+    sexes = tbl["sex"].tolist()
+    out = np.full((2, last + 1), np.nan)                             # noqa: F821
+    for i in range(len(ages)):
+        out[("M", "F").index(sexes[i]), ages[i]] = rates[i]
+    return out
+
+
+def lapse_table_array():
+    """The annual surrender rate by chassis and policy year, from *lapse_table.csv*:
+    float64 [chassis, policy year].
+
+    Row ``c`` is the chassis whose code is ``c``, UWP_bond 0 and CWP_endowment 1, as
+    :func:`chassis_code` numbers each point's, and element ``[c, y]`` the rate of its
+    policy year ``y``, from 1 to the chassis's last, :func:`lapse_last_year`, which checks
+    the table first: each chassis's years run from 1 without a gap.  As wide as the
+    table's last year plus one.  Year 0, no policy year, and any year past a chassis's
+    last, where the other chassis's runs further, hold NaN, which no formula reads:
+    ``Projection.surr_rate_base`` reads a policy year of cover, 1 or more, at most the
+    chassis's last, which it reads every later year at, as :mod:`~.WP_UK_S` does.  It asks
+    :func:`lapse_last_year` first, by one element, which runs the table's check, and takes
+    its width from the table, never from that cell's array (R13).
+    """
+    lapse_last_year()[0]
+    tbl = lapse_table_rows()
+    years = pd.to_numeric(tbl["policy_year"]).to_numpy(dtype="int64")  # noqa: F821
+    rates = pd.to_numeric(tbl["lapse_rate"]).to_numpy(dtype="float64")  # noqa: F821
+    chassis = tbl["chassis"].tolist()
+    out = np.full((2, int(years.max()) + 1), np.nan)                 # noqa: F821
+    for i in range(len(chassis)):
+        out[("UWP_bond", "CWP_endowment").index(chassis[i]), years[i]] = rates[i]
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -547,3 +926,5 @@ lapse_table_file = "lapse_table.csv"
 future_horizon_mth = 120
 
 pd = ("Module", "pandas")
+
+np = ("Module", "numpy")
