@@ -16,9 +16,9 @@ column holding the state before it (D6). Term and critical illness were reworked
 also by run 54 (§6.1, *Record — the anniversary at the valuation date*), so every SEC model
 built so far follows it. Whole of life's compile step, M6, and income protection's in-force
 step, M7, are done too, 2026-11-24, by run 55 (§6.4, *Record — M6*, and §6.3, *Record —
-M7*), and so is with-profits' in-force step, M13, by run 56 (§6.5, *Record — M13*). The
-compile steps of the pension annuity, income protection and with-profits, M12, M8 and M14,
-are under way (§7). Like USLIB-SEC-PLAN.md, this document is both the
+M7*), with-profits' in-force step, M13, by run 56 (§6.5, *Record — M13*), and the pension
+annuity's compile step, M12, by run 57 (§6.7, *Record — M12*). The compile steps of income
+protection and with-profits, M8 and M14, are under way (§7). Like USLIB-SEC-PLAN.md, this document is both the
 specification and the record: each milestone records what it actually did, including where
 the implementation departed from the plan.
 
@@ -3065,7 +3065,7 @@ I re-injected the payout rule's fault at landing, and the edges test caught it.
 
 In CI, the Tests workflow's run 56 on `d4b7e0f` ran 105 jobs. 104 had passed when this
 record was written, and the last, uslib's compile leg for the variable annuity on Windows,
-was still running. Every macOS leg was given a runner. M13's legs passed at the first
+was still running. It passed, and the run concluded in success. Every macOS leg was given a runner. M13's legs passed at the first
 attempt:
 - `sec_uk`'s three WP legs: the full grid on Ubuntu in 14.2 min, and the core on Windows in
   5.6 and on macOS in 8.3;
@@ -3891,6 +3891,249 @@ record was written. Every other job passed.
   - Each domain edge accepted projects its reports.
   - A rule tying two amounts of money compares to a cent. It is tried a cent outside and
     half a cent inside.
+
+#### Record — M12, done 2026-11-24
+
+**Commits.** M12 was built in two commits on M11's landing: the C step (`1c79ecc`), and
+its docs with C6 (`e62947a`). Seven more followed from the review and its verification:
+- a fix to ULB's page, whose block snippet indexed `Projection` by label under `idx`
+  (`7d5b601`);
+- the review's rework, in three commits (`92ede0b`, `b696613`, `3f37e9d`);
+- the verification's, in four (`fcb7cf3`, `9ed6641`, `a4aa8f4`, `033f7ec`).
+
+It ran beside the compile step of WOL, M6, and the in-force steps of IP and WP, M7 and
+M13. It landed after all three.
+
+**The build and the review.**
+- One agent built it, injecting 22 faults, all caught.
+- A second agent reviewed it against this note, the plan and USLIB-SEC-PLAN.md, injecting
+  29 faults of its own, of which 25 were caught.
+  - **No number had moved.** It compared every value both engines cache, bit for bit,
+    13,728,373 values in all, all 0 apart. The comparison covered 546 rows built from S:
+    - S's 10 points, the splice's 16 variants, and 8 variants of its own;
+    - each restated at 1, 12, 13, 17, 25, F−12 and F−1;
+    - starting 1, 13 and 120 months on;
+    - under RPIs of 3%, 8% and −2%;
+    - the 18 extremes.
+  - It found inputs the C step accepted that stage E had refused. The worst:
+    - **An `overlap` written as text on one point was misread on every other point.**
+      Refusal by point accepted text on a single life, which never reads the column.
+      pandas then read the whole column as text, and `bool("False")` is True. On every
+      joint point the flag turned on: point 3's Σ`net_cf` moved from −375,880.01 to
+      −403,437.23, in both engines, with no refusal.
+    - **The start year** had the same root cause.
+  - Gaps in what the tests saw:
+    - No test reached an overflow that first arises on an anniversary.
+    - Mortality ages were cast to int64 before any bound, and the gap check built the whole
+      range.
+    - On the table basis an `omega_age` of 116 raised a compiled-only `IndexError`, naming
+      nothing.
+    - The two improvement ages compiled to `long long`. At 90.5 the compiled
+      `net_cf(400)` was −3.64116 against modelx's −3.65233, with no refusal.
+    - C4's chunks never counted their rows.
+    - Nothing tested `death_mth(3)`.
+- **The rework.** The builder fixed all of them, with 7 faults more caught.
+- **The verification.** The reviewer verified the rework with 13 faults of its own, of
+  which 10 were caught.
+  - **The scenario basis's documented edge was wrong.** Frames of 1,394 months already
+    failed compiled in some configurations. I decided to refuse, not document (*A frame
+    bounded on either basis* below).
+  - **A flag's check and its decode were separate comparisons.** A fault letting " True"
+    pass one and fail the other passed 173 tests.
+  - **The decode refusals' labels were unchecked.** A refusal naming the point by its
+    position passed, since the committed labels equal position + 1.
+  - **The codes test checked the union over two points.** A code asked on one basis only
+    passed.
+  - `033f7ec` and the three commits before it close all four. I re-injected the last fault
+    at landing, and the codes test caught it.
+
+**What exists now.**
+- *`PA_UK_SEC` at stage EC*, compiled under modelx-cython and checked against modelx.
+- *`Data`:*
+  - Every value is read by value, through one cell, `flag_codes`, for the flags. Every
+    check and every decode reads it.
+  - The mortality array runs by schedule and attained age, padded from 0, read through one
+    age reader.
+  - The bool columns are int64.
+  - The blank dependant and death columns are a value, a flag and a −1 sentinel (R8).
+  - Keys are bounded below `2**53` before any cast, and gaps are found in one pass.
+- *`Projection`:*
+  - It takes `idx`, `point_id()` naming the point in every refusal. A decode refusal names
+    it by label, as a test on a relabelled extract holds.
+  - Of its 100 cells, 8 stay Python. A compiled ItemSpace is 1,390,576 bytes.
+  - The kinds are one family, `VP`, `PROP`, `ANNUITANT` and `ALL`, in an inner width of 4.
+  - `claims(t, ALL)` sums its two kinds left to right, held to S by `float.hex`.
+  - `cum_annuity_pp`'s codes: `ANNUITANT` on the policy clock at its static base, and
+    `ALL` through `cum_annuity_all`, refused before the valuation date's key.
+  - The label accessors are reporting cells.
+- *The limits:*
+  - On the table basis, `omega_age_max`, 116, the table's last age plus one, bounds
+    `omega_age`.
+  - On either basis, `proj_len()` refuses a frame longer than
+    12 × (`omega_age_max` − `issue_age_min`), 1,392 months.
+  - The caches:
+    - `t` is 1,514, `k` 1,394, `y` 118, and `a` and `x` 117;
+    - each is derived in `spec_sec.py` and held by a test;
+    - no input either engine accepts reads past one.
+- *M22's guard* is on `inflation_factor`, `rpi_index` and `improve_factor`, inside each
+  cell's existing `except`, so that stage E's messages stay. Stage E's post-check stays
+  too.
+- *Refusal by point*, M23's form, applies to the sexes, the ratings, the start year, the
+  price and the overlap.
+- *Beside the model:*
+  - `sample_sec.py`, under a recursion limit of 3,000;
+  - `spec_sec.py`;
+  - the registry at stage `"EC"`, with `idx`, five reporting labels, `reporting_columns`
+    and `closing_pols_if`;
+  - `run_sec.py --cython`;
+  - `model-sec.md`'s *The compiled model*;
+  - uklib's `index.md`;
+  - the `cython_uk` job's `pension_annuity` shard.
+- *Tests:*
+  - without the compile tests, which is what the `sec_uk` legs run: 469 pass in 381 s, at
+    a peak of 2.7 GB;
+  - with them: 482 pass in 930 s, at 4.3 GB;
+  - the shard on the full grid: 16 compile tests in 1,116 s, 679 s of them C4 over the
+    splice grid.
+
+**The stack.**
+- *One cell a month*, modelx ran 1,391 cells deep. Compiled, each of 43 heads ran cold in
+  an ItemSpace of its own, bisected to 4 KiB. They needed 244 to 276 KiB, 33 of them more
+  than 256, and `net_cf` 256 to 276.
+- *Blocked by policy year*, in M10's `_py(y)` form:
+  - each life's survival on the table basis, `lives_if_py(y, life)`;
+  - the payments to date on every stream, `cum_annuity_all_py(y)`;
+  - the annuitant's, `cum_annuity_pp_py(y)`, whose walk starts at the static base where
+    that falls inside the year.
+
+  The income and the ratchet's peak already recursed by year.
+- *The refusals* moved off the chains into `annual_income_refusal`,
+  `cum_annuity_all_refusal` and `cum_annuity_pp_refusal`. A test holds each to its chain
+  by `float.hex`, at every key on every committed point. Each chain is tried past the
+  floats mid-year and on an anniversary.
+- *After*, at `omega_age` 116:
+  - modelx runs 253 cells deep on a chain of 241. The depth test holds each head to 12
+    beyond the chain, which is measured exactly over every monthly cell at every code.
+  - Compiled, every head ran on 52 to 76 KiB at 115. The test's bracket runs on 96 KiB and
+    not on 64, and the main thread passes.
+  - The compiled call needs a recursion limit of 26, and the export 517.
+- *The 1 MiB test cannot see the blocking undone*, since one cell a month needs only about
+  384 KiB here. Only the modelx depth test guards it, as the page says.
+
+**Departures and precisions.**
+- *A frame bounded on either basis.* This departs from stage E. The scenario basis
+  projects any limiting age, and stage E accepted frames past the table basis's longest.
+  - **Why refuse:** documenting the compiled edge proved fragile. It moved with value
+    protection and with a frame issued later.
+  - **What it refuses:** on the table basis, nothing stage E accepted. On the scenario
+    basis, only frames longer than 1,392 months.
+  - **At the edge:** on point 1, with first-death value protection, issued 120 months on
+    and lives aged 1, a 1,392-month guarantee projects 1,512 months, and C4 matches it
+    compiled. A month more is refused alike in both engines, message for message.
+- *One flag rule.* `Data.flag_codes()`, 1, 0 or −1 for each flag, is what each check and
+  each decode reads, from a single read of the file. " True", "True ", 1 and 1.0 on a point
+  that reads the flag are refused in both engines. A parameterised helper would have been
+  typed from the sample's bools.
+- *The inner width is 4,* where §6.7 said 3: the kinds are one family, and `ALL` is 3.
+- *`y` has no headroom.* Its largest key, 117, is reached, and the frame bound keeps it
+  there.
+- *Smaller precisions:*
+  - The improvement ages ship as floats, 90.0 and 110.0, so a fraction reads alike in
+    both engines.
+  - `sex(2)` returns NaN on a single life, as SPIA's and Term's labels do.
+  - `death_mth(3)` raises in both engines, where S read `death_mth_2`.
+  - A decode refusal keeps S's wording and names the point. A refusal of a code a cell
+    does not take keeps its constant string, the chain rule.
+- *C4:*
+  - It runs ten rows a read, and the extremes one at a time, since a sweep's memory grows
+    with the square of the frame. Each chunk counts its rows.
+  - `_pa_c4_also` asks every code no swept cell reads, on every row, both lives'
+    `lives_death` among them. Checking it row by row found `lives_death(t, 1)` uncompared
+    on single lives.
+- *The default run is past U6's five minutes* with the compile tests. The page records
+  why: each added test is the only compiled check of what it holds, and the `sec_uk` legs
+  skip them.
+- *C6 ran before the caches grew by 0.8%* for `omega_age_max`, and was not re-run.
+
+**Measured for K6.** On the shared 4-CPU Linux machine:
+- C6, at a load of 1.5 to 4.0, each figure the median of three runs, with the range:
+
+  | Engine | `net_cf`, a point | `result_cf`, a point | Peak |
+  |---|---|---|---|
+  | compiled | 0.393 ms (0.385–0.403) | 0.907 ms (0.864–0.930) | 87–88 MB |
+  | export | 5.92 ms (5.60–5.95) | 6.28 ms (5.95–6.32) | 87–88 MB |
+  | modelx | 192 ms (183–192) | 192 ms (188–200) | 119–122 MB |
+
+  - On `net_cf` the compiled model runs 15.1 times its export and 489 times modelx.
+  - On `result_cf` it runs 6.8 and 212 times.
+  - The compiled block stays flat, while modelx's grows 31 to 35 MB.
+- Stage E against EC, on the final tree:
+  - 572,562 values on the 23 committed points, 0 apart;
+  - 10,978,173 on the full splice grid's 460 rows, under the shipped References, an RPI of
+    8% and one of −2%, 0 apart.
+- At landing, `033f7ec` ran its gate here in two jobs, beside two builders:
+  - the full grid, its compile tests apart: 844 passed, in 1,906 s;
+  - the `pension_annuity` shard on the full grid: 16 passed, in 1,686 s. Each head, in an
+    ItemSpace of its own, ran on 96 KiB and not on 64, in that test's coarser steps;
+  - the `toolchain` shard;
+  - the conventions, harness and S suites of all seven products: 1,078 passed and 19
+    skipped, in 827 s;
+  - the generators' and fingerprints' checks for all seven uklib SEC models;
+  - the harness check;
+  - doccheck at 0 warnings;
+  - the scaffolding at 0 files.
+
+In CI, the Tests workflow's run 57 on `033f7ec` ran 107 jobs, the `cython_uk` job's six
+shards among them. When this record was written 103 had passed and four were still
+running, none of them M12's. M12's legs passed at the first attempt:
+- the `cython_uk` `pension_annuity` legs, the first to compile `PA_UK_SEC`, 16 tests each:
+  - 1,148 s on Ubuntu, on the full grid;
+  - 438 s on Windows;
+- `sec_uk`'s three PA legs: the full grid on Ubuntu in 17.5 min, and the core on Windows in
+  8.4 and on macOS in 6.2;
+- the `test` job on Python 3.14 and Ubuntu: 7,209 passed and 123 skipped in 42 min 17 s,
+  its harness step agreeing, with 146 statements compared.
+
+The compiled cold call's stack, as its test records it in its coarser steps, each head in
+an ItemSpace of its own:
+
+| Where | Ran on | Not on |
+|---|---|---|
+| Here | 96 KiB | 64 KiB |
+| Ubuntu | 192 KiB | 128 KiB |
+| Windows | 96 KiB | 64 KiB |
+
+The 1 MiB thread the test asserts holds on both runners, with a margin of five on Ubuntu.
+
+**Faults.** Each was injected into a copy of its own.
+- **The builder:** 22, then 7 on the rework and 5 on the verification's items. All were
+  caught, but a `check_*` cell returning None slips past C3, which leaves the checks to
+  Python (R17); C4 catches it.
+- **The review:** 29, of which four survived:
+  - the two anniversary openings skipping their overflow checks;
+  - `death_mth(3)` reading life 2;
+  - a C4 chunk dropping its last row.
+
+  Each is caught since the rework.
+- **The verification:** 13, of which three survived:
+  - a flag's check and its decode drifting apart;
+  - a decode refusal naming the point by position;
+  - a code asked on one basis only.
+
+  Each is caught since the verification's commits.
+
+**Carried into M15.**
+- *The shared conventions' C4* on the committed points runs without `also`, for every
+  model. `also` needs a hook in `SecSpec`, which is a change to the shared harness.
+- *C6 at the grown caches.*
+
+**The template, for M8, M14 and later:**
+- Refusal by point must never change how the points that read a column read it. Read
+  every value by value, through one rule that the check and the decode share.
+- No input either engine accepts may read past a compiled cache. Refuse it in
+  `proj_len()`, on every basis, rather than document an edge.
+- Assert every code of every coded cell row by row, not as a union.
+- Run the decode refusals on a relabelled extract.
 
 ---
 
