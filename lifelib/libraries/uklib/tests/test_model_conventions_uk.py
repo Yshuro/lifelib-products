@@ -965,6 +965,20 @@ TWIN_FLOORS = {
     "Term_UK_SEC": {"check_fib_ledger_resid": 1e-9},
 }
 
+# IP_UK_SEC sums its claim cohorts as Python's sum() sums floats from Python 3.12, with
+# Neumaier's compensation written out, so that there its twins are IP_UK_S's bit for bit
+# (UKLIB-SEC-PLAN.md §6.3, Record -- M8).  Python 3.11's sum() adds left to right,
+# uncompensated, and there IP_UK_S's sums round apart from IP_UK_SEC's in their last bits:
+# the two residuals that are roundings about zero then part, the count's roll-forward in
+# 107 places of the twins and the states' in 48, each by 1e-16 or less, as the Tests
+# workflow's run 59 found on Python 3.11 alone.  So where sum() does not compensate, each
+# keeps its own floor.  The test is of sum() itself, not of the version, since 3.12
+# compensates "on most builds".
+SUM_COMPENSATES = sum([0.1] * 10) == 1.0
+if not SUM_COMPENSATES:
+    TWIN_FLOORS["IP_UK_SEC"] = {"check_pols_roll_fwd_resid": 1e-9,
+                                "check_states_resid": 1e-9}
+
 # The new-business twins whose SEC frame ends before their S twin's, by design, each keyed
 # by its point_id with the two frames it must have, (SEC's, S's), and by model the cells
 # that hold where a frame ends, the cell of the fund that runs out, and the Reference of

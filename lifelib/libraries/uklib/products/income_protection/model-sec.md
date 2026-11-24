@@ -569,10 +569,15 @@ Python under its C declaration. So each input now reaches a cell as a number, as
   past it is 0.0, which `IP_UK_S`'s three filtered sums leave out and whose addition
   changes neither the compensated sum nor its carried error. A test holds every sum to
   `sum` by its bits in every month of every committed point, and to `IP_UK_S`'s own on
-  its twins, and counts the months where a plain left-to-right sum parts from it. So the
-  recursion forms the cohorts that can hold lives and no others, a triangle of the
-  months by the claim durations on new business, where the whole vector would form the
-  rectangle `IP_UK_S`'s tuples do.
+  its twins, and counts the months where a plain left-to-right sum parts from it. On
+  Python 3.11, whose `sum` adds left to right, `IP_UK_S`'s sums part from these in their
+  last bits, and so do the count's roll-forward residual and the states' residual, each
+  a rounding about zero, by 1e-16 or less: there the conventions' twin test holds the
+  two residuals to an absolute floor, and the product module, which CI runs on Python
+  3.13, would part from `IP_UK_S` in the sums' last bits. So the recursion forms the
+  cohorts that can hold lives and no others, a triangle of the months by the claim
+  durations on new business, where the whole vector would form the rectangle
+  `IP_UK_S`'s tuples do.
 - **Codes.** A timing or a kind, which `IP_UK_S` spells as text, is an int Reference
   named as the text: `BEF_NB = 0`, `BEF_DECR = 1` and `AFT_DECR = 2`, in the order of
   their instants within the month; and `claims`' kinds, `BENEFIT = 0`, `DEATH = 1` and
