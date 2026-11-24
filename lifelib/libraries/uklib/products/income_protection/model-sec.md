@@ -1010,35 +1010,47 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   main thread; a Reference set late; and the runner.
   `tests/test_compiled_conventions_uk.py` adds C3, C5 and the release.
 
-**Time and memory** (UKLIB-SEC-PLAN.md U6). The module's default run takes 1,360 s here at
-a peak of 6.0 GB of memory, and without its compile tests, `-m "not cython"`, 702 s at a
-peak of 5.4 GB, on the shared 4-CPU machine at a 1-minute load of 3 to 5 (measured at the
-C step). The in-force step's took about 190 s alone at 1.4 GB. Both are past the five
-minutes U6 budgets, and the C step's restructure is why: modelx records each cell's
-dependencies as it computes it, and the claim cohorts, a tuple a month in the in-force
-step, are each a cell now, read by four sums, so that a point costs modelx about five
-times what it did, the committed points' fingerprint 42 s where it took 7.6, and the
-committed points, swept once and held for the module, hold about 2 GB of the peak. The
+**Time and memory** (UKLIB-SEC-PLAN.md U6, K6). Measured at M8's review on the shared
+4-CPU machine, at a 1-minute load of 1.0 to 3.2, each peak the largest resident size of
+the run's processes: the module's default run takes 1,603 s at a peak of 2,709 MiB, and
+without its compile tests, `-m "not cython"`, as the `sec_uk` job's legs run it, having no
+compiler, 808 s at 2,564 MiB. On the full grid without them, `UKLIB_SEC_FULL=1`, as the
+`sec_uk` job's Linux leg runs it, 1,967 s at 2,950 MiB, and the `cython_uk` job's
+`income_protection` shard on the full grid, its Linux leg, 1,414 s at 3,537 MiB: each
+inside its job's hour. The in-force step's default took about 190 s alone at 1.4 GB. Both
+defaults are past the five minutes U6 budgets, and the C step's restructure is why: modelx
+records each cell's dependencies as it computes it, and the claim cohorts, a tuple a month
+in the in-force step, are each a cell now, read by four sums, so that a point costs modelx
+about five times what it did, the committed points' fingerprint 42 s where it took 7.6.
+That cost memory too: as the C step left the module, its peak was 5,884 MiB without the
+compile tests and 6,139 MiB with them (M8's review), 2 GB of it the committed points,
+swept once and held for the module at about 2.9 KB a cache entry. So the module now keeps
+each committed point as its sweep left it, its values alone, the cohorts an array of the
+months by the claim durations and the rest a dict, about 0.2 GB for the 19, and releases
+its ItemSpace, collecting after some 700 MB of released points (`sec_read`); every test on
+the committed model reads the kept values as it read the swept points, and a call the
+sweep did not cache, of which the tests make few, is computed on the point read afresh and
+released as the test ends. The sweep takes 63 s where it took 43, and the peaks are 3,320
+and 3,430 MiB lower. What sets the peak now is a test's own models before Python's cyclic
+collector frees them, a closed model sitting in reference cycles until it runs: the
+in-force interface's edges, a 624-month cover among their rows, and the states S reaches,
+restated after them. The peak without the compile tests is over 4 GB inside the 7 GB of
+the macOS `sec_uk` legs, the smallest CI runners, before their system takes its share. The
 default run's cuts are made already, each case on the full grid in full: the domain test's
 accepted edges project on a frame of 120 months where their own point's is 360, the
 month-on restatement and the cohort sums run on the core's points, the cold chains on one
 frame of the anchor cell, the chain-text test reading the depth test's traces, and the
 compiled comparisons under References of their own on the rows each binds on or was read
 for. What is left of the modelx part is the splice's core, about 80 s; the cold chains at
-the longest cover, 65 s; the committed points' sweep, 40 s; the counts' scaling, the
+the longest cover, 87 s; the committed points' sweep, 63 s; the counts' scaling, the
 checks on ten million policies, the restatements and the domains, under a minute each; and
-the rest, each test's own rows. The compile tests take about 11 minutes, the build 2 of
-them, the splice grid's core 2, the contract's extremes, the refusals, the committed rows
-and the stack one or two each. A cut to five minutes would leave the splice's core a few
-rows, take the longest cover's chains, and with them the stack's chains, off the default
-run, and move the compile tests to the full grid, which the `cython_uk` job's Linux legs
-run: its Windows legs, which run the default, would then run no compiled comparison with
-MSVC. The peak is inside the 7 GB of the smallest CI runner, the macOS `sec_uk` legs,
-which run without the compile tests, by 1.6 GB; releasing the committed points once swept
-would take 2 GB off it and add their sweep again to each test that reads them. On the full
-grid, `UKLIB_SEC_FULL=1`, the module takes 2,981 s at a peak of 7.0 GB, and the
-`cython_uk` job's `income_protection` shard, the compile tests alone on the full grid as
-that job's Linux leg runs them, 1,460 s at a peak of 3.3 GB, inside the job's hour.
+the rest, each test's own rows. The compile tests take about 13 minutes, the build 2 of
+them, the contract's extremes, the splice grid's core and the refusals near 2 each, and
+the committed rows, the stack and the compiled runner about one each. A cut to five
+minutes would leave the splice's core a few rows, take the longest cover's chains, and
+with them the stack's chains, off the default run, and move the compile tests to the full
+grid, which the `cython_uk` job's Linux legs run: its Windows legs, which run the default,
+would then run no compiled comparison with MSVC.
 
 ```bash
 python -m pytest tests/test_income_protection_uk_sec.py -q
