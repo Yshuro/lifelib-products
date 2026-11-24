@@ -2367,11 +2367,20 @@ def _by_label(message, relabel):
 def _extract_of(edit=None):
     """The committed table, edited by ``edit`` by its own labels, then relabelled
     :data:`EXTRACT_LABELS`, so that no label is its position plus one; and the relabelling,
-    ``{committed label: extract label}``."""
+    ``{committed label: extract label}``.
+
+    Every label is asserted to be neither its row's position nor that plus one, so that an
+    extract that came to relabel nothing fails each test that reads it, rather than let a
+    refusal naming its point by ``idx`` or ``idx + 1`` pass as the extract's label.
+    """
     committed = _committed()
     relabel = dict(zip(committed.index, EXTRACT_LABELS))
     table = edit(committed) if edit is not None else committed
-    return table.rename(index=relabel), relabel
+    extract = table.rename(index=relabel)
+    clashes = [(position, label) for position, label in enumerate(extract.index)
+               if label in (position, position + 1)]
+    assert not clashes, f"the extract labels rows by their positions: {clashes}"
+    return extract, relabel
 
 
 def _refused_naming(call, message):
@@ -7858,11 +7867,9 @@ def _refusal_cases():
     which the test indexes ``Projection`` by in modelx too.
     """
     committed = _committed()
-    relabel = dict(zip(committed.index, EXTRACT_LABELS))
 
     def extract(edit=None):
-        table = edit(committed) if edit is not None else committed
-        return table.rename(index=relabel)
+        return _extract_of(edit)[0]
 
     def at(point):
         return list(committed.index).index(point)
@@ -8021,7 +8028,7 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
     cases = _refusal_cases()
     plain = len(cases)
     committed = _committed()
-    relabelled = committed.rename(index=dict(zip(committed.index, EXTRACT_LABELS)))
+    relabelled, _ = _extract_of()
     positions = list(committed.index)
     cases.append(("compiled only", relabelled, None, {},
                   [(positions.index(point), cell, args)
