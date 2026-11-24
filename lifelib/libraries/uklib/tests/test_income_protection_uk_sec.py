@@ -92,12 +92,13 @@ the product's own facts:
   parameters; the static check the C step made; the docstrings; the shared input tables;
   and what the default grid reaches.
 * The C step's representation, in modelx: the claims total held to ``IP_UK_S``'s by its
-  bits; the cohorts' sums held to ``IP_UK_S``'s ``sum`` by theirs, the cohorts past the
-  live ones zero; every schedule at every age of the inception and mortality arrays, on
-  the shipped inception table and on the floor's; every decode on every value, the
-  escalation flag read by its text alone; the padded arrays; the vectors' dtypes; the
-  parameterless cells' Python numbers; the labels' refusals; the spec's and the sample's
-  comments; the runner's rebuild; and what the vectors cannot hold.
+  bits; the cohorts' sums held to ``IP_UK_S``'s ``sum`` by theirs and by their order, the
+  cohorts past the live ones zero; every schedule at every age of the inception and
+  mortality arrays, on the shipped inception table and on the floor's; every decode on
+  every value, the escalation flag read by its text alone; the padded arrays; the
+  vectors' dtypes; the parameterless cells' Python numbers; the labels' refusals; the
+  spec's and the sample's comments; the runner's rebuild; and what the vectors cannot
+  hold.
 * C2, the fingerprint: every committed point computes what the model computed when its E
   step ended, frozen at the end of this module before its C step changed anything
   (USLIB-SEC-PLAN.md §5.4).
@@ -5095,10 +5096,10 @@ def test_the_cohort_sums_are_s_sums_bit_for_bit(sec_model, s_model, grid):
     Neumaier's way, and this model writes each sum out as a loop over ``pols_sick_dur(t,
     z)`` in ``z`` order, from 1 to ``claim_dur_live(t)`` (:data:`COHORT_SUMS`), and the
     present value as a loop over the frame's months.  Nothing else holds a loop to
-    ``sum``'s float: T1 and the splice compare to 1e-9, and a plain sum, or one out of
-    ``z`` order, parts from it by an ulp in some months.  So on every committed point, in
-    every month of its frame and the month after it: the two cohorts past
-    ``claim_dur_live(t)``, where ``max_dur()`` has them, are 0.0 exactly, and at the
+    ``sum``'s float: T1 and the splice compare to 1e-9, and a plain sum parts from it by
+    an ulp in some months; one out of ``z`` order the test below holds.  So on every
+    committed point, in every month of its frame and the month after it: the two cohorts
+    past ``claim_dur_live(t)``, where ``max_dur()`` has them, are 0.0 exactly, and at the
     frame's first two months and its last every cohort past it is, so that the sums may
     stop there, the cohorts past them being each the zero of the one below on the
     diagonal; each sum is, by ``float.hex``, ``sum`` of S's term over the cohorts to
@@ -5158,6 +5159,60 @@ def test_the_cohort_sums_are_s_sums_bit_for_bit(sec_model, s_model, grid):
                          f"{s.pv_benefits()!r}")
     assert plain > 0, "no month where a plain sum parts from sum: the test sees no order"
     assert not found, found[:10]
+
+
+def _direct_reads(proj, cell, args, read):
+    """The arguments of each call of ``read`` that ``cell(*args)`` makes itself, in the
+    order it makes them, by modelx's stack trace.  On a model just read every read is cold,
+    and the trace records it; a read of a value already cached it does not."""
+    mx.start_stacktrace(maxlen=None)
+    try:
+        proj.cells[cell](*args)
+        trace = mx.get_stacktrace(summarize=False)
+    finally:
+        mx.stop_stacktrace()
+    level, found = 0, []
+    for event, _, _, text, called in trace:
+        if event == "ENTER":
+            level += 1
+            if level == 2 and f".{read}(" in text:
+                found.append(tuple(called))
+        else:
+            level -= 1
+    return found
+
+
+# modelx warns as its stack trace starts and stops, which is all the test does with it.
+@pytest.mark.filterwarnings("ignore:call stack trace:UserWarning")
+def test_each_sum_reads_its_terms_in_ip_uk_s_order():
+    """Each compensated sum reads its terms in ``IP_UK_S``'s order: ``z``, and ``t``,
+    ascending.
+
+    A compensated sum of terms all 0 or more is the correctly rounded sum in almost any
+    order, so the bit test above cannot see a loop run out of order: on the committed
+    points it passes one summed in reverse.  But ``sum``'s float is its order's, and a sum
+    whose exact value lies near a rounding tie parts in another.  So the order itself is
+    held: on a model just read, each cohort sum of :data:`COHORT_SUMS` on the anchor cell
+    in force in its last month, point 10, whose 359 opening cohorts are each read cold, is
+    called under modelx's stack trace, and the cohorts it reads itself must be claim
+    durations 1 to ``claim_dur_live(0)``, in order; and the present value's reads of the
+    benefit outgo, on the twin of the older male cell, its months 0 to ``proj_len() - 1``,
+    in order.
+    """
+    for cell in (*COHORT_SUMS, "pv_benefits"):
+        model = mx.read_model(model_path(SEC), name=_name("order"))
+        try:
+            if cell == "pv_benefits":
+                p = _point(model, 6)
+                want = [(t, _code(p, "BENEFIT")) for t in range(p.proj_len())]
+                got = _direct_reads(p, cell, (), "claims")
+            else:
+                p = _point(model, 10)
+                want = [(0, z) for z in range(1, p.claim_dur_live(0) + 1)]
+                got = _direct_reads(p, cell, (0,), "pols_sick_dur")
+            assert got == want and len(want) > 100, (cell, got[:5], len(got), len(want))
+        finally:
+            model.close()
 
 
 # Every schedule of the inception table, as Data.inception_schedule numbers them: by sex,

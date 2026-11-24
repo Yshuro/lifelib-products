@@ -808,6 +808,44 @@ is the recovery rate and the lapse rate, the RPI's steps floored and capped, and
 inception rate floored at 0: a compile test holds the two engines equal where each binds,
 on its own rows.
 
+### Speed
+
+`python tools/bench_sec_cy.py income_protection` builds the model into a temporary
+directory and times one block run on three engines: modelx, the export and the compiled
+model. Each engine runs the committed table repeated, in a process of its own, as
+`run_sec.py --block` runs a block, each point projected and then released. `net_cf` is
+`net_cf(t)` summed over the frame, the projection alone, as `basiclife/BasicTerm_SC` is
+timed on its `pv_net_cf()`; `result_cf` is the report `run_sec.py` prints, which builds a
+DataFrame for each point. Each run of the tool takes the fastest of three runs of each
+engine and loop. The tool was run three times, on one build, `--build`, with modelx's
+block one copy of the table, since a modelx point takes a second and a half here, and
+each time below is the median of its three, with the range of the three beside it:
+
+| Engine | Points | `net_cf`, a point | `result_cf`, a point | Peak memory |
+|---|---|---|---|---|
+| compiled | 6,004 | 2.82 ms (2.73–2.82) | 3.36 ms (3.31–3.37) | 134 MB |
+| export | 608 | 56.7 ms (56.1–57.1) | 57.0 ms (57.0–57.7) | 99 MB |
+| modelx | 19 | 1,430 ms (1,420–1,460) | 1,470 ms (1,450–1,490) | 280 MB |
+
+On `net_cf` the compiled model runs 20.2 times its export (19.9 to 20.8 over the three),
+and on `result_cf` 17.2 times (16.9 to 17.2); it runs 508 times modelx on `net_cf` (504 to
+534) and 437 on `result_cf` (431 to 451). The cohorts are the work: a point forms its
+claim cohorts, a triangle of its months by the claim durations that can hold lives, and
+sums them four times a month, so a point costs more on every engine than one of
+`WOL_UK_SEC`'s, which ran 0.40 ms compiled, and modelx most, each cohort being a cell
+whose dependencies it records. The release keeps a block flat: the compiled model's peak
+grew by 0.3 MB at most over its 6,004 points, each ItemSpace's 6 MB freed as the next is
+made, and the export's not at all, where modelx's rose by 181 MB over its 19. Reading the
+six files and building every `Data` vector and array for the compiled block took 0.38 to
+0.41 s, and asking every point for its frame, the runner's first pass, 1.47 to 1.52 s.
+Every engine, loop and run summed `net_cf` over a copy of the table to the same
+−834,758.3005, to 1e-9 relative.
+
+Measured on 2026-11-24 on a machine shared with other work: 4 CPUs (an Intel Xeon at
+2.10 GHz), a 1-minute load average between 3.8 and 5.8 as the runs started; Linux,
+Python 3.13.18 and gcc 13.3.0, with modelx 0.33.0, modelx-cython 0.1.0, Cython 3.3.1,
+numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
+
 ## Tests
 
 - **The twin identity**, in `tests/test_model_conventions_uk.py`: on points 1, 3, 4 and 6,
@@ -925,3 +963,37 @@ on its own rows.
   edges; each shape's deepest cold calls on a 1 MiB stack and on the main thread; a
   Reference set late; and the runner. `tests/test_compiled_conventions_uk.py` adds C3,
   C5 and the release.
+
+**Time and memory** (UKLIB-SEC-PLAN.md U6). The module's default run takes 1,360 s here at
+a peak of 6.0 GB of memory, and without its compile tests, `-m "not cython"`, 702 s at a
+peak of 5.4 GB, on the shared 4-CPU machine at a 1-minute load of 3 to 5 (measured at the
+C step). The in-force step's took about 190 s alone at 1.4 GB. Both are past the five
+minutes U6 budgets, and the C step's restructure is why: modelx records each cell's
+dependencies as it computes it, and the claim cohorts, a tuple a month in the in-force
+step, are each a cell now, read by four sums, so that a point costs modelx about five
+times what it did, the committed points' fingerprint 42 s where it took 7.6, and the
+committed points, swept once and held for the module, hold about 2 GB of the peak. The
+default run's cuts are made already, each case on the full grid in full: the domain test's
+accepted edges project on a frame of 120 months where their own point's is 360, the
+month-on restatement and the cohort sums run on the core's points, the cold chains on one
+frame of the anchor cell, the chain-text test reading the depth test's traces, and the
+compiled comparisons under References of their own on the rows each binds on or was read
+for. What is left of the modelx part is the splice's core, about 80 s; the cold chains at
+the longest cover, 65 s; the committed points' sweep, 40 s; the counts' scaling, the
+checks on ten million policies, the restatements and the domains, under a minute each; and
+the rest, each test's own rows. The compile tests take about 11 minutes, the build 2 of
+them, the splice grid's core 2, the contract's extremes, the refusals, the committed rows
+and the stack one or two each. A cut to five minutes would leave the splice's core a few
+rows, take the longest cover's chains, and with them the stack's chains, off the default
+run, and move the compile tests to the full grid, which the `cython_uk` job's Linux legs
+run: its Windows legs, which run the default, would then run no compiled comparison with
+MSVC. The peak is inside the 7 GB of the smallest CI runner, the macOS `sec_uk` legs,
+which run without the compile tests, by 1.6 GB; releasing the committed points once swept
+would take 2 GB off it and add their sweep again to each test that reads them.
+
+```bash
+python -m pytest tests/test_income_protection_uk_sec.py -q
+UKLIB_SEC_FULL=1 python -m pytest tests/test_income_protection_uk_sec.py -q   # the full grid
+python -m pytest tests/test_model_conventions_uk.py -q -k IP_UK_SEC
+UKLIB_CYTHON_SHARD=income_protection python -m pytest -m cython tests -q     # compiled
+```
