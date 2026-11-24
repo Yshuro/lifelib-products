@@ -513,11 +513,14 @@ million, extract and month-on tests; and the whole-limit test's later rows. The
 every-state test restates each S point by default at every month of its first policy year
 and the first anniversary, the declaration and the anniversary of every fifth policy year,
 policy months 106 to 120 and the frame's last month, and on the full grid at every month.
-UKLIB-SEC-PLAN.md U6 asks for about five minutes by default (K6): the default run took
-about 316 s at the M13 review, at a peak of 3.4 GiB, so it runs over by about a minute,
-on a machine shared with other builds. Moving the every-state test's main and rule sets to
-the full grid saves about 30 s; moving the splice's rule set there too would save about a
-minute more, but leave no core row declaring under the rule, which the review asked for.
+UKLIB-SEC-PLAN.md U6 asks for about five minutes by default (K6). The default run took
+about 316 s at the M13 review, at a peak of 3.4 GiB; after the review's rework, which adds
+the splice's third set and seven core rows, it takes about 406 s here, at a peak of
+4.7 GB, on a machine shared with other builds, and the full grid about 1,180 s, at a peak
+of 4.6 GB. So the default run is over by one to two minutes. Moving the every-state
+test's main and rule sets to the full grid saved about 30 s; moving the splice's rule and
+bound sets there too would save about two minutes more, but leave no core row declaring
+under the rule or holding the surrender rate at its bound, which the review asked for.
 
 **Branches the core reaches.** A test asserts the core reaches each branch, keyed by the
 set of References it runs under where the set matters. A withdrawal is capped at the unit
