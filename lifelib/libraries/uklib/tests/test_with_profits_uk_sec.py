@@ -1532,9 +1532,7 @@ def _longest_cover(tmp_path, shapes):
 
 # modelx warns as its stack trace starts and stops, which is all the test does with it.
 @pytest.mark.filterwarnings("ignore:call stack trace:UserWarning")
-@pytest.mark.parametrize("shape", [pytest.param(s, id=s.replace(" ", "_"),
-                                                marks=() if s != "withdrawing bond"
-                                                else FULL_ONLY)
+@pytest.mark.parametrize("shape", [pytest.param(s, id=s.replace(" ", "_"))
                                    for s in SHAPES])
 def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path, shape):
     """Called cold, each chain runs one cell a month within its policy year, and two cells a
@@ -1557,11 +1555,12 @@ def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path, shape):
     cover, 1,236 months from issue age 18, issued now and, with the full grid, 120 months on
     (:func:`_longest_cover`), each row's frame asserted on its own read first.  The bonus
     rule's own chain, one cell a year, is held to a year a cell and :data:`RULE_OVERHEAD`
-    more.  The bond and the endowment run by default, and the withdrawing bond, whose
-    exhaustion search runs the units' chain ascending first, with the full grid.  A chain
-    left one cell a month runs about a thousand cells past its bound; one of two cells a
-    month within its year 11 past it in the frame's last month, the year's twelfth; and a
-    year's opening that walks from the year's second month a cell more a year.
+    more.  Every shape runs by default, the withdrawing bond among them, whose exhaustion
+    search runs the units' chain ascending first, so that a fault in its depth fails the
+    default run; the rows issued 120 months on run with the full grid.  A chain left one
+    cell a month runs about a thousand cells past its bound; one of two cells a month within
+    its year 11 past it in the frame's last month, the year's twelfth; and a year's opening
+    that walks from the year's second month a cell more a year.
     """
     folder, frames = _longest_cover(tmp_path, (shape,))
     frames = frames if SEC_FULL else frames[:1]
@@ -1804,26 +1803,27 @@ def test_no_cell_a_chain_recurses_through_formats_a_refusal(tmp_path):
     A compiled cell's C frame holds the code that formats each of its messages, whether a
     run reaches it or not, and a chain holds a frame of each cell it recurses through at
     each level.  On CI's Ubuntu runner, a refusal formatted inside ``Term_UK_SEC``'s
-    recursive waiver cell had its cold call at the longest cover need 512 KiB to 1 MiB,
-    and 256 to 384 once the cell held none (K12).  So every refusal of this model whose
-    message is formatted sits in a cell no chain recurses through: the asset share, the
-    unit price, the units, the guarantee, the cumulant of the charges and the smoothing
-    account call ``asset_share_refusal``, ``unit_price_refusal``, ``units_refusal``,
+    recursive waiver cell had its cold call at the longest cover need 512 KiB to 1 MiB, and
+    256 to 384 once the cell held none (K12).  So every refusal of this model whose message
+    is formatted sits in a cell no chain recurses through: the asset share, the unit price,
+    the units, the guarantee, the cumulant of the charges and the smoothing account call
+    ``asset_share_refusal``, ``unit_price_refusal``, ``units_refusal``,
     ``guar_benefit_refusal``, ``guar_charge_cum_refusal`` and ``smoothing_account_refusal``
     on their error paths alone, and the count and the payout refuse nothing a value makes.
-    On a model just read, at the longest cover of the bond and of the endowment, issued
+    On a model just read, at the longest cover of each shape of :data:`SHAPES`, the
+    withdrawing bond among them, whose exhaustion search runs the units' chain first, issued
     now, each head of :data:`TEXT_HEADS` is called cold in the last month, under modelx's
     stack trace, with :data:`LONGEST_REFS` set, and the cells on the stack at its deepest
     point are counted.  A cell held there twice or more is one the chain recurses through,
-    at every month or every year.  None of them may build text anywhere in its formula, at
-    a raise, in an error branch or into a local, nor raise other than one exception on one
+    at every month or every year.  None of them may build text anywhere in its formula, at a
+    raise, in an error branch or into a local, nor raise other than one exception on one
     string constant (:func:`_text_faults`): the frame holds a message's code whether or not
     its branch runs.  A cell held once costs its frame once, as ``mort_rate``, whose refusal
     names an age outside the table, does at the chain's foot.  Each chain's monthly cell and
     its year's opening must be among the cells checked, every cell the eight blocked chains
     recurse through, or the test would check less than it says.
     """
-    folder, frames = _longest_cover(tmp_path, ("bond", "endowment"))
+    folder, frames = _longest_cover(tmp_path, tuple(SHAPES))
     found, checked = [], set()
     for label, shape, months, entry in frames:
         if entry != 0:

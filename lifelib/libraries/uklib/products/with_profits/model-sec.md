@@ -1003,34 +1003,33 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
 and the default cases of the slower tests; the full grid, `UKLIB_SEC_FULL=1`, runs the
 rest, and one leg of the `sec_uk` job runs it. Only on the full grid: the splice's other
 cases; the every-state test's sets but S as shipped, the splice's main and rule sets and
-the two sets of the committed rows' own References; the depth test's withdrawing bond and
-each shape's row issued 120 months on; the other committed points of the scaling, ten
-million, extract and month-on tests; and the whole-limit test's later rows. The
-every-state test restates each S point by default at every month of its first policy year
-and the first anniversary, the declaration and the anniversary of every fifth policy year,
-policy months 106 to 120 and the frame's last month, and on the full grid at every month.
-UKLIB-SEC-PLAN.md U6 asks for about five minutes by default (K6). The default run took
-about 316 s at the M13 review, at a peak of 3.4 GiB, and after the review's rework, which
-adds the splice's third set and seven core rows, about 406 s at a peak of 4.7 GB. Each
-splice set now reads S with the points its cases compare alone, where it read all 16, the
-generator writing a twin of each and the rule's exhaustion searches projecting them: the
-default run takes about 321 s here, at a peak of 3.4 GB, and the full grid about 1,030 s,
-at a peak of 3.6 GB, on a machine shared with other builds, each comparing what it did.
-So the default run is about half a minute over. Moving the every-state test's main and
-rule sets to the full grid saved about 30 s; moving the splice's rule and bound sets there
-too would save about a minute more, but leave no core row declaring under the rule or
-holding the surrender rate at its bound, which the review asked for. The C step (M14) adds
-the representation's tests, about half a minute, which hold the compiled form in a run
-with no compiler and so stay in the default run, and the compile tests, which run in the
-default run too where modelx-cython and a compiler are at hand. Without them, `-m "not
-cython"`, as the `sec_uk` legs run it, the default run takes about 380 s here, at a peak of
-3.6 GB; with them, the model built once, about 750 s, at a peak of 4.0 GB, the build two
-minutes of it; and the full grid, its compile tests comparing the whole grid, about
-1,850 s, at a peak of 4.2 GB, on a machine shared with other builds. So the run the
-`sec_uk` legs make is about 80 s over, the representation's tests about half a minute of
-it and a busier machine than M13's the rest; moving those tests to the full grid would
-leave a run without a compiler no hold on the compiled form, so the cuts that remain are
-M13's, at the cost above.
+the two sets of the committed rows' own References; the depth test's row of each shape
+issued 120 months on; the other committed points of the scaling, ten million, extract and
+month-on tests; and the whole-limit test's later rows. The every-state test restates each
+S point by default at every month of its first policy year and the first anniversary, the
+declaration and the anniversary of every fifth policy year, policy months 106 to 120 and
+the frame's last month, and on the full grid at every month. UKLIB-SEC-PLAN.md U6 asks for
+about five minutes by default (K6). The default run took about 316 s at the M13 review, at
+a peak of 3.4 GiB, and after the review's rework, which adds the splice's third set and
+seven core rows, about 406 s at a peak of 4.7 GB. Each splice set now reads S with the
+points its cases compare alone, where it read all 16, the generator writing a twin of each
+and the rule's exhaustion searches projecting them: the default run takes about 321 s
+here, at a peak of 3.4 GB, and the full grid about 1,030 s, at a peak of 3.6 GB, on a
+machine shared with other builds, each comparing what it did. So the default run is about
+half a minute over. Moving the every-state test's main and rule sets to the full grid
+saved about 30 s; moving the splice's rule and bound sets there too would save about a
+minute more, but leave no core row declaring under the rule or holding the surrender rate
+at its bound, which the review asked for. The C step (M14) adds the representation's
+tests, about half a minute, which hold the compiled form in a run with no compiler and so
+stay in the default run, and the compile tests, which run in the default run too where
+modelx-cython and a compiler are at hand. Without them, `-m "not cython"`, as the `sec_uk`
+legs run it, the default run takes about 380 s here, at a peak of 3.6 GB; with them, the
+model built once, about 750 s, at a peak of 4.0 GB, the build two minutes of it; and the
+full grid, its compile tests comparing the whole grid, about 1,850 s, at a peak of 4.2 GB,
+on a machine shared with other builds. So the run the `sec_uk` legs make is about 80 s
+over, the representation's tests about half a minute of it and a busier machine than M13's
+the rest; moving those tests to the full grid would leave a run without a compiler no hold
+on the compiled form, so the cuts that remain are M13's, at the cost above.
 
 **Branches the core reaches.** A test asserts the core reaches each branch, keyed by the
 set of References it runs under where the set matters. A withdrawal is capped at the unit
