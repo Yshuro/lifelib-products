@@ -16,9 +16,10 @@ column holding the state before it (D6). Term and critical illness were reworked
 also by run 54 (§6.1, *Record — the anniversary at the valuation date*), so every SEC model
 built so far follows it. Whole of life's compile step, M6, and income protection's in-force
 step, M7, are done too, 2026-11-24, by run 55 (§6.4, *Record — M6*, and §6.3, *Record —
-M7*), with-profits' in-force step, M13, by run 56 (§6.5, *Record — M13*), and the pension
-annuity's compile step, M12, by run 57 (§6.7, *Record — M12*). The compile steps of income
-protection and with-profits, M8 and M14, are under way (§7). Like USLIB-SEC-PLAN.md, this document is both the
+M7*), with-profits' in-force step, M13, by run 56 (§6.5, *Record — M13*), the pension
+annuity's compile step, M12, by run 57 (§6.7, *Record — M12*), and with-profits', M14, by
+run 58 (§6.5, *Record — M14*). Income protection's compile step, M8, is under way (§7).
+Like USLIB-SEC-PLAN.md, this document is both the
 specification and the record: each milestone records what it actually did, including where
 the implementation departed from the plan.
 
@@ -3106,6 +3107,283 @@ attempt:
     The opening column holds the value last declared.
   - A splice set builds S only for the points it compares.
 
+#### Record — M14, done 2026-11-24
+
+**Commits.** M14 was built in three commits on M13's landing:
+- the C step (`cc87336`);
+- its docs with C6 (`d34d788`);
+- the default run's figures (`bac6edd`).
+
+Eleven more followed from the review:
+- the caches' bounds refused by point, with stage E's domains restored (`0c4212b`);
+- the withdrawing bond made a default case of the depth tests (`27af1e4`);
+- the charges cumulant's refusal text corrected, with its cases (`33adaa0`);
+- the exhaustion search's last month of cover held (`f6f07a5`);
+- each refusal held to the point's label on a relabelled extract (`94ca190`);
+- C4's codes derived from what modelx takes (`a339e94`);
+- D6's declarations held to the rule computed in the test, in three commits (`720aa86`,
+  `cb28abd`, `29ae29c`);
+- the shared harness's C4 setting a `Data` Reference, in both libraries' copies
+  (`cfc4671`);
+- the default run's figures after the rework (`99b6090`).
+
+Three more followed from the verification:
+- the cover bound recorded as conservative, its case held (`115c70f`);
+- an extract that relabels nothing fails (`8c209ee`);
+- the guarantee flags' last column, read by a frame (`2dd7242`).
+
+It ran beside IP's compile step, M8, and landed first.
+
+**The build and the review.**
+- One agent built it, injecting 21 faults, of which 20 were caught. The one not caught,
+  M22's three guards dropped compiled, is equivalent (*M22's guards* below).
+- A second agent reviewed it against this note, the plan and USLIB-SEC-PLAN.md, injecting
+  24 faults of its own: 16 were caught, 5 missed, and 3 are equivalent.
+  - **No number had moved.** It compared every value both engines cache on 79 rows of its
+    own under four sets of References, the shipped, two rule sets and the longest cover
+    at 121: 7,824,032 values, all 0 apart. Compiled, the 3,198 declarations made in the
+    frames equalled its own computation of the rule, by `float.hex`.
+  - **Its first finding was the caches' bounds.** The C step refused three References past
+    the caches' edges: an `issue_age_min` below 18, an `omega_age_max` above 121 and a
+    horizon above 120. Each refused whole tables that stage E projects: at an
+    `issue_age_min` of 17, or a horizon of 121, stage E projected all 24 committed points,
+    and the compiled model refused all 24. Only one input truly passed a cache, a bond
+    issued at 15 with a cover of 1,260 months, and it took the other 23 points down with
+    it. I decided M12's form: stage E's domains, and a refusal by point of only what passes
+    a cache (*The caches' bounds, by point* below).
+  - Gaps in what the tests saw:
+    - The exhaustion search's last month of cover was untested. A search a month short
+      passed the default run. A bond in force at 777 of 780 months whose units run out at
+      779 then lost its forced encashment, and its maturity at `t = 1` fell from 0.0264 to
+      0.
+    - A refusal naming the point by its position passed, the committed labels being
+      position + 1, compiled as in modelx.
+    - `also` was held to the test's own list of codes. `smoothing_cost_pp` at `GUARANTEE`
+      could fall out of C4 and pass.
+    - The horizon's refusal printed differently in the two engines: set as 121.0, modelx
+      printed `not 121.0` and the compiled model `not 121`.
+    - A depth fault in the smoothing account showed on the full grid only, the withdrawing
+      bond being a full-grid case.
+    - The page said the charges cumulant leaves the floats after its first month only with
+      the estate's distribution holding the asset share flat. That was false.
+- **The rework.** The builder fixed all of them, with 10 faults more, each caught. One was
+  missed at first: the declaration reading the asset share a month off. Both rows the D6
+  tests declared on were clamped by the cap or the floor, so the declared rate ignored the
+  supportable one. Two unclamped rows were added, the endowment at 11 and the 5% bond at
+  60, and the test now computes the rule itself; both D6 tests fail on that fault.
+- **The verification.** The reviewer verified the rework with 18 faults, the 7 that had
+  survived re-injected among them, each caught. Under the widest domains, an
+  `issue_age_min` of 0, a mortality table from 0 to 130 and a horizon of 5,000 months, ten
+  rows at and past both bounds matched modelx compiled, message for message, with no
+  compiled-only `IndexError`. It found three gaps more:
+  - **The cover bound is conservative.** A bond issued at 17 to 121 with a cover of 1,248
+    months, withdrawing 3% a year, runs out of units at policy month 798, inside both
+    caches. Stage E projects it, and the compiled model refuses it. I decided to record
+    it, not to bound the cover by the exhaustion month (*The caches' bounds, by point*
+    below).
+  - **The extract's relabelling was unchecked.** With the extract relabelling nothing, a
+    refusal naming the point by position passed every modelx test; only the compiled
+    refusal test, which builds its own extract, saw it.
+  - **The guarantee flags' last column** became reachable once `issue_age_min` could be
+    0, and no test wrote a date there.
+  - The last three commits close all three. The reviewer's bond is a refused case of the
+    caches test, in both engines, message for message. The extract asserts that no label
+    is its row's position or that plus one. A decoded case on a table cut to ages 0 to 60
+    reads the flags' last column in its frame's last month. I re-injected two faults at
+    landing: the flags stopping a year short failed the decoded test, and the extract
+    relabelling nothing beside a refusal naming the point by position failed 176 domain
+    cases at setup.
+
+**What exists now.**
+- *`WP_UK_SEC` at stage EC*, compiled under modelx-cython and checked against modelx.
+- *`Data`:*
+  - 27 vectors, arrays and extents, each with its column or file in the docstring.
+  - The chassis decodes to `chassis_code`, `UWP_bond` 0 and `CWP_endowment` 1, and the
+    sex to `mort_schedule`, M 0 and F 1. The tax basis, which no formula reads, stays a
+    label.
+  - `guarantee_dates` decodes once into `guarantee_flags`, by point and policy year, as
+    wide as every year a frame can read, `guarantee_year_last()`, the mortality table's
+    last age plus 2. The tuple and the generator are gone, and `guarantee_imminent(t)`'s
+    window is the one year whose date is 1 to 12 months ahead. The check and the decode
+    read each part alike, by value: " 10", "10 ", 10 and 10.0 name year 10 in both.
+  - The mortality table is an array by schedule and attained age, padded from 0; the
+    lapse rates by chassis and policy year, with each chassis's last year.
+  - Keys are bounded below `2**53` before any cast.
+- *`Projection`:*
+  - It takes `idx`, `point_id()` naming the point by its label in every refusal, as a
+    relabelled extract holds in both engines.
+  - Of its 124 cells, 7 reporting cells stay Python. A compiled ItemSpace is 1,853,528
+    bytes.
+  - The codes: the count's timings `BEF_NB` 0 to `AFT_DECR` 3 and the asset share's
+    `BEF_PREM` 4 to `AFT_MC` 9, one numbering in one inner width of 10; the claims' kinds
+    `DEATH` 0, `SURRENDER` 1, `GUARANTEE` 2, `MATURITY` 3 and `ALL` 4.
+  - `claims(t, ALL)` is Neumaier's summation written out, since three kinds are paid
+    together in a frame's last month. It is held to S by `float.hex`.
+  - The eight chains are blocked by policy year (*The stack* below). The exhaustion
+    search stays one loop, stopping at month 1,356.
+  - Six refusal cells, each held to its chain by `float.hex` in every month of every
+    committed point.
+- *The limits:*
+  - `proj_len()` refuses by point a cover longer than 1,236 months and a frame longer than
+    1,356, in both engines, message for message.
+  - The caches: `t` is 1,358 and `y` 105, each derived in `spec_sec.py` from the two
+    bounds and held by a test. No input either engine accepts reads past one.
+- *M22's guard* is on the inflation factor, the bonus rule's growth and the endowment's
+  discount, inside each cell's existing `try`, so that stage E's messages stay.
+- *Beside the model:*
+  - `sample_sec.py`, under a recursion limit of 2,000;
+  - `spec_sec.py`;
+  - the registry at stage `"EC"`, with `idx` and three reporting labels;
+  - `run_sec.py --cython`;
+  - `model-sec.md`'s *The compiled model*;
+  - uklib's `index.md`;
+  - the `cython_uk` job's `with_profits` shard.
+- *The shared harness:* C4 sets a Reference named `"Data.<name>"` on `Data`, in modelx and
+  in the compiled child, so that it can compare a row issued past the shipped horizon.
+  uslib's copy takes the same lines, and no uslib Reference name holds a dot.
+- *Tests*, by default, as the builder measured them before the verification's three
+  commits:
+  - without the compile tests, which is what the `sec_uk` legs run: 477 pass in 442 s, at
+    a peak of 3.8 GiB;
+  - with them: 495 pass in 839 s, at 4.2 GiB.
+
+**The stack.**
+- *One cell a month*, as stage E left the chains, a cold call at the longest cover, 1,236
+  months from 18 to 121, with the rule and the estate's distribution on, ran compiled on:
+  - the count's heads, `net_cf`, the count, its residual and the claims total: 292 KiB,
+    not 288;
+  - the asset share, the payout and the asset share's residual: 232, not 228;
+  - the guarantee and the smoothing account: 216, not 212;
+  - the units, the unit price and the charges cumulant: 212, not 208;
+  - the bonus rule's chain, a cell a year: 40.
+
+  The count's was past the 256 KiB the C step allows itself here, and CI's Ubuntu runner
+  needs two to four times this machine's stack (K12).
+- *Blocked by policy year*, in M10's `_py(y)` form, all eight: `pols_if_py` to
+  `smoothing_account_py`.
+- *After:*
+  - modelx runs 215 cells deep, and the depth test holds each head to 8 to 25 beyond the
+    chain, measured exactly;
+  - compiled, the count's heads ran on 64 KiB and not 60, the others on 56 and not 52. The
+    1 MiB test's bracket runs on 64 KiB and not on 48;
+  - the export needs a recursion limit of 490.
+- *The 1 MiB test cannot see the blocking undone*, since one cell a month needs only 292
+  KiB here. Only the modelx depth test guards it, as the page says. The withdrawing bond
+  is now one of its default cases.
+
+**Departures and precisions.**
+- *The caches' bounds, by point.* Stage E's domains stay, and `proj_len()` refuses a point,
+  not a table.
+  - **What it refuses:** a cover longer than 1,236 months, the `y` cache's, or a frame
+    longer than 1,356, the `t` cache's. A point reaches either only through a lowered
+    `issue_age_min`, a longer mortality table or a horizon past 120.
+  - **A departure from stage E:** the cover's bound is read before the exhaustion search,
+    so it refuses a bond whose units would run out within both caches, as the
+    verification's bond issued at 17 does at policy month 798. Bounding the cover by the
+    exhaustion month instead would need the search's own months bounded by the cover.
+  - **At the edge**, under an `issue_age_min` of 17, an `omega_age` of 121 and a horizon of
+    200: a frame of 1,356 months projects, and C4 matches it compiled; 1,357 is refused. A
+    cover of 1,248 months, covers being whole years, is refused on both chassis. A bond
+    issued 200 months on whose units run out in month 1,356 projects; one whose units run
+    out in 1,357, or never, is refused. Each refusal matches message for message.
+- *M22's guards stay inside the existing `try`*, M6's form, where M13 carried M22's
+  original form, dropping the `try`. Dropping it would change stage E's message. The kept
+  check raises the same message, so the three guards dropped compiled is an equivalent
+  fault: the review found no power that can overflow compiled without raising.
+- *D6, compiled.* Every in-frame declaration is made at today's References from the asset
+  share projected to its month. The test computes the rule from the opening asset share,
+  the guarantee, the charges and the References, not from the model's own
+  `bonus_supportable`.
+- *The horizon* prints as a float in both engines, `not 9007199254740992.0` whether set as
+  `2**53` or `2.0**53`.
+- *`claims` refuses `GUARANTEE`*, as S's does, a guarantee-date exit being a surrender.
+- *`sex()` refuses* any code but M and F.
+- *The default run is past U6's five minutes*: 442 s without the compile tests. Nothing
+  was moved to the full grid, and the verification judged the overrun minor: WP's `sec_uk`
+  legs ran in 5.6 and 8.3 minutes at M13, against limits of 60.
+
+**Measured for K6.** On the shared 4-CPU Linux machine:
+- C6, at a load of 3.0 to 4.4, each figure the median of three runs, with the range:
+
+  | Engine | `net_cf`, a point | `result_cf`, a point | Peak |
+  |---|---|---|---|
+  | compiled | 0.803 ms (0.791–0.822) | 1.615 ms (1.586–1.671) | 88–89 MB |
+  | export | 10.70 ms (10.69–10.77) | 11.21 ms (11.14–11.29) | 88–89 MB |
+  | modelx | 302 ms (285–322) | 344 ms (335–349) | 145–152 MB |
+
+  - On `net_cf` the compiled model runs 13.3 times its export and 368 times modelx.
+  - On `result_cf` it runs 6.9 and 207 times.
+  - The compiled block stays flat, while modelx's grows 56 to 63 MB.
+- Stage E against EC, on the final tree, every cached value, all 0 apart and no raise
+  apart:
+  - 825,438 values on the 24 committed points;
+  - 5,133,353 on the full grid's 143 main points;
+  - 1,094,916 on the rule's 34;
+  - 123,504 on the bounds' 2.
+- At landing, `2dd7242` ran its gate here in two jobs, beside IP's builder:
+  - the full grid, its compile tests apart: 619 passed, in 1,746 s, at a peak of 3.9 GiB;
+  - the `with_profits` shard on the full grid: 21 passed, in 759 s, at 2.7 GiB. The 1 MiB
+    test's heads ran on 64 KiB and not on 48;
+  - the `toolchain` shard;
+  - the conventions, harness and S suites of all seven products: 1,084 passed and 19
+    skipped, in 1,075 s;
+  - the generators' and fingerprints' checks for all seven uklib SEC models;
+  - the harness check, md_lint, and uslib's harness tests, 79 passed;
+  - doccheck at 0 warnings;
+  - the scaffolding at 0 files.
+
+In CI, the Tests workflow's run 58 on `2dd7242` ran 109 jobs, the `cython_uk` job's seven
+shards among them. When this record was written 100 had passed and nine were still
+running, none of them M14's. M14's legs passed at the first attempt:
+- the `cython_uk` `with_profits` legs, the first to compile `WP_UK_SEC`, 21 tests each:
+  - 678 s on Ubuntu, on the full grid;
+  - 413 s on Windows;
+- `sec_uk`'s three WP legs: the full grid on Ubuntu in 28.4 min, and the core on Windows in
+  8.8 and on macOS in 7.3;
+- the `test` job on Python 3.14 and Ubuntu: 7,212 passed and 126 skipped in 52 min 28 s,
+  its harness step agreeing, with 146 statements compared.
+
+The compiled cold call's stack, as its test records it in its coarser steps, each head in
+an ItemSpace of its own:
+
+| Where | Ran on | Not on |
+|---|---|---|
+| Here | 64 KiB | 48 KiB |
+| Ubuntu | 192 KiB | 128 KiB |
+| Windows | 96 KiB | 64 KiB |
+
+The 1 MiB thread the test asserts holds on both runners, with a margin of five on Ubuntu.
+
+**Faults.** Each was injected into a copy of its own.
+- **The builder:** 21, then 10 on the rework and 4 on the verification's items. All were
+  caught but M22's three guards dropped compiled, which is equivalent.
+- **The review:** 24, of which five survived:
+  - the exhaustion search a month short;
+  - `CODED` narrowed;
+  - two refusals naming the point by position, one compiled;
+  - the smoothing account's frame check moved, caught by the full grid only.
+
+  Three were equivalent then: the guarantee flags' last column, which the rework made
+  reachable, the total's kinds reordered, and M22's guards dropped compiled. Each survivor
+  is caught since the rework.
+- **The verification:** 18, of which one survived: the extract relabelling nothing, alone
+  and beside a refusal by position. Two cover bounds off by a month, at 1,237 and 1,247,
+  are caught by the spec test's text alone and are otherwise equivalent, covers being
+  whole years. The survivor, and the flags stopping a year short, are caught since the
+  verification's commits.
+
+**Carried into M15.**
+- *The shared conventions' C4* on the committed points runs without `also`, for every
+  model (*Record — M12*).
+
+**The template, for M8 and later:**
+- A cache's bound refuses a point, never a Reference's whole domain, and the page says
+  where it refuses more than passes the cache.
+- An extract that tests labels asserts its own relabelling.
+- A rule's test computes the rule itself, on rows the rule's clamps leave free.
+- Hold each search's last month with a row that ends there and one a month earlier.
+- A change to a shared harness function goes into both libraries' copies.
+
 ### 6.6 Unit-linked bond — `ULB_UK_SEC` (E: S, C: S)
 
 *Today:* the policy clock from issue, new business only. `horizon_mths() =
@@ -4085,7 +4363,8 @@ M13. It landed after all three.
 
 In CI, the Tests workflow's run 57 on `033f7ec` ran 107 jobs, the `cython_uk` job's six
 shards among them. When this record was written 103 had passed and four were still
-running, none of them M12's. M12's legs passed at the first attempt:
+running, none of them M12's. All four passed, and the run concluded in success. M12's legs
+passed at the first attempt:
 - the `cython_uk` `pension_annuity` legs, the first to compile `PA_UK_SEC`, 16 tests each:
   - 1,148 s on Ubuntu, on the full grid;
   - 438 s on Windows;
