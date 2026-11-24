@@ -26,11 +26,9 @@
 # issue_age_min needs t raised to 12 * (expiry_age_max - issue_age_min) + the horizon + 2.
 # timing, beside t in pols_if_at: BEF_NB = 0 to AFT_DECR = 2, the codes, 3.
 # kind, beside t in claims: BENEFIT = 0 to ALL = 3, the codes, 4.  Two 2-D caches of one
-# outer size share one inner width, the wider, here 4: Cython's unpickle code converts the
-# 2-D caches of one outer size with one function, and two widths there are refused by
-# gcc 14 and would write past the narrower array (USLIB-SEC-PLAN.md 7.2, Record -- M15).
-# So a code from 4 raises IndexError, compiled alone, and the timing 3, inside the width,
-# is a code pols_if_at refuses, in either engine.
+# outer size share one inner width, the wider, here 4 (below).  So a code from 4 raises
+# IndexError, compiled alone, and the timing 3, inside the width, is a code pols_if_at
+# refuses, in either engine.
 # z, a claim duration, alone in the cells of one claim duration, rec_rate, rec_rate_mth,
 # mort_rate_sick, mort_rate_sick_mth, claim_surv_step, claim_dur_year and
 # pols_sick_dur_init: read at 1 to max_dur(), the cover from issue and one cohort of
@@ -40,11 +38,21 @@
 # 626 wide; and t's months and one more, 747, so that its outer size is no other 2-D
 # cache's, whose inner width is 4: one inner width would widen pols_if_at's and claims'
 # caches to 626 a month each, about 3.7 MB a point apiece (UKLIB-SEC-PLAN.md 6.3, K11).
-# Cython names the converter it unpickles a 2-D cache with by its outer size, so caches of
-# two outer sizes may hold two inner widths, which gcc 13.3 with
-# -Werror=incompatible-pointer-types builds, and a pickled compiled point reads back
-# exactly; caches of one outer size with two widths it refuses (measured at M8).  The
-# month past t's, 746, is one no call reaches.
+# Why the outer size: Cython's unpickle code, __pyx_unpickle__c_Projection__set_state,
+# reads each 2-D cache back through a C-array temporary, with a converter named by the
+# inner type, __Pyx_carray_from_py_double___5b_626_5d_ for double[626].  It pools its
+# temporaries by C type (Code.py's allocate_temp), and its C-array types compare equal on
+# the outer size alone, the inner one not compared (PyrexTypes.py's CArrayType.__eq__).
+# So caches of one outer size share one temporary of the first one's shape: claims and
+# pols_if_at share a double[746][4], and the cohorts, at 747, get a double[747][626] of
+# their own.  At an outer size of 746 the cohorts' converter would be handed the [746][4]
+# temporary, which gcc and clang refuse under -Werror=incompatible-pointer-types, as
+# tools/build_sec_cy.py builds on Linux and macOS, and gcc 14 by default, and which MSVC
+# only warns of, and then writes 746 x 626 doubles into it as a point is unpickled.  This
+# rests on an internal of Cython 3.3.1, measured at M8 and read at its review; uslib's
+# rule of one inner width a model (USLIB-SEC-PLAN.md 6.1 step 6, 7.2's Record -- M15) is
+# one width an outer size here, held by a test of these sizes and one of the generated
+# C's temporaries.  The month past t's, 746, is one no call reaches.
 {"spaces": {"Projection": {"cells_param_size": {
     "t": 746, ("t", "timing"): (746, 4), ("t", "kind"): (746, 4), "z": 626,
     ("t", "z"): (747, 626)}}}}

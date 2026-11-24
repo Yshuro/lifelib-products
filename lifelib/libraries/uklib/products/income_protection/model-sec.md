@@ -426,6 +426,18 @@ first, compares around:
   `claim_rate_vectors` recomputes the in-claim survival beside `claim_surv_step`, which
   only the tests read.
 
+**From the plan and from uslib's rule**, the C step departs once more, in its caches'
+widths (*What compiling changed, and why*, below). UKLIB-SEC-PLAN.md §9 item 11, §6.3's
+first option, asks that the timings and the kinds become cells of `t` alone, so that only
+the cohorts carry a cache 626 claim durations wide; and uslib holds one inner width a
+model (USLIB-SEC-PLAN.md §6.1 step 6, as `WholeLife_US_SEC` met it at M15). Here the
+timings and the kinds keep `IP_UK_S`'s cells of two parameters, `pols_if_at(t, timing)`
+and `claims(t, kind)`, which T1 compares and the conventions read, R9's `pols_if_at(t,
+BEF_DECR)` among them, and uslib's rule is one inner width an outer size: the cohorts'
+cache takes an outer size of its own, 747, beside the timings' and kinds' 746. The end
+item 11 asked is kept: the cohorts are `IP_UK_S`'s bit for bit, none pooled, and they
+alone are 626 wide.
+
 ## The compiled model
 
 The model compiles under modelx-cython into C-typed code, as `basiclife/BasicTerm_SC`
@@ -578,19 +590,28 @@ Python under its C declaration. So each input now reaches a cell as a number, as
   the death and lapse kinds being 0 by the product's design. A test counts the kinds
   non-zero together in every month of every committed point, never two, and holds the
   total to `IP_UK_S`'s by its bits on every twin of its new business.
-- **One wide cache, by its outer size.** Every 2-D cache of one outer size shares one
-  inner width: Cython's unpickle code converts the caches of one outer size with one
-  function, and two widths there are refused by gcc, as uslib's `WholeLife_US_SEC` found
-  (USLIB-SEC-PLAN.md §7.2, *Record — M15*). uslib read that as one width a model, which
-  would widen `pols_if_at` and `claims` to the cohorts' 626 claim durations, three such
-  caches of about 5.6 MB a point, values and flags. Measured here, the converter is named
-  by the outer size as well as the width, so the cohorts' cache takes an outer size of its
-  own, `t`'s months
-  and one more, 747, beside the timings' and kinds' 746 by 4: gcc 13.3 with
-  `-Werror=incompatible-pointer-types` builds it, and a compiled point pickled and read
-  back holds its every cache exactly. So the timings and kinds keep their cells and their
-  width of four, which every SEC model's conventions read, and the cohorts alone carry the
-  wide cache, the end UKLIB-SEC-PLAN.md §6.3 asked of its first option.
+- **One inner width an outer size.** Cython's unpickle code reads each 2-D cache back
+  through a C-array temporary, with a converter named by the inner type,
+  `__Pyx_carray_from_py_double___5b_626_5d_` for `double[626]`. It pools its temporaries
+  by C type, and its C-array types compare equal on the outer size alone, the inner one
+  not compared, so the caches of one outer size share one temporary, of the first one's
+  shape. Two widths there hand a converter a temporary of the wrong shape, as uslib's
+  `WholeLife_US_SEC` found (USLIB-SEC-PLAN.md §7.2, *Record — M15*): gcc 14 refuses the
+  build by default, and gcc and clang under `-Werror=incompatible-pointer-types`, which
+  `tools/build_sec_cy.py` passes on Linux and macOS, but MSVC only warns, and the build
+  would write 746 × 626 doubles into a temporary of 746 × 4 as a point is unpickled. uslib
+  read that as one inner width a model, which here would widen `pols_if_at` and `claims`
+  to the cohorts' 626 claim durations, three such caches of about 5.6 MB a point, values
+  and flags. So the cohorts' cache takes an outer size of its own, `t`'s months and one
+  more, 747, beside the timings' and kinds' 746 by 4: the unpickle code,
+  `__pyx_unpickle__c_Projection__set_state`, shares one temporary of 746 by 4 between
+  `claims` and `pols_if_at`, and gives the cohorts one of 747 by 626. That rests on an
+  internal of Cython, 3.3.1 here, read in its `PyrexTypes.py` and `Code.py` (M8's review),
+  which a later Cython may change: the spec test holds the sizes, and a compiled test
+  reads the generated C, which Cython writes alike for every compiler, and holds each 2-D
+  cache to a temporary of its own shape, the guard a build with MSVC has. So the timings
+  and kinds keep their cells and their width of four, which every SEC model's conventions
+  read, and the cohorts alone carry the wide cache (*Departures from IP_UK_S*, above).
 - **No refusal formatted on a chain.** A compiled cell's C frame holds the code that
   formats each of its messages, whether a run reaches it or not, and a chain holds a frame
   of each cell it recurses through at each level (UKLIB-SEC-PLAN.md K12). The chains here,
@@ -740,18 +761,32 @@ the smallest of its sizes each ran on. The export recurses in Python instead: th
 call needs a recursion limit of 1,282 there, two Python frames a cell, and the reports and
 checks, which run in ascending `t`, need 36, so `sample_sec.py` sets 6,000.
 
+**Pickling, a known limit.** A compiled point does not pickle:
+`pickle.dumps(model.Projection[8])` fails, `Memoryview is not initialized`, from `Data`,
+whose arrays are typed memoryviews. Its state alone, through Cython's `__reduce_cython__`
+and `__setstate_cython__`, reads back exactly on a thread of 8 MiB of stack and crashes
+the interpreter on 4, 2 and 1 MiB, since the unpickle function holds the cohorts' two
+temporaries, values and flags, 5.6 MB, on the C stack (measured at M8's review). Nothing
+in the library pickles a point: `run_sec.py` and the tests' children pass values, never
+points.
+
 ### What it refuses
 
 The compiled model refuses what modelx refuses, with the same message. modelx raises its
 `FormulaError`, which quotes the error; compiled, the `ValueError` itself propagates. A
 test holds the in-force suite's refusals to modelx's, compiled, message for message, on an
 extract labelled otherwise than by position, its claim cohorts relabelled alike: each
-malformed row of the table and of the companion, each writing of the escalation flag,
-each assumption table a reader cannot read, each point the frame refuses, the contract
-moved past the caches among them, each Reference off its domain, each escalation history
-the contract cannot have, each value past the floats, by its cell and by a report, a key
-read beyond the mortality table, `Data`'s References off their domains, and what the
-vectors cannot hold, in a cell typed `long long` or `double` as in a Python one.
+malformed row of the table and of the companion, each writing of the escalation flag, each
+assumption table a reader cannot read, each point the frame refuses, the contract moved
+past the caches among them, each Reference off its domain, each escalation history the
+contract cannot have, each value past the floats, by its cell and by a report, a key read
+beyond the mortality table, `Data`'s References off their domains, and what the vectors
+cannot hold, in a cell typed `long long` or `double` as in a Python one. Two engines that
+agree could both name a point by its place in the table, so each refusal of a point's own,
+by its frame, a Reference, its history, a value past the floats or a rate its tables do
+not hold, must begin `ValueError: point_id <label>:`, the extract's label, in both
+engines, and the test counts them; the modelx tests of those refusals run on such an
+extract too.
 
 A message prints each Reference as the compiled model holds it: a rate or an age bound as
 a float, an age bound through `int()` once it is whole; and it names a timing or a kind by
@@ -887,15 +922,18 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
 - **Future new business**: issued 1, 12 and 120 months after the valuation date, each S
   point is the S projection moved on, with zeros before issue and no table read there, and
   so is each variant issued 13 months on.
-- **How it computes**: on every row of the splice's grid, after its reports, its checks
-  and every monthly cell at every month, no cell has been called at a negative month, none
-  on the books read a month before `t_entry()`, none read a month later than `t + 1`, and
-  none raised. On a fresh read of the committed model, `duration_mth(500)` evaluates
+- **How it computes**: on every row of the splice's grid, after its reports, its checks,
+  every monthly cell at every month and the cells of a month and a timing, a kind or a
+  claim duration at every argument C4 asks, the cohorts in the month a row is first on the
+  books among them, no cell has been called at a negative month, none on the books read a
+  month before `t_entry()`, none read a month later than `t + 1`, and none raised: a
+  cohort base at `t == 0`, which moves no number, reads before issue on a row issued
+  later. On a fresh read of the committed model, `duration_mth(500)` evaluates
   `duration_mth` once, and every point's reports and checks run under modelx's recursion
   limit lowered to 40. And each chain, called cold in the last month at the contract's
   longest cover, 624 months, on four shapes, runs one cell a month back to `t_entry()`,
-  the cohorts' down their diagonal, and at most its head's own measured overhead more:
-  at the in-force step, the cohorts a tuple, a cold `net_cf` ran 8 or 9 more, 631 to 632
+  the cohorts' down their diagonal, and at most its head's own measured overhead more: at
+  the in-force step, the cohorts a tuple, a cold `net_cf` ran 8 or 9 more, 631 to 632
   deep; since the C step it runs 7 more, 630 deep, the healthy count 5, the oldest cohort
   5 or 6, the cumulative count and the population identity 6, the lives in claim, the
   roll-forward and the count by timing 7, and the benefit claims 8. No cell a chain
@@ -910,19 +948,23 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
 - **Validation and regeneration**: each malformed row of the table, 75 cases, a missing
   column among them, and of the companion, 23, is refused naming its point or its lines,
   and naming its label on an extract labelled otherwise, table and companion alike; the
-  horizon is a Reference; a point past its policy end date is refused by `proj_len()`,
-  and `run_sec.py --block` refuses it before printing anything; so is a point outside the
+  horizon is a Reference; a point past its policy end date is refused by `proj_len()`, and
+  `run_sec.py --block` refuses it before printing anything; so is a point outside the
   contract's bounds, 9 cases; so is an escalation history past them, each bound a cent
   outside and accepted half a cent inside, beside two histories the contract cannot have
   and the committed history under a contract it was not written under, 11 cases; each of
-  23 References off its domain, the value next outside each edge, NaN and both
-  infinities, where each edge is accepted; a value past the floats, 11 cases, where it
-  first is; each assumption table with one fault, 42 cases, before a value of it is read;
-  the edges of the interface, the shares' tolerance pinned from both sides and an
-  escalated amount half a cent below its issue value among them; and every state `IP_UK_S`
-  reaches, under the shipped References and four sets more, at the edges of each frame's
-  windows, or at every month with the full grid. The committed CSVs are what the generator
-  makes of `IP_UK_S` today.
+  23 References off its domain, the value next outside each edge, NaN and both infinities,
+  where each edge is accepted; a value past the floats, 12 cases, where it first is, the
+  lives in claim among them, whose sum leaves the floats as `sum`'s infinity, as each
+  cohort sum's does on an input that takes it there; each refusal of a point's own, by its
+  frame, a Reference, its history or a value past the floats, on an extract labelled
+  otherwise than by position, beginning by naming the point by the extract's label; each
+  assumption table with one fault, 42 cases, before a value of it is read; the edges of
+  the interface, the shares' tolerance pinned from both sides and an escalated amount half
+  a cent below its issue value among them; and every state `IP_UK_S` reaches, under the
+  shipped References and four sets more, at the edges of each frame's windows, or at every
+  month with the full grid. The committed CSVs are what the generator makes of `IP_UK_S`
+  today.
 - **The product's own facts**: the two clocks; the present value and the annuity factor
   on the valuation clock; the committed rows continuing their S points, the two read
   under an RPI of their own continuing S under it; each history column read rather than
@@ -941,28 +983,32 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
 - **The C step's representation**, in modelx, in seconds: the claims total by its bits;
   the cohort sums and the present value against `sum` by theirs, on every committed point
   in every month, and against `IP_UK_S`'s own on its twins, the months a plain sum parts
-  from `sum` counted, and the cohorts past the live ones 0; every schedule at every age of
-  the inception and mortality arrays against `IP_UK_S`'s rates, on the shipped inception
-  table and on the floor's; every decode on every value, and the escalation flag written
-  `" True"`, `"True "`, 1, 1.0, `True`, `" RPI"`, `"RPI "` or `rpi` refused as the table
-  is read; the padded arrays; each `Data` vector's dtype against the `Data` docstring's
-  table; the parameterless cells' Python numbers; the labels' refusals; the spec's sizes,
-  the codes and `proj_len()`'s cache bounds against the spec's comment; the sample's
-  recursion limit against its comment; the runner's rebuild; and what the vectors cannot
-  hold.
-- **Compiled**, the tests marked `cython`, which compile the model once a session and
-  run the compiled package in a child process: C4, every cell at every argument a full
-  modelx sweep evaluates, with every code and claim duration no swept cell reads
-  (`_ip_c4_also`, which a test holds to asking each, row by row), on the splice grid
+  from `sum` counted, the cohorts past the live ones 0 and the oldest of the live ones
+  holding lives; each sum's order of reads by modelx's stack trace; every schedule at
+  every age of the inception and mortality arrays against `IP_UK_S`'s rates, on the
+  shipped inception table and on the floor's; every decode on every value, and the
+  escalation flag written `" True"`, `"True "`, 1, 1.0, `True`, `" RPI"`, `"RPI "` or
+  `rpi` refused as the table is read; the padded arrays; each `Data` vector's dtype
+  against the `Data` docstring's table; the parameterless cells' Python numbers; the
+  labels' refusals; the spec's sizes, the codes and `proj_len()`'s cache bounds against
+  the spec's comment; the sample's recursion limit against its comment; the runner's
+  rebuild; and what the vectors cannot hold.
+- **Compiled**, the tests marked `cython`, which compile the model once a session and run
+  the compiled package in a child process: C4, every cell at every argument a full modelx
+  sweep evaluates, with every code and claim duration no swept cell reads (`_ip_c4_also`,
+  which a test holds to asking each, row by row, the codes each cell takes derived in
+  modelx on each row C4 compares, not read from the test's own lists), on the splice grid
   under each set of References, at the contract's extremes, where each cap, floor and
   bound binds, on every inception schedule, on keys written as floats, on every committed
   row, under the References two of its rows were read from, and on the rows valued on an
-  anniversary, each grid in chunks sized by the squares of its frames, each chunk
-  asserted to compare its own rows; the labels; the refusals and overflows, message for
-  message, with the refusals the compiled model alone makes and `idx` at the table's
-  edges; each shape's deepest cold calls on a 1 MiB stack and on the main thread; a
-  Reference set late; and the runner. `tests/test_compiled_conventions_uk.py` adds C3,
-  C5 and the release.
+  anniversary, each grid in chunks sized by the squares of its frames, each chunk asserted
+  to compare its own rows; the labels; the refusals and overflows, message for message,
+  each refusal of a point's own naming the extract's label in both engines, 296 of them
+  counted, with the refusals the compiled model alone makes and `idx` at the table's
+  edges; each 2-D cache read back, as a point is unpickled, through a temporary of its own
+  shape in the generated C; each shape's deepest cold calls on a 1 MiB stack and on the
+  main thread; a Reference set late; and the runner.
+  `tests/test_compiled_conventions_uk.py` adds C3, C5 and the release.
 
 **Time and memory** (UKLIB-SEC-PLAN.md U6). The module's default run takes 1,360 s here at
 a peak of 6.0 GB of memory, and without its compile tests, `-m "not cython"`, 702 s at a

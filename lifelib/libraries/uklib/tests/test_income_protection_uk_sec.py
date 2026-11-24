@@ -641,6 +641,41 @@ def _refused(call, message):
     assert "ValueError" in text and message in text, text
 
 
+def _extract_inputs(tmp_path, edit=None, cohorts_edit=None, edits=None):
+    """A copy whose table is an extract: the committed table, ``edit`` made first by its
+    own labels, then labelled :data:`EXTRACT_LABELS`, the generator's columns kept; and
+    whose claim cohorts, ``cohorts_edit`` made first, are relabelled alike.  So a refusal
+    that named a point by its place, ``idx + 1``, names another.  Its SEC folder."""
+    relabel = _relabel_map()
+    table = (edit or (lambda t: t))(_committed()).rename(index=relabel)
+    held = (cohorts_edit or (lambda t: t))(_committed_cohorts())
+    held = held.assign(point_id=[relabel.get(p, p) for p in held["point_id"]])
+    return _sec_inputs(tmp_path, table, held, edits)
+
+
+def _read_extract(tmp_path, edit=None, cohorts_edit=None, edits=None):
+    """IP_UK_SEC read from an extract (:func:`_extract_inputs`)."""
+    return mx.read_model(_extract_inputs(tmp_path, edit, cohorts_edit, edits),
+                         name=_name("extract"))
+
+
+def _as_extract(message):
+    """``message``, each ``point_id N:`` in it the committed label N's extract label."""
+    relabel = _relabel_map()
+    return re.sub(r"point_id (\d+):", lambda m: f"point_id {relabel[int(m.group(1))]}:",
+                  message)
+
+
+def _refused_naming(call, message, label):
+    """``call()`` refuses with ``message`` (:func:`_refused`), and its error begins by
+    naming the point, ``ValueError: point_id <label>:``, the extract's label."""
+    with pytest.raises(Exception) as excinfo:
+        call()
+    text = str(excinfo.value)
+    assert "ValueError" in text and message in text, text
+    assert _raised(excinfo.value).startswith(f"ValueError: point_id {label}: "), text
+
+
 def _raised(err):
     """The line that names an error: modelx's ``FormulaError`` puts it second."""
     lines = [line for line in str(err).splitlines() if line.strip()]
@@ -861,9 +896,175 @@ CORE_GRID = frozenset({*CORE_SPLICES, *((r, "future", p, -k) for r, p, k in CORE
 # Fixtures
 
 
+class _KeptCell:
+    """A cell of a kept point (:class:`_Kept`): called at arguments its sweep cached, the
+    value cached; called at any other, the point's cell, computed afresh."""
+
+    def __init__(self, point, name, parameters, values):
+        self._point, self.name, self.parameters = point, name, parameters
+        self._values = values
+
+    def _key(self, args):
+        """The key modelx caches ``args`` under (``uk_sec_support._args``, reversed)."""
+        if not self.parameters:
+            return ()
+        return args[0] if len(self.parameters) == 1 else tuple(args)
+
+    def __call__(self, *args):
+        if len(args) == len(self.parameters):
+            try:
+                return self._values[self._key(args)]
+            except (KeyError, TypeError):
+                pass
+        return self._point.live().cells[self.name](*args)
+
+    def keys(self):
+        return self._values.keys()
+
+
+def _cohort_key(key):
+    """Whether ``key`` is a month and a claim duration, each an int of 0 or more."""
+    return (isinstance(key, tuple) and len(key) == 2
+            and all(type(a) is int and a >= 0 for a in key))
+
+
+class _KeptCohorts(_KeptCell):
+    """``pols_sick_dur`` of a kept point, each float it cached held in a float64 array of
+    the months by the claim durations, beside a mask of which are cached, rather than in a
+    dict of some hundreds of thousands of floats: the same doubles, each returned as the
+    Python float modelx caches.  A value cached under any other key, or of any other type,
+    is kept as :class:`_KeptCell` keeps it."""
+
+    def __init__(self, point, name, parameters, values):
+        held = {k: v for k, v in values.items() if _cohort_key(k) and type(v) is float}
+        shape = ((max(t for t, _ in held) + 1, max(z for _, z in held) + 1) if held
+                 else (0, 0))
+        self._array, self._held = np.zeros(shape), np.zeros(shape, dtype=bool)
+        for (t, z), value in held.items():
+            self._array[t, z], self._held[t, z] = value, True
+        super().__init__(point, name, parameters,
+                         {k: v for k, v in values.items() if k not in held})
+
+    def __call__(self, *args):
+        if _cohort_key(args):
+            t, z = args
+            if t < self._held.shape[0] and z < self._held.shape[1] and self._held[t, z]:
+                return float(self._array[t, z])
+        return super().__call__(*args)
+
+    def keys(self):
+        return [*((int(t), int(z)) for t, z in zip(*np.nonzero(self._held))),
+                *self._values]
+
+
+class _Kept:
+    """One committed point as :func:`sec_read`'s sweep left it, kept as its values.
+
+    Swept and held for the module, the committed points took 2 GB of the default run's
+    peak: modelx keeps each value with the dependencies it records, and each claim cohort is
+    a cell, read by four sums, about 2.9 KB an entry (measured at M8's review).  So each
+    point is kept as what its sweep cached, a value and its arguments, and its ItemSpace
+    released, and a test reads it as it read the swept point: through its cells
+    (:class:`_KeptCell`), by name or as ``cells[name]``; its References and every other
+    attribute are the committed ``Projection``'s.  A cell called where the sweep did not is
+    computed on the point read afresh (:meth:`_KeptModel.live`).
+    """
+
+    def __init__(self, owner, key, proj):
+        self._owner, self._key = owner, key
+        self.cells = {}
+        for name, cells in proj.cells.items():
+            n = len(cells.parameters)
+            values = {k: cells(*(() if n == 0 else (k,) if n == 1 else k))
+                      for k in list(cells.keys())}
+            kind = _KeptCohorts if name == "pols_sick_dur" else _KeptCell
+            self.cells[name] = kind(self, name, tuple(cells.parameters), values)
+
+    def live(self):
+        """The point's ItemSpace, read afresh, for a call its sweep did not cache."""
+        return self._owner.live(self._key)
+
+    def __getattr__(self, name):
+        cells = self.__dict__.get("cells", {})
+        if name in cells:
+            return cells[name]
+        return getattr(self._owner.model.Projection, name)
+
+
+class _KeptSpace:
+    """The committed model's ``Projection`` as kept: indexed by the registry's keys, it
+    gives each point kept (:class:`_Kept`); anything else is the space's own."""
+
+    def __init__(self, owner):
+        self._owner = owner
+
+    def __getitem__(self, key):
+        return self._owner.points[key]
+
+    def __getattr__(self, name):
+        return getattr(self._owner.model.Projection, name)
+
+
+# Each kept model, whose points read afresh after a test are released (_release_live).
+_KEPT = []
+
+# How many cache entries sec_read releases between its collections.  A released ItemSpace
+# sits in reference cycles until Python's cyclic collector runs, at about 2.9 KB an entry
+# with the dependencies modelx records; a collection over the module's heap costs a second
+# or more, so the sweep collects after some 700 MB of released points, not after each.
+KEPT_COLLECT = 250_000
+
+
+class _KeptModel:
+    """The committed model as :func:`sec_read` swept it, each point kept (:class:`_Kept`).
+
+    ``Data`` is the model's own, as its sweep left it, its tables read once; ``Projection``
+    gives the kept points (:class:`_KeptSpace`).  A point a test calls where its sweep did
+    not is read afresh, held until the test ends or until three more are (:meth:`live`),
+    and released, so that the module holds the swept points' values and not their
+    ItemSpaces.  ``uk_registry``'s helpers take it as they take a model.
+    """
+
+    LIVE = 3
+
+    def __init__(self, model):
+        self.model, self.name, self.Data = model, model.name, model.Data
+        self.points, self.held = {}, []
+        self.Projection = _KeptSpace(self)
+        _KEPT.append(self)
+
+    def live(self, key):
+        """``key``'s ItemSpace in the model, read afresh where it was released."""
+        if key in self.held:
+            self.held.remove(key)
+        elif len(self.held) >= self.LIVE:
+            _release(self.model, self.held.pop(0))
+        self.held.append(key)
+        return projection(self.model, key)
+
+    def release(self):
+        """Release every point read afresh, as a test ends."""
+        while self.held:
+            _release(self.model, self.held.pop())
+        return True
+
+    def __getattr__(self, name):
+        return getattr(self.__dict__["model"], name)
+
+
+@pytest.fixture(autouse=True)
+def _release_live():
+    """After each test, release the committed points it read afresh (:class:`_KeptModel`),
+    and collect them, so that no test holds another's."""
+    yield
+    if any([kept.release() for kept in _KEPT if kept.held]):
+        gc.collect()
+
+
 @pytest.fixture(scope="module")
 def sec_read():
-    """IP_UK_SEC read in place, as committed, and swept once, cold; what it met.
+    """IP_UK_SEC read in place, as committed, and swept once, cold; what it met; and each
+    point kept as its sweep left it.
 
     The model is first asked for ``duration_mth(500)`` on the twin of S point 1, and the
     keys that call leaves in ``duration_mth`` are kept.  Then every committed point is
@@ -871,31 +1072,49 @@ def sec_read():
     in table order and each column in ascending ``t``, under a recursion limit lowered to
     :data:`CALL_DEPTH`, and whatever that raises is kept, point by point, rather than
     raised.  So the record says what a cold model does, which the clock and depth test
-    asserts (D3, R2), and every test on the committed model reads a model already swept:
-    the sweep is paid once, not once for each.  Returns ``(model, record)``.
+    asserts (D3, R2).  Then, at the module's recursion limit, each point is swept whole,
+    as C4 sweeps it (``uk_sec_support.full_sweep`` and :func:`_ip_c4_also`), kept
+    (:class:`_Kept`) and released, one at a time, and the model holds no point: so every
+    test on the committed model reads it as swept, and the sweep is paid once, not once
+    for each.  Returns ``(the kept model, record)`` (:class:`_KeptModel`).
     """
     model = mx.read_model(model_path(SEC), name=_name("sec"))
-    first = _row(model, "twin", 1, 0)
-    record = {"duration_mth(500)": first.duration_mth(500),
-              "keys": list(first.cells["duration_mth"].keys()), "deep": []}
-    labels = model.Data.model_point_table().index
-    limit = mx.get_recursion()
-    mx.set_recursion(CALL_DEPTH)
+    kept = _KeptModel(model)
     try:
+        first = _row(model, "twin", 1, 0)
+        record = {"duration_mth(500)": first.duration_mth(500),
+                  "keys": list(first.cells["duration_mth"].keys()), "deep": []}
+        del first                       # the point is swept, kept and released below
+        labels = model.Data.model_point_table().index
+        limit, released = mx.get_recursion(), 0
         for key, point_id in zip(point_keys(model), labels):
+            proj = projection(model, key)
+            mx.set_recursion(CALL_DEPTH)
             try:
-                sweep(projection(model, key))
+                sweep(proj)
             except Exception as err:            # kept, so every point is swept
                 record["deep"].append(f"point {point_id}: the sweep raised {_raised(err)}")
+            finally:
+                mx.set_recursion(limit)
+            full_sweep(proj)
+            _ip_c4_also(proj)
+            kept.points[key] = _Kept(kept, key, proj)
+            released += sum(len(cells.keys()) for cells in proj.cells.values())
+            del proj
+            _release(model, key)
+            if released > KEPT_COLLECT:
+                gc.collect()
+                released = 0
+        gc.collect()
+        yield kept, record
     finally:
-        mx.set_recursion(limit)
-    yield model, record
-    model.close()
+        _KEPT.remove(kept)
+        model.close()
 
 
 @pytest.fixture(scope="module")
 def sec_model(sec_read):
-    """IP_UK_SEC read in place, as committed, with every point swept (sec_read)."""
+    """IP_UK_SEC read in place, as committed, with every point swept and kept (sec_read)."""
     return sec_read[0]
 
 
@@ -1023,17 +1242,27 @@ def _rule_breaches(proj):
 
     The row's reports and checks are run (:func:`uk_sec_support.sweep`), and then every
     monthly cell at every month of the frame and the month after it, as the C step's sweep
-    runs them (:func:`uk_sec_support.full_sweep`): no report of a row need read every
+    runs them (:func:`uk_sec_support.full_sweep`), and the cells of ``t`` and a second
+    parameter at every argument C4 asks of them (:func:`_ip_c4_also`): every timing and
+    kind in every month, and the cohorts outside the live ones, every claim duration in the
+    month the row is first on the books among them.  No report of a row need read every
     state, and a base at ``t == 0`` would hide in a cell the reports leave unread
-    (USLIB-SEC-PLAN.md §5.2, T2, precised at M4).  ``{"negative": [...], "early": [...],
+    (USLIB-SEC-PLAN.md §5.2, T2, precised at M4): the cohorts' base among them, which on a
+    row issued later only a cohort of that first month reads, and no sum does, the live
+    ones being none there (M8's review).  ``{"negative": [...], "early": [...],
     "ahead": [...], "raised": [...]}``: every cached call with a negative argument; every
     precedent keyed by a month before ``t_entry()`` of a call keyed by a month at or after
     it; every precedent keyed by a month beyond ``t + 1`` of a call keyed by ``t``, but
-    :data:`LOOK_AHEAD`'s, which is empty; and every call the full sweep found raising.  A
-    precedent is a call's as modelx's dependency graph records it.
+    :data:`LOOK_AHEAD`'s, which is empty; and every call the full sweep found raising, and
+    C4's asks, the first that raised.  A precedent is a call's as modelx's dependency graph
+    records it.
     """
     sweep(proj)
     raised = [f"{name}{args}: {text}" for (name, args), text in full_sweep(proj).items()]
+    try:
+        _ip_c4_also(proj)
+    except Exception as err:                    # reported by the rules test
+        raised.append(f"C4's asks: {_raised(err)}")
     entry = proj.t_entry()
     negative, early, ahead = [], [], []
     for name, cells in proj.cells.items():
@@ -1386,7 +1615,8 @@ def test_no_cell_is_called_before_the_valuation_date_or_reads_far_ahead(spliced,
     and on a point issued at ``t = 0`` the two clocks coincide and hide it from T1 too.
     The splice's rows are points in force at every month T2 names, the variants and the
     twins of S's claims among them, and points issued later, under every set, and on each
-    the reports, the checks and the full sweep are run first (:func:`_rule_breaches`):
+    the reports, the checks and the full sweep are run first, with the cells of ``t`` and a
+    timing, a kind or a claim duration at every argument C4 asks (:func:`_rule_breaches`):
 
     * R1: no cell holds a negative argument.  modelx evaluates one without complaint, and
       a compiled cache raises ``IndexError`` below 0 (USLIB-SEC-PLAN.md F4).  A policy
@@ -2662,9 +2892,13 @@ def test_a_point_the_contract_does_not_issue_is_refused_by_proj_len(tmp_path, ca
     cover or frame would pass them, in either engine, which stage E projected: the
     compiled model would read past a cache, and raise ``IndexError`` alone.  The table
     reads either way.  Every Reference is set on a model just read, before its projection
-    computes anything (K7), ``Data``'s named ``"Data.<name>"``.
+    computes anything (K7), ``Data``'s named ``"Data.<name>"``.  Each case runs on an
+    extract labelled otherwise than by position (:func:`_read_extract`), and its refusal
+    must begin by naming the point by the extract's label, as every refusal does, so that
+    one naming a point by its place in the table, ``idx + 1``, fails here (M8's review).
     """
-    model = _read_edited(tmp_path, edit or (lambda t: t))
+    model = _read_extract(tmp_path, edit)
+    label = _relabel_map()[point]
     try:
         for ref, value in refs.items():
             if ref.startswith("Data."):
@@ -2672,7 +2906,7 @@ def test_a_point_the_contract_does_not_issue_is_refused_by_proj_len(tmp_path, ca
             else:
                 setattr(model.Projection, ref, value)
         assert len(model.Data.model_point_table()) == len(_committed())
-        _refused(_point(model, point).result_cf, message)
+        _refused_naming(_point(model, label).result_cf, _as_extract(message), label)
     finally:
         model.close()
     if frame is not None:
@@ -2788,27 +3022,31 @@ def test_the_escalation_history_is_bounded_by_the_contract(tmp_path, case, amoun
     ``except`` that reads its overflow as the cap's path, which the compiled refusal test
     reaches compiled.  Each case reads the history back as written, within the two
     ulps the CSV's text can cost a computed float, and exactly where a case sits at a
-    bound's edge computed alike, and sets its References on a model just read (K7).
+    bound's edge computed alike, and sets its References on a model just read (K7).  Each
+    runs on an extract labelled otherwise than by position (:func:`_read_extract`), and a
+    refusal must begin by naming the point by the extract's label.
     """
     benefit, premium = amounts
-    model = _read_edited(tmp_path, _then(_set("benefit_pp_init", [9], benefit),
-                                         _set("premium_pp_init", [9], premium)))
+    model = _read_extract(tmp_path, _then(_set("benefit_pp_init", [9], benefit),
+                                          _set("premium_pp_init", [9], premium)))
+    label = _relabel_map()[9]
     try:
         for ref, value in refs.items():
             setattr(model.Projection, ref, value)
         table = model.Data.model_point_table()
-        read = (table.at[9, "benefit_pp_init"], table.at[9, "premium_pp_init"])
+        read = (table.at[label, "benefit_pp_init"], table.at[label, "premium_pp_init"])
         assert read == pytest.approx(amounts, rel=1e-15, abs=0.0)
         if "half a cent past the cap" in case:
             assert read == amounts
         if message is None:
-            assert len(_point(model, 9).result_cf()) == 300
+            assert len(_point(model, label).result_cf()) == 300
         else:
             with pytest.raises(Exception) as excinfo:
-                _point(model, 9).result_cf()
+                _point(model, label).result_cf()
             text = str(excinfo.value)
-            assert "ValueError" in text, text
-            missing = [part for part in message if part not in text]
+            assert _raised(excinfo.value).startswith(
+                f"ValueError: point_id {label}: "), text
+            missing = [part for part in map(_as_extract, message) if part not in text]
             assert not missing, (missing, text)
     finally:
         model.close()
@@ -2918,10 +3156,17 @@ OWN_POINT_EDGES = frozenset({"issue_age_min=35 on 1", "issue_age_max=35 on 1",
                              "expiry_age_min=65 on 1", "expiry_age_max=65 on 1"})
 
 
+@pytest.fixture(scope="module")
+def extract_folder(tmp_path_factory):
+    """The SEC folder of an extract, unedited (:func:`_extract_inputs`), which the cases
+    that read it as it is each read afresh."""
+    return _extract_inputs(tmp_path_factory.mktemp("extract"))
+
+
 @pytest.mark.parametrize("case, refs, point, message, report", DOMAINS,
                          ids=[c[0] for c in DOMAINS])
-def test_each_reference_is_held_to_its_domain_at_both_edges(case, refs, point, message,
-                                                            report):
+def test_each_reference_is_held_to_its_domain_at_both_edges(extract_folder, case, refs,
+                                                            point, message, report):
     """``proj_len()`` holds each Reference to its domain, NaN and the infinities outside it.
 
     ``IP_UK_S`` checks none of them, and off its domain each projects a negative rate,
@@ -2942,21 +3187,25 @@ def test_each_reference_is_held_to_its_domain_at_both_edges(case, refs, point, m
     the four age bounds set at the anchor cell's own ages (:data:`OWN_POINT_EDGES`): since
     the C step a frame forms its claim cohorts a cell an element in modelx, and the
     accepted edges on frames of 360 months took about three minutes of the default run.
+    Each case runs on an extract labelled otherwise than by position (:func:`_read_extract`,
+    :func:`extract_folder`), and a refusal must begin by naming the point by the extract's
+    label.
     """
     assert OWN_POINT_EDGES <= {c[0] for c in DOMAINS if c[3] is None}, OWN_POINT_EDGES
-    model = mx.read_model(model_path(SEC), name=_name("domain"))
+    model = mx.read_model(extract_folder, name=_name("domain"))
     try:
         for ref, value in refs.items():
             setattr(model.Projection, ref, value)
         if (message is None and report is None and not SEC_FULL
                 and case not in OWN_POINT_EDGES):
             point = 6
-        p = _row(model, "twin", point, 0)
+        label = _relabel_map()[_label(_committed(), "twin", point, 0)]
+        p = _point(model, label)
         if message is not None:
-            _refused(p.result_cf, message)
+            _refused_naming(p.result_cf, _as_extract(message), label)
         elif report is not None:
             assert p.proj_len() > 0
-            _refused(p.result_cf, report)
+            _refused_naming(p.result_cf, _as_extract(report), label)
         else:
             for name in ("result_cf", "result_states", "result_pols"):
                 frame = p.cells[name]()
@@ -2982,8 +3231,35 @@ def test_each_reference_is_held_to_its_domain_at_both_edges(case, refs, point, m
 # value at 1e308 a month; the lapse shock under an escalation of 1e300 and a slope of 1e10;
 # and the powers: the inflation factor and the benefit's and premium's steps under rates of
 # 1e200, which square past the floats at the second anniversary, and the discount factor at
-# a rate a hair above -1.  Each is refused in the cell where it first is, naming the point,
-# the month and what makes it.
+# a rate a hair above -1.  And the lives in claim (M8's review): the claim at 24, its count
+# the largest float, all of it in claim at claim durations 24 and 25 with shares of 0.5 and
+# 0.5 + 9e-11, which Data reads, summing to 1 within its 1e-10, at a claim severity of 0, so
+# that it claims nothing: their sum, pols_sick(0), leaves the floats, and the expenses on it
+# are refused first, printing it as sum makes it, inf, where a sum that dropped its test of
+# the carried error would make NaN.  Each is refused in the cell where it first is, naming
+# the point, the month and what makes it.
+def _with_cohorts(edit, cohorts_edit):
+    """``edit`` of the table, carrying ``cohorts_edit``, an edit of the claim cohorts that
+    the case makes too (:func:`_read_extract`)."""
+    def both(table):
+        return (edit or (lambda t: t))(table)
+    both.cohorts = cohorts_edit
+    return both
+
+
+def _in_claim_at(point, shares):
+    """An edit of the claim cohorts that holds ``point``'s lives in claim at ``shares``,
+    ``{claim duration: share}``, and nowhere else."""
+    def edit(table):
+        table = table[table["point_id"] != point]
+        rows = pd.DataFrame({"point_id": point, "z": list(shares),
+                             "pols_sick_dur_init": list(shares.values())})
+        return pd.concat([table, rows], ignore_index=True)
+    return edit
+
+
+# The claim at 24, all in claim at claim durations 24 and 25 at shares summing to 1 + 9e-11.
+LIVES_PAST = _in_claim_at(11, {24: 0.5, 25: 0.5 + 9e-11})
 PAST_THE_FLOATS = [
     ("a benefit",
      _then(_set("benefit_mth", [9], 1.75e308), _set("benefit_pp_init", [9], 1.75e308),
@@ -3035,6 +3311,11 @@ PAST_THE_FLOATS = [
      "pv_benefits",
      "point_id 2: the discount factor disc_factor(231) is past the largest float, under "
      "disc_rate -0.9999999999999999"),
+    ("the lives in claim", _with_cohorts(_set("policy_count", [11], BIG), LIVES_PAST),
+     {"claim_severity": 0.0}, 11, ("expenses", 0), "result_cf",
+     "point_id 11: the expenses expenses(0) are inf, not a finite number, from "
+     "expense_maint 60.0, expense_claim 300.0 and inflation_rate 0.03, on pols_if(0) inf "
+     "policies, pols_sick(0) inf in claim"),
 ]
 
 
@@ -3057,19 +3338,22 @@ def test_a_value_past_the_floats_is_refused_where_it_first_is(tmp_path, case, ed
     (USLIB-SEC-PLAN.md §7.1, *Record — M1*; UKLIB-SEC-PLAN.md §6.6, *Carried into M10 and
     after*; §6.7, *Record — M11*).  The month before projects.  Each Reference is set on a
     model just read (K7).  A kind is passed as its code, and a refusal names it by its code,
-    as the compiled model prints it.
+    as the compiled model prints it.  Each case runs on an extract labelled otherwise than
+    by position (:func:`_read_extract`), and each refusal must begin by naming the point by
+    the extract's label.
     """
-    model = _read_edited(tmp_path, edit or (lambda t: t))
+    model = _read_extract(tmp_path, edit, getattr(edit, "cohorts", None))
+    label = _relabel_map()[point]
     try:
         for ref, value in refs.items():
             setattr(model.Projection, ref, value)
-        p = _point(model, point)
+        p = _point(model, label)
         name, *args = call
         args = [_code(p, a) if isinstance(a, str) else a for a in args]
         if args and args[0] > 0:
             p.cells[name](args[0] - 1, *args[1:])
-        _refused(lambda: p.cells[name](*args), message)
-        _refused(p.cells[report], message)
+        _refused_naming(lambda: p.cells[name](*args), _as_extract(message), label)
+        _refused_naming(p.cells[report], _as_extract(message), label)
     finally:
         model.close()
 
@@ -5102,7 +5386,9 @@ def test_the_cohort_sums_are_s_sums_bit_for_bit(sec_model, s_model, grid):
     past ``claim_dur_live(t)``, where ``max_dur()`` has them, are 0.0 exactly, and at the
     frame's first two months and its last every cohort past it is, so that the sums may
     stop there, the cohorts past them being each the zero of the one below on the
-    diagonal; each sum is, by ``float.hex``, ``sum`` of S's term over the cohorts to
+    diagonal; on the books, the cohort at ``claim_dur_live(t)`` holds lives, so that the
+    sums stop at the oldest cohort that can, not past it (M8's review); each sum is, by
+    ``float.hex``, ``sum`` of S's term over the cohorts to
     ``claim_dur_live(t)``, each cohort that holds no lives left out where S's generator
     leaves it out; and ``pv_benefits()`` is ``sum`` over the frame of the month's benefit
     times its discount factor.  The months where a plain left-to-right sum parts from
@@ -5129,6 +5415,10 @@ def test_the_cohort_sums_are_s_sums_bit_for_bit(sec_model, s_model, grid):
             if any(v != 0.0 for v in held):
                 found.append(f"point {point_id}, t = {t}: a cohort past claim_dur_live "
                              f"{live} holds {[v for v in held if v != 0.0][:3]}")
+            if (entry <= t < p.proj_len() and live > 0
+                    and not p.pols_sick_dur(t, live) > 0.0):
+                found.append(f"point {point_id}, t = {t}: the cohort at claim_dur_live "
+                             f"{live} holds no lives")
             cohorts = [(z, p.pols_sick_dur(t, z)) for z in range(1, live + 1)]
             for cell, (term, filtered) in COHORT_SUMS.items():
                 terms = [term(p, z, a) for z, a in cohorts if a != 0.0 or not filtered]
@@ -5159,6 +5449,62 @@ def test_the_cohort_sums_are_s_sums_bit_for_bit(sec_model, s_model, grid):
                          f"{s.pv_benefits()!r}")
     assert plain > 0, "no month where a plain sum parts from sum: the test sees no order"
     assert not found, found[:10]
+
+
+def _mortality_in_claim(rate):
+    """An edit of the termination table that sets the in-claim mortality of claim
+    duration years 2 and 3, claim durations 13 to 36, to ``rate``."""
+    def edit(table):
+        table = table.copy()
+        table.loc[table["claim_duration_year"].isin([2, 3]), "mort_rate_sick"] = rate
+        return table
+    return edit
+
+
+# Each cohort sum taken past the floats on the claim at 24, its count the largest float, all
+# in claim at claim durations 24 and 25 at shares summing to 1 + 9e-11, which Data reads
+# (LIVES_PAST), as (the References, the termination table's edit): the lives in claim at the
+# shipped rates; the recoveries under an overlay of 0.1, every recovery rate capped at 1;
+# the deaths in claim and the survivors, under an overlay of the largest float, which takes
+# every recovery rate to 0, with the in-claim mortality of those claim durations set to 1
+# and to 0.  The termination table's rates are each held to 0 to 1 by Data, and the overlay
+# to a finite number above 0 by proj_len(), so each input is one the model accepts.
+SUMS_PAST = {
+    "pols_sick": ({}, None),
+    "pols_recovery": ({"cycle_factor": 0.1}, None),
+    "pols_death_sick": ({"cycle_factor": BIG}, _mortality_in_claim(1.0)),
+    "pols_sick_surv": ({"cycle_factor": BIG}, _mortality_in_claim(0.0)),
+}
+
+
+@pytest.mark.parametrize("cell", list(SUMS_PAST))
+def test_a_cohort_sum_past_the_floats_is_sum_s_infinity(tmp_path, cell):
+    """A cohort sum that leaves the floats is ``sum``'s infinity, not NaN.
+
+    ``sum`` adds back its carried error only where it is finite, and so does each loop here
+    (:func:`pols_sick`'s docstring): once the running sum leaves the floats, the error
+    carried is an infinity of the other sign, and added back it would make the sum NaN,
+    which every refusal downstream would print where ``IP_UK_S`` prints ``inf``.  No
+    committed point reaches it, so the bit test above cannot see the test dropped; here
+    each sum is taken past the floats on an input the model accepts (:data:`SUMS_PAST`)
+    and must be, by ``float.hex``, ``sum`` of :mod:`~.IP_UK_S`'s terms over the cohorts
+    (:data:`COHORT_SUMS`), the infinity, in the month the claim is valued at (M8's
+    review).
+    """
+    refs, term = SUMS_PAST[cell]
+    model = _read_edited(tmp_path, _set("policy_count", [11], BIG), LIVES_PAST,
+                         edits={TERM: term} if term else None)
+    try:
+        for ref, value in refs.items():
+            setattr(model.Projection, ref, value)
+        p = _point(model, 11)
+        term_of, filtered = COHORT_SUMS[cell]
+        cohorts = [(z, p.pols_sick_dur(0, z)) for z in range(1, p.claim_dur_live(0) + 1)]
+        want = float(sum(term_of(p, z, a) for z, a in cohorts if a != 0.0 or not filtered))
+        got = p.cells[cell](0)
+        assert want == math.inf and got.hex() == want.hex(), (cell, got, want)
+    finally:
+        model.close()
 
 
 def _direct_reads(proj, cell, args, read):
@@ -5606,8 +5952,11 @@ def test_the_spec_sizes_each_cache_as_its_comment_derives():
     future_horizon_mth + 2``, the timings' and kinds' 2-D caches to it by the one inner
     width, 4, the most codes a family has; ``z`` to ``12 * (expiry_age_max -
     issue_age_min) + 2``; and the cohorts' to ``z``'s width and ``t``'s months and one
-    more, the outer size no other 2-D cache has, since Cython converts the caches of one
-    outer size with one function, which two widths break.  And ``proj_len()``'s two bounds
+    more, the outer size no other 2-D cache has, since Cython's unpickle code reads the
+    caches of one outer size back through one temporary, which two widths break
+    (``spec_sec.py``; the generated C is held by
+    :func:`test_each_2d_cache_is_unpickled_through_a_temporary_of_its_shape`).  And
+    ``proj_len()``'s two bounds
     to the longest cover and the longest frame the sizes are for, 624 and 744 months, so
     that no input it accepts reads past a cache; ``Data``'s interpolated ages to the ages
     the contract admits, ``issue_age_min`` to ``expiry_age_max - 1``; and the codes dense
@@ -7059,6 +7408,60 @@ def _mismatch_lines(found):
     return f"{len(found)} mismatches, first:\n  " + "\n  ".join(found[:50])
 
 
+# The cells C4 asks at every code, each with the names of the codes it takes, read from the
+# model's own References (_code): the timings and the kinds, the claims total among them.
+# What each takes is derived in modelx, row by row, on every row C4 compares (_code_faults),
+# and these must name exactly that (M8's review, after M14's).
+CODED = {"pols_if_at": TIMINGS, "claims": CLAIM_CODES}
+
+
+def _inner_width():
+    """The one inner width ``spec_sec.py`` gives the caches of ``t`` and a code."""
+    source, _ = _comment("spec_sec.py")
+    sizes = ast.literal_eval(source)["spaces"]["Projection"]["cells_param_size"]
+    (width,) = {size[1] for name, size in sizes.items()
+                if isinstance(size, tuple) and name != ("t", "z")}
+    return width
+
+
+def _codes_taken(proj, width):
+    """``({cell: codes}, lines)``: the codes each cell of :data:`CODED` takes on point
+    ``proj``, in modelx, and a line for each other raise.
+
+    Each cell is asked every code of the caches' inner width, ``width``, in the point's
+    first month on the books, and the codes it takes are those it does not refuse with
+    ``invalid timing`` or ``invalid kind``.  A refused call caches nothing, so asking adds
+    nothing to what a comparison holds.
+    """
+    taken, lines, t = {}, [], proj.t_entry()
+    for cell in CODED:
+        taken[cell] = set()
+        for code in range(width):
+            try:
+                proj.cells[cell](t, code)
+            except Exception as err:            # a code the cell does not take
+                if not re.search(r"ValueError: invalid (timing|kind)", _raised(err)):
+                    lines.append(f"point {proj.point_id()}: {cell}({t}, {code}) raised "
+                                 f"{_raised(err)}")
+                continue
+            taken[cell].add(code)
+    return taken, lines
+
+
+def _code_faults(proj, width):
+    """Where :data:`CODED` misnames the codes each of its cells takes on point ``proj``, in
+    modelx (:func:`_codes_taken`), a line each: the codes it names, read from the point's
+    References, must be exactly those, so that a cell that took a code more, or one fewer,
+    parts here; and a line for each raise but a refused code."""
+    taken, lines = _codes_taken(proj, width)
+    for cell, names in CODED.items():
+        named = {_code(proj, name) for name in names}
+        if taken[cell] != named:
+            lines.append(f"point {proj.point_id()}: {cell} takes {sorted(taken[cell])} in "
+                         f"modelx, CODED names {sorted(named)}")
+    return lines
+
+
 def _ip_c4_also(proj):
     """What C4 compares of an ``IP_UK_SEC`` point beyond its full sweep (M8).
 
@@ -7077,16 +7480,15 @@ def _ip_c4_also(proj):
     triangle's edges meet the cache's.  Every other cohort is the zero of one asked here,
     down its diagonal: the sample traces the whole rectangle in the export, where a cohort
     costs a C double, and modelx, whose cache entry costs a thousand times that, forms
-    the triangle and its edges.  Every code inside the one inner width but the timing 3,
-    which ``pols_if_at`` refuses, is one its cell takes, and every claim duration asked is
-    inside the ``z`` cache, so none raises.  Passed to
+    the triangle and its edges.  The codes are :data:`CODED`'s, each one its cell takes,
+    which :func:`_c4` holds on every row it compares (:func:`_code_faults`), and every claim
+    duration asked is inside the ``z`` cache, so none raises.  :func:`_c4` passes it to
     ``uk_sec_support.compiled_mismatches`` as ``also``.
     """
-    codes = {"pols_if_at": TIMINGS, "claims": CLAIM_CODES}
     last, top, entry = proj.proj_len(), proj.max_dur(), proj.t_entry()
     edges = {entry, entry + 1, last - 1, last}
     for t in range(last + 1):
-        for cell, names in codes.items():
+        for cell, names in CODED.items():
             for name in names:
                 proj.cells[cell](t, _code(proj, name))
         live = proj.cells["claim_dur_live"](t)
@@ -7130,6 +7532,18 @@ class _Asked:
         return self.entry
 
 
+class _AskedOf(_Asked):
+    """:class:`_Asked` of a real point, ``proj``: its frame, its claim durations, its live
+    cohorts and its References are the point's own."""
+
+    def __init__(self, proj):
+        self._proj = proj
+        super().__init__(proj.proj_len(), proj.max_dur(), proj.t_entry(), None, proj.refs)
+
+    def live(self, t):
+        return self._proj.claim_dur_live(t)
+
+
 # How many months squared of frames C4 compares at once.  compiled_mismatches sweeps every
 # row of its case in one modelx read and keeps every value of every row, in the parent and
 # in the child, until it compares them, and a row forms its cohorts on a triangle of its
@@ -7167,9 +7581,12 @@ def _c4(build, root, table, cohorts, refs=None, edits=None):
 
     Each chunk's case is asserted to hold the chunk's rows, in order, and its claim cohorts
     the chunk's, so that the rows compared are the case's, and between them the chunks
-    hold every row of ``table`` once.
+    hold every row of ``table`` once.  And on each row, in modelx, before
+    :func:`_ip_c4_also` asks it, the codes each cell of :data:`CODED` takes are derived and
+    held to :data:`CODED` (:func:`_code_faults`), a line for each row they part on, so that
+    every code a cell takes is compared on every row C4 compares.
     """
-    found, compared = [], []
+    found, compared, width = [], [], _inner_width()
     for i, chunk in enumerate(_c4_chunks(table)):
         held = cohorts[cohorts["point_id"].isin(chunk.index)]
         folder = compiled_case(build, root / f"chunk{i}", model_points=chunk,
@@ -7178,9 +7595,17 @@ def _c4(build, root, table, cohorts, refs=None, edits=None):
         assert list(written.index) == list(chunk.index), (i, list(written.index))
         assert len(pd.read_csv(folder.parent / COHORTS)) == len(held), i
         compared += list(written.index)
+        coded, asked = [], []
+
+        def also(proj):
+            coded.extend(_code_faults(proj, width))
+            asked.append(proj.point_id())
+            _ip_c4_also(proj)
+
         found += [f"chunk {i}, rows {list(chunk.index)}: {line}"
-                  for line in compiled_mismatches(build, folder, refs=refs,
-                                                 also=_ip_c4_also)]
+                  for line in compiled_mismatches(build, folder, refs=refs, also=also)]
+        assert asked == list(chunk.index), (i, asked)
+        found += [f"chunk {i}: {line}" for line in coded]
     assert compared == list(table.index), compared
     return found
 
@@ -7208,48 +7633,88 @@ OWN_REFS_ROWS = {0.05: (18,), 0.12: (19,)}
 ANNIVERSARY_ROWS = (8, 9)
 
 
-def test_the_c4_comparisons_ask_every_code_and_their_rows(sec_model):
-    """C4's ``also`` asks every code in every month of every row, and each default
-    selection is what modelx says of the committed rows.
+def _ask_faults(stand_in, taken):
+    """Where :func:`_ip_c4_also`, run on ``stand_in`` (:class:`_Asked`), asks other than
+    every code of ``taken``, ``{cell: codes}``, in every month of the frame and the month
+    after it, the cohorts outside the live ones C4 compares, and every claim duration's
+    survival: a line each."""
+    _ip_c4_also(stand_in)
+    asked, lines = stand_in.asked, []
+    frame = range(stand_in.months + 1)
+    for cell in CODED:
+        want = {(t, c) for t in frame for c in taken[cell]}
+        if asked.get(cell) != want:
+            lines.append(f"{cell}: {sorted(asked.get(cell, set()) ^ want)[:6]} asked or "
+                         f"missed")
+    top, entry = stand_in.top, stand_in.entry
+    edges = {entry, entry + 1, stand_in.months - 1, stand_in.months} & set(frame)
+    cohorts = ({(t, 0) for t in frame}
+               | {(t, z) for t in edges for z in range(top + 1)}
+               | {(t, stand_in.live(t) + 1) for t in frame if stand_in.live(t) + 1 <= top})
+    if asked.get("pols_sick_dur") != cohorts:
+        apart = sorted(asked.get("pols_sick_dur", set()) ^ cohorts)
+        lines.append(f"pols_sick_dur: {apart[:6]} asked or missed")
+    if asked.get("claim_surv_step") != {(z,) for z in range(1, top + 1)}:
+        lines.append("claim_surv_step: not every claim duration's survival")
+    return lines
+
+
+def test_the_c4_comparisons_ask_every_code_and_their_rows(sec_model, spliced):
+    """C4's ``also`` asks every code its cells take in every month of every row, and each
+    default selection is what modelx says of the committed rows.
 
     Nothing in a comparison shows what it leaves out: dropped from :func:`_ip_c4_also`, a
-    code is simply not compared, and dropped from a selection, a row.  So
-    :func:`_ip_c4_also` is run on stand-in points (:class:`_Asked`), each a row of its own
-    shape, with the model's References read as the spec test reads them: on each, it must
-    ask ``pols_if_at`` at every code inside the one inner width ``spec_sec.py`` gives but
-    the timing 3, which the cell refuses, and ``claims`` at every one, in every month of
-    the frame and the month after it; the cohorts at claim duration 0 and at the first past
-    the live ones in every month, and at every claim duration from 0 to ``max_dur()`` at
-    the four edges of the live triangle; and every claim duration's survival.  The shapes
-    are a point issued at the valuation date, one issued later, one in claim and one whose
-    cohorts fill ``max_dur()`` before the frame ends, so that the asks are the row's own,
-    not one row's for all.  And each selection is derived in modelx from the committed
-    points: the rows an RPI of 5% or 12% moves, whose benefit or premium in some month
-    differs from the shipped RPI's, are :data:`RPI_ROWS`, and the row each was read for,
-    the spec's ``derived_refs`` row, :data:`OWN_REFS_ROWS`, is one of them; and the rows
-    valued on an anniversary with RPI escalation, :data:`ANNIVERSARY_ROWS`.
+    code is simply not compared, and dropped from a selection, a row.  So what each cell of
+    :data:`CODED` takes is first derived in modelx, not read from :data:`CODED`
+    (:func:`_codes_taken`): on a fresh read of the committed model, and on every row of the
+    splice grid this run selects under each of its sets, the twins, the rows restated in
+    force and the future rows among them, each such cell is asked every code in the caches'
+    one inner width, 0 to 3, in the row's first month on the books, and the codes it takes
+    are those it does not refuse, ``invalid timing`` or ``invalid kind``; :data:`CODED`
+    must name exactly those, by the model's own References, row by row
+    (:func:`_code_faults`), as :func:`_c4` holds on every row it compares.  Then
+    :func:`_ip_c4_also` is run on a stand-in of each of those rows (:class:`_AskedOf`),
+    one at a time: it must ask each cell of :data:`CODED` at every code the cell takes on
+    the row, in every month of the frame and the month after it, and no other, so that a
+    code left out on one kind of row fails here, where a union over the rows would pass
+    it; the cohorts at claim duration 0 and at the first past the live ones in every month,
+    and at every claim duration from 0 to ``max_dur()`` at the four edges of the live
+    triangle; and every claim duration's survival (:func:`_ask_faults`).  The same is held
+    on stand-ins of shapes no such row has (:class:`_Asked`), at the codes the committed
+    rows take, one whose cohorts fill ``max_dur()`` before the frame ends among them.  And
+    each selection is derived in modelx from the committed points: the rows an RPI of 5%
+    or 12% moves, whose benefit or premium in some month differs from the shipped RPI's,
+    are :data:`RPI_ROWS`, and the row each was read for, the spec's ``derived_refs`` row,
+    :data:`OWN_REFS_ROWS`, is one of them; and the rows valued on an anniversary with RPI
+    escalation, :data:`ANNIVERSARY_ROWS`.
     """
-    source, _ = _comment("spec_sec.py")
-    sizes = ast.literal_eval(source)["spaces"]["Projection"]["cells_param_size"]
-    widths = {size[1] for name, size in sizes.items()
-              if isinstance(size, tuple) and name != ("t", "z")}
-    (width,) = widths
+    width = _inner_width()
+    found, rows, committed_takes = [], 0, None
+    fresh = mx.read_model(model_path(SEC), name=_name("codes"))
+    try:
+        models = [("committed", fresh)] + [(rates, spliced.pair(rates)[1])
+                                           for rates in SPLICE_SETS]
+        for name, model in models:
+            for key in point_keys(model):
+                p = projection(model, key)
+                where = f"{name} row {p.point_id()}"
+                taken, _ = _codes_taken(p, width)
+                found += [f"{name}: {line}" for line in _code_faults(p, width)]
+                found += [f"{where}: {line}" for line in _ask_faults(_AskedOf(p), taken)]
+                if name == "committed":
+                    if committed_takes not in (None, taken):
+                        found.append(f"{where}: takes {taken}, another row "
+                                     f"{committed_takes}")
+                    committed_takes = taken
+                rows += 1
+                _release(model, key)
+    finally:
+        fresh.close()
+    assert rows > len(_committed()) and not found, (rows, found[:10])
     refs = _references("Projection")
     for months, top, entry, z0 in ((5, 7, 0, 0), (6, 4, 2, 0), (4, 9, 0, 3), (8, 3, 0, 1)):
-        stand_in = _Asked(months, top, entry, z0, refs)
-        _ip_c4_also(stand_in)
-        asked = stand_in.asked
-        frame = range(months + 1)
-        assert asked["pols_if_at"] == {(t, c) for t in frame for c in range(width)
-                                       if c != 3}, sorted(asked["pols_if_at"])
-        assert asked["claims"] == {(t, c) for t in frame for c in range(width)}
-        edges = {entry, entry + 1, months - 1, months} & set(frame)
-        cohorts = ({(t, 0) for t in frame}
-                   | {(t, z) for t in edges for z in range(top + 1)}
-                   | {(t, stand_in.live(t) + 1) for t in frame
-                      if stand_in.live(t) + 1 <= top})
-        assert asked["pols_sick_dur"] == cohorts, sorted(asked["pols_sick_dur"] ^ cohorts)
-        assert asked["claim_surv_step"] == {(z,) for z in range(1, top + 1)}
+        lines = _ask_faults(_Asked(months, top, entry, z0, refs), committed_takes)
+        assert not lines, ((months, top, entry, z0), lines)
 
     labels = dict(zip(sec_model.Data.model_point_table().index, point_keys(sec_model)))
     points = {label: projection(sec_model, key) for label, key in labels.items()}
@@ -7275,6 +7740,84 @@ def test_the_c4_comparisons_ask_every_code_and_their_rows(sec_model):
                 for (p, d), refs in SPEC.derived_refs.items() if refs.keys() == {"rpi_rate"}}
     assert read_for == OWN_REFS_ROWS and len(read_for) == len(SPEC.derived_refs), read_for
     assert {label for rows in read_for.values() for label in rows} <= set(RPI_ROWS)
+
+
+# The 2-D caches, by their cells and the parameters spec_sec.py sizes them by.
+TWO_D_CACHES = {"pols_if_at": ("t", "timing"), "claims": ("t", "kind"),
+                "pols_sick_dur": ("t", "z")}
+
+
+def _unpickled_through(source):
+    """``{member: (outer, width, temporary)}``: each C-array member of the compiled
+    ``Projection`` that its unpickle function, ``__pyx_unpickle__c_Projection__set_state``,
+    in the generated C ``source``, reads back through a 2-D temporary, by the length and
+    the inner width the converter is called with; and ``{temporary: (outer, width)}``, the
+    shape each 2-D temporary of that function is declared with."""
+    match = re.search(r"\nstatic PyObject \*__pyx_f_\w+___pyx_unpickle__c_Projection__set_"
+                      r"state\(struct \w+ \*__pyx_v___pyx_result, PyObject \*\w+\) \{\n"
+                      r"(.*?)\n\}\n", source, re.S)
+    assert match, "no unpickle function in the generated C: its layout has changed"
+    body = match.group(1)
+    declared = {name: (int(outer), int(width)) for name, outer, width in re.findall(
+        r"^  \w+(?: \w+)* (__pyx_t_\d+)\[(\d+)\]\[(\d+)\];$", body, re.M)}
+    read, pending = {}, None
+    for line in body.splitlines():
+        call = re.search(r"__Pyx_carray_from_py_\w+?___5b_(\d+)_5d_\(\w+, (__pyx_t_\d+), "
+                         r"(\d+)\)", line)
+        if call:
+            pending = (int(call.group(3)), int(call.group(1)), call.group(2))
+            continue
+        copy = re.search(r"memcpy\(&\(__pyx_v___pyx_result->(\w+)\[0\]\), (__pyx_t_\d+), ",
+                         line)
+        if copy and pending and copy.group(2) == pending[2]:
+            read[copy.group(1)], pending = pending, None
+    return read, declared
+
+
+@pytest.mark.cython
+def test_each_2d_cache_is_unpickled_through_a_temporary_of_its_shape(sec_build):
+    """As a compiled point is unpickled, each 2-D cache is read back through a temporary
+    of its own shape (M8's review).
+
+    Cython's unpickle code reads each C-array cache back through a temporary, with a
+    converter named by the inner type, and pools its temporaries by C type, its C-array
+    types comparing equal on the outer size alone: so the caches of one outer size share
+    one temporary, of the first one's shape (``spec_sec.py``).  That is why the cohorts'
+    cache takes an outer size of its own, 747 by 626, beside the timings' and kinds' 746 by
+    4.  Were the two outer sizes one, the cohorts would be read into a temporary of 746 by
+    4: gcc and clang refuse the build under ``-Werror=incompatible-pointer-types``, which
+    ``tools/build_sec_cy.py`` passes on Linux and macOS, and the spec test holds the sizes,
+    but MSVC, on the ``cython_uk`` job's Windows legs, only warns, and the build would
+    write 746 x 626 doubles into it.  So this reads the generated C, which Cython writes
+    alike for every compiler: in ``__pyx_unpickle__c_Projection__set_state``, the value
+    cache and the flags of each 2-D cache (:data:`TWO_D_CACHES`) are each read through a
+    2-D temporary declared with the cache's own outer size and inner width, as
+    ``spec_sec.py`` gives them, by a converter of that width called with that length.  A
+    layout this cannot read fails here, rather than passing unread.
+    """
+    build = sec_build(SEC)
+    source, _ = _comment("spec_sec.py")
+    sizes = ast.literal_eval(source)["spaces"]["Projection"]["cells_param_size"]
+    read, declared = _unpickled_through(
+        (build.package / "_mx_classes.c").read_text(encoding="utf-8", errors="replace"))
+    found, temporaries = [], {}
+    for cell, params in TWO_D_CACHES.items():
+        outer, width = sizes[params]
+        for member in (f"_v_{cell}", f"_has_{cell}"):
+            if member not in read:
+                found.append(f"{member}: read back through no 2-D temporary")
+                continue
+            length, inner, temporary = read[member]
+            temporaries.setdefault((outer, width), set()).add(temporary)
+            shape = declared.get(temporary)
+            if (length, inner) != (outer, width) or shape != (outer, width):
+                found.append(f"{member}, a {outer} by {width} cache: read with a converter "
+                             f"of width {inner} and length {length} through {temporary}, "
+                             f"declared {shape}")
+    assert not found, found
+    shared = [(a, b) for a, ta in temporaries.items() for b, tb in temporaries.items()
+              if a < b and ta & tb]
+    assert not shared, (shared, temporaries)
 
 
 @pytest.mark.cython
@@ -7798,7 +8341,7 @@ COMPILED_ONLY = [
 def _refusal_cases():
     """Every refusal the compiled model must make as modelx does, as (case, the table, the
     claim cohorts, the other edits, the References, [(position, cell, arguments)], the
-    Data cells to read).
+    Data cells to read, whether each refusal names its point).
 
     Each table is an extract, labelled otherwise than by position (:data:`EXTRACT_LABELS`,
     the generator's columns kept), with its claim cohorts relabelled alike, so that a
@@ -7806,7 +8349,9 @@ def _refusal_cases():
     table or cohorts edits them first, by their own labels, and they are then relabelled.
     A position, not a label, since a table ``Data`` refuses has no keys to give: each is
     the row's place in the table written, ``Projection``'s ``idx``, which the test indexes
-    ``Projection`` by in modelx too.
+    ``Projection`` by in modelx too.  The refusals of a point's own, by its frame, its
+    References, its history, a value past the floats or a rate its tables do not hold,
+    each name the point, and must name it by the extract's label (M8's review).
     """
     committed, held = _committed(), _committed_cohorts()
     relabel = _relabel_map()
@@ -7827,50 +8372,53 @@ def _refusal_cases():
     cases = []
     for case, edit, _ in MALFORMED:
         cases.append((case, extract(edit), cohorts(), None, {}, [(0, "result_cf", ())],
-                      ("model_point_table",)))
+                      ("model_point_table",), False))
     for value in FLAG_WRITINGS:
         cases.append((f"the escalation written {value!r}",
                       extract(_set("escalation", [1], value)), cohorts(), None, {},
                       [(at(1), "result_cf", ()), (at(1), "is_escalating", ())],
-                      ("model_point_table", "escalation_rpi")))
+                      ("model_point_table", "escalation_rpi"), False))
     for case, edit, _ in MALFORMED_COHORTS:
         cases.append((f"cohorts: {case}", extract(), cohorts(edit), None, {},
-                      [(at(9), "result_cf", ())], ("inforce_cohorts",)))
+                      [(at(9), "result_cf", ())], ("inforce_cohorts",), False))
     for case, file, edit, _ in UNREADABLE:
         cases.append((case, extract(), cohorts(), {file: edit}, {},
-                      [(at(9), "result_cf", ())], (CHECKED_BY[file], ARRAYS[file])))
+                      [(at(9), "result_cf", ())], (CHECKED_BY[file], ARRAYS[file]), False))
     for case, edit, refs, point, _, _ in NOT_ISSUED:
         cases.append((case, extract(edit), cohorts(), None, refs,
-                      [(at(point), cell, ()) for cell in ("result_cf", "proj_len")], ()))
+                      [(at(point), cell, ()) for cell in ("result_cf", "proj_len")], (),
+                      True))
     for case, refs, point, message, _ in DOMAINS:
         if message is not None:
             cases.append((f"domain {case}", extract(), cohorts(), None, refs,
-                          [(at(point), "result_cf", ()), (at(point), "proj_len", ())], ()))
+                          [(at(point), "result_cf", ()), (at(point), "proj_len", ())], (),
+                          True))
     for case, amounts, refs, message in HISTORY_BOUNDS:
         if message is not None:
             edit = _then(_set("benefit_pp_init", [9], amounts[0]),
                          _set("premium_pp_init", [9], amounts[1]))
             cases.append((f"history: {case}", extract(edit), cohorts(), None, refs,
-                          [(at(9), "result_cf", ()), (at(9), "proj_len", ())], ()))
+                          [(at(9), "result_cf", ()), (at(9), "proj_len", ())], (), True))
     for case, edit, refs, point, call, report, _ in PAST_THE_FLOATS:
         name, *args = call
         args = tuple(_codes_of(args))
         calls = [(at(point), name, args), (at(point), report, ())]
         if args and args[0] > 0:
             calls.insert(0, (at(point), name, (args[0] - 1, *args[1:])))
-        cases.append((f"past the floats: {case}", extract(edit), cohorts(), None, refs,
-                      calls, ()))
+        cases.append((f"past the floats: {case}", extract(edit),
+                      cohorts(getattr(edit, "cohorts", None)), None, refs, calls, (), True))
     cut = {MORT: _dropped(lambda t: (t["age"] < 40).to_numpy())}
     cases.append(("an age below the mortality table", extract(), cohorts(), cut, {},
-                  [(at(1), "result_cf", ()), (at(1), "mort_rate", (0,))], ()))
+                  [(at(1), "result_cf", ()), (at(1), "mort_rate", (0,))], (), True))
     for case, refs in DATA_REFUSALS:
         cases.append((case, extract(), cohorts(), None, refs,
                       [(at(1), "result_cf", ()), (at(1), "inception_rate", (0,))],
-                      ("model_point_table",) if "horizon" in case else ()))
+                      ("model_point_table",) if "horizon" in case else (),
+                      "issue age" in case))
     for case, edit, cell, args, _ in NOT_HELD:
         if edit is not None:
             cases.append((case, edit(committed), held, None, {}, [(2, cell, args)],
-                          ("point_id",)))
+                          ("point_id",), False))
     return cases
 
 
@@ -7922,20 +8470,25 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
     The compiled model runs every case in one child, each on a fresh instance of the model
     that reads the case's own copies of the six files by absolute path
     (:data:`REFUSALS_CHILD`), each path in a message written as the file's name, as modelx
-    names it (:func:`_named`), and modelx reads each case afresh.
+    names it (:func:`_named`), and modelx reads each case afresh.  Engines agreeing is not
+    enough where both name a point by its place: so each refusal of a point's own, by its
+    frame, a Reference, its history, a value past the floats or a rate its tables do not
+    hold, must begin ``ValueError: point_id <label>:``, the extract's label of its row, in
+    both engines, and the refusals that do are counted, every such case's but the month
+    before a value past the floats, which computes (M8's review).
     """
     build = sec_build(SEC)
     cases = _refusal_cases()
     plain = len(cases)
     relabelled = _extract_with_generated()
     cases.append(("compiled only", relabelled, _extract_cohorts(), None, {},
-                  [(0, cell, args) for cell, args, _ in COMPILED_ONLY], ()))
+                  [(0, cell, args) for cell, args, _ in COMPILED_ONLY], (), False))
     assert len(relabelled) == 19
-    cases.append((IDX_CASE, relabelled, _extract_cohorts(), None, {}, IDX_EDGES, ()))
+    cases.append((IDX_CASE, relabelled, _extract_cohorts(), None, {}, IDX_EDGES, (), False))
     root = tmp_path / "refused"
     compiled_case(build, root / "base")
     jobs, wants = [], []
-    for i, (case, table, cohorts, edits, refs, calls, data) in enumerate(cases):
+    for i, (case, table, cohorts, edits, refs, calls, data, _) in enumerate(cases):
         folder = temp_inputs(root / f"case{i:03d}", model_path(SEC), model_points=table,
                              model_point_file=TABLE,
                              edits={**(edits or {}), COHORTS: cohorts})
@@ -7961,9 +8514,10 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
     assert done.returncode == 0, done.stderr[-4000:]
     got = pickle.loads(result.read_bytes())
     found, refused, computed, edges = [], 0, 0, {}
+    named = {"modelx": 0, "compiled": 0}
     only = iter(COMPILED_ONLY)
-    for (case, *_, calls, data), (files, *_), (want, want_data), (have, have_data) in zip(
-            cases, jobs, wants, got, strict=True):
+    for (case, *_, calls, data, names), (files, *_), (want, want_data), (
+            have, have_data) in zip(cases, jobs, wants, got, strict=True):
         have = [_named(did, files) for did in have]
         have_data = [_named(did, files) for did in have_data]
         for n, ((idx, cell, args), modelx_did, compiled_did) in enumerate(
@@ -7999,6 +8553,15 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
             elif compiled_did != modelx_did:
                 found.append(f"{where}: compiled {compiled_did}, modelx {modelx_did}")
             refused += 1
+            if not names:
+                continue
+            for engine, did in (("modelx", modelx_did), ("compiled", compiled_did)):
+                if did[0] == "raised" and str(did[1]).startswith(
+                        f"ValueError: point_id {EXTRACT_LABELS[idx]}: "):
+                    named[engine] += 1
+                else:
+                    found.append(f"{where}: {engine} {did}, not naming point_id "
+                                 f"{EXTRACT_LABELS[idx]}")
         for name, modelx_did, compiled_did in zip(data, want_data, have_data, strict=True):
             if modelx_did[0] != "raised":
                 found.append(f"{case}: Data.{name}: modelx returned, where a refusal was "
@@ -8014,7 +8577,10 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
     assert edges[-1, "point_id", ()][0] == ("ok", EXTRACT_LABELS[-1]), edges
     assert not found, "\n".join(found[:40])
     assert refused + computed == sum(len(calls) + len(data)
-                                     for *_, calls, data in cases[:plain])
+                                     for *_, calls, data, _ in cases[:plain])
+    naming = sum(len(calls) - (case.startswith("past the floats: ") and len(calls) == 3)
+                 for case, *_, calls, _, names in cases[:plain] if names)
+    assert named == {"modelx": naming, "compiled": naming} and naming > 200, (named, naming)
 
 
 def _extract_with_generated():
