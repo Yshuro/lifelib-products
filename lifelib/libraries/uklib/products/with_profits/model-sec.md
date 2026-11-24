@@ -236,26 +236,28 @@ asserts. `WP_UK_S` meets most of these only when a projection reaches them, and 
 never: a guarantee date on the endowment would gate an exercise and the imminent window
 there, and a fraction of a year in the age would be truncated by `int()`.
 
-A point at or past the end of cover at the valuation date, `duration_mth ≥
-cover_end_mth()`, reads, but `proj_len()` refuses it, naming the point: the end of cover is
-the product's rule, keyed on the policy clock, not the table's. So does a point the
-contract does not write ([`product-spec.md`](product-spec.md)): one issued below 18,
-`Projection.issue_age_min`, the youngest age the mortality table rates, though the bond
-admits issue from 3 months; a bond issued at or past the limiting age, `omega_age`; and an
-endowment maturing past it, `age_at_entry() + policy_term() > omega_age`, whose last
-attained ages the table may not rate, where `WP_UK_S` bounds no term and reads them at
-`omega_age`. `omega_age` itself must lie above `issue_age_min` and at most a year past the
-mortality table's last age. Each is a lower-case Reference. The compiled model's caches
-are sized from the shipped References and table: a cover of at most 1,236 months, from
-issue at 18 to 121, the table's last age plus one, and a frame of at most 1,356 months,
-that cover issued 120 months after the valuation date. So `proj_len()` refuses a point
-whose cover or frame is longer, naming it, in modelx as compiled, and each Reference keeps
-its domain (*The bounds the caches hold*, below). A whole limiting age written as a
-float, `120.0`, is read as the `int` it is, so that the frame is a whole number of
-months, as it is compiled. And `proj_len()` refuses a bond whose units run out in its
-first month on the books, which would leave no month to project. On every point `proj_len()` also refuses a Reference off its domain (below). A
-loop over the block meets such a row only when it reaches it, so `run_sec.py --block` asks
-every point for its frame before it projects any, and stops before it prints anything.
+A point at or past the end of cover at the valuation date,
+`duration_mth ≥ cover_end_mth()`, reads, but `proj_len()` refuses it, naming the point:
+the end of cover is the product's rule, keyed on the policy clock, not the table's. So
+does a point the contract does not write ([`product-spec.md`](product-spec.md)): one
+issued below 18, `Projection.issue_age_min`, the youngest age the mortality table rates,
+though the bond admits issue from 3 months; a bond issued at or past the limiting age,
+`omega_age`; and an endowment maturing past it,
+`age_at_entry() + policy_term() > omega_age`, whose last attained ages the table may not
+rate, where `WP_UK_S` bounds no term and reads them at `omega_age`. `omega_age` itself
+must lie above `issue_age_min` and at most a year past the mortality table's last age.
+Each is a lower-case Reference. The compiled model's caches are sized from the shipped
+References and table: a cover of at most 1,236 months, from issue at 18 to 121, the
+table's last age plus one, and a frame of at most 1,356 months, that cover issued 120
+months after the valuation date. So `proj_len()` refuses a point whose cover or frame is
+longer, naming it, in modelx as compiled, and each Reference keeps its domain (*The bounds
+the caches hold*, below). A whole limiting age written as a float, `120.0`, is read as the
+`int` it is, so that the frame is a whole number of months, as it is compiled. And
+`proj_len()` refuses a bond whose units run out in its first month on the books, which
+would leave no month to project. On every point `proj_len()` also refuses a Reference off
+its domain (below). A loop over the block meets such a row only when it reaches it, so
+`run_sec.py --block` asks every point for its frame before it projects any, and stops
+before it prints anything.
 
 The assumption tables are checked before a value of them is read, each by the cell the
 projection takes its extent from, reading the file as it stands, so that a fault is named
@@ -1105,13 +1107,14 @@ contractual bound by a 20% bonus on a 12% return, two variants of S's points.
   point, and naming its label on an extract labelled otherwise than by position; the
   horizon a Reference; a point past its cover, one the contract does not issue, a bond
   spent in its first month, and a cover or a frame longer than the compiled model's caches
-  hold refused by `proj_len()`; each Reference off its domain, at the
-  value next outside each edge, NaN and both infinities, where each edge is accepted and
-  projects its reports; each value past the floats refused in its cell, the powers'
-  among them; each assumption table a reader cannot read refused naming its lines;
-  keys written as floats read as `WP_UK_S` reads them; the edges of the interface accepted;
-  every state `WP_UK_S` reaches accepted in force; and the committed table is what `WP_UK_S`
-  generates.
+  hold refused by `proj_len()`; each Reference off its domain, at the value next outside
+  each edge, NaN and both infinities, where each edge is accepted and projects its
+  reports; each value past the floats refused in its cell, the powers' among them; each of
+  these refusals naming the label of an extract labelled otherwise than by position, as
+  the compiled model's must too; each assumption table a reader cannot read refused naming
+  its lines; keys written as floats read as `WP_UK_S` reads them; the edges of the
+  interface accepted; every state `WP_UK_S` reaches accepted in force; and the committed
+  table is what `WP_UK_S` generates.
 - **The product's own facts**: the two clocks on the shipped points; the committed rows
   continuing their S points at the shipped assumptions but for inflation, and the rows read
   under References of their own continuing `WP_UK_S` under them; each history column read,

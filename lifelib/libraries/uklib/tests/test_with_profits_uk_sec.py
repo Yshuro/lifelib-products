@@ -2356,6 +2356,34 @@ def _relabelled(message, relabel):
     return re.sub(r"point_id \[(\d+(?:, \d+)*)\]", labels, message)
 
 
+def _by_label(message, relabel):
+    """``message``, which names its point first, ``point_id N: ...``, naming it by
+    ``relabel[N]`` instead."""
+    match = re.match(r"point_id (\d+): ", message)
+    assert match, message
+    return f"point_id {relabel[int(match.group(1))]}: " + message[match.end():]
+
+
+def _extract_of(edit=None):
+    """The committed table, edited by ``edit`` by its own labels, then relabelled
+    :data:`EXTRACT_LABELS`, so that no label is its position plus one; and the relabelling,
+    ``{committed label: extract label}``."""
+    committed = _committed()
+    relabel = dict(zip(committed.index, EXTRACT_LABELS))
+    table = edit(committed) if edit is not None else committed
+    return table.rename(index=relabel), relabel
+
+
+def _refused_naming(call, message):
+    """``call()`` raises ``ValueError`` whose message starts with ``message``, which names
+    the point first: a refusal naming another point, its position plus one, fails here
+    even where the rest of its words are right."""
+    with pytest.raises(Exception) as excinfo:
+        call()
+    line = _raised(excinfo.value)
+    assert line.startswith(f"ValueError: {message}"), (line, message)
+
+
 @pytest.fixture(scope="module")
 def malformed_extract(tmp_path_factory):
     """:data:`MALFORMED`'s tables as an extract labels its rows, each a file of its own.
@@ -2471,15 +2499,17 @@ def test_a_point_past_its_cover_is_refused_by_proj_len(tmp_path, case, row, end)
     the block would meet the point only when it reached it, after projecting the points
     before it, so ``run_sec.py --block``, run beside the table, asks every point for its
     frame first: it fails naming the point, and prints nothing before.  The month before,
-    the committed row, projects one month.
+    the committed row, projects one month.  The table is an extract labelled otherwise
+    than by position, and the refusal names the extract's label.
     """
     moved = _label(_committed(), "derived", *row)
-    model = _read_edited(tmp_path, _set("duration_mth", [moved], end))
-    message = (f"point_id {moved}: duration_mth {end} is at or past the end of cover, policy "
-               f"month {end}")
+    table, relabel = _extract_of(_set("duration_mth", [moved], end))
+    model = mx.read_model(_sec_inputs(tmp_path, table), name=_name("past_cover"))
+    message = (f"point_id {relabel[moved]}: duration_mth {end} is at or past the end of "
+               f"cover, policy month {end}")
     try:
         assert len(model.Data.model_point_table()) == len(_committed())
-        _refused(_point(model, moved).result_cf, message)
+        _refused_naming(_point(model, relabel[moved]).result_cf, message)
     finally:
         model.close()
     shipped = mx.read_model(model_path(SEC), name=_name("last"))
@@ -2538,15 +2568,19 @@ def test_a_point_the_contract_does_not_issue_is_refused_by_proj_len(tmp_path, ca
     refuses such a point, naming it, as it refuses a point past its cover, and every report
     with it (:data:`NOT_ISSUED`): each bound just inside it, and each bound moved past a
     committed twin, which projects at the shipped bound, on a model read afresh.  A bound
-    off by one, or a refusal lost, lets a point through.  The table reads either way.  Every
-    Reference is set on a model just read, before its projection computes anything (K7).
+    off by one, or a refusal lost, lets a point through.  The table reads either way, an
+    extract labelled otherwise than by position, and each refusal names the extract's
+    label.  Every Reference is set on a model just read, before its projection computes
+    anything (K7).
     """
-    model = _read_edited(tmp_path, edit or (lambda t: t))
+    table, relabel = _extract_of(edit)
+    model = mx.read_model(_sec_inputs(tmp_path, table), name=_name("not_issued"))
     try:
         for ref, value in refs.items():
             setattr(model.Projection, ref, value)
         assert len(model.Data.model_point_table()) == len(_committed())
-        _refused(_point(model, point).result_cf, message)
+        _refused_naming(_point(model, relabel[point]).result_cf,
+                        _by_label(message, relabel))
     finally:
         model.close()
     if frame is not None:
@@ -2582,13 +2616,14 @@ def test_a_bond_spent_in_its_first_month_is_refused_by_proj_len(tmp_path, case, 
     premium is never spent in its issue month; with none it is, and ``WP_UK_S``'s search,
     whose "never" is that month, would project it to the limiting age.
     """
-    model = _read_edited(tmp_path, edit)
+    table, relabel = _extract_of(edit)
+    model = mx.read_model(_sec_inputs(tmp_path, table), name=_name("spent"))
     try:
-        p = _point(model, point)
+        p = _point(model, relabel[point])
         assert p.fund_exhaust_mth() == month
-        _refused(p.result_cf, f"point_id {point}: the bond's units run out in its first "
-                              f"month on the books, policy month {month}, so its frame "
-                              f"would end before it began")
+        _refused_naming(p.result_cf, f"point_id {relabel[point]}: the bond's units run out "
+                                     f"in its first month on the books, policy month "
+                                     f"{month}, so its frame would end before it began")
     finally:
         model.close()
 
@@ -2828,10 +2863,18 @@ DOMAINS = [
 ]
 
 
+@pytest.fixture(scope="module")
+def domain_extract(tmp_path_factory):
+    """The committed table as an extract labels it (:func:`_extract_of`), in a folder of its
+    own: ``(the SEC folder, {committed label: extract label})``."""
+    table, relabel = _extract_of()
+    return _sec_inputs(tmp_path_factory.mktemp("domain_extract"), table), relabel
+
+
 @pytest.mark.parametrize("case, refs, point, message, report", DOMAINS,
                          ids=[c[0] for c in DOMAINS])
-def test_each_reference_is_held_to_its_domain_at_both_edges(case, refs, point, message,
-                                                            report):
+def test_each_reference_is_held_to_its_domain_at_both_edges(domain_extract, case, refs,
+                                                            point, message, report):
     """``proj_len()`` holds each Reference to its domain, NaN and the infinities outside it.
 
     ``WP_UK_S`` checks none of them, and off its domain each projects a negative rate,
@@ -2847,18 +2890,22 @@ def test_each_reference_is_held_to_its_domain_at_both_edges(case, refs, point, m
     the mortality table's last age.  Each edge accepted projects its reports, in finite
     floats over the whole frame, but where the edge makes a value past the floats, which is
     refused where it first is, naming the point (M11's template).  A whole float, ``120.0``,
-    reads as the whole number.  Each case sets its References on a model just read (K7).
+    reads as the whole number.  Each case sets its References on a model just read (K7),
+    from an extract labelled otherwise than by position, and each refusal must name the
+    extract's label: a refusal naming its point by ``idx + 1`` names another here.
     """
-    model = mx.read_model(model_path(SEC), name=_name("domain"))
+    folder, relabel = domain_extract
+    model = mx.read_model(folder, name=_name("domain"))
     try:
         for ref, value in refs.items():
             setattr(model.Projection, ref, value)
-        p = _row(model, "twin", point, ENTRY[point])
+        p = _point(model, relabel[_label(_committed(), "twin", point, ENTRY[point])])
         if message is not None:
-            _refused(p.result_cf, message)
+            _refused_naming(p.result_cf, _by_label(message, relabel))
         elif report is not None:
             assert p.proj_len() > 0
-            _refused(lambda: [p.cells[name]() for name in REPORTS], report)
+            _refused_naming(lambda: [p.cells[name]() for name in REPORTS],
+                            _by_label(report, relabel))
         else:
             for name in REPORTS:
                 frame = p.cells[name]()
@@ -2986,20 +3033,22 @@ def test_a_value_past_the_floats_is_refused_where_it_first_is(tmp_path, case, ed
     (:data:`PAST_THE_FLOATS`), and so does the report that reads it first (UKLIB-SEC-PLAN.md
     §6.6, *Carried into M10 and after*; *Record — M11*).  The month before projects, but in
     a cell whose months read one declaration (:data:`SAME_YEAR`).  Each Reference is set on
-    a model just read (K7).
+    a model just read (K7), from an extract labelled otherwise than by position, whose
+    label each refusal must name.
     """
-    model = _read_edited(tmp_path, edit or (lambda t: t))
+    table, relabel = _extract_of(edit)
+    model = mx.read_model(_sec_inputs(tmp_path, table), name=_name("past_floats"))
     try:
         for ref, value in refs.items():
             setattr(model.Projection, ref, value)
-        p = _point(model, point)
+        p = _point(model, relabel[point])
         name, t, *rest = call
         rest = [_code(p, a) if isinstance(a, str) else a for a in rest]
         if t > p.t_entry() and name not in SAME_YEAR:
             p.cells[name](t - 1, *rest)
-        _refused(lambda: p.cells[name](t, *rest), message)
+        _refused_naming(lambda: p.cells[name](t, *rest), _by_label(message, relabel))
         report, first = report if isinstance(report, tuple) else (report, message)
-        _refused(p.cells[report], first)
+        _refused_naming(p.cells[report], _by_label(first, relabel))
     finally:
         model.close()
 
@@ -5570,8 +5619,9 @@ def test_the_spec_sizes_each_cache_as_its_comment_derives():
         model.close()
     cover = 12 * (last + 1 - proj["issue_age_min"])
     frame = cover + data["future_horizon_mth"]
+    years = cover // 12
     for text in (f"the frame's bound in proj_len, {frame:,}, + 2",
-                 f"the cover's bound in proj_len in years, {cover:,} / 12 = {cover // 12}, + 2"):
+                 f"the cover's bound in proj_len in years, {cover:,} / 12 = {years}, + 2"):
         assert text in comment, text
     t, width = frame + 2, max(len(TIMING_CODES), len(CLAIM_CODES))
     assert sizes == {"t": t, ("t", "timing"): (t, width), ("t", "kind"): (t, width),
@@ -7761,6 +7811,22 @@ def _refusal_cases():
     return cases
 
 
+# The cases of :func:`_refusal_cases` whose every refusal is a projection's, naming its
+# point first, ``point_id <label>: ...``: those Data's reader, the assumption tables'
+# checks, the vectors' holding and a cell's codes refuse name a list of labels, a file or
+# nothing.
+NAMING_CASES = frozenset({c[0] for c in PAST_COVER} | {c[0] for c in NOT_ISSUED}
+                         | {c[0] for c in SPENT}
+                         | {"the claims total past the floats",
+                            "an age below the mortality table", "the caches' bounds"})
+
+
+def _names_its_point(case):
+    """Whether every refusal of ``case`` names its point first (:data:`NAMING_CASES`)."""
+    return case in NAMING_CASES or case.startswith(("domain ", "past the floats: ",
+                                                    "later: "))
+
+
 @pytest.mark.cython
 def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
     """Compiled, the model refuses what modelx refuses, with modelx's error and message.
@@ -7809,6 +7875,12 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
     modelx's, which a build without bounds checks, or without Python's negative indices,
     would part from.
 
+    Comparing the engines alone would pass a refusal that names its point by its position,
+    ``idx + 1``, in both: so each refusal a projection makes must also name the extract's
+    label first, ``point_id <label>: ...``, every refusal of a case of
+    :data:`NAMING_CASES`, the domains', the values' and the chains' past the floats among
+    them (:func:`_names_its_point`), and any other that names a point.
+
     The compiled model runs every case in one child, each on a fresh instance of the model
     that reads the case's own copies of the three files by absolute path
     (:data:`REFUSALS_CHILD`), each path in a message written as the file's name, as modelx
@@ -7852,10 +7924,11 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
                           capture_output=True, text=True, timeout=1800)
     assert done.returncode == 0, done.stderr[-4000:]
     got = pickle.loads(result.read_bytes())
-    found, refused, computed, edges = [], 0, 0, {}
+    found, refused, computed, edges, named = [], 0, 0, {}, 0
     only = iter(COMPILED_ONLY)
-    for (case, *_, calls, data), (files, *_), (want, want_data), (have, have_data) in zip(
-            cases, jobs, wants, got, strict=True):
+    for (case, table, *_, calls, data), (files, *_), (want, want_data), (
+            have, have_data) in zip(cases, jobs, wants, got, strict=True):
+        labels = list(table.index)
         have = [_named(did, files) for did in have]
         have_data = [_named(did, files) for did in have_data]
         for n, ((idx, cell, args), modelx_did, compiled_did) in enumerate(
@@ -7898,6 +7971,12 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
                 found.append(f"{where}: modelx returned, where a refusal was meant")
             elif compiled_did != modelx_did:
                 found.append(f"{where}: compiled {compiled_did}, modelx {modelx_did}")
+            text = str(modelx_did[1])
+            if _names_its_point(case) or text.startswith("ValueError: point_id "):
+                named += 1
+                if not text.startswith(f"ValueError: point_id {labels[idx]}: "):
+                    found.append(f"{where}: {text[:120]!r} does not name the extract's "
+                                 f"label, {labels[idx]}")
             refused += 1
         for name, modelx_did, compiled_did in zip(data, want_data, have_data, strict=True):
             if modelx_did[0] != "raised":
@@ -7913,6 +7992,9 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
                          f"row {edges[23, cell, args]}")
     assert edges[-1, "point_id", ()][0] == ("ok", EXTRACT_LABELS[-1]), edges
     assert not found, "\n".join(found[:40])
+    naming = sum(len(calls) for case, *_, calls, _ in cases[:plain]
+                 if _names_its_point(case)) - len(CHAINS_PAST)
+    assert named >= naming > 300, (named, naming)
     assert computed == len(CHAINS_PAST) + sum(2 for h in HORIZONS if h in READ_HORIZONS)
     assert refused + computed == sum(len(calls) + len(data)
                                      for *_, calls, data in cases[:plain])
