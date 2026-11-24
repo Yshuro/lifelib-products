@@ -7105,14 +7105,20 @@ def test_the_c4_comparisons_ask_every_code_and_their_rows(sec_model, spliced):
     modelx says of the committed rows.
 
     Nothing in a comparison shows what it leaves out: dropped from :func:`_wp_c4_also`, a
-    code is simply not compared, and dropped from a selection, a row.  So
-    :func:`_wp_c4_also` is run on a stand-in of each row C4 compares here (:class:`_Asked`):
-    every committed row, and every row of the splice grid this run selects under each of
-    its sets, the twins, the rows restated in force and the future rows, both chassis, the
-    one-row frames and the exhausted bonds among them.  On each row, one at a time, it must
-    ask every cell of :data:`CODED` at every code that cell takes, read from the model's
-    own References, in every month of the frame and the month after it, and no other: a
-    code left out on one kind of row fails here, where a union over the rows would pass it.
+    code is simply not compared, and dropped from a selection, a row.  So what each cell of
+    :data:`CODED` takes is first derived in modelx, not read from :data:`CODED`: on a fresh
+    read of the committed model, each such cell is asked every code in the caches' one
+    inner width, 0 to 9, on every committed row in its first month on the books, and the
+    codes it takes are those it does not refuse, ``invalid timing`` or ``invalid kind``,
+    the same on every row; :data:`CODED` must name exactly those, by the model's own
+    References.  Then :func:`_wp_c4_also` is run on a stand-in of each row C4 compares here
+    (:class:`_Asked`): every committed row, and every row of the splice grid this run
+    selects under each of its sets, the twins, the rows restated in force and the future
+    rows, both chassis, the one-row frames and the exhausted bonds among them.  On each
+    row, one at a time, it must ask every cell of :data:`CODED` at every code that cell
+    takes, in every month of the frame and the month after it, and no other: a code left
+    out on one kind of row fails here, where a union over the rows would pass it, and a
+    code left out of :data:`CODED` fails above.
     And each default selection is derived in modelx from the committed rows: the rows of
     :data:`OWN_REFS_ROWS` are those the spec's ``derived_refs`` read under each set; the
     rows of :data:`DECLARING_ROWS` declare in their frame under the rule, one valued on its
@@ -7120,6 +7126,29 @@ def test_the_c4_comparisons_ask_every_code_and_their_rows(sec_model, spliced):
     frames by the units' exhaustion.
     """
     found, rows = [], 0
+    width = max(len(TIMING_CODES), len(CLAIM_CODES))
+    fresh = mx.read_model(model_path(SEC), name=_name("codes"))
+    try:
+        for key, label in zip(point_keys(fresh), fresh.Data.model_point_table().index):
+            p = projection(fresh, key)
+            for cell, names in CODED.items():
+                takes = set()
+                for code in range(width):
+                    try:
+                        p.cells[cell](p.t_entry(), code)
+                    except Exception as err:    # a code the cell does not take
+                        if not re.search(r"ValueError: invalid (timing|kind)", str(err)):
+                            found.append(f"row {label}: {cell}({p.t_entry()}, {code}) "
+                                         f"raised {_raised(err)}")
+                        continue
+                    takes.add(code)
+                coded = {_code(p, n) for n in names}
+                if takes != coded:
+                    found.append(f"row {label}: {cell} takes {sorted(takes)} in modelx, "
+                                 f"CODED names {sorted(coded)}")
+    finally:
+        fresh.close()
+    assert not found, found[:10]
     models = [("committed", sec_model)] + [(name, pair[1]) for name, pair in spliced.items()]
     for name, model in models:
         keys = point_keys(model)
