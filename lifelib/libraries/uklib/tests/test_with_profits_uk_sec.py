@@ -3849,10 +3849,15 @@ def _declared(got, want):
     return got == pytest.approx(want, rel=1e-12, abs=0.0)
 
 
-# Rows on which D6's declarations are asserted under the rule, at today's References: the
-# worked example's bond valued in a declaration month, 71, its declaration month 0's own
-# event, and the down scenario valued mid-year, 68, its year-end declaration at t = 3.
-DECLARED = ((("derived", 1, 71), 0), (("derived", 2, 68), 3))
+# Rows on which D6's declarations are asserted under the rule, at today's References, as
+# ((row_kind, S point, month), the first declaration's month): the worked example's bond
+# valued in a declaration month, 71, its declaration month 0's own event, and the down
+# scenario valued mid-year, 68, its year-end declaration at t = 3, whose steps the change
+# cap clamps and the floor holds at 0; and two whose steps neither does, so that the rate
+# declared moves with the supportable rate itself: the endowment valued in its
+# declaration month, 11, and the 5% bond in force at 60, its first declaration at t = 11.
+DECLARED = ((("derived", 1, 71), 0), (("derived", 2, 68), 3), (("derived", 5, 11), 0),
+            (("twin", 3, 60), 11))
 
 
 def test_each_declaration_in_the_frame_is_made_at_today_s_references():
@@ -3869,21 +3874,35 @@ def test_each_declaration_in_the_frame_is_made_at_today_s_references():
     the month opens with being ``asset_share_init()`` and the guarantee the units at the
     opening price, and the price steps by it at ``t = 0``.  On the row valued mid-year the
     year-end declaration, at ``t = 3``, is the rule's from the opening rate, and every month
-    of the year reads it.  Each differs from the rate the row opens with.
+    of the year reads it.  Each differs from the rate the row opens with.  Their steps are
+    clamped, by the change cap and the floor, so two more rows take steps no clamp holds,
+    the endowment on its declaration and the 5% bond in force: there the rate declared
+    moves with the supportable rate, and the model's ``bonus_supportable`` is held to the
+    rule computed here on every row.
     """
     model = mx.read_model(model_path(SEC), name=_name("declared"))
     try:
         for ref, value in RULE_REFS.items():
             setattr(model.Projection, ref, value)
+        free = 0
         for case, d0 in DECLARED:
             p = _row(model, *case)
             assert p.declaration_month(0) == d0 and p.is_declaration_month(d0), case
             init = p.bonus_rate_init()
             got, want = _rule_from(p, init)
             assert _declared(got, want) and got != init, (case, got, want, init)
+            assert _declared(p.bonus_supportable(d0), _supportable(p, d0)), case
             assert [p.bonus_rate(t) for t in range(d0 + 1)] == [got] * (d0 + 1), case
-            opened = p.unit_price_init() if d0 == 0 else p.unit_price(d0 - 1)
-            assert p.unit_price(d0) == opened * (1.0 + got), case
+            raw = p.bonus_speed * (_supportable(p, d0) - init)
+            free += abs(raw) < p.bonus_change_cap and init + raw > 0.0
+            if p.is_unitised():
+                opened = p.unit_price_init() if d0 == 0 else p.unit_price(d0 - 1)
+                assert p.unit_price(d0) == opened * (1.0 + got), case
+            else:
+                opened = (p.sum_assured() + p.attaching_bonus_init() if d0 == 0
+                          else p.guar_benefit_pp(d0 - 1))
+                assert p.guar_benefit_pp(d0) == opened * (1.0 + got), case
+        assert free == 2, free
         p = _row(model, *DECLARED[0][0])
         assert p.asset_share_at(0, _code(p, "BEF_PREM")) == p.asset_share_init()
         assert p.guar_benefit_open(0) == p.units_init() * p.unit_price_init()
@@ -3895,13 +3914,15 @@ def test_under_the_rule_a_first_declaration_s_carries_departs_by_d6(spliced):
     """Where S's first frame year keeps its column, this model declares by the rule (D6).
 
     ``WP_UK_S``'s first projected year keeps its column under the rule; this model makes
-    every declaration in its frame by the rule at today's References.  So under the rule
-    set the twin of S's worked example in force at 60 parts from S at its first
-    declaration, policy month 71, ``t = 11``: S keeps the 2% it carries, and this model
-    declares the rule's step from it, computed here (:func:`_supportable`).  Before it the row is S's in every cell and report
-    but the bonus rate, which every month of the year reads from that declaration (T2,
-    :func:`_carried_cut`); the price steps apart there.  The departure ``model-sec.md``
-    records.  At the shipped References the rule is off, and the committed twins are S's.
+    every declaration in its frame by the rule at today's References.  So under the rule set
+    the twin of S's worked example in force at 60 parts from S at its first declaration,
+    policy month 71, ``t = 11``: S keeps the 2% it carries, and this model declares the
+    rule's step from it, computed here (:func:`_supportable`), which the change cap clamps,
+    so the model's ``bonus_supportable`` is held to that rule too.  Before it the row is S's
+    in every cell and report but the bonus rate, which every month of the year reads from
+    that declaration (T2, :func:`_carried_cut`); the price steps apart there.  The departure
+    ``model-sec.md`` records.  At the shipped References the rule is off, and the committed
+    twins are S's.
     """
     s, sec = spliced["rule"]
     sp = _point(s, 1)
@@ -3912,6 +3933,7 @@ def test_under_the_rule_a_first_declaration_s_carries_departs_by_d6(spliced):
         assert sp.bonus_rate(71) == sp.bonus_rate_init() == p.bonus_rate_init() == 0.02
         got, want = _rule_from(p, p.bonus_rate_init())
         assert _declared(got, want) and got != 0.02, (got, want)
+        assert _declared(p.bonus_supportable(11), _supportable(p, 11))
         assert p.unit_price(10) == sp.unit_price(70)
         assert p.unit_price(11) == sp.unit_price(70) * (1.0 + got) != sp.unit_price(71)
     finally:
@@ -7131,11 +7153,12 @@ OWN_REFS_ROWS = {"guar_charge_rate_base": (20, 21), "bonus_rule_on": (22, 23),
                  "smooth_cap": (24,)}
 
 # The rows of the rule's declarations in the frame, by default (DECLARED's, the bond valued
-# on its declaration and the down scenario's valued mid-year, whose year closes at t = 3),
-# and on the full grid every committed row; and the rows whose units run out, by default
-# the withdrawing bond and the bond variant in force, and on the full grid every committed
+# on its declaration, the down scenario's valued mid-year, whose year closes at t = 3, the
+# endowment valued on its declaration and the 5% bond in force, whose steps no clamp holds),
+# and on the full grid every committed row; and the rows whose units run out, by default the
+# withdrawing bond and the bond variant in force, and on the full grid every committed
 # withdrawing bond: each held in modelx, by its test, to be what it is said to be.
-DECLARING_ROWS = (8, 9)
+DECLARING_ROWS = (8, 9, 15, 3)
 EXHAUSTED_ROWS = (4, 18)
 
 
@@ -7585,13 +7608,15 @@ def test_the_compiled_model_declares_in_the_frame_as_modelx_does(sec_build, tmp_
     share and guarantee.  On the row valued in its declaration month, the bond at 71, that
     declaration is month 0's own event, its rule reading the opening state; on the row
     valued mid-year, the down scenario's bond at 68, the year-end declaration at ``t = 3``
-    is the rule's from the opening rate.  In modelx, under :data:`RULE_REFS`, each row's
-    rate in the declaration's month is asserted to be the rule's and not the row's opening
-    rate, as ``test_each_declaration_in_the_frame_is_made_at_today_s_references`` holds it;
-    then the rows of :data:`DECLARING_ROWS`, the whole committed table with the full grid,
-    are swept fully under those References, and the compiled model must agree everywhere,
-    the declared rate, the price it steps and every year's declaration after it among it.
-    A compiled declaration that read the extract's rate parts here.
+    is the rule's from the opening rate; and on the endowment valued on its declaration and
+    the 5% bond in force, whose steps no clamp holds, the rate declared moves with the
+    supportable rate.  In modelx, under :data:`RULE_REFS`, each row's rate in the
+    declaration's month is asserted to be the rule's and not the row's opening rate, as
+    ``test_each_declaration_in_the_frame_is_made_at_today_s_references`` holds it; then the
+    rows of :data:`DECLARING_ROWS`, the whole committed table with the full grid, are swept
+    fully under those References, and the compiled model must agree everywhere, the declared
+    rate, the price it steps and every year's declaration after it among it. A compiled
+    declaration that read the extract's rate parts here.
     """
     build = sec_build(SEC)
     model = mx.read_model(model_path(SEC), name=_name("declares"))
@@ -8042,9 +8067,11 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
                     found.append(f"{where}: compiled {compiled_did}, modelx {modelx_did}, "
                                  f"where the month before the overflow computes")
                 continue
+            refused += 1
             if modelx_did[0] != "raised":
                 found.append(f"{where}: modelx returned, where a refusal was meant")
-            elif compiled_did != modelx_did:
+                continue
+            if compiled_did != modelx_did:
                 found.append(f"{where}: compiled {compiled_did}, modelx {modelx_did}")
             text = str(modelx_did[1])
             if _names_its_point(case) or text.startswith("ValueError: point_id "):
@@ -8052,7 +8079,6 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
                 if not text.startswith(f"ValueError: point_id {labels[idx]}: "):
                     found.append(f"{where}: {text[:120]!r} does not name the extract's "
                                  f"label, {labels[idx]}")
-            refused += 1
         for name, modelx_did, compiled_did in zip(data, want_data, have_data, strict=True):
             if modelx_did[0] != "raised":
                 found.append(f"{case}: Data.{name}: modelx returned, where a refusal was "
