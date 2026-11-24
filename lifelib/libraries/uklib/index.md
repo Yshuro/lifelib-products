@@ -102,6 +102,9 @@ guarantee from the table's first age, runs on a small C stack.
 smoothed payout, the guarantee, the units, the unit price and two cumulants, and compiles
 too, each of its eight chains blocked by policy year, and its claims total compensated as
 Python's `sum` is, three kinds being paid together in a frame's last month.
+`IP_UK_SEC` runs in force with lives in health and in claim at any claim duration, and
+compiles too, its claim cohorts, a tuple a month in `IP_UK_S`, a recursion of two
+parameters, a cohort a cell, whose sums are `IP_UK_S`'s `sum` to the last bit.
 
 Assumption tables stay in the units they are quoted in: a mortality rate by attained age
 and a lapse rate by policy year are annual, and each model converts them month by month

@@ -1,15 +1,15 @@
 # In-Force Implementation Notes
 
-**Status:** Draft, 2026-11-23. `IP_UK_SEC` is [`IP_UK_S`](model.md) taught to project from
+**Status:** Draft, 2026-11-24. `IP_UK_SEC` is [`IP_UK_S`](model.md) taught to project from
 a valuation date. Besides policies issued at that date, it takes policies already in force
 there, in any month of their policy year, with lives in health and lives in claim at any
 claim duration, and policies to be written in the ten years after it, as lifelib's
 `basiclife/BasicTerm_SE` extends `basiclife/BasicTerm_S`. The product is the one
 [`product-spec.md`](product-spec.md) specifies and [`technical-notes.md`](technical-notes.md)
-models; this page says what running in force changes. The suffix adds lifelib's letters to
-`S`: `E` for in force, as in `BasicTerm_SE`, and `C` for the compiled form, as in
-`basiclife/BasicTerm_SC`, which the model's next step adds (UKLIB-SEC-PLAN.md U2). Until
-then it runs in modelx alone.
+models; this page says what running in force changes, and what compiling it changed. The
+suffix adds lifelib's letters to `S`: `E` for in force, as in `BasicTerm_SE`, and `C` for
+the compiled form, as in `basiclife/BasicTerm_SC`: the model runs in modelx and compiles
+under modelx-cython to C, which computes the same numbers (*The compiled model*, below).
 
 > **This is a mechanics demonstration, not a pricing or reserving result.** The model is
 > `IP_UK_S` on another time axis, and it reads `IP_UK_S`'s assumption tables in place,
@@ -26,6 +26,7 @@ then it runs in modelx alone.
 python products/income_protection/run_sec.py            # point 1: the anchor cell, issued at t = 0
 python products/income_protection/run_sec.py 9          # point 9: the anchor cell in force 60 months
 python products/income_protection/run_sec.py --block    # every model point, summed row by row
+python products/income_protection/run_sec.py 9 --cython # point 9 on the compiled model
 ```
 
 The first prints the twelve rows `run.py` prints for `IP_UK_S`'s point 1, with the policy
@@ -34,14 +35,15 @@ counts behind them. Three lines to the same thing for point 9:
 ```python
 import modelx as mx
 model = mx.read_model("products/income_protection/IP_UK_SEC")
-model.Projection[9].result_cf()
+model.Projection[8].result_cf()          # point 9, the table's ninth row
 ```
 
-`Projection` takes a `point_id`, as `IP_UK_S`'s does; it will take `idx`, a point's
-position in the table, once the model compiles, and the runner takes its key from the
-model either way. `result_cf()` has `IP_UK_S`'s columns — `pols_if`, `pols_active`,
-`pols_sick`, `premiums`, `claims_benefit`, `claims_death`, `claims_lapse`, `expenses` and
-`net_cf` — with one row per month from the valuation date, `t = 0 … proj_len() − 1`, and
+`Projection` takes `idx`, a point's position in the table, from 0, as `basiclife`'s
+`BasicTerm_SC` does, and `point_id()` returns the point's label; the runner takes points
+by their `point_id`, and its key from the model. `result_cf()` has `IP_UK_S`'s columns —
+`pols_if`, `pols_active`, `pols_sick`, `premiums`, `claims_benefit`, `claims_death`,
+`claims_lapse`, `expenses` and `net_cf` — with one row per month from the valuation date,
+`t = 0 … proj_len() − 1`, and
 `result_states()` `IP_UK_S`'s ten columns of the states, their transitions and the annual
 rates. `result_pols()`, new, sets out the counts behind them on the same rows: `pols_if`,
 `pols_new_biz`, the healthy and the sick counts, then the month's movements in the
@@ -59,12 +61,11 @@ block's sum as it goes, compensated as pandas sums a `groupby`, so that the bloc
 for bit, the frames concatenated and summed by `t`. Its projection years carry the counts
 of their first month, in force, healthy and in claim, and the flows of all twelve.
 
-The runner is uslib Term's, so it already takes `--cython`, which runs the compiled model
-in place of modelx, building it first with the repository's `tools/build_sec_cy.py`, and
-`--build DIR`, which runs a build made elsewhere. The model compiles from its next step
-on, which brings the build's `sample_sec.py` and `spec_sec.py`; until then a build stops,
-saying why. A `lifelib.create()` copy carries no `tools/`, and there `--cython` stops
-before building, saying so.
+`--cython` runs the compiled model in place of modelx and prints the same lines, building
+it first with the repository's `tools/build_sec_cy.py` where no build is current, and
+`--build DIR` runs a build made elsewhere (*The compiled model*, below). A
+`lifelib.create()` copy carries no `tools/`, and there `--cython` stops before building,
+saying so.
 
 ## Two clocks
 
@@ -326,16 +327,17 @@ already in force, 0 for any other. `pols_new_biz(t)` is `policy_count` in the is
 the month with `duration_mth(t) = 0`, and 0 in every other; every policy issued starts in
 health. `pols_if(t)` is `pols_active(t) + pols_sick(t)`, the count weighting month `t`,
 healthy and in claim, D5's row weight with no exception. `pols_if_at(t, timing)` keeps
-`IP_UK_S`'s two timings and adds `basiclife/BasicTerm_SE`'s `"BEF_NB"`:
+`IP_UK_S`'s two timings and adds `basiclife/BasicTerm_SE`'s `BEF_NB`, each an int code
+since the C step, named as `IP_UK_S`'s text (*The compiled model*):
 
-- `"BEF_NB"`, the count carried in from month `t − 1`, before month `t`'s new business:
+- `BEF_NB`, 0, the count carried in from month `t − 1`, before month `t`'s new business:
   `pols_if(t)` less `pols_new_biz(t)`, exactly, since new business arrives only on an
   empty book;
-- `"BEF_DECR"`, the count before month `t`'s decrements, `pols_if(t)`;
-- `"AFT_DECR"`, the count after them: `"BEF_NB"` at `t + 1`, which counts none of that
+- `BEF_DECR`, 1, the count before month `t`'s decrements, `pols_if(t)`;
+- `AFT_DECR`, 2, the count after them: `BEF_NB` at `t + 1`, which counts none of that
   month's new business, and 0 in the last covered month and outside cover.
 
-Any other timing raises. The roll-forward check reads the same `"BEF_NB"`, so it never
+Any other timing raises. The roll-forward check reads the same `BEF_NB`, so it never
 counts the next month's new business. The three cumulative counts, of deaths, lapses and
 recoveries leaving the model, which only the population identity reads, restart at
 `t_entry()`, the identity restated on the count on the books; `IP_UK_S`'s count from its
@@ -375,15 +377,20 @@ one of `IP_UK_S`'s 73 is gone, `claim_duration_months`, which the claim cohorts 
 Four References are new, the contract's bounds `issue_age_min`, `issue_age_max`,
 `expiry_age_min` and `expiry_age_max`, and in `Data` the future horizon; `Data` gains the
 companion's reader and the four tables' checks, three of the readers reading their file
-once through a `*_rows` cell that the check and the indexed reader share.
+once through a `*_rows` cell that the check and the indexed reader share. The C step adds
+seven cells more, `point_id`, the decodes `inception_schedule`, `mort_schedule`,
+`is_escalating` and `recovery_code`, and the claim durations the cohorts' sums run to,
+`claim_dur_init` and `claim_dur_live`, and drops `IP_UK_S`'s two tuple cells,
+`sick_cohorts` and `claim_rate_vectors`, whose elements are cells here; with `idx` and the
+codes, and in `Data` its vectors, arrays and two interpolated ages (*The compiled model*).
 
 | Cells | `IP_UK_S` | `IP_UK_SEC` | Why |
 |---|---|---|---|
 | `duration_mth`, `duration` | `t`, `t // 12` | `duration_mth_init() + t`, `duration_mth(t) // 12` | The policy clock, opened from the model point |
 | `proj_len`; `expiry_mth`, new | `12 × (expiry_age − entry_age)`, from issue | `expiry_mth() − duration_mth_init()`, from the valuation date; raises at or past the policy end date, outside the contract's bounds, on an escalation history past them and on a Reference off its domain | The frame starts at the valuation date |
-| `pols_active`, `sick_cohorts` | from `pols_if_init()` on an `active` cell, into cohort `claim_duration_months + 1` on an `in_claim` one | from `policy_count` split by the healthy share and the companion's cohort shares at `t_entry()`, new business healthy | Lives in health and in claim at once, at every claim duration, are history |
+| `pols_active`, `pols_sick_dur` | from `pols_if_init()` on an `active` cell, into cohort `claim_duration_months + 1` of the tuple `sick_cohorts` on an `in_claim` one | from `policy_count` split by the healthy share and the companion's cohort shares at `t_entry()`, new business healthy; each cohort a cell since the C step | Lives in health and in claim at once, at every claim duration, are history |
 | `max_dur` | `proj_len() + claim_duration_months() + 1` | `expiry_mth() + 1`, the cover from issue and a cohort of headroom | A claim is no older than its policy; on a future row the horizon would size `z` |
-| `pols_if`, `pols_if_at`, `pols_if_init` | `pols_if_at(t + 1)` read for the roll-forward; `pols_if_init()` the column | `"BEF_NB"` added, `pols_if(t) − pols_new_biz(t)`; the roll-forward and `"AFT_DECR"` read it at `t + 1`; `pols_if_init()` 0 unless in force | Next month's new business is not this month's survivors |
+| `pols_if`, `pols_if_at`, `pols_if_init` | `pols_if_at(t + 1)` read for the roll-forward; `pols_if_init()` the column | `BEF_NB` added, `pols_if(t) − pols_new_biz(t)`; the roll-forward and `AFT_DECR` read it at `t + 1`; `pols_if_init()` 0 unless in force | Next month's new business is not this month's survivors |
 | `benefit_pp`, `premium_pp`; `duration_init`, new | the amounts at issue times `(1 + j)^(t // 12)` | `benefit_pp_init()` and `premium_pp_init()` times the step for each anniversary since the columns' year, an anniversary at the valuation date the first; a value past the floats refused in its month | The increases already given are history, and one at month 0 is the projection's, at today's References |
 | `premiums`, `claims`, `expenses`, `net_cf`, `pv_benefits`, `esc_lapse_factor` | unchecked | a value past the floats refused in its month, naming the point and what makes it | An infinite flow would pass every check |
 | `inflation_factor` | `1.03^(y − 1)`, from issue | `1.03^(t // 12)`, from the valuation date; past the floats refused | Unit costs in valuation-date pounds |
@@ -418,6 +425,388 @@ first, compares around:
   the lookups, but the cohort shift assumes the rates depend on `z` alone; and
   `claim_rate_vectors` recomputes the in-claim survival beside `claim_surv_step`, which
   only the tests read.
+
+## The compiled model
+
+The model compiles under modelx-cython into C-typed code, as `basiclife/BasicTerm_SC`
+does, and modelx reads and runs the same formulas as before. Compiling changed how each
+cell reads its inputs and spells its codes, and how the claim cohorts are carried, and no
+number: what its reports computed on each committed point was frozen before the change,
+and they still compute it, to 1e-12 of each column's largest value (*Tests*, below), and
+every value the in-force model cached was this one's, bit for bit, when the change was
+made, each element of the cohort vector beside its cell here among them: 1,805,221 values
+on the 19 committed points, and 10,986,993 on the 129 points of the full splice grid under
+each set's References, none apart. 117 differ in type alone: where no cohort holds lives,
+the in-force step's sum of no terms was the int 0, and is the C double 0.0 here.
+Cell by cell, at every argument a full modelx sweep evaluates, the compiled model
+computes what modelx computes, bit for bit, on the committed points, on the points of
+the splice grid, which take the branches they do not, at the contract's extremes, where
+each cap, floor and bound binds, the inception floor's splice among them, on every
+inception schedule, on keys written as floats, on the committed rows under the
+References they were read from, and on the rows valued on an anniversary under References
+that move its increase. The compile tests hold it so on x86-64, and to 1e-12 relative
+elsewhere, where no run has shown it yet.
+
+### Building it
+
+In the source repository:
+
+```bash
+python tools/build_sec_cy.py income_protection                 # in place, beside the model
+python tools/build_sec_cy.py income_protection --out /tmp/ip   # elsewhere, with the CSVs
+```
+
+The tool exports the model to `IP_UK_SEC_nomx/`, the Python package modelx's `export`
+writes, which runs without modelx. It copies the CSVs beside the export when it builds
+anywhere but here, because the package reads the CSVs of the directory that holds it. It
+then runs mx2cy, modelx-cython's compiler, on the export, with `sample_sec.py` and
+`spec_sec.py` (below). The result is `IP_UK_SEC_nomx_cy/`, whose spaces are C extension
+types, and it is imported as the export is:
+
+```python
+import sys
+sys.path.insert(0, "products/income_protection")    # the directory holding the build
+from IP_UK_SEC_nomx_cy import mx_model as model
+model.Projection[8].result_cf()                     # point 9, compiled
+```
+
+Compiled, no cache is ever cleared. An ItemSpace takes the References when it is made,
+and keeps the values it computes until it is deleted; the base `Projection` and `Data`
+keep theirs for good. So a Reference set on `Projection` after it has computed,
+`inflation_rate` say, leaves every value computed before as it was, in the base
+`Projection` and in every ItemSpace made before, and only an ItemSpace made afterwards
+computes with it. Set every Reference on a model just imported, before anything is
+computed, where modelx would recompute; a test holds the compiled model to this.
+
+A build takes about two minutes with gcc, 122 s here, and needs a C compiler,
+which is why `requirements.txt` leaves modelx-cython out: `pip install -r
+requirements-cython.txt`. `run_sec.py --cython` builds in place when it finds no build,
+or one older than the model, the sample, the spec or the tool, and `--build DIR` runs a
+build made with `--out DIR`. Nothing a build writes is committed. All of it derives from
+committed files, and an extension module is built for one operating system, processor and
+Python (`_mx_classes.cpython-313-x86_64-linux-gnu.so` here); in place, `.gitignore`
+covers all of it. A `lifelib.create()` copy of the library carries no `tools/`, so it
+cannot build, and `run_sec.py --cython` says so.
+
+### What compiling changed, and why
+
+A compiled cell is fast when its body is C, and types alone do not make it so: a cell
+whose body still looks a value up in a DataFrame, compares text or sums a tuple runs
+Python under its C declaration. So each input now reaches a cell as a number, as uslib's
+`Term_US_SEC` was taught first (USLIB-SEC-PLAN.md R1 to R17), and `WOL_UK_SEC` here:
+
+- **`idx`.** `Projection` is parameterized by the position of a point in the table, from
+  0, as `BasicTerm_SC` is: `Projection[8]` is point 9, and `point_id()` returns the label,
+  which every refusal names. The position is what indexes the vectors below.
+- **`Data`'s vectors.** Each model point attribute a formula uses is a `Data` vector of
+  int64 or float64, one element a point, and a cell reads its point's element:
+  `benefit_mth()` is `float(data.benefit_mth()[idx])`. Compiled, the vector is a typed
+  memoryview, and the read is a load from memory. The opening state's three columns are
+  vectors too, and the claim cohorts a table of them.
+- **Text, decoded once.** A C cell holds no text, so `Data` decodes each text column a
+  formula reads into the number it selects, for every point at once: the sex, the
+  occupation class and the deferred period into the point's row of the inception array,
+  `inception_schedule`, `20 × sex + 5 × (class − 1) + deferred`, M before F and the
+  deferred periods 4, 8, 13, 26 and 52 weeks 0 to 4, forty schedules; the sex into its
+  row of the mortality array, `mort_schedule`; the escalation into a 0/1 flag,
+  `escalation_rpi`, RPI 1, which `is_escalating()` reads; and the recovery basis into its
+  code, `recovery_code`, `return_to_h` 0 and `exit` 1, `Projection`'s `RETURN_TO_H` and
+  `EXIT`. Each decodes as `IP_UK_S` reads the column, which a test holds on every value a
+  column can hold, and the flag is checked and decoded by its text alone, exactly `RPI` or
+  `none`, so that `" True"`, `"RPI "` or `1` is refused as the table is read, in both
+  engines, never read one way by the check and another by the decode. `status` is a label
+  no formula reads, and `premium_basis` a `Data` refusal of anything but `guaranteed`.
+- **Tables indexed by integers.** The inception table is `inception_array`, by schedule
+  and attained age, padded from age 0 so that the index is the age, and holding at each
+  age the contract admits, 18 to 69, `IP_UK_S`'s interpolation between the schedule's
+  pivot ages, its extrapolation beyond them and its floor at 0, made once by `IP_UK_S`'s
+  own formula, element by element, so that `inception_rate` multiplies it by the overlay
+  and caps it, as `IP_UK_S` does; a test holds every schedule at every age to `IP_UK_S`'s
+  rate, on the shipped table and on the floor's. The ages are two References of `Data`'s,
+  `rate_age_min` and `rate_age_max`, which a test holds to the contract's issue age and
+  latest expiry less one, since `Data` cannot read `Projection`'s. The mortality table is
+  `mort_table_array`, by sex and attained age, padded from age 0; the termination table's
+  two rates `recovery_rate_array` and `mort_rate_sick_array`, by claim duration year,
+  clamped at the table's last year, `termination_last_year`, as `IP_UK_S`'s
+  `tbl.index.max()` reads it; and the lapse table `lapse_rate_array`, by policy year,
+  clamped at its last, 6. The padding holds NaN, and nothing reads it: the one cell that
+  reads each array checks its key first, and the claim cohorts' column 0 is no claim
+  duration.
+- **The claim cohorts, a cell an element.** `IP_UK_S` carries a month's cohorts in one
+  tuple, `sick_cohorts(t)`, and their rates in three, `claim_rate_vectors()`, which a C
+  cell cannot hold. Here each cohort is a cell, `pols_sick_dur(t, z)`, a recursion of two
+  parameters: cohort 1 is the previous month's inceptions, every other cohort the cohort
+  one duration younger in the previous month times its month's survival, `claim_surv_step
+  (z − 1)`, and at `t_entry()` the opening cohorts, `policy_count` times the companion's
+  share at the point and claim duration, `Data.cohort_share`, a `[point, z]` array. Each is
+  the float `IP_UK_S`'s tuple holds, the same products in the same order. The rates are
+  the cells of one claim duration that `IP_UK_S` already had, `rec_rate_mth`,
+  `mort_rate_sick_mth` and `claim_surv_step`, whose values are the tuples' elements. The
+  cohorts past the termination table's last year are not pooled into one: pooling is
+  exact in exact arithmetic and not bit for bit with `IP_UK_S`.
+- **The sums, `sum` written out.** `pols_sick`, the lives in claim, and the month's three
+  flows out of claim, `pols_sick_surv`, `pols_recovery` and `pols_death_sick`, sum the
+  cohorts, and `pv_benefits` the discounted benefit, which `IP_UK_S` sums with Python's
+  `sum`, compensated since Python 3.12, Neumaier's way. So each is that sum written out as
+  a loop in `z` order, each addition's rounding error carried, the larger of the two in
+  size first, and added back once at the end where it is finite and not 0, `sum`'s own
+  test; the loop starts from `0.0`, whose first compensated addition is `sum`'s plain
+  first one. Each stops at `claim_dur_live(t)`, the longest claim duration whose cohort
+  can hold lives, `min(max_dur(), claim_dur_init() + t − t_entry())`, the companion's
+  longest opening claim aged since `t_entry()`, or the claims incepted since: every cohort
+  past it is 0.0, which `IP_UK_S`'s three filtered sums leave out and whose addition
+  changes neither the compensated sum nor its carried error. A test holds every sum to
+  `sum` by its bits in every month of every committed point, and to `IP_UK_S`'s own on
+  its twins, and counts the months where a plain left-to-right sum parts from it. So the
+  recursion forms the cohorts that can hold lives and no others, a triangle of the
+  months by the claim durations on new business, where the whole vector would form the
+  rectangle `IP_UK_S`'s tuples do.
+- **Codes.** A timing or a kind, which `IP_UK_S` spells as text, is an int Reference
+  named as the text: `BEF_NB = 0`, `BEF_DECR = 1` and `AFT_DECR = 2`, in the order of
+  their instants within the month; and `claims`' kinds, `BENEFIT = 0`, `DEATH = 1` and
+  `LAPSE = 2`, in `result_cf()`'s order, and `ALL = 3`. A call reads as before, less the
+  quotes: `pols_if_at(t, BEF_DECR)`. A string argument would give the cell a dictionary
+  for a cache, where a code indexes a C array, so codes are numbered from 0 without a gap;
+  the timing 3, inside the cache's width of four, is a code `pols_if_at` refuses, as it
+  refuses any other.
+- **The claims total, a code of its own.** `IP_UK_S` totals the three kinds as
+  `claims(t)`, its `kind` defaulted to `None`, with `sum` over a generator. A default
+  compiles as a keyword parameter the typing guard refuses, `None` is no C integer and a
+  generator is a Python object, so the total is `claims(t, ALL)`, which `net_cf` reads,
+  written out left to right, `0.0 + claims(t, BENEFIT) + claims(t, DEATH) + claims(t,
+  LAPSE)`: `sum`'s float wherever at most two kinds are non-zero, and here at most one is,
+  the death and lapse kinds being 0 by the product's design. A test counts the kinds
+  non-zero together in every month of every committed point, never two, and holds the
+  total to `IP_UK_S`'s by its bits on every twin of its new business.
+- **One wide cache, by its outer size.** Every 2-D cache of one outer size shares one
+  inner width: Cython's unpickle code converts the caches of one outer size with one
+  function, and two widths there are refused by gcc, as uslib's `WholeLife_US_SEC` found
+  (USLIB-SEC-PLAN.md §7.2, *Record — M15*). uslib read that as one width a model, which
+  would widen `pols_if_at` and `claims` to the cohorts' 626 claim durations, three such
+  caches of about 5.6 MB a point, values and flags. Measured here, the converter is named
+  by the outer size as well as the width, so the cohorts' cache takes an outer size of its
+  own, `t`'s months
+  and one more, 747, beside the timings' and kinds' 746 by 4: gcc 13.3 with
+  `-Werror=incompatible-pointer-types` builds it, and a compiled point pickled and read
+  back holds its every cache exactly. So the timings and kinds keep their cells and their
+  width of four, which every SEC model's conventions read, and the cohorts alone carry the
+  wide cache, the end UKLIB-SEC-PLAN.md §6.3 asked of its first option.
+- **No refusal formatted on a chain.** A compiled cell's C frame holds the code that
+  formats each of its messages, whether a run reaches it or not, and a chain holds a frame
+  of each cell it recurses through at each level (UKLIB-SEC-PLAN.md K12). The chains here,
+  the healthy count `pols_active`, the cohorts' diagonal and the three cumulative counts,
+  format nothing; `proj_len()`, the rates' reads of their tables and the cells that refuse
+  a value past the floats are each held once on a path, at its head or its foot, which a
+  test holds on every cold head's deepest path.
+- **The checks' loops.** `IP_UK_S`'s `check_pols_roll_fwd` and `check_states` are `all()`
+  over a generator, which compiles to a Python closure inside the cell; here each is a
+  loop over the frame that returns False at the first month outside the tolerance, a NaN
+  among them: the same verdict at the same month, in C.
+- **Six powers raise as modelx does.** Past the largest float, Python's float power
+  raises `OverflowError` where C's `pow` gives an infinity. So the benefit's and the
+  premium's steps, expense inflation and the discount factor, each inside the `try` that
+  names its refusal, and the premium history's two even paths in `proj_len()`, inside the
+  `except` that reads their overflow as the cap's path, call Python's own power where
+  theirs is infinite from a finite base (uslib's *Record — M22* form). Only inputs far
+  outside the product reach them (*What it refuses*, below).
+- **Reporting cells stay Python.** `model_point()`, the label accessors `sex()`,
+  `escalation()`, `premium_basis()`, `recovery_basis()` and `status()`, and the three
+  reports return a table row, text and DataFrames, for a reader, for `run_sec.py` and for
+  the comparison with `IP_UK_S`. No other cell calls them, so they cost the projection
+  nothing. Each label refuses any value but its column's codes, as `IP_UK_S`'s
+  `escalation`, `premium_basis`, `recovery_basis` and `status` do, and as `sex` now does
+  where `IP_UK_S`'s returns the column as read, so each returns text or raises, and
+  compiles to `str`.
+
+The `Data` docstring lists its 31 vectors, arrays and extents, each with the column or
+file it comes from. The ten readers stay Python, returning DataFrames and a path, and no
+`Projection` cell but `model_point()` reads them. Every other cell of `Projection`, 80 of
+its 89, returns a C `bint`, `long long` or `double`, and caches a single value, or a C
+array the spec sizes from the contract:
+
+| Compiled to | Cells |
+|---|---|
+| a C array of 746 by `t`, of `double`, `long long` or `bint` | the 39 cells of `t` alone: every count, rate, amount and cash flow, the cumulative counts, the residuals, the policy clock, its years, the attained age, the discount and inflation factors, the live claim durations and the flag `is_active` |
+| a C array of 746 by 4 | `pols_if_at(t, timing)` and `claims(t, kind)` |
+| a C array of 747 by 626 | `pols_sick_dur(t, z)`, the cohorts |
+| a C array of 626 by `z` | the seven cells of one claim duration: its year, its recovery and in-claim mortality rates, annual and monthly, its survival, and the opening cohort |
+| one `bint`, `long long` or `double` | the 31 other cells without a parameter: the point's numbers, codes, schedules and flag, its opening state, the ends of its frame, its longest claim durations, the escalation rate, the maximum benefit, the present value and the annuity factor, and the three checks |
+| a Python object, or `str` | the nine reporting cells |
+
+The declarations the build generates, `_mx_classes.pxd` in the compiled package, are the
+record of it, and none of `Projection`'s caches there is a dictionary. A compiled
+`Projection` ItemSpace is a C struct of 6,082,800 bytes, the cohorts' cache 5,611,464 of
+them, a double and a C `int` flag for each of its 467,622 cohorts.
+
+### The sample and the spec
+
+mx2cy types each cell from the values the sample run passes it and gets back, and a cell
+the run never calls compiles as a Python object. So `sample_sec.py` runs the three
+reports and the three checks on every committed point, and then the cells no report
+reaches: `model_point()` and the five label accessors, which only a reader asks for;
+`point_id()`, which only a refusal names; `occ_class()` and `deferred_weeks()`, which the
+inception rate reads through its schedule instead; the present value, its discount factor
+and the annuity factor, a companion no report reads; and the codes and keys the reports
+leave: the count at `BEF_DECR` and `AFT_DECR`, which no cell reads, and the cohorts
+outside the live ones, at claim duration 0 and past `claim_dur_live(t)`, which no sum
+reads. It calls every timing and every kind, the claims total among them, in every month
+of the frame and the month after it, and every cohort from 0 to `max_dur()` in each.
+Every code inside the one width but the timing 3, which `pols_if_at` refuses, is one its
+cell takes, so no call raises: a raise is not traced. It runs the committed points alone:
+the export reads the CSVs of the directory the build is made in, which in place is the
+product directory. The committed points leave branches untaken: a lapse rate at its
+bound, the caps on mortality and inception, the RPI's floor and cap, the inception floor,
+the recovery rate's bound. That still types every cell, because every branch of a cell
+returns the one type its others return, a count or an amount a float in every branch,
+and on points that take those branches the compiled model computes modelx's numbers
+(above). The labels need no trace beyond the committed points: each refuses what is not
+its codes, so each returns text alone. The sample also raises the recursion limit, which
+modelx raises and its export does not (*What a compiled run needs*, below).
+
+`spec_sec.py` sizes each C-array cache, by the names of the cells' parameters, and a
+compiled cache raises `IndexError` for an argument outside it. So each size covers the
+largest argument a cell is called with on a point the contract allows, in its frame and
+in the month after it, `t = proj_len()`, which the roll-forward reads and the compile
+tests' full sweep evaluates every monthly cell at; plus one because the index starts at
+0, and no more but the cohorts' month, which a test holds to the spec's own derivation:
+
+| Parameters | Size | The largest argument |
+|---|---|---|
+| `t` | 746 | 745. The longest frame is the longest cover, a policy issued at 18, `issue_age_min`, to expire at 70, `expiry_age_max`, issued 120 months after the valuation date, the furthest ahead `Data.future_horizon_mth` admits as shipped: 12 × (70 − 18) + 120 = 744 months, `t = 0 … 743`, and the month after, 744, whose roll-forward residual reads the count carried into 745 |
+| `t`, `timing`; `t`, `kind` | 746 by 4 | `t` as above, by the three timings and by `claims`' three kinds and the total |
+| `z` | 626 | 625, `max_dur()` at the longest cover, 624 months and a cohort of headroom, `IP_UK_S`'s: 12 × (70 − 18) + 2 sizes it, which the horizon does not move |
+| `t`, `z` | 747 by 626 | the cohorts, at every month of `t` and every claim duration; `t`'s months and one more, an outer size no other 2-D cache has, so that it may hold its own width (above) |
+
+The cohorts' cache is the model's one wide cache: 747 × 626 doubles, 3.7 MB a point, and
+as many flags, 5.6 MB with them. No cell takes a year or an age: a claim duration year, a
+policy year and an attained age each index a `Data` array, never a cache, so the 53 years
+and 70 ages UKLIB-SEC-PLAN.md §6.3 sized for are no caches here.
+
+**The contract the caches hold.** `proj_len()` refuses an issue age below
+`issue_age_min` and an expiry above `expiry_age_max`, and `Data` a point issued more than
+`future_horizon_mth` months ahead, so that no report on a point the model projects runs
+past these caches at the shipped bounds. Moved, they could: a lower `issue_age_min`, a
+higher `expiry_age_max` or a longer horizon lets a point's cover pass 624 months or its
+frame 744, and the compiled model would read a claim duration or a month past its caches,
+raising `IndexError` naming nothing, where modelx projects. So `proj_len()` refuses, in
+either engine, naming the point, a cover longer than 624 months and a frame longer than
+744, however the five are set: `point_id 1: its cover, 636 months from issue at 18 to
+expiry at 71, is longer than 624, the longest the compiled model's caches are sized for
+(spec_sec.py)`. That is a refusal the in-force step did not make, of points it projected,
+which no shipped contract writes. A contract with longer covers needs the sizes derived
+again, as `spec_sec.py` derives them, the two bounds moved with them, and a rebuild.
+
+### Two compiler directives
+
+`tools/build_sec_cy.py` puts `# cython: infer_types=True, cpow=True` at the top of the
+module mx2cy translates, before it compiles it, and on Linux and macOS compiles with
+`-ffp-contract=off` and `-Werror=incompatible-pointer-types`. Without `infer_types` an
+integer local, such as a loop's claim duration, stays a Python object, though the cell is
+typed `double`; without `cpow`, `1 − (1 − q)^(1/12)`, the monthly rate of each decrement
+here, is a complex power, whose last bits can differ from Python's; and gcc fuses a
+multiply and an add where the target has the instruction, one rounding where Python
+rounds twice, which the compensated sums would carry. The tool's docstring has the
+detail, and uslib's [`term_life/model-sec.md`](../../../uslib/products/term_life/model-sec.md)
+the measurements that put each there. With all four, every compiled value here agrees
+with modelx bit for bit.
+
+### What a compiled run needs
+
+**Memory, and the release.** A compiled `Projection` ItemSpace is a C struct of
+6,082,800 bytes, the type's basic size, which holds every cell's cache, the cohorts'
+5.6 MB among it, and deleting it, `del model.Projection[idx]`, frees nothing by itself:
+an ItemSpace sits in reference cycles, and only Python's cyclic collector frees it. That
+is why `run_sec.py --block` collects after each release, in its frame pass and in its
+projections (*Run it*, above), and a test runs the compiled runner on the committed table
+and finds no ItemSpace but the base alive after each collection. A block of a thousand
+points held at once would take about 6 GB; released, it holds one.
+
+**Stack, not recursion limit.** A compiled chain of cells calls C to C, on the C stack,
+which the interpreter's recursion limit does not count, so the compiled model needs no
+limit raised. What it needs is stack. The deepest call the contract allows is a cold one
+in the last month of the longest cover, a policy issued at 18 to expire at 70, now or 120
+months on, or in claim a year at the valuation date: one cell a month back to
+`t_entry()`, 611 to 623 months, and in modelx 5 to 8 cells more, which a test holds head
+by head (*Counts and timings*, above). Compiled with gcc, each head cold in an ItemSpace
+of its own, every head ran on a thread of 136 KiB and not of 128, and the healthy count
+and the cumulative count on 128, but the oldest cohort the last month can hold, whose
+diagonal runs back to the month it opened and there into the healthy count's chain, which
+needed 144 KiB and not 136: well inside the 256 KiB the C step allows itself here, which
+keeps the 1 MiB thread with K12's margin of two to four on CI's Ubuntu runner. So no chain
+is blocked by policy year. A test runs each shape at its longest cover in a thread of 1
+MiB, the stack Windows gives a program's main thread unless the program is linked for
+more, and again on the main thread, which is where `run_sec.py --cython` runs, and records
+the smallest of its sizes each ran on. The export recurses in Python instead: the same
+call needs a recursion limit of 1,282 there, two Python frames a cell, and the reports and
+checks, which run in ascending `t`, need 36, so `sample_sec.py` sets 6,000.
+
+### What it refuses
+
+The compiled model refuses what modelx refuses, with the same message. modelx raises its
+`FormulaError`, which quotes the error; compiled, the `ValueError` itself propagates. A
+test holds the in-force suite's refusals to modelx's, compiled, message for message, on an
+extract labelled otherwise than by position, its claim cohorts relabelled alike: each
+malformed row of the table and of the companion, each writing of the escalation flag,
+each assumption table a reader cannot read, each point the frame refuses, the contract
+moved past the caches among them, each Reference off its domain, each escalation history
+the contract cannot have, each value past the floats, by its cell and by a report, a key
+read beyond the mortality table, `Data`'s References off their domains, and what the
+vectors cannot hold, in a cell typed `long long` or `double` as in a Python one.
+
+A message prints each Reference as the compiled model holds it: a rate or an age bound as
+a float, an age bound through `int()` once it is whole; and it names a timing or a kind by
+its code, `claims(0, 0)` for the benefit, in both engines. Every Reference with a domain
+is a float, the contract's four ages and `Data`'s horizon and interpolated ages among
+them, so a fraction set on one is the fraction in either engine, refused as not whole in
+both: 12.5 set on the horizon is refused compiled as in modelx, where an int Reference
+would be truncated to 12 as it is set. The refusal test sets `Data`'s References as it
+sets `Projection`'s.
+
+- What `Data` cannot decode or hold, when the vector is first read, naming every point or
+  line at fault: a `point_id` that is not a whole number, or is `2**53` or more in size;
+  an age or a month `2**53` or more in size, which an int64 vector cannot hold whole and
+  numpy would cast without a word; a key of an assumption table or of the companion as
+  large, before its table is cast; and, as since the in-force step, a code that names no
+  sex, escalation, premium basis, status or recovery basis. A key written as a float, an
+  age `40.0`, is read by its value. The tables' checks find a gap from the keys a table
+  holds, in one pass, so that a key far from the rest is refused as a gap at once.
+- A key beyond a table, by the one cell that reads it, where `IP_UK_S`'s lookup raised
+  `KeyError` or extrapolated: `point_id 1: mort_table.csv has no rate at attained age 35`
+  on a table that starts at 40, and `point_id 1: inception_table.csv is interpolated at
+  attained ages 36 to 69, Data's rate_age_min to rate_age_max, not at 35` under a first
+  age raised to 36.
+- A cover or a frame past the caches, by `proj_len()` (*The sample and the spec*).
+- A value past the floats, in the cell where it first is, naming the point, the month
+  and what makes it: the benefit, the premium, the lapse shock, the premiums, the claims,
+  the expenses, the net cash flow and the present value.
+- A power past the largest float, which Python's float power refuses with
+  `OverflowError` where C's `pow` gives an infinity: the benefit's and the premium's steps,
+  expense inflation and the discount factor each call Python's own power where theirs is
+  infinite from a finite base, so that the compiled model refuses as modelx does (uslib's
+  *Record — M22* form), rather than carry an infinity on; a test reaches each with a rate
+  of 1e200, or a discount rate a hair above −1. The premium history's two even paths in
+  `proj_len()` take the same form inside the `except` that reads their overflow as the
+  cap's path, which a test reaches under a premium multiplier of 1e150, in both engines;
+  there the cap's path is past the floats too, so C's infinity would read the same.
+- A timing or a kind no cell takes, by the cell, as `IP_UK_S`'s are: `invalid timing`,
+  the timing 3 inside the cache's width among them, and `invalid kind`.
+
+An argument outside a cache raises `IndexError` in the compiled model alone: `net_cf(746)`
+or `net_cf(-1)`, which modelx answers with 0, the month being outside cover;
+`pols_if_at(t, 4)` and `claims(t, 4)`, which modelx refuses as a timing and a kind it does
+not take; `claim_dur_year(626)`, a claim duration past the `z` cache, whose year modelx
+computes as it computes any; and `pols_sick_dur(747, 1)` or `pols_sick_dur(0, 626)`, past
+the cohorts' cache, a cohort modelx answers with 0. No frame asks for any of them: a
+frame's last month is at most 743, and its longest claim duration 625. An `idx` past the
+last row is refused in both, with an `IndexError` at the first read of a vector, and
+`Projection[-1]` reads every vector at its last element in both, so it is the table's last
+point, under that point's own `point_id()`, its cohorts the last row's; the compiled
+refusal test holds both against modelx.
+
+An annual mortality or inception rate above 1 is not refused but capped, in both, and so
+is the recovery rate and the lapse rate, the RPI's steps floored and capped, and the
+inception rate floored at 0: a compile test holds the two engines equal where each binds,
+on its own rows.
 
 ## Tests
 
@@ -466,9 +855,13 @@ first, compares around:
   none raised. On a fresh read of the committed model, `duration_mth(500)` evaluates
   `duration_mth` once, and every point's reports and checks run under modelx's recursion
   limit lowered to 40. And each chain, called cold in the last month at the contract's
-  longest cover, 624 months, on four shapes, runs one cell a month back to `t_entry()` and
-  at most 16 more: measured, a cold `net_cf` runs 8 or 9 more, 631 to 632 deep, and the
-  other heads 5 to 8.
+  longest cover, 624 months, on four shapes, runs one cell a month back to `t_entry()`,
+  the cohorts' down their diagonal, and at most its head's own measured overhead more:
+  at the in-force step, the cohorts a tuple, a cold `net_cf` ran 8 or 9 more, 631 to 632
+  deep; since the C step it runs 7 more, 630 deep, the healthy count 5, the oldest cohort
+  5 or 6, the cumulative count and the population identity 6, the lives in claim, the
+  roll-forward and the count by timing 7, and the benefit claims 8. No cell a chain
+  recurses through builds text, which a test holds on each head's deepest path.
 - **Counts**: the counts roll forward through the states; `result_pols()` is S's counts and
   amounts with `pols_new_biz` beside them; multiplying `policy_count` by 2.5, with every
   idle assumption on, multiplies every flow and counted cell, each cohort element among
@@ -501,34 +894,34 @@ first, compares around:
   and lapse shock; the caps on mortality and inception and the lapse rate's bound, in both
   models; a NaN that reaches a cap; a check whose residual is NaN; the values outside
   cover; the block; an in-force extract, without the generator's columns or `status`; the
-  runner; the static check the C step will make; the docstrings; and the shared tables.
+  runner; the static check the C step made; the docstrings; and the shared tables.
   The K14 tests open the anchor cell in force at 60 with histories the contract can have:
   the benefit and premium `IP_UK_S` gives it under an RPI of 5%, valued under today's 3%.
 - **The fingerprint (C2)**: every committed point's `result_cf()` and `result_pols()`,
-  frozen when this step ended, in a commit of its own, which every later version must
-  reproduce to 1e-12.
-
-The default run takes three to five minutes, by the machine's load: about 190 seconds
-alone, at a peak of 1.4 GB, and 291 seconds measured at a load of 4 to 5.
-
-## Carried into the C step (M8)
-
-The cohort vector and its rates are tuples here, `IP_UK_S`'s: `sick_cohorts(t)`, one a
-month, and `claim_rate_vectors()`, with five cells reading them: `pols_sick`, their sum,
-`pols_sick_dur`, an element, and `pols_sick_surv`, `pols_recovery` and `pols_death_sick`,
-the month's flows out of them. The C step restructures them into `pols_sick_dur(t, z)`,
-based at `t_entry()` on a `[point, z]` array of the companion, with the sums in `z` order
-(UKLIB-SEC-PLAN.md §6.3, *C — the restructure*). The static check in
-`tests/test_income_protection_uk_sec.py` names every cell the C step must change, flagging
-besides a Python object or a text each cell that calls a tuple cell or reads a text
-column, the text columns read by their dtype under pandas 2 and 3 alike, and it checks
-each of its exemptions is needed, the scan flagging that cell once the one exemption is
-taken away. Nothing this step wrote adds to `IP_UK_S`'s but the companion's reader and
-`result_pols`: the seven decodes, `sex`, which returns a text, among them, and the five
-cells that compare a decoded column with its text; the readers of the four tables and of
-the companion; the tuples and the five cells that read them; the claims total and the
-present value. The inception table's array read must keep the rate's floor at 0, which the
-floor's splice holds, and the history's bounds in `proj_len()` are loops and powers, no
-Python object. The caches will be sized from the contract: `t` 0..745, a policy issued at
-18 to expire at 70, 624 months, issued 120 months on, and the roll-forward's `t + 1`; and
-`z` 0..625, `max_dur()`, which does not grow with the horizon.
+  frozen when the in-force step ended, in a commit of its own, which every later version
+  must reproduce to 1e-12, and which the C step does.
+- **The C step's representation**, in modelx, in seconds: the claims total by its bits;
+  the cohort sums and the present value against `sum` by theirs, on every committed point
+  in every month, and against `IP_UK_S`'s own on its twins, the months a plain sum parts
+  from `sum` counted, and the cohorts past the live ones 0; every schedule at every age of
+  the inception and mortality arrays against `IP_UK_S`'s rates, on the shipped inception
+  table and on the floor's; every decode on every value, and the escalation flag written
+  `" True"`, `"True "`, 1, 1.0, `True`, `" RPI"`, `"RPI "` or `rpi` refused as the table
+  is read; the padded arrays; each `Data` vector's dtype against the `Data` docstring's
+  table; the parameterless cells' Python numbers; the labels' refusals; the spec's sizes,
+  the codes and `proj_len()`'s cache bounds against the spec's comment; the sample's
+  recursion limit against its comment; the runner's rebuild; and what the vectors cannot
+  hold.
+- **Compiled**, the tests marked `cython`, which compile the model once a session and
+  run the compiled package in a child process: C4, every cell at every argument a full
+  modelx sweep evaluates, with every code and claim duration no swept cell reads
+  (`_ip_c4_also`, which a test holds to asking each, row by row), on the splice grid
+  under each set of References, at the contract's extremes, where each cap, floor and
+  bound binds, on every inception schedule, on keys written as floats, on every committed
+  row, under the References two of its rows were read from, and on the rows valued on an
+  anniversary, each grid in chunks sized by the squares of its frames, each chunk
+  asserted to compare its own rows; the labels; the refusals and overflows, message for
+  message, with the refusals the compiled model alone makes and `idx` at the table's
+  edges; each shape's deepest cold calls on a 1 MiB stack and on the main thread; a
+  Reference set late; and the runner. `tests/test_compiled_conventions_uk.py` adds C3,
+  C5 and the release.

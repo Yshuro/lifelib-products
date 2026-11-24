@@ -8,6 +8,8 @@ Cells Descriptions
 
 .. autofunction:: model_point
 
+.. autofunction:: point_id
+
 .. autofunction:: age_at_entry
 
 .. autofunction:: sex
@@ -15,6 +17,10 @@ Cells Descriptions
 .. autofunction:: occ_class
 
 .. autofunction:: deferred_weeks
+
+.. autofunction:: inception_schedule
+
+.. autofunction:: mort_schedule
 
 .. autofunction:: benefit_mth
 
@@ -24,6 +30,8 @@ Cells Descriptions
 
 .. autofunction:: escalation
 
+.. autofunction:: is_escalating
+
 .. autofunction:: premium_mth
 
 .. autofunction:: premium_basis
@@ -31,6 +39,8 @@ Cells Descriptions
 .. autofunction:: status
 
 .. autofunction:: recovery_basis
+
+.. autofunction:: recovery_code
 
 .. autofunction:: policy_count
 
@@ -66,6 +76,10 @@ Cells Descriptions
 
 .. autofunction:: max_dur
 
+.. autofunction:: claim_dur_init
+
+.. autofunction:: claim_dur_live
+
 .. autofunction:: claim_dur_year
 
 .. autofunction:: inception_rate
@@ -86,8 +100,6 @@ Cells Descriptions
 
 .. autofunction:: claim_surv_step
 
-.. autofunction:: claim_rate_vectors
-
 .. autofunction:: esc_rate
 
 .. autofunction:: benefit_pp
@@ -105,8 +117,6 @@ Cells Descriptions
 .. autofunction:: lapse_rate
 
 .. autofunction:: lapse_rate_mth
-
-.. autofunction:: sick_cohorts
 
 .. autofunction:: pols_sick_dur
 

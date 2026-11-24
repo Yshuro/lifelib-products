@@ -176,8 +176,8 @@ jobs:
     # in the `test` job, fails until the list is exactly uklib's registry's: term
     # assurance's, Term_UK_SEC's, first (M2), then critical illness's, CI_UK_SEC's
     # (M4), the unit-linked bond's, ULB_UK_SEC's (M10), whole of life's, WOL_UK_SEC's
-    # (M6), the pension annuity's, PA_UK_SEC's (M12), and with-profits', WP_UK_SEC's
-    # (M14).
+    # (M6), the pension annuity's, PA_UK_SEC's (M12), with-profits', WP_UK_SEC's (M14),
+    # and income protection's, IP_UK_SEC's (M8).
     name: Compile uklib ${{ matrix.shard }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
@@ -185,7 +185,7 @@ jobs:
       fail-fast: false
       matrix:
         shard: [toolchain, term_assurance, critical_illness, whole_of_life, unit_linked_bond,
-                pension_annuity, with_profits]
+                pension_annuity, with_profits, income_protection]
         os: [ubuntu-latest, windows-latest]
         python-version: ['3.13']
     env:

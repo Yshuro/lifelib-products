@@ -1740,6 +1740,21 @@ def _ip_cohorts(s_model, table):
     return pd.DataFrame(rows, columns=list(_IP_COHORTS))
 
 
+def _ip_claims_total(name, args):
+    """``IP_UK_S``'s ``claims`` keys as ``IP_UK_SEC`` takes them at stage ``"EC"`` (R9,
+    R12).
+
+    S's ``claims(t, kind=None)`` is cached under ``(t, None)`` where S asks for the total,
+    which its ``net_cf`` does: SEC's code ``ALL``, so ``None`` is mapped to ``"ALL"``,
+    which :func:`codes` then turns into the int, as it turns S's kinds and timings.  Every
+    other key, and every other cell's arguments, pass as they are, SEC's own codes among
+    them, where a comparison of two SEC models passes it SEC's keys.
+    """
+    if name == "claims" and len(args) == 2 and args[1] is None:
+        return (args[0], "ALL")
+    return args
+
+
 def _wp_units(s, d):
     """``WP_UK_S``'s units held entering month ``d``: its ``units(d - 1)``, the close of the
     month before, or where S's frame opens, at ``proj_start()``, its own opening units, the
@@ -2220,21 +2235,34 @@ SEC_SPECS: dict[str, SecSpec] = {
     # that history at today's 3%.
     #
     # T1 holds on IP at any count: neither model charges acquisition, and every flow is a
-    # count times an amount per policy.  It skips one S cell besides the default three:
+    # count times an amount per policy.  It skips three S cells besides the default three:
     #   claim_duration_months: S's claim duration on an in_claim cell, which the claim
     #     cohorts replace (D6); 0 on every twin T1 compares.
-    # S's status, the row's kind there, is kept as a label no formula reads.
+    #   sick_cohorts and claim_rate_vectors: S's tuples, a month's cohorts and the rates of
+    #     each claim duration, which a compiled cell cannot hold.  SEC carries each element
+    #     in a cell of its own, the cohort at claim duration z of month t in
+    #     pols_sick_dur(t, z), a recursion of two parameters, and the rates in rec_rate_mth,
+    #     mort_rate_sick_mth and claim_surv_step, S's cells of one claim duration, which
+    #     T1 compares where S's sweep reaches them; and S's four sums of the tuple,
+    #     pols_sick, pols_sick_surv, pols_recovery and pols_death_sick, which T1 compares in
+    #     every month, read every element.  test_income_protection_uk_sec.py maps the two
+    #     onto SEC's cells on every row it compares, element by element, and holds the four
+    #     sums to S's sum by their bits.  Kept as engine cells, they would need the key to
+    #     admit a cell of a parameter spec_sec.py sizes, returning a tuple, which no C type
+    #     holds, and would rebuild a vector of up to 625 floats a month from the recursion
+    #     for every comparison.
+    # S's status, the row's kind there, is kept as a label no formula reads.  S's claims(t,
+    # None), the total, is SEC's claims(t, ALL) (_ip_claims_total).
     #
-    # Phase 2 sizes its caches from the contract (UKLIB-SEC-PLAN.md §6.3's C list): t 0..745,
-    # a policy issued at issue_age_min, 18, expiring at expiry_age_max, 70, a cover of 624
-    # months, issued future_horizon_mth, 120 months, after the valuation date, a frame of
-    # 744, and the roll-forward's t + 1; and z 0..625, max_dur(), the cover from issue and
-    # one cohort of headroom, which does not grow with the horizon.  proj_len() refuses an
-    # issue age outside issue_age_min to issue_age_max, an expiry age outside
-    # expiry_age_min to expiry_age_max, and a point at or past its policy end date at the
-    # valuation date, each naming the point.  The cohort vector and its rates are tuples
-    # here, IP_UK_S's, which the C step restructures into pols_sick_dur(t, z), based at
-    # t_entry() on a [point, z] array of the companion.
+    # Phase 2 sizes its caches from the contract (UKLIB-SEC-PLAN.md §6.3's C list,
+    # spec_sec.py): t 746, a policy issued at issue_age_min, 18, expiring at expiry_age_max,
+    # 70, a cover of 624 months, issued future_horizon_mth, 120 months, after the valuation
+    # date, a frame of 744, and the roll-forward's t + 1; and z 626, max_dur(), the cover
+    # from issue and one cohort of headroom, which does not grow with the horizon.
+    # proj_len() refuses an issue age outside issue_age_min to issue_age_max, an expiry age
+    # outside expiry_age_min to expiry_age_max, a point at or past its policy end date at
+    # the valuation date, and a cover longer than 624 months or a frame longer than 744,
+    # each naming the point.
     "IP_UK_SEC": SecSpec(
         twin="IP_UK_S",
         column_map={"claim_duration_months": None},
@@ -2244,9 +2272,10 @@ SEC_SPECS: dict[str, SecSpec] = {
         future=((4, 13),),
         state=_IP_STATE,
         twin_state=_IP_TWIN_STATE,
-        exempt=frozenset({"claim_duration_months"}),
+        exempt=frozenset({"claim_duration_months", "sick_cohorts", "claim_rate_vectors"}),
         companions={"inforce_cohorts_sec.csv": _ip_cohorts},
         derived_refs={(1, 40): {"rpi_rate": 0.05}, (4, 30): {"rpi_rate": 0.12}},
+        twin_arg_map=_ip_claims_total,
     ),
     # WP's state is eight columns per policy (_WP_STATE above), with no companion: the asset
     # share, the units and the unit price, the endowment's attaching bonus, the smoothed
