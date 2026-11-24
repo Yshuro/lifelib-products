@@ -105,7 +105,8 @@ row by row, which is what `run_sec.py --block` prints:
 
 ```python
 import pandas as pd
-frames = [model.Projection[p].result_cf() for p in model.Data.model_point_table().index]
+points = range(len(model.Data.model_point_table()))
+frames = [model.Projection[i].result_cf() for i in points]
 block = pd.concat(frames).groupby(level="t").sum()
 ```
 
