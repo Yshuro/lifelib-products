@@ -14,9 +14,10 @@ M11*). On 2026-11-23 the owner decided that an anniversary or a review falling a
 valuation date is the projection's first event, made at today's References, each opening
 column holding the state before it (D6). Term and critical illness were reworked to it,
 also by run 54 (§6.1, *Record — the anniversary at the valuation date*), so every SEC model
-built so far follows it. The compile steps of whole of life and the pension annuity, M6 and
-M12, and the in-force steps of income protection and with-profits, M7 and M13, are under
-way, two in each stream (§7). Like USLIB-SEC-PLAN.md, this document is both the
+built so far follows it. Whole of life's compile step, M6, and income protection's in-force
+step, M7, are done too, 2026-11-24, by run 55 (§6.4, *Record — M6*, and §6.3, *Record —
+M7*). The pension annuity's compile step, M12, and with-profits' in-force step, M13, are
+under way (§7). Like USLIB-SEC-PLAN.md, this document is both the
 specification and the record: each milestone records what it actually did, including where
 the implementation departed from the plan.
 
@@ -1972,6 +1973,225 @@ first-year rates.
 IP is the plan's largest product and the least certain (K11), so it goes last in its
 stream.
 
+#### Record — M7, done 2026-11-24
+
+Built in three commits, as U1 and §7 ask:
+- `IP_UK_S` copied with only `_name` changed (`8a1ee33`);
+- the enhancement (`3e4ccc1`);
+- the Phase 1 fingerprint frozen alone (`8016c2c`).
+
+Five more commits came beside them:
+- S's swap test moved into `tmp_path` (`e7467ef`);
+- two changes to the shared harness, in both libraries' copies (`21d17b3`, `e77aaaf`;
+  *Departures* below);
+- the review's fixes and the verification's (`1abc6ea`, `6f99495`).
+
+IP's in-force step ran beside WOL's and PA's compile steps, M6 and M12, and WP's in-force
+step, M13 (§7).
+- One agent built it, injecting 14 faults, all caught.
+- A second agent reviewed it against this note, the plan and USLIB-SEC-PLAN.md, injecting
+  34 faults of its own, of which 33 were caught.
+  - It restated S's points itself, without the generator, at 128 rows:
+    - mid-year;
+    - on anniversaries;
+    - inside 13- and 26-week deferrals;
+    - after recoveries;
+    - point 1 at 348 to 359, with 359 cohorts;
+    - under the shipped References, the main set and an RPI of 12%.
+
+    Every row continues S to 2.8e-10, and the committed rows and their 679 cohorts equal S
+    at their instants to 1.9e-16. It found no wrong number.
+  - It confirmed point 7's departure as S's restarted clock. Under a flat lapse table the
+    twin equals S in every cell.
+  - It found these defects:
+    - *The first harness change removed SecSpec's refusal of `derived_refs` beside a
+      companion.* It rested on a docstring's word that every builder is row-local, and
+      three of uslib's are not: FIA's, RILA's and VA's re-based scenario sets each write
+      every scenario on every call. FIA's spec with one `derived_refs` row built a
+      `rate_scenario_sec.csv` of 130 rows with 23 keys written twice, and nothing refused
+      it. No shipped spec was affected.
+    - *The inception rate's floor was reached by no test*, the claim that it was idle on
+      every accepted input false. `Data` accepts a schedule falling below 0 above 18, and
+      dropping the floor passed the whole default run.
+    - *T6 passed S's shared model to `check_generated`*, whose `derived_refs` rows reset
+      its ItemSpaces. The committed-rows test after it then compared 53 of point 1's 69
+      cells.
+    - *Rule 12 bounded the escalation history from below only.* Both amount K14 tests
+      opened on states the contract cannot reach: a benefit risen faster than its
+      premium, and a premium past its cap.
+    - *The docs called the twin's chosen clock the policy's own,* and overstated what the
+      splice compares.
+    - *The fingerprint commit's message overclaimed.* C2 runs at the shipped 3%, where
+      neither the shocked lapse nor the capped increase runs.
+- The builder fixed all of them, with 4 faults more caught.
+- The reviewer verified the rework with 15 faults of its own, of which 12 were caught.
+  - The static check's new text-column rule never fired: under pandas 3, which CI
+    installs, text columns read as `str`, not `object`.
+  - Two of the static test's rules could be narrowed unseen.
+  - The premium cap had no case half a cent inside.
+  - The row-local check on the shipped rows was pinned by no test.
+
+  `6f99495` closes all four. Each missed fault is caught since, re-injected at landing.
+
+**What exists now.**
+- *`IP_UK_SEC` at stage E.* `Projection` keeps 72 of `IP_UK_S`'s 73 cells and adds 12:
+  - `policy_count`, `duration_mth_init`, `duration_init`, `t_entry`, `is_active`,
+    `expiry_mth`, `pols_new_biz` and `result_pols`;
+  - the four accessors of the opening state.
+
+  `claim_duration_months` is gone, the companion its successor. `pols_if` = healthy +
+  sick is the row weight, D5's with no exception, and new business enters healthy.
+- *The opening state* (D6), measured at the start of month 0, before any month-0 event,
+  with month −1's recoveries back in health. An anniversary at the valuation date is
+  month 0's own event:
+  - `pols_active_init`, the healthy share of the count;
+  - the claim cohorts, in a sparse companion, `inforce_cohorts_sec.csv`:
+    - keyed `(point_id, z)`, its share `pols_sick_dur_init`, S's `sick_cohorts(d)`
+      element `z − 1` over `pols_if(d)`;
+    - up to 624 cohorts a point under the contract's bounds, 679 rows as committed;
+  - `benefit_pp_init` and `premium_pp_init`, S's `benefit_pp(d − 1)` and
+    `premium_pp(d − 1)`.
+
+  Each has a K14 test on a reachable state that departs from today's References. The
+  amounts' tests open the anchor cell at 60 with S's history at an RPI of 5%, valued at 3%.
+- *`Data`* checks the table by 12 rules and the companion by 8.
+  - On the companion it refuses:
+    - a `z` outside 1 to the point's `duration_mth`;
+    - a cohort row on a point not yet in force, which is issued healthy;
+    - shares not summing to 1 with the healthy share, within 1e-10.
+  - It requires the 11 S columns the projection reads, naming a missing one. `status` is
+    an optional label.
+  - It checks each of the four assumption tables before a value of it is read. Keys must
+    be whole and below `2**53`, years must run without a gap, and every rate must lie
+    from 0 to 1.
+- *`proj_len()`* refuses:
+  - a point at or past its policy end date;
+  - the contract's age bounds, four new References: issue at 18 to 59, expiry at 50 to 70,
+    from which M8 sizes its caches;
+  - an escalation history above the contract, to half a cent:
+    - the benefit above its cap path;
+    - the premium above its own;
+    - the premium outside the range its benefit's increases allow;
+  - 23 References off their domains.
+- *The committed rows*, 19 points:
+  - S's 7 as twins, the three in claim on policy clocks of `12n` months, `n` the least
+    whole year that holds the claim (§9 item 11);
+  - 9 derived rows;
+  - one future row, issued 13 months on;
+  - two read from S under an RPI of their own (`derived_refs`): point 18 at 5%, its lapse
+    shocked, and point 19 at 12%, its increases capped.
+- *Beside the model:*
+  - `run_sec.py`;
+  - `model-sec.md`;
+  - the generated pages;
+  - uklib's `index.md` row;
+  - the `sec_uk` job's `income_protection` legs.
+- *Tests.*
+  - By default 497 pass and 94 skip, in 174 s at a peak of 1.4 GB alone, and in 291 s
+    at a load of 4 to 5.
+  - On the full grid 590 pass, in 313 s.
+
+**Departures and precisions.**
+- *The harness builds a `derived_refs` row's companion under that row's References*
+  (`21d17b3`, both copies). It calls each builder:
+  - first on the rows read from S as it ships;
+  - then on each `derived_refs` row alone, with that row's References set on S and
+    restored in a `finally`.
+
+  The parts must be row-local (`e77aaaf`): every row a call writes carries a `point_id`
+  it was given, so the joined parts cannot repeat a row. A builder that writes rows of its
+  own, as uslib's scenario sets do, is refused by name. A spec without `derived_refs` is
+  built as before, and all 18 SEC models' generated files are unchanged.
+- *The in-claim twins take the generator's clock.* S's row records no issue date, and its
+  clock restarts at the valuation date. Points 2 and 5 then match S in every cell but the
+  clock cells. On point 7 the recovered lives lapse a year apart in the two models: 0.8002
+  is in force at month 60 on the twin, against S's 0.7791. Its rows are compared under a
+  flat lapse table, and the difference at the shipped table is asserted. An in-claim point
+  with RPI escalation has no twin, and the generator refuses it. None ships.
+- *A state where S carries no policy* is written as a point of no policies, all healthy.
+  No committed row is one.
+- *`annuity_dis` is per policy*, over `amount_payable_pp(t_entry()) × policy_count()`.
+  S's divides by the amount payable alone, which agrees only on a count of 1. T4 holds it
+  to 1e-12, a ratio of two scaled sums.
+- *The splice compares four kinds of cell otherwise:*
+  - `proj_len`, by the frames ending together;
+  - the cumulative counts, by their increments;
+  - away from month 0, the discount factor, the present value and the annuity factor, by
+    a test of their own;
+  - the clock and cohort cells of claim rows, by checks of their own.
+- *Two bounds no shipped input binds*:
+  - The inception floor binds only on a schedule below 0, spliced on a copy of the
+    table.
+  - The in-claim mortality cap no accepted input binds. Its NaN test replaces the
+    termination reader's formula.
+- *`cycle_factor` of 0 or less* is refused by `proj_len()`, since `Data` cannot read a
+  Projection Reference.
+- *`check_states_resid`'s book count is 0 outside cover.*
+- *Rule 12 refuses one state S cannot reach either*: an escalation option lapsed after
+  increases. The model cannot represent it.
+- *The static check flags every cell that calls a tuple cell or reads a text column,*
+  besides a Python object, and checks each exemption is needed.
+
+**Measured for K6.**
+- A cold `net_cf` at the longest cover, 624 months, runs 631 to 632 cells: 8 or 9 beyond
+  its chain, where the plan estimated 4 to 6 and about 750 in all. The other heads run 5
+  to 8 beyond, and the test allows 16.
+- The committed sweep runs under a recursion limit of 40.
+- At landing, M7 and M6 ran one gate here, on `78e51c0`, and the WOL parts on `3d84a6f`,
+  whose last commit touched only whole of life's tests and page. The container restarted
+  partway, and the gate was run again from where it stopped:
+  - the full grid: 591 passed, in 536 s;
+  - the conventions, harness and S suites of all seven products: 1,037 passed and 17
+    skipped, in 595 s;
+  - uslib's harness tests: 79 passed;
+  - the generators' and fingerprints' checks for all 18 SEC models, uklib's 6 and uslib's
+    12, every one current;
+  - the harness check;
+  - doccheck at 0 warnings;
+  - the scaffolding at 0 files.
+
+  A case-insensitive search of `model_point_table_sec.csv` and `inforce_cohorts_sec.csv`
+  finds none of the publishers, products and document codes that
+  `income_protection/sources.md` cites.
+
+In CI, the Tests workflow's run 55 on `3d84a6f`, which carries M6 too, ran 100 jobs. When
+this record was written 99 had passed. The hundredth, uslib's `sec` full-grid leg for the
+indexed UL, was still running. Every macOS leg was given a runner this time. M7's legs
+passed at the first attempt:
+- `sec_uk`'s three IP legs: the full grid on Ubuntu in 7.3 min, and the core on Windows in
+  5.5 and on macOS in 5.0;
+- the `test` job on Python 3.14 and Ubuntu, 7,171 passed and 118 skipped in 43 min 10 s,
+  its harness step agreeing, 146 statements compared.
+
+**Faults.** Each was injected into a copy of its own.
+- The builder: 14, then 6 on the rework (the pre-fix committed-rows test missing its
+  fault, as it should) and 4 on the verification's items, all caught.
+- The review: 34, of which one was missed: the inception floor dropped. It is caught
+  since `1abc6ea`.
+- The verification: 15, of which three were missed:
+  - the row-local check on the `derived_refs` calls alone;
+  - the tuple rule narrowed;
+  - `sex` taken out of the exemptions.
+
+  Each is caught since `6f99495`, re-injected at landing.
+
+**Carried into M8.**
+- *The restructure*, §6.3's *C*:
+  - `sick_cohorts(t)` and `claim_rate_vectors()`, tuples, become `pols_sick_dur(t, z)`,
+    based at `t_entry()` on a `[point, z]` array of the companion;
+  - the five cells that read them, `pols_sick`, `pols_sick_dur`, `pols_sick_surv`,
+    `pols_recovery` and `pols_death_sick`, are summed in `z` order.
+
+  `STATIC_EXEMPT` lists every cell the C step must change, and only those.
+- *The inception array's read keeps the floor at 0*, which the floor's splice holds.
+- *The caches from the contract:* `t` 0..745 and `z` 0..625.
+- *A `derived_refs` row's companion* is built under its References. A compiled companion
+  reader must take the companion's rows as the harness joins them.
+- *The template, for every later product:*
+  - A rule on text columns reads them by `is_string_dtype`. Under pandas 3 they are `str`.
+  - A static test checks each of its exemptions is needed.
+  - A shared harness change states the property it rests on, and refuses what breaks it.
+
 ### 6.4 Whole of life — `WOL_UK_SEC` (E: M, C: S)
 
 *Today:* the policy clock from issue, new business only; `proj_len() =
@@ -2230,6 +2450,282 @@ uslib's. M5's legs passed at the first attempt:
   - The core-reach test names the branches the owner's D6 decision adds: an increase or
     a review at `t = 0`.
   - An S test that writes into the product folder writes into `tmp_path` instead.
+
+#### Record — M6, done 2026-11-24
+
+**Commits.**
+- The C step (`5f449a6`), and its docs with C6 (`d57a10d`), built on M5's landing.
+- Five more from the review and its verification:
+  - a new refusal, premiums ceasing past the limiting age (`4471df6`);
+  - four commits of tests and docs (`ca7d295`, `958ed16`, `78e51c0`, `3d84a6f`).
+
+  `958ed16`'s message was corrected at landing: it had called the default's row
+  selections the rows each set of References moves.
+
+It ran beside PA's compile step, M12, and the in-force steps of IP and WP, M7 and M13, two
+in each stream (§7). It landed with M7.
+
+**The build and the review.**
+- One agent built it, injecting 19 faults, one or more of each of the 15 kinds the brief
+  listed.
+- A second agent reviewed it against this note, the plan and USLIB-SEC-PLAN.md. It
+  injected 26 faults of its own, of which 21 were caught.
+  - **No number had moved.** It compared stage E with EC on 188 rows of its own, bit for
+    bit:
+    - issued at 18 at limiting age 121;
+    - anniversary, mid-year and last-year valuations;
+    - future business at 5 to 119 months;
+    - paid-up rows through their conversions;
+    - all eight mortality schedules.
+
+    It covered 3,781,628 values with every switch on and 3,851,120 at the limiting age of
+    121, all 0 apart. Compiled equalled modelx everywhere it reached.
+  - **It found gaps in what the tests held:**
+    - Three of the crossover search's four overflow guards were reached by no test. With
+      them dropped, the compiled `crossover_mth` returned −1 or 24 where modelx raises
+      `OverflowError`.
+    - The two refusal cells repeated their chains' formulas, held equal by nothing. A drift
+      in one moved point 11's refusal from month 9 to the anniversary at 18, months 9 to
+      17 returning a frozen 1.79e308, and every test passed.
+    - The default run took 587 s at a peak of 3.38 GB, with nothing recorded.
+    - The roll-forward check's loop bounds were unheld, and so was the crossover search's
+      last month. No grid point crossed in its last premium month.
+    - `Data.future_horizon_mth` was never refused compiled. Set to 12.5, it read back 12.
+    - C4 never compared the count at `AFT_DECR`, or the underwritten cell's `NON_ACC` and
+      `ACC` benefits, since no swept cell reads them.
+    - The 1 MiB stack test could not see the blocking undone, and the page justified the
+      blocking by the wrong rule.
+  - **It found three plausible risks:**
+    - the lapse array's width taken from one cell's last year;
+    - the `2**53` bounds on the cessation and the crossover, never tried at their edges;
+    - a zero premium with a cessation of `2**52`, whose search would loop about 4.5e15
+      times in both engines.
+- The builder fixed all of them, re-injecting the five faults the review had missed, all
+  caught.
+- The reviewer verified the rework with 15 faults of its own, of which 12 were caught.
+  `3d84a6f` closes the three gaps it found:
+  - the sixth variant's core rows, held by nothing;
+  - the default row selections, described wrongly;
+  - `also`'s codes and the selections, unasserted.
+
+  I re-injected one of those faults at landing: `_wol_c4_also` without `AFT_DECR` is caught.
+
+**What exists now.**
+- *`WOL_UK_SEC` at stage EC*, compiled under modelx-cython and checked against modelx.
+  - `Data` turns each model point column a formula reads into an int64 or float64 vector,
+    24 vectors, arrays and extents in all. Each array is padded with NaN that no reader
+    reads.
+    - **Mortality** is an array of eight schedules, basis by sex by smoker status, by
+      attained age, padded from age 0.
+    - **The lapse table** is an array by cell and policy year, beside an int64 vector of
+      each cell's last year.
+    - **The text is decoded once for every point**, into the cell and escalation codes,
+      the point's schedule and the two variant flags.
+    - **An entry age, a mortality age or a lapse year of `2**53` or more is refused**, and
+      gaps are found in one pass.
+  - `Projection` takes `idx`, `point_id()` naming the point in every refusal. It has 85
+    cells, 77 of them C scalars, and a compiled ItemSpace is 771,992 bytes.
+  - Codes, in one inner width of 4:
+    - the timings `BEF_NB`, `BEF_DECR`, `BEF_LAPSE` and `AFT_DECR`;
+    - `benefit_pp`'s `DEATH` 0, `NON_ACC`, `ACC` and `PAID_UP`;
+    - `claims`' `DEATH` 0, `DEATH_PU`, `LAPSE` and `ALL`.
+  - `claims(t, ALL)` is written left to right, S's sum to the last bit, since the lapse
+    kind is the literal 0.0 and at most two kinds are non-zero together. A test counts
+    them.
+  - M22's guard is on the cover's, the premium's, inflation's, improvement's and the
+    crossover's powers. Each guard is reached by a test, compiled and in modelx.
+  - `omega_age_max`, 121, the shipped table's last age plus one, bounds `omega_age`.
+  - The caches:
+    - `t` is 1,358, that is 12 × (121 − 18) + 120 + 2;
+    - the 2-D caches are 1,358 by 4;
+    - `y` is 104.
+- *Beside the model:*
+  - `sample_sec.py`, which traces every cell under a recursion limit of 2,000, four times
+    the 492 the export needs;
+  - `spec_sec.py`, each size derived and held by a test;
+  - the registry at stage `"EC"`, with `idx` and five reporting labels;
+  - `run_sec.py --cython`;
+  - `model-sec.md`'s *The compiled model*;
+  - the `cython_uk` job's `whole_of_life` shard.
+- *Tests.*
+  - By default 539 pass and 161 skip, in 466 to 524 s at a load of 2 to 4, at a peak of
+    3.3 to 3.4 GB. The modelx part alone, which the `sec_uk` legs run, takes 197 s at
+    2.0 GB.
+  - On the full grid 699 pass, in 794 s.
+  - The shard runs 20 compile tests.
+
+**The stack.**
+- *One cell a month* missed the 256 KiB this machine allows. A cold call at the longest
+  cover, 1,236 months from issue at 18 to the limiting age of 121, needed:
+  - 292 KiB on the count's chain: `net_cf`, the count, the residual and the claims total;
+  - 240 KiB on the paid-up chains;
+  - 212 KiB on the premiums paid.
+- *All four chains are blocked by policy year*, in M10's `_py(y)` form:
+  - the full-cover count, at `pols_if_py`;
+  - the paid-up count, at `pols_pu_py`;
+  - the paid-up cover, at `pu_benefit_py`;
+  - the premiums paid, at `prem_cum_pp_py`.
+
+  Each walks the year before in ascending order and returns the value carried out of its
+  last month, the same float.
+- *Why the premiums paid are blocked too.* They fit at 212 KiB, but the reason that holds
+  is K12's factor of two to four on CI's Ubuntu runner.
+- *After*:
+  - modelx runs a chain of 215 cells, and each head is held to its own measured overhead
+    beyond it:
+
+    | Head | Overhead, cells |
+    |---|---|
+    | the premiums paid | 5 |
+    | the count | 8 |
+    | `net_cf` | 11 to 12 |
+    | the residual | 12 |
+    | the claims total | 13 |
+    | the paid-up cover | 23 |
+    | the paid-up count and its deaths' claims | 24 |
+
+    One bound of 24 for all would not catch a chain of two cells a month within a year
+    on the shallower heads.
+  - Compiled, every head runs on 64 KiB and dies on 60, and the premiums paid on 52 and
+    48. The compiled call needs a recursion limit of 16.
+- *The 1 MiB test cannot see the blocking undone*, since one cell a month needs only
+  292 KiB here. Only the modelx depth test guards the blocking.
+- *The refusals of a value past the floats* moved off the chains into
+  `prem_cum_pp_refusal` and `pu_benefit_refusal`, which only their error paths call. A test
+  holds each to its chain by `float.hex`, in every month of every committed point. Each
+  chain also leaves the floats in a mid-year month and on an anniversary.
+
+**Departures and precisions.**
+- *`DEATH` is one code, 0, in both kind families.* It comes first among the benefits,
+  where S lists it third. That keeps one width of 4.
+- *`sex()` and `smoker()` refuse anything but their codes*, as ULB's `sex()` does. All
+  five labels compile to `str`.
+- *`check_pols_roll_fwd` is a loop.* R17 leaves the checks outside C3 and C5. A generator
+  there compiles to a Python closure, which costs speed only.
+- *`lapse_last_year` is an int64 vector by cell*, each cell with its own extent, as S's
+  are. The array's width, the longest cell's, is held on a copy whose underwritten rows
+  run to year 9.
+- *The chain-text test leaves out `claims(t, ALL)` as a head.* The total holds `claims`
+  twice at the top of its path, a constant two frames.
+- *Every code inside the width of 4 is taken*, so the test is of `IndexError` past it.
+- *A fractional `future_horizon_mth` is truncated compiled*, as every int Reference is, and
+  documented with them. −1 and `2**53` are refused in both engines, message for message.
+  The refusal child sets `Data`'s References as well as `Projection`'s.
+- *Premiums ceasing past the limiting age are refused* by `proj_len()`, a stage-E domain
+  the review's search bound showed was missing. The crossover search therefore loops at
+  most 1,236 months.
+  - Refusing, not capping the search: a cap would change S's result where its crossover
+    falls after the limiting age.
+  - The edge matches S: premiums are due while `duration_mth < cessation`.
+  - No S point, committed row or variant lies past it.
+- *C4's eight sweeps under other References* compare, by default, a selection of rows, and
+  the full grid compares the whole table:
+
+  | Set | Rows compared by default |
+  |---|---|
+  | RPI, at 5%, −2% and 25% | the rows the rate moves |
+  | the take-up | the escalating rows |
+  | the stress | rows 3, 10, 17 and 11 |
+  | the anniversary | its escalating rows |
+  | the male smoker's capped rows | |
+
+  A test derives each selection in modelx and asserts it. Every comparison passes
+  `_wol_c4_also`, which asks every code of each family in every month, and a test asserts
+  that it does.
+- *The default run is past U6's five minutes.* `model-sec.md` records why:
+  - the build takes about 70 s;
+  - the compiled comparisons about 200 s;
+  - the Windows legs run the default, and a compile test is never skipped.
+
+**Measured for K6.** On the shared 4-CPU Linux machine:
+- A build takes 65 to 69 s with gcc 13.3.
+- C6, at a load of 2.0 to 2.6, each figure the median of three runs, with the range:
+
+  | Engine | Points | `net_cf`, a point | `result_cf`, a point | Peak |
+  |---|---|---|---|---|
+  | compiled | 6,001 | 0.396 ms (0.390–0.411) | 0.993 ms (0.972–1.020) | 86 MB |
+  | export | 612 | 5.10 ms (5.07–5.28) | 5.85 ms (5.80–5.85) | 86 MB |
+  | modelx | 136 | 187 ms (183–189) | 202 ms (200–212) | 125–131 MB |
+
+  - The compiled model runs 13.0 times its export and 470 times modelx on `net_cf`, and
+    5.9 and 207 times on `result_cf`.
+  - A frame averages 617 months, against ULB's 340, at about the same cost a month.
+  - The compiled block grows 0 MB, and every engine sums `net_cf` to −79,123.3363.
+- Stage E against EC, at the final tree:
+  - 483,748 values on the 17 committed points, 0 apart;
+  - 4,079,632 on the full splice grid's 192 points, 0 apart.
+- At landing, `3d84a6f` ran its gate here with M7's (§6.3, *Record — M7*):
+  - the full grid, its compile tests apart: 683 passed, in 449 s;
+  - the `whole_of_life` shard on the full grid: 20 passed, in 532 s. Each head, in an
+    ItemSpace of its own, ran on 64 KiB and not on 48, in that test's coarser steps;
+  - the `toolchain` shard;
+  - the conventions, harness and S suites, the checks of all 18 SEC models' generators
+    and fingerprints, the harness check, doccheck at 0 warnings and the scaffolding at 0
+    files, as M7's record gives.
+
+In CI, the Tests workflow's run 55 on `3d84a6f` ran 100 jobs, the `cython_uk` job's five
+shards among them (§6.3, *Record — M7*). M6's legs passed at the first attempt:
+- the `cython_uk` `whole_of_life` legs, the first to compile `WOL_UK_SEC`, 20 tests each:
+  - 409 s on Ubuntu, on the full grid;
+  - 228 s on Windows;
+- `sec_uk`'s three WOL legs: the full grid on Ubuntu in 8.7 min, and the core on Windows in
+  4.2 and on macOS in 3.9.
+
+The compiled cold call's stack, as its test records it in its coarser steps, each head in
+an ItemSpace of its own:
+
+| Where | Ran on | Not on |
+|---|---|---|
+| Here | 64 KiB | 48 KiB |
+| Ubuntu | 192 KiB | 128 KiB |
+| Windows | 96 KiB | 64 KiB |
+
+Ubuntu needed two to three times the 60 to 64 KiB this machine needs, within K12's factor
+of two to four. The 1 MiB thread the test asserts holds there with a margin of five.
+
+**Faults.** Each was injected into a copy of its own.
+- **The builder:** 19, then 5 on the rework and 3 on the verification's items. All were
+  caught but two:
+  - a generator in `check_pols_roll_fwd`, a check R17 leaves to Python;
+  - a year walk that skips its next-to-last month. It moves no number, only a cell at the
+    chain's top. A walk starting a month late adds a cell a year, which the depth test
+    catches.
+- **The review:** 26, of which five were missed:
+  - the check loop a month short;
+  - the crossover search a month short;
+  - the refusal cells' drift;
+  - the lapse width from one cell;
+  - the three crossover guards dropped, compiled.
+
+  Each is caught since the rework.
+- **The verification:** 15, of which three were missed:
+  - the sixth variant out of the core, with the search a month short;
+  - `_wol_c4_also` without `AFT_DECR`;
+  - an RPI row dropped from the selection.
+
+  Each is caught since `3d84a6f`.
+
+**Carried into M8 and M14.**
+- *The stack.*
+  - Bound each head's depth by its own measured overhead, not by one number.
+  - Hold each refusal cell to its chain by `float.hex`, mid-year and on an anniversary.
+  - Block every chain once any one misses 256 KiB, for K12's factor on Ubuntu.
+- *The refusals and the domains.*
+  - Reach every overflow guard by a test, in both engines.
+  - No accepted input runs a loop longer than the contract's longest cover.
+  - The refusal child sets every space's References that have a domain, `Data`'s
+    included.
+- *C4.*
+  - Pass `also` for every code no swept cell reads, and assert that it asks each one.
+  - Derive and assert any default row selection.
+- *The faults' forms:*
+  - a dict cache as text codes;
+  - None returned on a traced branch;
+  - a generator in an engine cell;
+  - a year walk starting a month late.
+
+**Carried into M15.** Term, CI and ULB pass no `also` to C4. The count at `AFT_DECR` and
+the like go uncompared there, as they did here.
 
 ### 6.5 With-profits — `WP_UK_SEC` (E: M, C: M)
 
