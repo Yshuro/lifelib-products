@@ -957,20 +957,26 @@ def proj_len():
             steep = steep * (1.0 + esc_prem_mult * (left - 1.0))      # noqa: F821
             low = p0 * min(even, steep)
             # The most: the benefit's increase at its most, b and half a cent, the cap's.
-            r = min(b + 0.005, top_b) / b0
-            try:
-                even = (1.0 + esc_prem_mult * (r ** (1.0 / n) - 1.0)) ** n  # noqa: F821
-            except OverflowError:
-                even = top_p / p0
-            left = r
-            steep = 1.0
-            k = 0
-            while k < n and left > rise_b:
-                left = left / rise_b
-                steep = steep * rise_p
-                k = k + 1
-            steep = steep * (1.0 + esc_prem_mult * (left - 1.0))      # noqa: F821
-            high = p0 * max(even, steep)
+            # A benefit within half a cent of the cap's path allows the cap's premium alone,
+            # top_p, taken as the loop above computes it, so that the premium's bound at the
+            # cap is the same number on either test, to the ulp.
+            if b + 0.005 >= top_b:
+                high = top_p
+            else:
+                r = (b + 0.005) / b0
+                try:
+                    even = (1.0 + esc_prem_mult * (r ** (1.0 / n) - 1.0)) ** n  # noqa: F821
+                except OverflowError:
+                    even = top_p / p0
+                left = r
+                steep = 1.0
+                k = 0
+                while k < n and left > rise_b:
+                    left = left / rise_b
+                    steep = steep * rise_p
+                    k = k + 1
+                steep = steep * (1.0 + esc_prem_mult * (left - 1.0))  # noqa: F821
+                high = p0 * max(even, steep)
             if not (p >= low - 0.005 and p <= high + 0.005):
                 raise ValueError(
                     f"point_id {point_id}: premium_pp_init {p} is outside {low} to {high}, "  # noqa: F821

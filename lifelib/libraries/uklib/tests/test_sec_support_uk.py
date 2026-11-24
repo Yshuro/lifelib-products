@@ -1098,9 +1098,22 @@ def _first_point(s_model, table):
     return pd.DataFrame({"point_id": [1], "seen": [0.5]})
 
 
+def _stray_in_shipped(s_model, table):
+    """A companion builder row-local on a ``derived_refs`` row and not on the shipped rows:
+    a row for each point given, and, given more than one, a row of point 11, the first
+    ``derived_refs`` row's, which that row's own call writes again."""
+    rows = table[["point_id"]].assign(seen=0.5)
+    if len(table) > 1:
+        rows = pd.concat([rows, pd.DataFrame({"point_id": [11], "seen": [0.5]})],
+                         ignore_index=True)
+    return rows
+
+
 @pytest.mark.parametrize("build, fault", [
     (_fixed_rows, "it wrote rows without a point_id"),
     (_first_point, r"given 1 rows, it wrote rows of point_id \[1\], which it was not given"),
+    (_stray_in_shipped,
+     r"given 10 rows, it wrote rows of point_id \[11\], which it was not given"),
 ])
 def test_a_companion_builder_that_is_not_row_local_is_refused_beside_derived_refs(build,
                                                                                   fault):
@@ -1111,8 +1124,10 @@ def test_a_companion_builder_that_is_not_row_local_is_refused_beside_derived_ref
     scenario sets write every scenario, would write them once more for each such row, and
     the joined companion would hold them twice, with nothing to say so.  The generator
     refuses such a builder, naming the file and the builder: one that writes fixed rows
-    with no ``point_id``, and one that writes a fixed point's row on every call, a point the
-    ``derived_refs`` row's call was not given.  Without ``derived_refs`` each is called
+    with no ``point_id``; one that writes a fixed point's row on every call, a point the
+    ``derived_refs`` row's call was not given; and one row-local on each ``derived_refs``
+    row that, on the shipped rows, writes a ``derived_refs`` row's point as well, which
+    only the check of the shipped rows' call sees.  Without ``derived_refs`` each is called
     once, on the whole table, and its rows are kept as it wrote them.
     """
     model = _read("not_row_local")
@@ -1122,8 +1137,9 @@ def test_a_companion_builder_that_is_not_row_local_is_refused_beside_derived_ref
                                              f"is not row-local: {fault}"):
             build_sec_table(spec, model)
         assert model.Projection.premium_market_ratio == 1.0
-        _, companions = build_sec_table(dataclasses.replace(spec, derived_refs={}), model)
-        pd.testing.assert_frame_equal(companions["rates_sec.csv"], build(model, None))
+        table, companions = build_sec_table(dataclasses.replace(spec, derived_refs={}),
+                                            model)
+        pd.testing.assert_frame_equal(companions["rates_sec.csv"], build(model, table))
     finally:
         model.close()
 

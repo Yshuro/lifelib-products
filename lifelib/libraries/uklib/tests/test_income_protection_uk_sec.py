@@ -2444,6 +2444,7 @@ HISTORY_BOUNDS = [
     ("a benefit a cent past the cap", (TOP_BENEFIT + 0.01, TOP_PREMIUM), {}, _BENEFIT_PAST),
     ("a benefit half a cent past the cap", (TOP_BENEFIT + 0.005, TOP_PREMIUM), {}, None),
     ("a premium a cent past the cap", (TOP_BENEFIT, TOP_PREMIUM + 0.01), {}, _PREMIUM_PAST),
+    ("a premium half a cent past the cap", (TOP_BENEFIT, TOP_PREMIUM + 0.005), {}, None),
     ("a premium a cent above the most its benefit allows", (BENEFIT_5, PREMIUM_5 + 0.01),
      {}, _OUTSIDE),
     ("a premium half a cent above the most its benefit allows",
@@ -4365,8 +4366,10 @@ TUPLE_CELLS = frozenset({"sick_cohorts", "claim_rate_vectors"})
 
 # The model point's text columns, which the C step decodes to ints: a cell that reads one
 # returns or compares a text, and must change with it.  policy_id, the generator's columns
-# and status are labels no formula reads.
-TEXT_COLUMNS = frozenset(c for c in _committed().columns if _committed()[c].dtype == object)
+# and status are labels no formula reads.  A text column reads as object under pandas 2
+# and as str under pandas 3, and is_string_dtype takes either.
+TEXT_COLUMNS = frozenset(c for c in _committed().columns
+                         if pd.api.types.is_string_dtype(_committed()[c]))
 
 # The cells the static check leaves to the C step, each an item of UKLIB-SEC-PLAN.md §6.3's
 # C list or a cell that stays Python, every one of them IP_UK_S's as it ships but the
@@ -4399,6 +4402,45 @@ STATIC_EXEMPT = {
     "claims", "pv_benefits"}
 
 
+def _static_findings(tree, exempt):
+    """What the static check finds in ``tree``, the Projection's source parsed, every cell
+    of ``exempt`` left out: ``(the cells read, [(cell, what it holds), ...])``."""
+    built = (ast.Tuple, ast.List, ast.Set, ast.Dict, ast.GeneratorExp, ast.ListComp,
+             ast.SetComp, ast.DictComp, ast.JoinedStr, ast.Lambda)
+    found, read = [], set()
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        read.add(node.name)
+        if node.name in exempt:
+            continue
+        raises = {id(n) for r in ast.walk(node) if isinstance(r, ast.Raise)
+                  for n in ast.walk(r)}
+        columns = {id(n) for s in ast.walk(node)
+                   if isinstance(s, ast.Subscript) and isinstance(s.value, ast.Call)
+                   and getattr(s.value.func, "id", None) == "model_point"
+                   for n in ast.walk(s.slice)}
+        body = node.body[1:] if ast.get_docstring(node) is not None else node.body
+        for inner in (n for statement in body for n in ast.walk(statement)):
+            if id(inner) in raises:
+                continue
+            if isinstance(inner, built):
+                found.append((node.name, f"{type(inner).__name__} at line {inner.lineno}"))
+            elif (isinstance(inner, ast.Constant) and isinstance(inner.value, str)
+                  and inner.value not in CODES and id(inner) not in columns):
+                found.append((node.name, f"the text {inner.value!r} at line "
+                                         f"{inner.lineno}"))
+            elif (isinstance(inner, ast.Call)
+                  and getattr(inner.func, "id", None) in TUPLE_CELLS):
+                found.append((node.name, f"reads the tuple cell {inner.func.id} at line "
+                                         f"{inner.lineno}"))
+            elif (isinstance(inner, ast.Constant) and inner.value in TEXT_COLUMNS
+                  and id(inner) in columns):
+                found.append((node.name, f"reads the text column {inner.value!r} at line "
+                                         f"{inner.lineno}"))
+    return read, found
+
+
 def test_no_computed_cell_builds_a_python_object(sec_model):
     """No computed cell builds a tuple, a text or a generator but to raise (§6.3, *C*).
 
@@ -4413,44 +4455,24 @@ def test_no_computed_cell_builds_a_python_object(sec_model):
     compare, each of which must change with what it reads.  ``try`` is allowed: a power
     that leaves the floats raises Python's ``OverflowError``, which the cell names.  Every
     cell of the Space is read, and every exemption is a cell of it.
+
+    The rules check themselves too, so that narrowing one cannot pass unseen: the text
+    columns are found under pandas 2 and 3 alike, ``sex``, ``escalation`` and
+    ``recovery_basis`` among them; and each exemption is needed, the scan flagging its cell
+    once that one exemption is taken away, which also keeps :data:`STATIC_EXEMPT` to the
+    cells the C step must change.
     """
-    source = (model_path(SEC) / "Projection" / "__init__.py").read_text(encoding="utf-8")
-    built = (ast.Tuple, ast.List, ast.Set, ast.Dict, ast.GeneratorExp, ast.ListComp,
-             ast.SetComp, ast.DictComp, ast.JoinedStr, ast.Lambda)
-    found, read = [], set()
-    for node in ast.parse(source).body:
-        if not isinstance(node, ast.FunctionDef):
-            continue
-        read.add(node.name)
-        if node.name in STATIC_EXEMPT:
-            continue
-        raises = {id(n) for r in ast.walk(node) if isinstance(r, ast.Raise)
-                  for n in ast.walk(r)}
-        columns = {id(n) for s in ast.walk(node)
-                   if isinstance(s, ast.Subscript) and isinstance(s.value, ast.Call)
-                   and getattr(s.value.func, "id", None) == "model_point"
-                   for n in ast.walk(s.slice)}
-        body = node.body[1:] if ast.get_docstring(node) is not None else node.body
-        for inner in (n for statement in body for n in ast.walk(statement)):
-            if id(inner) in raises:
-                continue
-            if isinstance(inner, built):
-                found.append(f"{node.name}: {type(inner).__name__} at line {inner.lineno}")
-            elif (isinstance(inner, ast.Constant) and isinstance(inner.value, str)
-                  and inner.value not in CODES and id(inner) not in columns):
-                found.append(f"{node.name}: the text {inner.value!r} at line "
-                             f"{inner.lineno}")
-            elif (isinstance(inner, ast.Call)
-                  and getattr(inner.func, "id", None) in TUPLE_CELLS):
-                found.append(f"{node.name}: reads the tuple cell {inner.func.id} at line "
-                             f"{inner.lineno}")
-            elif (isinstance(inner, ast.Constant) and inner.value in TEXT_COLUMNS
-                  and id(inner) in columns):
-                found.append(f"{node.name}: reads the text column {inner.value!r} at line "
-                             f"{inner.lineno}")
+    tree = ast.parse(
+        (model_path(SEC) / "Projection" / "__init__.py").read_text(encoding="utf-8"))
+    read, found = _static_findings(tree, STATIC_EXEMPT)
     assert read == set(sec_model.Projection.cells)
     assert STATIC_EXEMPT <= read
     assert not found, found
+    assert {"sex", "escalation", "recovery_basis"} <= TEXT_COLUMNS, sorted(TEXT_COLUMNS)
+    needless = sorted(cell for cell in STATIC_EXEMPT
+                      if cell not in {name for name, _ in
+                                      _static_findings(tree, STATIC_EXEMPT - {cell})[1]})
+    assert not needless, f"exempt, though the scan finds nothing in them: {needless}"
 
 
 def _docs(model):

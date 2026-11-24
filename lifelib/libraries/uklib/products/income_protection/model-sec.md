@@ -521,7 +521,9 @@ based at `t_entry()` on a `[point, z]` array of the companion, with the sums in 
 (UKLIB-SEC-PLAN.md §6.3, *C — the restructure*). The static check in
 `tests/test_income_protection_uk_sec.py` names every cell the C step must change, flagging
 besides a Python object or a text each cell that calls a tuple cell or reads a text
-column, and nothing this step wrote adds to `IP_UK_S`'s but the companion's reader and
+column, the text columns read by their dtype under pandas 2 and 3 alike, and it checks
+each of its exemptions is needed, the scan flagging that cell once the one exemption is
+taken away. Nothing this step wrote adds to `IP_UK_S`'s but the companion's reader and
 `result_pols`: the seven decodes, `sex`, which returns a text, among them, and the five
 cells that compare a decoded column with its text; the readers of the four tables and of
 the companion; the tuples and the five cells that read them; the claims total and the
