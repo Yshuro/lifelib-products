@@ -3780,8 +3780,8 @@ def test_each_history_column_is_read_from_the_model_point(s_model, tmp_path, col
                 setattr(sec.Projection, ref, value)
             declared = [_rule_from(_point(sec, row), rate)
                         for row, rate in ((label, mine), (twin.index[0], theirs))]
-            assert _declared(*declared[0]), declared
-            assert _declared(*declared[1]), declared
+            assert _rule_agrees(*declared[0]), declared
+            assert _rule_agrees(*declared[1]), declared
             assert declared[0][0] != declared[1][0], declared
             sec.close()
             sec = None
@@ -3843,7 +3843,7 @@ def _rule_from(p, prev):
     return p.bonus_rate(d), max(0.0, prev + step)
 
 
-def _declared(got, want):
+def _rule_agrees(got, want):
     """Whether a declared rate is the rule's computed here: to 1e-12 relative, the sum of
     premiums and the power taken here in their own order."""
     return got == pytest.approx(want, rel=1e-12, abs=0.0)
@@ -3890,8 +3890,8 @@ def test_each_declaration_in_the_frame_is_made_at_today_s_references():
             assert p.declaration_month(0) == d0 and p.is_declaration_month(d0), case
             init = p.bonus_rate_init()
             got, want = _rule_from(p, init)
-            assert _declared(got, want) and got != init, (case, got, want, init)
-            assert _declared(p.bonus_supportable(d0), _supportable(p, d0)), case
+            assert _rule_agrees(got, want) and got != init, (case, got, want, init)
+            assert _rule_agrees(p.bonus_supportable(d0), _supportable(p, d0)), case
             assert [p.bonus_rate(t) for t in range(d0 + 1)] == [got] * (d0 + 1), case
             raw = p.bonus_speed * (_supportable(p, d0) - init)
             free += abs(raw) < p.bonus_change_cap and init + raw > 0.0
@@ -3932,8 +3932,8 @@ def test_under_the_rule_a_first_declaration_s_carries_departs_by_d6(spliced):
     try:
         assert sp.bonus_rate(71) == sp.bonus_rate_init() == p.bonus_rate_init() == 0.02
         got, want = _rule_from(p, p.bonus_rate_init())
-        assert _declared(got, want) and got != 0.02, (got, want)
-        assert _declared(p.bonus_supportable(11), _supportable(p, 11))
+        assert _rule_agrees(got, want) and got != 0.02, (got, want)
+        assert _rule_agrees(p.bonus_supportable(11), _supportable(p, 11))
         assert p.unit_price(10) == sp.unit_price(70)
         assert p.unit_price(11) == sp.unit_price(70) * (1.0 + got) != sp.unit_price(71)
     finally:
@@ -7627,7 +7627,7 @@ def test_the_compiled_model_declares_in_the_frame_as_modelx_does(sec_build, tmp_
             p = _row(model, *case)
             got, want = _rule_from(p, p.bonus_rate_init())
             assert p.bonus_rate(d0) == got != p.bonus_rate_init(), case
-            assert _declared(got, want), (case, got, want)
+            assert _rule_agrees(got, want), (case, got, want)
     finally:
         model.close()
     found = _c4_chunks(build, _c4_rows(DECLARING_ROWS), RULE_REFS, tmp_path / "declared")
