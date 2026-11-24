@@ -2541,21 +2541,25 @@ def _by_point_edit(case, column, value, points):
 
 
 # The Data cells every point's projection reads whole, the mortality table's, which BY_POINT
-# compares whole; every other array cell of Data is a vector by point, compared by element.
+# compares whole; every other array cell of Data is by point, compared by element, the
+# flags' codes, [flag, point], at each point's column.
 SCHEDULED = ("mort_sexes", "mort_table_array", "mort_age_first", "mort_age_last")
 
 
 def _own_vectors(column):
-    """The ``Data`` vectors that hold ``column``'s own value at a point."""
+    """The ``Data`` arrays that hold ``column``'s own value at a point."""
     if column in ("annuitant_sex", "dependant_sex"):
         return {"mort_schedule_1" if column == "annuitant_sex" else "mort_schedule_2"}
+    if column == "overlap":
+        return {"overlap", "overlap_ok", "flag_codes"}
     return {column, f"{column}_ok"}
 
 
 def _vector_mismatches(want, got, skip):
     """Where two reads of a table's ``Data`` differ, bit for bit: the mortality table's
-    arrays whole, and every vector by point at every position, but those ``skip`` maps to
-    the vectors it leaves out there, or to None for all of them."""
+    arrays whole, and every array by point at every position, a vector's element or the
+    flags' column there, but those ``skip`` maps to the arrays it leaves out there, or to
+    None for all of them."""
     n = len(want.Data.model_point_table())
     found = []
     for name, cells in want.Data.cells.items():
@@ -2564,14 +2568,14 @@ def _vector_mismatches(want, got, skip):
             if np.asarray(a).tobytes() != np.asarray(got.Data.cells[name]()).tobytes():
                 found.append(f"Data.{name}()")
             continue
-        if not (isinstance(a, np.ndarray) and a.ndim == 1 and len(a) == n):
+        if not (isinstance(a, np.ndarray) and a.ndim in (1, 2) and a.shape[-1] == n):
             continue
         b = got.Data.cells[name]()
         for i in range(n):
             left_out = skip.get(i, ())
             if left_out is not None and name not in left_out and (
-                    a[i].tobytes() != b[i].tobytes()):
-                found.append(f"Data.{name}()[{i}]: {a[i]!r} and {b[i]!r}")
+                    a[..., i].tobytes() != b[..., i].tobytes()):
+                found.append(f"Data.{name}()[..., {i}]: {a[..., i]!r} and {b[..., i]!r}")
     return found
 
 
@@ -2637,8 +2641,9 @@ def test_a_flag_reads_by_its_value_whatever_type_pandas_gives_its_column(tmp_pat
     reads the whole column as text, ``True`` and ``False`` among it, and ``bool("False")``
     is True, which would read every joint contract's overlap as True, the guarantee's
     dependant paid beside the annuitant on point 3, as stage E refused the table to avoid.
-    So the column is asserted text as read, every ``Data`` vector of every point is held to
-    the committed table's, bit for bit, and point 3's overlap read as False.
+    So the column is asserted text as read, every ``Data`` array of every point is held to
+    the committed table's, bit for bit, but the single lives' flag codes, where the overlap
+    reads -1, neither, and point 3's overlap read as False.
     """
     committed = _committed()
     single = [label for label in committed.index
@@ -2648,11 +2653,72 @@ def test_a_flag_reads_by_its_value_whatever_type_pandas_gives_its_column(tmp_pat
     try:
         read = model.Data.model_point_table()
         assert {"True", "False", "n.a."} <= set(read["overlap"]), read["overlap"]
-        assert not _vector_mismatches(base, model, {})
+        at = {label: i for i, label in enumerate(committed.index)}
+        assert not _vector_mismatches(base, model, {at[p]: {"flag_codes"} for p in single})
+        codes = model.Data.flag_codes()
+        assert [int(codes[1, at[p]]) for p in single] == [-1] * len(single)
         assert _point(model, 3).overlap() is False and _point(model, 3).is_joint() is True
     finally:
         base.close()
         model.close()
+
+
+# A flag written as PA_UK_S's bool() reads True but no reader of the table writes it, on a
+# point whose projection reads the flag: with a space before or after, " True" and
+# "True ", which pandas reads as text, and the numbers 1 and 1.0, which it reads as text
+# beside True and False.  Each flag column has one rule, Data.flag_codes, which its check
+# and its decode both read, so each value is refused by the check, naming the point, or
+# read as True by the decode; never passed by the check and read as False, or read as True
+# where the check refuses it.  As (column, the point, its refusal): every point reads
+# dependant_present and proportion, refused as the table is read, written on point 1, a
+# joint contract whose proportion is False; a contract with a dependant reads its overlap,
+# refused by its projection, written on point 3, whose overlap is False.
+FLAG_SPELLINGS = (" True", "True ", 1, 1.0)
+FLAG_READERS = [
+    ("dependant_present", 1, f"{TABLE}: dependant_present must be True or False; it is "
+     f"not at point_id [1]"),
+    ("overlap", 3, OVERLAP.format(label=3)),
+    ("proportion", 1, f"{TABLE}: proportion must be True or False; it is not at point_id "
+     f"[1]"),
+]
+
+
+@pytest.mark.parametrize("column, point, refusal", FLAG_READERS,
+                         ids=[c[0] for c in FLAG_READERS])
+def test_a_flag_spelt_otherwise_is_refused_or_read_as_true_by_its_one_rule(
+        tmp_path, column, point, refusal):
+    """Each of :data:`FLAG_SPELLINGS`, written on a point that reads the flag, is refused
+    there by the check or read as True by the decode, both reading one rule (M12).
+
+    ``PA_UK_S``'s ``bool()`` reads each as True.  ``Data.flag_codes`` is each flag's one
+    rule, which the check, ``Data.model_point_table`` or ``Data.overlap_ok``, and the
+    decode, ``Data.is_joint``, ``Data.overlap`` or ``Data.proportion``, both read, so a
+    value the check passes is never read as False.  So each value is written alone on a
+    model read afresh, the point's projection is asked for its report, and the outcome is
+    the check's refusal of the point (:data:`FLAG_READERS`), or the report and the decode,
+    in ``Data`` and in the projection, reading True; and every value has the same outcome,
+    whichever pandas makes of the column.
+    """
+    outcomes = {}
+    for i, value in enumerate(FLAG_SPELLINGS):
+        model = _read_edited(tmp_path / f"spelling{i}", _set(column, [point], value))
+        try:
+            try:
+                p = _point(model, point)
+                p.result_cf()
+            except Exception as err:            # the outcome compared below
+                outcomes[value] = ("refused", _raised(err))
+                continue
+            decode = {"dependant_present": "is_joint"}.get(column, column)
+            position = list(model.Data.model_point_table().index).index(point)
+            outcomes[value] = ("read", int(model.Data.cells[decode]()[position]),
+                               p.cells[decode]())
+        finally:
+            model.close()
+    for value, outcome in outcomes.items():
+        assert outcome in (("refused", f"ValueError: {refusal}"), ("read", 1, True)), (
+            column, value, outcome)
+    assert len(set(outcomes.values())) == 1, (column, outcomes)
 
 
 def test_the_future_horizon_is_a_reference_that_bounds_future_business(tmp_path):
@@ -5250,7 +5316,8 @@ def test_every_padded_array_holds_nan_and_each_sex_its_own_extents(sec_model, tm
 # Data's readers, each a DataFrame or a path, which only the label accessors, the reports
 # and Data's own cells read.  Every other Data cell is a vector or an int in the Data
 # docstring's table of its vectors.
-READERS = ("input_dir", "model_point_table", "mort_table", "mort_table_rows")
+READERS = ("input_dir", "model_point_table", "model_point_rows", "mort_table",
+           "mort_table_rows")
 
 
 def _vector_kinds():
@@ -7428,6 +7495,12 @@ def _refusal_cases(anniversary=None):
         cases.append((f"by point: {case}", extract(_by_point_edit(case, column, value,
                                                                   [refused])), None,
                       {}, [(at(refused), "result_cf", ())], ()))
+    for column, point, _ in FLAG_READERS:
+        for value in FLAG_SPELLINGS:
+            cases.append((f"{column} written {value!r}",
+                          extract(_set(column, [point], value)), None, {},
+                          [(at(point), "result_cf", ())],
+                          () if column == "overlap" else ("model_point_table",)))
     for case, edit, message in UNREADABLE:
         cases.append((case, extract(), {MORT: edit}, {}, [(at(2), "result_cf", ())],
                       ("mort_age_first",)))
@@ -7490,21 +7563,22 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
 
     A ``ValueError`` raised in a cell typed ``long long`` or ``double`` propagates out of
     the compiled model as out of modelx.  So, each on its own inputs and References
-    (:func:`_refusal_cases`), on an extract labelled otherwise than by position: every
-    case of :data:`MALFORMED`, refused by a projection and by ``Data``'s reader; every case
-    of :data:`BY_POINT`, by the projection of the point that reads the column alone; every
-    case of :data:`UNREADABLE`, by a projection and by the ``Data`` cell that checks the
-    table, so that a compiled ``Data`` cell refuses each value its modelx cell refuses;
-    every text no decode knows; every case of :data:`NOT_ISSUED` and of
-    :data:`OWING_NOTHING`, by ``result_cf`` and ``proj_len``; every case of :data:`DOMAINS`
-    that refuses and that the compiled model can hold, its integer References whole
-    (:func:`_held_compiled`), each printed as the compiled model types it; each power, each
-    income and the payments past the floats, which the compiled powers reach through
-    Python's own power where C's gives an infinity, uslib's M22 form, so that the compiled
-    model raises the cell's refusal as modelx does (:data:`PAST_FLOATS`, :data:`INCOMES`);
-    a label, a start year and a month of death the vectors cannot hold
-    (:data:`NOT_HELD`); and each code of :data:`CODES_IN_CACHE`, inside the caches, which
-    the cell's own formula refuses.
+    (:func:`_refusal_cases`), on an extract labelled otherwise than by position: every case
+    of :data:`MALFORMED`, refused by a projection and by ``Data``'s reader; every case of
+    :data:`BY_POINT`, by the projection of the point that reads the column alone; each flag
+    spelt as only ``PA_UK_S``'s ``bool()`` reads it (:data:`FLAG_SPELLINGS`), by the check,
+    as the table is read or by the point; every case of :data:`UNREADABLE`, by a projection
+    and by the ``Data`` cell that checks the table, so that a compiled ``Data`` cell
+    refuses each value its modelx cell refuses; every text no decode knows; every case of
+    :data:`NOT_ISSUED` and of :data:`OWING_NOTHING`, by ``result_cf`` and ``proj_len``;
+    every case of :data:`DOMAINS` that refuses and that the compiled model can hold, its
+    integer References whole (:func:`_held_compiled`), each printed as the compiled model
+    types it; each power, each income and the payments past the floats, which the compiled
+    powers reach through Python's own power where C's gives an infinity, uslib's M22 form,
+    so that the compiled model raises the cell's refusal as modelx does
+    (:data:`PAST_FLOATS`, :data:`INCOMES`); a label, a start year and a month of death the
+    vectors cannot hold (:data:`NOT_HELD`); and each code of :data:`CODES_IN_CACHE`, inside
+    the caches, which the cell's own formula refuses.
 
     And the refusals that are the compiled model's alone (:data:`COMPILED_ONLY`): a month
     past the ``t`` cache either side, a timing, a kind and a life past their codes, and a

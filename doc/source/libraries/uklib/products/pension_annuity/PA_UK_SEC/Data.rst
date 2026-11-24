@@ -10,6 +10,8 @@ Cells Descriptions
 
 .. autofunction:: model_point_table
 
+.. autofunction:: model_point_rows
+
 .. autofunction:: mort_table
 
 .. autofunction:: mort_table_rows
@@ -35,6 +37,8 @@ Cells Descriptions
 .. autofunction:: annuitant_age
 
 .. autofunction:: dependant_age
+
+.. autofunction:: flag_codes
 
 .. autofunction:: is_joint
 

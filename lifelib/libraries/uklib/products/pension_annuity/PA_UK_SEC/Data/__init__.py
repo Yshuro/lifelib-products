@@ -104,23 +104,26 @@ imported, before anything is read.
 
 **The vectors.** The readers return what the files hold, and no
 :mod:`~.PA_UK_SEC.Projection` cell but ``model_point``, a reporting cell, reads them. The
-others read the arrays below instead, one element at a time, a model point's attribute being
-the element at its position, ``data.annual_income()[idx]``. That is what lets the model
-compile to C, as ``basiclife.BasicTerm_SC`` does: each array is a numpy vector or table of
-int64 or float64, which compiles to a typed memoryview, never one of bools, objects or text,
-and each check of a table is an int. Each model point column a projection reads is one
-vector of the column's own name, read element by element, each value by its own value
-whatever type pandas gives the column (USLIB-SEC-PLAN.md R6): ``float()`` of an amount or a
-rate, ``int()`` of the ``float()`` of an age, a month count or a year, so that ``2026.0``
-written as text is 2026, and a flag True where ``str()`` of its value, lowered, is ``true``.
-A column that holds one value pandas cannot read as a number or a flag, which a point that
-never reads the column may hold, is read as text throughout, and there ``bool("False")`` is
-True and ``int("2026.0")`` refuses, so no element is read through either. Where a point's
-value can be one its projection cannot use, a 0/1 vector beside it, ``<column>_ok``, says
-whether it is usable. The text the projection branches on is decoded into 0/1 flags, each
-with a ``has_*`` flag that says the value is one :mod:`~.PA_UK_S` names. The mortality
-table, keyed by sex and age, is tabled by schedule, one per sex, and age, padded from age 0,
-each point carrying the schedule of each life's sex:
+others read the arrays below instead, one element at a time, a model point's attribute
+being the element at its position, ``data.annual_income()[idx]``. That is what lets the
+model compile to C, as ``basiclife.BasicTerm_SC`` does: each array is a numpy vector or
+table of int64 or float64, which compiles to a typed memoryview, never one of bools,
+objects or text, and each check of a table is an int. Each model point column a projection
+reads is one vector of the column's own name, read element by element, each value by its
+own value whatever type pandas gives the column (USLIB-SEC-PLAN.md R6): ``float()`` of an
+amount or a rate, ``int()`` of the ``float()`` of an age, a month count or a year, so that
+``2026.0`` written as text is 2026, and a flag by its one rule, :func:`flag_codes`, which
+its check and its decode both read: True where ``str()`` of its value, lowered, is
+``true``, False where it is ``false``, and neither elsewhere, which the check refuses, a
+space before or after and the numbers 1 and 1.0 among it. A column that holds one value
+pandas cannot read as a number or a flag, which a point that never reads the column may
+hold, is read as text throughout, and there ``bool("False")`` is True and ``int("2026.0")``
+refuses, so no element is read through either. Where a point's value can be one its
+projection cannot use, a 0/1 vector beside it, ``<column>_ok``, says whether it is usable.
+The text the projection branches on is decoded into 0/1 flags, each with a ``has_*`` flag
+that says the value is one :mod:`~.PA_UK_S` names. The mortality table, keyed by sex and
+age, is tabled by schedule, one per sex, and age, padded from age 0, each point carrying
+the schedule of each life's sex:
 
 ==================================  =======  ================  ===========================
 Cells                               dtype    Shape             From
@@ -131,6 +134,10 @@ duration_mth()                      int64    [point]           ``duration_mth``
 annuitant_age()                     int64    [point]           ``annuitant_age``
 dependant_age()                     int64    [point]           ``dependant_age``, 0 where
                                                                blank
+flag_codes()                        int64    [flag, point]     ``dependant_present``,
+                                                               ``overlap`` and
+                                                               ``proportion``: 1 True, 0
+                                                               False, -1 neither
 is_joint()                          int64    [point]           ``dependant_present``, 1 on
                                                                True
 overlap(), overlap_ok()             int64    [point]           ``overlap``, 1 on True
@@ -269,11 +276,11 @@ def input_dir():
 def model_point_table():
     """The model point table, read from *model_point_table_sec.csv* and checked.
 
-    Indexed by ``point_id``.  Eight columns are the in-force interface: ``policy_count``,
-    the contracts the point stands for, and ``duration_mth``, the months elapsed from the
-    annuity start date at the valuation date, as in ``basiclife.BasicTerm_SE``; then the
-    opening state, per contract, as it stands at the start of month 0, before any month-0
-    event:
+    The file as read, :func:`model_point_rows`, indexed by ``point_id``.  Eight columns are
+    the in-force interface: ``policy_count``, the contracts the point stands for, and
+    ``duration_mth``, the months elapsed from the annuity start date at the valuation date,
+    as in ``basiclife.BasicTerm_SE``; then the opening state, per contract, as it stands at
+    the start of month 0, before any month-0 event:
 
     * ``lives_if_init_1`` and ``lives_if_init_2``: each covered life's probability of
       being alive at the valuation date, 1 or 0 on a real record, where a joint contract
@@ -306,9 +313,10 @@ def model_point_table():
        more than that many months after the valuation date, so ``duration_mth`` is
        ``-future_horizon_mth`` or more.  At 0 the model takes no future new business, and
        the message says so;
-    6. ``dependant_present`` and ``proportion`` are True or False.  pandas reads a column of
-       them as booleans, but one blank or one other text leaves the whole column text or
-       mixed, and :mod:`~.PA_UK_S`'s ``bool`` reads a blank, NaN, as True;
+    6. ``dependant_present`` and ``proportion`` are True or False, by their codes in
+       :func:`flag_codes`, the rule each column's decode reads too.  pandas reads a column
+       of them as booleans, but one blank or one other text leaves the whole column text
+       or mixed, and :mod:`~.PA_UK_S`'s ``bool`` reads a blank, NaN, as True;
     7. ``annuitant_age`` is a whole number below ``2**53``, which :mod:`~.PA_UK_S` truncates
        with ``int``;
     8. the contract's: ``annual_income`` an amount, a finite number, 0 or more;
@@ -363,7 +371,7 @@ def model_point_table():
     ``death_mth_1``, would be rewritten by the export.
     """
     name = model_point_file                                          # noqa: F821
-    table = pd.read_csv(input_dir() / name, index_col="point_id")    # noqa: F821
+    table = model_point_rows()
     state = ("lives_if_init_1", "lives_if_init_2", "cum_annuity_all_init",
              "annual_income_init", "rpi_peak_init", "cum_annuity_pp_init")
     for column in ("policy_count", "duration_mth", *state):
@@ -398,13 +406,20 @@ def model_point_table():
         raise ValueError(f"{name}: duration_mth must be -{int(horizon)} or more, an "
                          f"annuity starting at most {int(horizon)} months after the "
                          f"valuation date; it is not at point_id {bad}")
-    for column in ("dependant_present", "proportion"):
-        flag = table[column]
-        bad = table.index[~flag.map(lambda v: str(v).lower() in ("true", "false"))].tolist()
+    n = len(table)
+    for row, column in ((0, "dependant_present"), (2, "proportion")):
+        at = []
+        for i in range(n):
+            if flag_codes()[row, i] < 0:
+                at.append(i)
+        bad = table.index[at].tolist()
         if bad:
             raise ValueError(f"{name}: {column} must be True or False; it is not at "
                              f"point_id {bad}")
-    joint = table["dependant_present"].map(lambda v: str(v).lower() == "true")
+    present = []
+    for i in range(n):
+        present.append(flag_codes()[0, i] == 1)
+    joint = pd.Series(present, index=table.index, dtype=bool)        # noqa: F821
     rules = {"whole": ("a whole number below 2**53",
                        lambda v: (v % 1 == 0) & (v.abs() < 2.0 ** 53)),
              "months": ("a whole number of months, 0 or more, below 2**53",
@@ -516,6 +531,18 @@ def model_point_table():
                              f"blank or duration_mth or later, and 0 once it has died; "
                              f"it is not at point_id {bad}")
     return table.assign(**{"death_mth_1": deaths[1], "death_mth_2": deaths[2]})
+
+
+def model_point_rows():
+    """*model_point_table_sec.csv* as the file holds it, unchecked, indexed by ``point_id``.
+
+    The one read of the file.  :func:`model_point_table` checks it and returns it, and
+    :func:`flag_codes` reads the three flags from it, the one rule that the check of each
+    flag column and the column's decode both read: read from the table the check returns,
+    the rule could not serve the check.
+    """
+    return pd.read_csv(input_dir() / model_point_file,               # noqa: F821
+                       index_col="point_id")
 
 
 def mort_table():
@@ -753,64 +780,89 @@ def dependant_age():
     with a dependant, which :func:`model_point_table` has held to a whole number below
     ``2**53``, and 0 on a single-life contract, which ``Projection.age_at_entry`` never
     reads there."""
-    table = model_point_table()
-    values = table["dependant_age"].tolist()
-    joint = table["dependant_present"].tolist()
+    values = model_point_table()["dependant_age"].tolist()
     out = np.zeros(len(values), dtype="int64")                       # noqa: F821
     for i in range(len(values)):
-        if str(joint[i]).lower() == "true":
+        if is_joint()[i] == 1:
             out[i] = int(float(values[i]))
     return out
 
 
+def flag_codes():
+    """The three flag columns' values by point, int64 by flag and point: 1 where the value
+    is True, 0 where it is False, -1 where it is neither.
+
+    Row 0 is ``dependant_present``, row 1 ``overlap`` and row 2 ``proportion``.  Each value
+    is read by its own value, whatever type pandas gives its column (USLIB-SEC-PLAN.md R6):
+    ``str()`` of it, lowered, is ``true`` or ``false``, so the text ``False`` is False,
+    where ``bool()`` reads it as True, and so is ``fALSE``, which pandas itself reads as a
+    flag.  Anything else is -1: a blank, other text, ``True`` with a space before or after
+    it, and a number, 1 or 1.0, each of which :mod:`~.PA_UK_S`'s ``bool()`` reads as True.
+    This is each flag's one rule.  The check reads it, :func:`model_point_table` refusing
+    the code -1 in ``dependant_present`` or ``proportion`` and :func:`overlap_ok` in a
+    contract with a dependant's ``overlap``, and so does each decode, :func:`is_joint`,
+    :func:`overlap` and :func:`proportion`, reading 1 as True and nothing else.  So no
+    value passes the check that a decode reads as False, and none is read as True that the
+    check refuses.  Read from the file as read, :func:`model_point_rows`, since
+    :func:`model_point_table`'s own check is among its readers.
+    """
+    table = model_point_rows()
+    out = np.zeros((3, len(table)), dtype="int64")                   # noqa: F821
+    for row, column in enumerate(("dependant_present", "overlap", "proportion")):
+        values = table[column].tolist()
+        for i in range(len(values)):
+            text = str(values[i]).lower()
+            if text == "true":
+                out[row, i] = 1
+            elif not text == "false":
+                out[row, i] = -1
+    return out
+
+
 def is_joint():
-    """The ``dependant_present`` column, int64 by point: 1 where the value is True, read by
-    its value, ``str()`` of it lowered being ``true``, on values :func:`model_point_table`
-    has held to True or False, as :mod:`~.PA_UK_S`'s ``bool()`` reads a True or a False.
-    ``bool()`` itself would read the text ``False`` as True, and pandas leaves a column as
-    text where one value is neither, ``tRUE`` among them, which the check reads as True."""
-    values = model_point_table()["dependant_present"].tolist()
-    out = np.zeros(len(values), dtype="int64")                       # noqa: F821
-    for i in range(len(values)):
-        out[i] = 1 if str(values[i]).lower() == "true" else 0
+    """The ``dependant_present`` column, int64 by point: 1 where the value is True, its
+    code in :func:`flag_codes` 1, on values :func:`model_point_table` has held to True or
+    False by the same codes, as :mod:`~.PA_UK_S`'s ``bool()`` reads a True or a False."""
+    n = len(model_point_table())
+    out = np.zeros(n, dtype="int64")                                 # noqa: F821
+    for i in range(n):
+        out[i] = 1 if flag_codes()[0, i] == 1 else 0
     return out
 
 
 def overlap():
-    """The ``overlap`` column, int64 by point: 1 where the value is True, read by its
-    value as :func:`is_joint` reads its column.  A single-life contract may hold any text
-    there, which it never reads, and then pandas reads the whole column as text, where
-    ``bool()`` would read every joint contract's ``False`` as True."""
-    values = model_point_table()["overlap"].tolist()
-    out = np.zeros(len(values), dtype="int64")                       # noqa: F821
-    for i in range(len(values)):
-        out[i] = 1 if str(values[i]).lower() == "true" else 0
+    """The ``overlap`` column, int64 by point: 1 where the value is True, its code in
+    :func:`flag_codes` 1.  A single-life contract may hold any text there, which it never
+    reads, and then pandas reads the whole column as text, where ``bool()`` would read
+    every joint contract's ``False`` as True."""
+    n = len(model_point_table())
+    out = np.zeros(n, dtype="int64")                                 # noqa: F821
+    for i in range(n):
+        out[i] = 1 if flag_codes()[1, i] == 1 else 0
     return out
 
 
 def overlap_ok():
     """1 where the point's projection may read its ``overlap``: 0 on a contract with a
-    dependant, the one reader, where the value is not True or False, which
-    :mod:`~.PA_UK_S`'s ``bool`` would read as True were it blank."""
-    table = model_point_table()
-    values = table["overlap"].tolist()
-    joint = table["dependant_present"].tolist()
-    out = np.zeros(len(values), dtype="int64")                       # noqa: F821
-    for i in range(len(values)):
-        if (str(values[i]).lower() in ("true", "false")
-                or not str(joint[i]).lower() == "true"):
+    dependant, the one reader, where the value is not True or False, its code in
+    :func:`flag_codes` -1, which :mod:`~.PA_UK_S`'s ``bool`` would read as True were it
+    blank."""
+    n = len(model_point_table())
+    out = np.zeros(n, dtype="int64")                                 # noqa: F821
+    for i in range(n):
+        if flag_codes()[1, i] >= 0 or not is_joint()[i] == 1:
             out[i] = 1
     return out
 
 
 def proportion():
-    """The ``proportion`` column, int64 by point: 1 where the value is True, read by its
-    value as :func:`is_joint` reads its column, on values :func:`model_point_table` has
-    held to True or False."""
-    values = model_point_table()["proportion"].tolist()
-    out = np.zeros(len(values), dtype="int64")                       # noqa: F821
-    for i in range(len(values)):
-        out[i] = 1 if str(values[i]).lower() == "true" else 0
+    """The ``proportion`` column, int64 by point: 1 where the value is True, its code in
+    :func:`flag_codes` 1, on values :func:`model_point_table` has held to True or False by
+    the same codes."""
+    n = len(model_point_table())
+    out = np.zeros(n, dtype="int64")                                 # noqa: F821
+    for i in range(n):
+        out[i] = 1 if flag_codes()[2, i] == 1 else 0
     return out
 
 
@@ -904,14 +956,13 @@ def dependant_rating_ok():
     table = model_point_table()
     values = table["dependant_rating"].tolist()
     basis = table["mort_basis"].tolist()
-    joint = table["dependant_present"].tolist()
     out = np.zeros(len(values), dtype="int64")                       # noqa: F821
     for i in range(len(values)):
         try:
             v = float(values[i])
         except (TypeError, ValueError):
             continue
-        if (not (basis[i] == "table" and str(joint[i]).lower() == "true")
+        if (not (basis[i] == "table" and is_joint()[i] == 1)
                 or (v >= 1.0 and v < float("inf"))):
             out[i] = 1
     return out
