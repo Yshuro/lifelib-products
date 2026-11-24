@@ -16,8 +16,9 @@ column holding the state before it (D6). Term and critical illness were reworked
 also by run 54 (§6.1, *Record — the anniversary at the valuation date*), so every SEC model
 built so far follows it. Whole of life's compile step, M6, and income protection's in-force
 step, M7, are done too, 2026-11-24, by run 55 (§6.4, *Record — M6*, and §6.3, *Record —
-M7*). The pension annuity's compile step, M12, and with-profits' in-force step, M13, are
-under way (§7). Like USLIB-SEC-PLAN.md, this document is both the
+M7*), and so is with-profits' in-force step, M13, by run 56 (§6.5, *Record — M13*). The
+compile steps of the pension annuity, income protection and with-profits, M12, M8 and M14,
+are under way (§7). Like USLIB-SEC-PLAN.md, this document is both the
 specification and the record: each milestone records what it actually did, including where
 the implementation departed from the plan.
 
@@ -2156,7 +2157,8 @@ step, M13 (§7).
 
 In CI, the Tests workflow's run 55 on `3d84a6f`, which carries M6 too, ran 100 jobs. When
 this record was written 99 had passed. The hundredth, uslib's `sec` full-grid leg for the
-indexed UL, was still running. Every macOS leg was given a runner this time. M7's legs
+indexed UL, was still running; it passed, and the run concluded in success. Every macOS
+leg was given a runner this time. M7's legs
 passed at the first attempt:
 - `sec_uk`'s three IP legs: the full grid on Ubuntu in 7.3 min, and the core on Windows in
   5.5 and on macOS in 5.0;
@@ -2664,7 +2666,7 @@ in each stream (§7). It landed with M7.
     files, as M7's record gives.
 
 In CI, the Tests workflow's run 55 on `3d84a6f` ran 100 jobs, the `cython_uk` job's five
-shards among them (§6.3, *Record — M7*). M6's legs passed at the first attempt:
+shards among them (§6.3, *Record — M7*). Every one passed. M6's legs passed at the first attempt:
 - the `cython_uk` `whole_of_life` legs, the first to compile `WOL_UK_SEC`, 20 tests each:
   - 409 s on Ubuntu, on the full grid;
   - 228 s on Windows;
@@ -2831,6 +2833,278 @@ rule on.
 message and the notes' `chassis` enum carry it, and `test_with_profits_uk.py` writes it into
 a temporary model point table in the product directory. §9 item 9 asks whether a commit
 of its own renames it in M0, as uslib renamed RILA's and VA's keys at their landings.
+
+#### Record — M13, done 2026-11-24
+
+**Commits.** M13 was built in three commits, as U1 and §7 ask:
+- `WP_UK_S` copied with only `_name` changed (`1833108`);
+- the enhancement (`23f8521`);
+- the Phase 1 fingerprint frozen alone (`94afd8d`).
+
+Two S commits came before them:
+- S's tests write the tables they swap in beside a copy in `tmp_path` (`6a570dc`);
+- S's shipped table gains point 7, a bond issued at the valuation date (`f1c165b`, *Departures* below).
+
+Five more followed from the review and its verification:
+- S's `model.md` describes point 7 in S's own terms (`a102888`);
+- the review's rework (`742981b`);
+- a refreeze of rows 22 and 23 alone (`1d878f8`);
+- the default run's figures (`dda498b`);
+- the verification's items (`2439509`).
+
+At landing one commit more corrected two lines of `model-sec.md` that still gave rows 22 and
+23 the year's rates (`d4b7e0f`). It ran beside the compile steps of WOL and PA, M6 and M12, and IP's in-force step,
+M7 (§7).
+
+**The build.** One agent built it, injecting 19 faults, all caught.
+
+**The review.** A second agent reviewed it against this note, the plan and
+USLIB-SEC-PLAN.md, injecting 36 faults of its own.
+- *Scope.* It found the numbers sound:
+  - its own extraction of the opening state equals the harness's on 123 rows;
+  - 136 rows continue S under a set of ten References no test used;
+  - the chains reproduce S bit for bit;
+  - S restarts both cumulants at 0 in its own code, so the twins' zeros are S's semantics.
+- *Its first finding was the instant of the bonus rate.*
+  - With the bonus rule on, S declares a year's rate at the year's end, from the asset
+    share then. So `bonus_rate_init`, S's `bonus_rate(d)`, held a declaration made on or
+    after the valuation date.
+  - Today's rule References never reached it, even at `t = 0`. On point 1 under the
+    rule, with today's `guar_fill_target` at 0.6, SEC declared 6.08% for year 13, where
+    the rule from the rate declared before it gives 4.60%. The unit price stayed about
+    1.4% high for good.
+- *Its other findings:*
+  - the core held no row under the rule whose month 0 is an event, and the core-reach
+    test could not tell;
+  - the default run took 316 s and nothing recorded it;
+  - `bonus_horizon` was refused when its growth factor overflowed, but accepted when it
+    underflowed. At 4,500 the model declared 0.5% where 4,000 gives 0;
+  - the endowment's chain was depth-checked on the full grid alone;
+  - the frame's bound on the bonus rate was tried at no edge;
+  - two branches documented as reached by no frame were reachable: the withdrawal cap
+    and the surrender bound;
+  - five static-check exemptions exempted nothing.
+- *Plausible risks:*
+  - the rule's lower clamp and the MVR's contractual bound, reached by no row;
+  - a payout of 0 beside a positive asset share, accepted.
+- *Its verdict on `f1c165b`* was to keep it.
+- *Faults.* 31 of its 36 faults were caught. Of the five not caught:
+  - two were caught only by the full grid;
+  - two by nothing;
+  - one was benign.
+
+**The decision on the bonus rate.** I settled the first finding by the owner's D6 (*D6
+applied to the declaration* below).
+
+**The rework.** The builder fixed every finding, with 7 faults more caught.
+
+**The verification.** The reviewer verified the rework with 20 faults of its own, all
+caught. It independently confirmed the declaration:
+- the opening column equals S's last declaration on 42 rows of every kind;
+- 160 in-frame declarations under other rule References match its own computation to
+  1.1e-16;
+- the departure falls exactly at the first in-frame declaration, and no wider.
+
+`2439509` closes the three items it found:
+- the payout rule, held to the cent;
+- that rule, missing from the page;
+- a peak of 4.6 GiB. Each splice set built S for all 16 points. It now builds S only
+  for the points it compares, and the peak falls to 3.4 GB.
+
+I re-injected the payout rule's fault at landing, and the edges test caught it.
+
+**What exists now.**
+- *`WP_UK_SEC` at stage E.*
+  - `Projection` keeps 96 of `WP_UK_S`'s 99 cells. `proj_start`, `duration_inforce`
+    and `attaching_bonus` give way to the clock and the opening state.
+  - It adds 16 cells:
+    - `policy_count`, `duration_mth_init`, `t_entry`, `is_active`, `cover_end_mth`,
+      `pols_new_biz` and `result_pols`;
+    - three accessors of the opening state;
+    - six refusal cells, one for each chain's value past the floats, off the chain.
+  - The count, the asset share, the smoothed payout and the endowment's guarantee are
+    written one cell a month back to `t_entry()`. The units, the price and both
+    cumulants already were.
+- *The opening state* (D6). There are eight columns, each measured at month 0's
+  `BEF_NB` instant, S's close of month `d − 1`:
+  - `asset_share_init`, S's `asset_share_at(d, BEF_PREM)`;
+  - `units_init` and `unit_price_init`, S's `units(d − 1)` and `unit_price(d − 1)`;
+  - `attaching_bonus_init`, the endowment's guarantee less its sum assured;
+  - `smoothed_payout_init`;
+  - `bonus_rate_init`, the rate declared at the last declaration before the valuation
+    month;
+  - `guar_charge_cum_pp_init` and `smoothing_account_init`, the two cumulants S restarts
+    at 0 where its frame opens, the second per policy.
+
+  Each has a K14 test on a reachable state that departs from today's References.
+- *`Data`* refuses S's defects. Two rules tie amounts of money, each to the cent:
+  - rule 13, the attaching bonus;
+  - a payout of 0 beside an asset share above a cent.
+- *`proj_len()`* refuses:
+  - an issue age below 18;
+  - a bond issued at or past `omega_age`, or an endowment maturing past it;
+  - a point at or past the end of cover;
+  - a bond spent in its first month, which S projects to the limiting age;
+  - every Reference off its domain, NaN and ±inf included;
+  - the two charges' summed monthly rates;
+  - a `bonus_horizon` whose growth factor underflows.
+- *The exhaustion search* is one loop from `t_entry()`. Its "never" is
+  `cover_end_mth() + 1`, since S's 0 is a real month on the valuation clock.
+- *The committed rows*, 24 points:
+  - S's 7 as twins;
+  - 11 derived rows, reaching:
+    - a declaration at the end of month 0;
+    - the MVR turning on;
+    - the corridor's ceiling;
+    - the guarantee date;
+    - the asset share floored;
+    - the charge cap;
+    - exhaustion;
+    - maturity;
+    - the limiting age;
+  - one future row, a bond issued 13 months on;
+  - five read from S under References of their own (`derived_refs`):
+    - two under a guarantee charge of 0.2%;
+    - two under the bonus rule;
+    - one under a smoothing cap of 5%.
+- *Beside the model:*
+  - `run_sec.py`;
+  - `model-sec.md`;
+  - the generated pages;
+  - uklib's `index.md` row;
+  - the `sec_uk` job's `with_profits` legs.
+- *Tests.*
+  - By default 449 pass and 141 skip, in 321 s at a peak of 3.4 GB.
+  - On the full grid 590 pass, in 1,029 s at 3.6 GB.
+
+**Departures and precisions.**
+- *D6 applied to the declaration.*
+  - With the bonus rule on, every declaration in the frame is made by the rule at
+    today's References, from SEC's own asset share and guarantee. That includes one at
+    the end of month 0.
+  - The first declaration starts from `bonus_rate_init`. Every month of a policy year
+    reads its year's declaration, as in S.
+  - The review saw the alternative: carry S's rate for the year under way and record a
+    departure from D6. I chose D6, as for Term's and CI's anniversaries, and told the
+    owner, who may reverse it.
+  - It departs from S in one place. S's first frame year carries the point's column
+    without the rule. So under the rule, S's in-force points, its new business and rows
+    valued in S's first frame year depart from S at their first in-frame declaration:
+    - T2 compares them up to the month before it;
+    - a test of its own shows the departure, on point 1 at policy month 71.
+
+    Under the shipped References the rule is off, and nothing moves. Only rows 22 and 23,
+    read under the rule, changed their column, and `1d878f8` refroze those two alone.
+- *A final year cut short by forced encashment* reads the rate declared before it. S reads
+  a declaration past its own frame. Only `bonus_rate` and that year's `result_payout`
+  column move.
+- *S's shipped table gains a point* (`f1c165b`), outside §9's list. Point 7 is the down
+  scenario's bond issued at the valuation date.
+  - The conventions' T1 on a bond pairs each new-business twin with its row in S's
+    table. The committed future bond row and C2's freeze of a bond's issue month need it
+    too, short of a shared harness change to admit in-memory S rows.
+  - Points 1 to 6 are bit-identical, 212,076 values compared, and S's 68 tests pass.
+- *Values past the floats are refused where they first arise*:
+  - every flow;
+  - each multiplied amount;
+  - each chain, in the six refusal cells.
+
+  The three powers are refused by name, in M11's form.
+- *Smaller changes:*
+  - `bonus_horizon` is read as an int;
+  - `mort_charge_pp` is 0 outside cover;
+  - the roll-forward's tolerance scales with the count;
+  - expense inflation runs on `t // 12`.
+- *`smoothing_cost_pp`* is compared at the residuals' floor of 1e-9. Without it one row
+  fails by 2.9e-11, from a CSV value an ulp off.
+- *The binding mortality cap* is held by the cap test at a factor of 2, from age 106, not
+  by a splice set.
+- *Branches once documented as unreachable.* The withdrawal cap binds in each withdrawing
+  bond's issue month. The surrender bound binds under a deterrent of 25, a third
+  References set. The core reaches both.
+- *Some cases run on the full grid alone:*
+  - the every-state test's main and rule sets;
+  - the depth test's withdrawing shape and its row issued 120 months on;
+  - the month-on test's non-core rows.
+
+  The core-reach test keys its at-valuation labels by References set.
+- *C2 freezes `result_cf` and `result_pols`*, so `result_payout` is held by T2 and not
+  fingerprinted.
+- *The static check flags every cell that calls a cell returning a tuple*, and checks that
+  each exemption is needed.
+
+**Measured for K6.**
+- Cold, at the longest cover, 1,224 months from issue at 18, with the bonus rule and the
+  estate's distribution on, each head runs this many cells beyond its chain:
+
+  | Head | Bond | Endowment | Withdrawing bond |
+  |---|---|---|---|
+  | `net_cf` | 16 | 14 | 9 |
+  | the count | 12 | 6 | 5 |
+  | the asset share | 6 | | |
+  | the payout | 7 | | |
+  | the guarantee | 11 | 10 | |
+  | the units, the price and the charges | 10 | | |
+  | the smoothing account | 12 | | 8 |
+
+  - `bonus_rate` runs one cell a year, plus 30.
+  - The tests allow 16 and 40.
+  - S's `asset_share(779)` runs 5,042 cells deep.
+- At landing, `2439509` ran its gate here in two jobs:
+  - the full grid: 590 passed, in 1,077 s;
+  - the conventions, harness and S suites of all seven products: 1,072 passed and 19
+    skipped, in 655 s;
+  - the generators' and fingerprints' checks for all seven uklib SEC models;
+  - the harness check;
+  - doccheck at 0 warnings, again on `d4b7e0f`;
+  - the scaffolding at 0 files.
+
+  A case-insensitive search of `model_point_table_sec.csv` and of S's changed
+  `model_point_table.csv` finds none of the publishers, products and document codes
+  that `with_profits/sources.md` cites.
+
+In CI, the Tests workflow's run 56 on `d4b7e0f` ran 105 jobs. 104 had passed when this
+record was written, and the last, uslib's compile leg for the variable annuity on Windows,
+was still running. Every macOS leg was given a runner. M13's legs passed at the first
+attempt:
+- `sec_uk`'s three WP legs: the full grid on Ubuntu in 14.2 min, and the core on Windows in
+  5.6 and on macOS in 8.3;
+- the `test` job on Python 3.14 and Ubuntu, 7,206 passed and 120 skipped in 37 min 50 s,
+  its harness step agreeing, 146 statements compared.
+
+**Faults.** Each was injected into a copy of its own.
+- **The builder:** 19, then 7 on the rework and 2 on the verification's items, all
+  caught.
+- **The review:** 36, of which five were not caught:
+  - the month-0 declaration carried, caught by the full grid alone;
+  - the endowment's guarantee at two cells a month, caught by the full grid alone;
+  - the frame's bound on the bonus rate at `>`, caught by nothing;
+  - the rule's lower clamp loosened, caught by nothing;
+  - a core row dropped, which was benign.
+
+  Each is caught by default since `742981b`.
+- **The verification:** 20, all caught. Two equivalent mutants and one benign case are
+  set aside.
+
+**Carried into M14.**
+- *§6.5's C list:*
+  - the tables become arrays;
+  - `guarantee_dates` becomes a flag array, with the `guarantee_years` tuple and the
+    generator in `guarantee_imminent` gone;
+  - codes replace the timings, the kinds, and the chassis, sex and tax basis;
+  - a compensated three-kind claims total.
+- *M22's form for the three powers*: drop the `try`, keep the test.
+- *The caches.* The `t` cache runs 0..1,344, because the exhaustion search reads one month
+  past the frame.
+- *The stack.* The cold chain is about 1,239 cells. Measure its stack compiled, and block
+  it by policy year if it needs more than 256 KiB (*Record — M6*, *Record — M12*).
+- *C4 on `result_payout`*, which C2 does not freeze.
+- *The declaration's rule at today's References*, compiled. Each in-frame declaration
+  reads the asset share at its month.
+- *The template, for every later product:*
+  - An annual act of discretion, a declaration as much as an anniversary, is D6's event.
+    The opening column holds the value last declared.
+  - A splice set builds S only for the points it compares.
 
 ### 6.6 Unit-linked bond — `ULB_UK_SEC` (E: S, C: S)
 
