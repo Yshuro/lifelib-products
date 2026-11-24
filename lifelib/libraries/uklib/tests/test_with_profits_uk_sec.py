@@ -873,15 +873,17 @@ def s_model():
 def _spliced_pair(root, refs, set_name):
     """S and SEC on one set of the splice's inputs, ``refs`` set in both: see
     :func:`spliced`."""
-    s_folder = temp_inputs(root / "s", model_path(TWIN), model_points=_s_table_with_variants())
-    s = mx.read_model(s_folder, name=_name(f"s_{set_name}"))
-    for ref, value in refs.items():
-        setattr(s.Projection, ref, value)
     chosen = [case for case in _selected(SPLICES + IN_FORCE_TWINS, CORE_SPLICES)
               if case[3] == set_name]
     derived = [(p, d) for kind, p, d, _ in chosen if kind == "derived"]
     futures = [(p, k) for p, k, refs_name in _selected(FUTURES, CORE_FUTURES)
                if refs_name == set_name]
+    compared = {p for _, p, _, _ in chosen} | {p for p, _ in futures}
+    s_folder = temp_inputs(root / "s", model_path(TWIN),
+                           model_points=_s_table_with_variants().loc[sorted(compared)])
+    s = mx.read_model(s_folder, name=_name(f"s_{set_name}"))
+    for ref, value in refs.items():
+        setattr(s.Projection, ref, value)
     spec = dataclasses.replace(SPEC, derived=tuple(derived), derived_refs={},
                                future=tuple(futures))
     table, companions = build_sec_table(spec, s)
@@ -889,10 +891,8 @@ def _spliced_pair(root, refs, set_name):
     sec = mx.read_model(_sec_inputs(root / "sec", table), name=_name(f"sec_{set_name}"))
     for ref, value in refs.items():
         setattr(sec.Projection, ref, value)
-    compared = {p for _, p, _, _ in chosen} | {p for p, _ in futures}
-    for key, point_id in zip(point_keys(s), s.Data.model_point_table().index):
-        if point_id in compared:
-            _sweep_s(projection(s, key))
+    for key in point_keys(s):
+        _sweep_s(projection(s, key))
     return s, sec
 
 
@@ -900,16 +900,19 @@ def _spliced_pair(root, refs, set_name):
 def spliced(tmp_path_factory):
     """S and SEC on each set of the splice's inputs, ``{set: (s, sec)}``.
 
-    For each set, :data:`SPLICED_REFS` and :data:`RULE_REFS`, S is read from a copy of the
-    product directory whose table has the variants appended, with the set's References set.
+    For each set, :data:`SPLICED_REFS`, :data:`RULE_REFS` and :data:`BOUND_REFS`, S is read
+    from a copy of the product directory whose table holds the points and variants the
+    set's selected cases compare, and no other, with the set's References set: the
+    generator writes a twin of every point S holds, and under the rule each withdrawing
+    bond's exhaustion search runs through the asset share, so a point no case compares
+    would cost a set's build its projection for nothing (the M13 verification).
     SEC runs on the same assumption tables, and on a model point table of its own, built by
     the generator from the registered spec with its rows replaced by the set's cases this
     run selects, the core or the full grid (:func:`_selected`), out of this S model, so each
     row opens with the state of the very run it is compared with.  No input table moves
     with ``d``: WP's one valuation-clock input is the ``inflation_rate`` Reference.  Every S
-    point a selected case compares is then swept (:func:`_sweep_s`), and stays swept; each
-    SEC row is projected by the case that compares it and released once compared
-    (:func:`_settle`).
+    point is then swept (:func:`_sweep_s`), and stays swept; each SEC row is projected by
+    the case that compares it and released once compared (:func:`_settle`).
     """
     root = tmp_path_factory.mktemp("spliced")
     pairs = {name: _spliced_pair(root / name, refs, name) for name, refs in REF_SETS.items()}
@@ -1947,9 +1950,14 @@ MALFORMED = [
      "{file}: guar_charge_cum_pp_init " + _NOT_YET + "[19]"),
     ("a smoothing account at issue", _set("smoothing_account_init", [5], -1.0),
      "{file}: smoothing_account_init " + _NOT_YET + "[5]"),
+    # Rule 13 refuses a payout of 0 beside an asset share above a cent: a cent outside is
+    # refused, and a cent and half a cent are read (the edges test).
     ("a payout of 0 beside an asset share", _set("smoothed_payout_init", [8], 0.0),
-     "{file}: smoothed_payout_init must be above 0 on a policy in force with an asset share, "
-     "which holds the payout above 0; it is not at point_id [8]"),
+     "{file}: smoothed_payout_init must be above 0 on a policy in force with an asset share "
+     "above a cent, which holds the payout above 0; it is not at point_id [8]"),
+    ("a payout of 0 beside two cents", _set("asset_share_init", [12], 0.02),
+     "{file}: smoothed_payout_init must be above 0 on a policy in force with an asset share "
+     "above a cent, which holds the payout above 0; it is not at point_id [12]"),
     ("a bond in force without units", _set("units_init", [14], 0.0),
      "{file}: units_init must be above 0 on a bond in force, whose units are spent only "
      "when it is encashed; it is not at point_id [14]"),
@@ -2606,7 +2614,9 @@ def test_a_whole_limit_written_as_a_float_projects_as_the_int_does(grid):
 # years on, the contract's longest cover; a count of 0; the whole original premium
 # withdrawn a year, the share's edge, which exhausts the units in the 14th month; a return
 # a hair above -1, the return's edge; a bond with no guarantee date; a smoothing account of
-# minus the largest float; a bonus rate of 0; and the smallest price above 0.
+# minus the largest float; a bonus rate of 0; the smallest price above 0; and rule 13's
+# edges, a payout of 0 beside an asset share of a cent and of half a cent, an extract's to
+# the cent of S's £0.006 and £0.0048.
 EDGES = {
     25: (("derived", 5, 11), {"attaching_bonus_init": 0.005}, 289),
     26: (("derived", 1, 71), {"duration_mth": 71.0}, 709),
@@ -2621,6 +2631,8 @@ EDGES = {
     35: (("derived", 1, 71), {"smoothing_account_init": -BIG}, 709),
     36: (("derived", 1, 71), {"bonus_rate_init": 0.0}, 709),
     37: (("twin", 1, 60), {"unit_price_init": ABOVE_0}, 720),
+    38: (("derived", 2, 242), {"asset_share_init": 0.01}, 538),
+    39: (("derived", 2, 242), {"asset_share_init": 0.005}, 538),
 }
 
 

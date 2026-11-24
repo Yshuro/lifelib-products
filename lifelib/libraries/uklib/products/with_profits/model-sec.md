@@ -225,8 +225,12 @@ bonus rate a finite number, zero or more, a declared bonus being floored at 0 by
 contract; and the smoothing account a finite number of either sign. A point not yet in
 force holds no opening state, its seed price and its first year's bonus rate excepted,
 which are issue values; a bond in force holds units, a bond whose units are spent being
-encashed; and an endowment in force 11 months or fewer has no attaching bonus, to the
-cent, its first declaration falling at the end of policy month 11. Each holds of every
+encashed; a point in force with an asset share above a cent has a payout above 0, to the
+cent, since the smoothing cap is skipped only from a payout of 0, which `WP_UK_S` holds only
+beside an asset share of 0, so that an extract carrying £0.006 and its payout of £0.0048
+to the cent, 0.01 beside 0.00, reads; and an endowment in force 11 months or fewer has no
+attaching bonus, to the cent, its first declaration falling at the end of policy month 11.
+Each holds of every
 state `WP_UK_S` reaches, as shipped and under the splice's References, which a test
 asserts. `WP_UK_S` meets most of these only when a projection reaches them, and some
 never: a guarantee date on the endowment would gate an exercise and the imminent window
@@ -514,13 +518,16 @@ every-state test restates each S point by default at every month of its first po
 and the first anniversary, the declaration and the anniversary of every fifth policy year,
 policy months 106 to 120 and the frame's last month, and on the full grid at every month.
 UKLIB-SEC-PLAN.md U6 asks for about five minutes by default (K6). The default run took
-about 316 s at the M13 review, at a peak of 3.4 GiB; after the review's rework, which adds
-the splice's third set and seven core rows, it takes about 406 s here, at a peak of
-4.7 GB, on a machine shared with other builds, and the full grid about 1,180 s, at a peak
-of 4.6 GB. So the default run is over by one to two minutes. Moving the every-state
-test's main and rule sets to the full grid saved about 30 s; moving the splice's rule and
-bound sets there too would save about two minutes more, but leave no core row declaring
-under the rule or holding the surrender rate at its bound, which the review asked for.
+about 316 s at the M13 review, at a peak of 3.4 GiB, and after the review's rework, which
+adds the splice's third set and seven core rows, about 406 s at a peak of 4.7 GB. Each
+splice set now reads S with the points its cases compare alone, where it read all 16, the
+generator writing a twin of each and the rule's exhaustion searches projecting them: the
+default run takes about 321 s here, at a peak of 3.4 GB, and the full grid about 1,030 s,
+at a peak of 3.6 GB, on a machine shared with other builds, each comparing what it did.
+So the default run is about half a minute over. Moving the every-state test's main and
+rule sets to the full grid saved about 30 s; moving the splice's rule and bound sets there
+too would save about a minute more, but leave no core row declaring under the rule or
+holding the surrender rate at its bound, which the review asked for.
 
 **Branches the core reaches.** A test asserts the core reaches each branch, keyed by the
 set of References it runs under where the set matters. A withdrawal is capped at the unit

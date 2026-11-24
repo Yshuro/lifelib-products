@@ -170,15 +170,18 @@ def model_point_table():
         and are exempt;
     12. a bond in force holds units, ``units_init`` above 0: a bond whose units are spent
         is encashed, and has nothing to project;
-    13. a policy in force with an asset share has a payout above 0: the smoothing cap holds
-        a payout above 0 once it is, and the cap is skipped only from a payout of 0, which
-        :mod:`~.WP_UK_S` holds only where the asset share is 0, the corridor's;
+    13. a policy in force with an asset share above a cent has a payout above 0: the
+        smoothing cap holds a payout above 0 once it is, and the cap is skipped only from a
+        payout of 0, which :mod:`~.WP_UK_S` holds only where the asset share is 0, the
+        corridor's.  It compares to the cent, a rule tying two amounts of money: an extract
+        carrying an asset share of £0.006 and its payout of £0.0048 to the cent reads 0.01
+        beside 0.00, which is read;
     14. a conventional endowment in force 11 months or fewer has no attaching bonus, to the
         cent: the first declaration falls at the end of policy month 11, and before it no
         reversionary bonus has been added.
 
-    Rule 14 holds the amount to the cent, within half a cent of 0, so that an extract
-    rounded to the cent reads. Each rule of the history holds of every state
+    Rules 13 and 14 hold the amounts to the cent, rule 14 within half a cent of 0, so that
+    an extract rounded to the cent reads. Each rule of the history holds of every state
     :mod:`~.WP_UK_S` reaches, under any References: the relations it states are the
     contract's.
     """
@@ -328,13 +331,13 @@ def model_point_table():
         raise ValueError(f"{name}: units_init must be above 0 on a bond in force, whose "
                          f"units are spent only when it is encashed; it is not at point_id "
                          f"{bad}")
-    bad = table.index[(months > 0) & (state["asset_share_init"] > 0)
+    cent = 0.005
+    bad = table.index[(months > 0) & (state["asset_share_init"] > 2 * cent)
                       & ~(state["smoothed_payout_init"] > 0)].tolist()
     if bad:
         raise ValueError(f"{name}: smoothed_payout_init must be above 0 on a policy in force "
-                         f"with an asset share, which holds the payout above 0; it is not at "
-                         f"point_id {bad}")
-    cent = 0.005
+                         f"with an asset share above a cent, which holds the payout above 0; "
+                         f"it is not at point_id {bad}")
     bad = table.index[~bond & (months > 0) & (months <= 11)
                       & (state["attaching_bonus_init"] > cent)].tolist()
     if bad:
