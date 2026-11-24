@@ -535,22 +535,23 @@ What running in force adds is the contract's own bounds, which :func:`proj_len` 
 point to: every covered life issued at ``issue_age_min``, 0, or more, the youngest age
 :mod:`~.PA_UK_S` projects; on the table basis a limiting age of at most
 ``omega_age_max``, 116, the shipped table's last age plus one; a guarantee of at most
-``12 x (omega_age - issue_age_min)`` months, the longest frame from the start date; a
-contract still owing a payment at the valuation date, short of the stop rule. ``Data``
-bounds future new business by ``future_horizon_mth``, 120 months. And :func:`proj_len`
-holds every Reference a formula reads through a bound or a power to its domain, NaN and
-the infinities outside each, its docstring naming each domain and its reason. Those
-bounds are the contract the compiled model's caches are sized from (``spec_sec.py``): a
-frame of at most ``12 x (omega_age_max - issue_age_min)`` months, 1,392, from the start
-date, starting at most 120 months after the valuation date, so that every frame the table
-basis projects fits them, at any limiting age the table and the bound admit. The
-scenario basis reads no mortality table, and :func:`proj_len` holds its limiting age to
-no bound, as the in-force step held it to none: there a limiting age above
-``omega_age_max`` projects in modelx, and in the compiled model a frame longer than 1,392
-months from the start date, a life issued younger than ``omega_age - omega_age_max``,
-raises a bare ``IndexError`` at its first policy month past 1,393, where the caches end.
-Raising ``omega_age_max`` or the horizon needs the caches derived again and the model
-rebuilt; :func:`proj_len` refuses an ``issue_age_min`` below 0.
+``12 x (omega_age - issue_age_min)`` months, the longest frame from the start date; on
+either basis a frame of at most ``12 x (omega_age_max - issue_age_min)`` months, 1,392,
+from the start date, the longest the table basis projects; a contract still owing a
+payment at the valuation date, short of the stop rule. ``Data`` bounds future new business
+by ``future_horizon_mth``, 120 months. And :func:`proj_len` holds every Reference a
+formula reads through a bound or a power to its domain, NaN and the infinities outside
+each, its docstring naming each domain and its reason. Those bounds are the contract the
+compiled model's caches are sized from (``spec_sec.py``): a frame of at most 1,392 months
+from the start date, starting at most 120 months after the valuation date. The scenario
+basis reads no mortality table, and :func:`proj_len` holds its limiting age to no bound,
+as the in-force step held it to none, but holds its frame to the table basis's longest:
+a limiting age above ``omega_age_max`` projects, in both engines alike, where every
+covered life was issued at ``omega_age - omega_age_max`` or older under a guarantee of at
+most 1,392 months, and a longer frame, which :mod:`~.PA_UK_S` and the in-force step
+projected, is refused, naming the point, where the caches would not hold it (model-sec.md,
+*Departures from PA_UK_S*). Raising ``omega_age_max`` or the horizon needs the caches
+derived again and the model rebuilt; :func:`proj_len` refuses an ``issue_age_min`` below 0.
 """
 
 from modelx.serialize.jsonvalues import *
@@ -1311,10 +1312,18 @@ def proj_len():
       age plus one, so that every limiting age the shipped table admits projects, and a
       longer table's runs no frame past the caches (UKLIB-SEC-PLAN.md §6.6, *Record --
       M10*).  The scenario basis reads no table, and the in-force step projected it at any
-      limiting age, so the bound is not asked there (the Space docstring);
+      limiting age, so the bound is not asked there, though the frame's below is (the
+      Space docstring);
     * a guarantee longer than ``12 x (omega_age - issue_age_min)`` months, the longest
-      frame from the start date that the youngest life allows, which the compiled
-      model's caches are sized from;
+      frame from the start date that the youngest life allows;
+    * on either basis, a frame longer than ``12 x (omega_age_max - issue_age_min)``
+      months, 1,392, from the start date to the stop rule: the longest the table basis
+      projects, which the compiled model's caches are sized from.  On the table basis the
+      rules above admit no longer frame, so it refuses nothing there.  On the scenario
+      basis, whose ``omega_age`` no bound holds, it refuses a frame the table basis never
+      projects, a life issued younger than ``omega_age - omega_age_max`` or a guarantee
+      past 1,392 months, which :mod:`~.PA_UK_S` and the in-force step projected and the
+      caches would not hold (model-sec.md, *Departures from PA_UK_S*);
     * a point at or past the stop rule, which an in-force extract should not carry;
     * a contract that owes nothing after the valuation date: in payment, its guarantee
       over, and every covered life dead, so that no instalment, no dependant's income and
@@ -1372,10 +1381,10 @@ def proj_len():
     :func:`cum_annuity_all`; the three powers, :func:`inflation_factor`, :func:`rpi_index`
     and :func:`improve_factor`; and the maintenance, in :func:`expenses`.  On the scenario
     basis an ``omega_age`` above ``omega_age_max`` is not refused, as the in-force step
-    refused none, and in the compiled model a frame longer than the caches raises a bare
-    ``IndexError`` where modelx projects (the Space docstring).  ``omega_age_max`` or
-    ``Data.future_horizon_mth`` raised needs the caches derived again and the model rebuilt;
-    ``issue_age_min`` cannot go below 0, the first rule above.
+    refused none, but a frame longer than the table basis's longest is, in both engines
+    alike (the Space docstring).  ``omega_age_max`` or ``Data.future_horizon_mth`` raised
+    needs the caches derived again and the model rebuilt; ``issue_age_min`` cannot go below
+    0, the first rule above.
     """
     if not (issue_age_min > -9007199254740992.0                       # noqa: F821
             and issue_age_min < 9007199254740992.0                    # noqa: F821
@@ -1421,6 +1430,13 @@ def proj_len():
             f"point_id {point_id()}: the guarantee, {guarantee_mths()} months, is longer "
             f"than {int(longest)} months, 12 x (omega_age - issue_age_min), the longest "
             f"frame from the start date")
+    held = 12 * (omega_age_max - issue_age_min)                      # noqa: F821
+    if stop_mth() > held:
+        raise ValueError(
+            f"point_id {point_id()}: the frame, {stop_mth()} months from the start date, "
+            f"is longer than {int(held)} months, 12 x (omega_age_max - issue_age_min), "
+            f"the longest the table basis projects, which the compiled model's caches "
+            f"are sized from")
     d = duration_mth_init()
     n = stop_mth() - d
     if n <= 0:

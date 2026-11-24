@@ -13,24 +13,26 @@
 # runs to the age stop on its youngest life; on the table basis an omega_age above
 # omega_age_max, 116, the shipped mortality table's last age plus one, so that every
 # limiting age the shipped table admits fits these sizes and a longer table's is refused
-# (UKLIB-SEC-PLAN.md 6.6, Record -- M10); and a guarantee above 12 * (omega_age -
-# issue_age_min) months, at most 1,392 on the table basis; the age stop ends the frame
-# when the youngest life reaches omega_age; and Data refuses an annuity starting more than
-# future_horizon_mth, 120 months, after the valuation date.  So no point a report
-# projects on the table basis at these References outruns these sizes.  The scenario
-# basis reads no table, and proj_len holds its omega_age to no bound, as the in-force step
-# held it to none: there a frame longer than 12 * (omega_age_max - issue_age_min) = 1,392
-# months from the start date, a life issued younger than omega_age - omega_age_max, runs
-# past k and y below and raises IndexError, compiled alone.  A larger omega_age_max or
-# future_horizon_mth needs these sizes recomputed here and the model rebuilt; proj_len
-# refuses an issue_age_min below 0.
+# (UKLIB-SEC-PLAN.md 6.6, Record -- M10); a guarantee above 12 * (omega_age -
+# issue_age_min) months; and on either basis a frame longer than 12 * (omega_age_max -
+# issue_age_min) = 1,392 months from the start date, the longest the table basis
+# projects.  The scenario basis reads no table, and proj_len holds its omega_age to no
+# bound, as the in-force step held it to none, so there the frame's rule refuses a life
+# issued younger than omega_age - omega_age_max, or a guarantee past 1,392 months, which
+# the in-force step projected.  The age stop ends the frame when the youngest life reaches
+# omega_age; and Data refuses an annuity starting more than future_horizon_mth, 120
+# months, after the valuation date.  So no point a report projects at these References,
+# on either basis, outruns these sizes.  A larger omega_age_max or future_horizon_mth
+# needs these sizes recomputed here and the model rebuilt; proj_len refuses an
+# issue_age_min below 0.
 #
 # t, months from the valuation date.  The longest frame is a life issued at 0, the
-# youngest, to the age stop, 12 * (116 - 0) = 1,392 months, or a guarantee of as many on
-# the table basis, starting 120 months on: 1,512 months, t = 0 .. 1,511, and 1,512 in the
-# month after, the closing time point, where lives_if reads survival and C4's sweep
-# evaluates every monthly cell: 1,513, and one of headroom, 1,514.  Nothing reads t + 1 at
-# t = proj_len().  In general 12 * (omega_age_max - issue_age_min) + future_horizon_mth + 2.
+# youngest, to the age stop, 12 * (116 - 0) = 1,392 months, or a guarantee of as many, the
+# longest frame proj_len admits, starting 120 months on: 1,512 months, t = 0 .. 1,511, and
+# 1,512 in the month after, the closing time point, where lives_if reads survival and C4's
+# sweep evaluates every monthly cell: 1,513, and one of headroom, 1,514.  Nothing reads
+# t + 1 at t = proj_len().  In general 12 * (omega_age_max - issue_age_min) +
+# future_horizon_mth + 2.
 # timing, beside t in pols_if_at: BEF_NB 0 and BEF_DECR 1; kind, beside t in claims: VP 0,
 # PROP 1 and ALL 3, the codes numbered as one with cum_annuity_pp's ANNUITANT 2, so that
 # each kind's cell refuses the other's; life, beside t in the per-life monthly cells: 1

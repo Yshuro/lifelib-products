@@ -2804,7 +2804,36 @@ def test_a_contract_owing_nothing_is_refused_by_proj_len(tmp_path, case, edit, p
 # twin, refuses it, which at the shipped bound projects its frame: the issue age raised past
 # either life's, and the limiting age lowered to 9, where the longest frame, 108 months, is
 # shorter than the guarantee.  Point 1 is the worked example, 65 with a dependant of 62; 3
-# its twin with a 120-month guarantee.
+# its twin with a 120-month guarantee.  And on either basis a frame longer than the table
+# basis's longest, 12 x (omega_age_max - issue_age_min) = 1,392 months from the start
+# date, which the caches are sized from: on the scenario basis, whose limiting age no
+# bound holds, a month past it at the worst configuration the caches meet, the frame's
+# edge (FRAME_REFS), accepted at it in the frame's edge tests, in both engines; the same
+# lives issued at 0, 1,404 months; and the bound lowered to 52 past point 1's frame of 636
+# months, which projects at the shipped 116 and is accepted at 53 (DOMAINS).
+FRAME_REFUSAL = ("point_id {label}: the frame, {frame} months from the start date, is "
+                 "longer than {bound} months, 12 x (omega_age_max - issue_age_min), the "
+                 "longest the table basis projects, which the compiled model's caches are "
+                 "sized from")
+
+# The frame's edge where the caches end, at the worst configuration they meet: the worked
+# example, point 1, on the scenario basis with value protection on the first death, issued
+# future_horizon_mth, 120 months, after the valuation date, both lives at 1, under a
+# limiting age of 117, above omega_age_max, which the scenario basis reads no table to be
+# held to: the age stop 12 x (117 - 1) = LONGEST, 1,392 months from the start, the table
+# basis's longest frame, and a guarantee as long, so that a guarantee a month longer is
+# the frame a month longer.  t reaches 1,512, the payments to date's closing key 1,392, the
+# policy year 117 and the anniversary 115, as at the contract's extremes.
+FRAME_REFS = {"omega_age": OMEGA_MAX + 1}
+
+
+def _frame_edge(guarantee):
+    """The edit that puts point 1 at the frame's edge under a guarantee of ``guarantee``
+    months (:data:`FRAME_REFS`)."""
+    return _then(_set("annuitant_age", [1], 1), _set("dependant_age", [1], 1),
+                 _set("duration_mth", [1], -120), _set("guarantee_months", [1], guarantee))
+
+
 NOT_ISSUED = [
     ("an annuitant aged -1", _set("annuitant_age", [1], -1), {}, 1,
      "point_id 1: life 1's issue age, -1, is below issue_age_min, 0", None),
@@ -2820,6 +2849,13 @@ NOT_ISSUED = [
     ("a guarantee past a limiting age lowered to 9", None, {"omega_age": 9}, 3,
      "point_id 3: the guarantee, 120 months, is longer than 108 months, 12 x (omega_age "
      "- issue_age_min), the longest frame from the start date", 636),
+    ("a frame a month past the table basis's longest", _frame_edge(LONGEST + 1),
+     FRAME_REFS, 1, FRAME_REFUSAL.format(label=1, frame=LONGEST + 1, bound=LONGEST), None),
+    ("lives issued at 0 past omega_age_max",
+     _then(_set("annuitant_age", [1], 0), _set("dependant_age", [1], 0)), FRAME_REFS, 1,
+     FRAME_REFUSAL.format(label=1, frame=12 * (OMEGA_MAX + 1), bound=LONGEST), None),
+    ("a frame past omega_age_max lowered to 52", None, {"omega_age_max": 52}, 1,
+     FRAME_REFUSAL.format(label=1, frame=636, bound=624), 636),
 ]
 
 
@@ -2831,13 +2867,13 @@ def test_a_point_the_contract_does_not_issue_is_refused_by_proj_len(tmp_path, ca
     """``proj_len()`` refuses a point outside the contract's bounds, naming both (§6.7).
 
     ``PA_UK_S`` projects any age on the scenario basis, a negative one among them, and any
-    guarantee, and the compiled model's caches will be sized from the contract: a frame of
-    at most ``12 x (omega_age - issue_age_min)`` months from the start and the horizon.  So
-    the frame refuses such a point, naming it, as it refuses a point at its stop, and every
-    report with it (:data:`NOT_ISSUED`): each bound just past it, and each bound moved past a
-    committed point, which projects at the shipped bound, on a model read afresh.  The
-    table reads either way.  Every Reference is set on a model just read, before its
-    projection computes anything (K7).
+    guarantee, and the compiled model's caches are sized from the contract: a frame of at
+    most ``12 x (omega_age_max - issue_age_min)`` months from the start, the table basis's
+    longest, on either basis, and the horizon.  So the frame refuses such a point, naming
+    it, as it refuses a point at its stop, and every report with it (:data:`NOT_ISSUED`):
+    each bound just past it, and each bound moved past a committed point, which projects at
+    the shipped bound, on a model read afresh.  The table reads either way.  Every
+    Reference is set on a model just read, before its projection computes anything (K7).
     """
     model = _read_edited(tmp_path, edit or (lambda t: t))
     try:
@@ -2853,6 +2889,39 @@ def test_a_point_the_contract_does_not_issue_is_refused_by_proj_len(tmp_path, ca
             assert len(_point(shipped, point).result_cf()) == frame
         finally:
             shipped.close()
+
+
+def test_the_table_basis_s_longest_frame_projects_on_the_scenario_basis(tmp_path):
+    """On either basis a frame of the table basis's longest projects, and one a month
+    longer is refused: here the scenario basis, past ``omega_age_max`` (M12).
+
+    ``proj_len()`` holds every frame to ``12 x (omega_age_max - issue_age_min)`` months
+    from the start, 1,392, the table basis's longest, which the compiled model's caches are
+    sized from.  The scenario basis reads no table, and its limiting age is held to no
+    bound, as at stage E, which projected any frame there, and a frame past 1,392 months
+    ran past the caches compiled.  So the worked example at the frame's edge, the worst
+    configuration the caches meet (:func:`_frame_edge`, :data:`FRAME_REFS`), projects: its
+    frame 1,392 months from the start, which it enters 120 months after the valuation date,
+    1,512 months from the valuation date in all, its value protection reading the
+    annuitant's payments to date at the closing key, 1,392.  A guarantee a month longer is
+    refused, naming the point (:data:`NOT_ISSUED`), and the compiled model computes the one
+    as modelx does and refuses the other as modelx does, message for message (the frame's
+    edge compile test, the refusal test).
+    """
+    model = _read_edited(tmp_path, _frame_edge(LONGEST))
+    try:
+        for ref, value in FRAME_REFS.items():
+            setattr(model.Projection, ref, value)
+        p = _point(model, 1)
+        assert (p.is_scenario(), p.is_first_death(), p.vp_pct() > 0.0) == (True,) * 3
+        assert (p.stop_mth(), p.t_entry(), p.proj_len()) == (LONGEST, 120, LONGEST + 120)
+        assert p.horizon_mths() == p.guarantee_mths() == LONGEST
+        assert len(p.result_cf()) == LONGEST + 120
+        assert p.duration_mth(LONGEST + 120) == LONGEST
+        assert p.cum_annuity_pp(LONGEST, _code(p, "ANNUITANT")) > 0.0
+        assert p.vp_balance(LONGEST + 120) >= 0.0
+    finally:
+        model.close()
 
 
 # Each Reference proj_len() holds to a domain, at both edges of it, as (case, the References
@@ -2876,7 +2945,10 @@ def test_a_point_the_contract_does_not_issue_is_refused_by_proj_len(tmp_path, ca
 # omega_age_max bounds; on the table basis omega_age_max, 116, bounds it, and is held to
 # its own domain, a whole number below 2**53, refusing the shipped 115 lowered to 114 there
 # and not on the scenario basis, and 116 under a bound lowered to 115, which a mortality
-# table longer than the shipped one would otherwise admit.
+# table longer than the shipped one would otherwise admit.  On either basis it bounds the
+# frame, at 12 x (omega_age_max - issue_age_min) months, so it is held to its domain on the
+# scenario basis too, and point 1's frame, 636 months, is accepted at a bound of 53, 636
+# months, and refused at 52 (NOT_ISSUED).
 BIG = 1.7976931348623157e308
 WHOLE = 2.0 ** 53
 BELOW_0 = math.nextafter(0.0, -1.0)
@@ -2964,6 +3036,9 @@ DOMAINS = [
     ("omega_age_max=114 on 2", {"omega_age_max": 114}, 2,
      "point_id 2: omega_age, 115, is above omega_age_max, 114, on the table basis", None),
     ("omega_age_max=114 on 1", {"omega_age_max": 114}, 1, None, None),
+    ("omega_age_max=53 on 1", {"omega_age_max": 53}, 1, None, None),
+    ("omega_age_max=nan on 1", {"omega_age_max": math.nan}, 1,
+     "point_id 1: omega_age_max must be a whole number below 2**53, not nan", None),
     ("omega_age=116 under omega_age_max=115 on 2", {"omega_age": 116, "omega_age_max": 115},
      2, "point_id 2: omega_age, 116, is above omega_age_max, 115, on the table basis",
      None),
@@ -6898,6 +6973,28 @@ def test_the_compiled_model_computes_what_modelx_computes_at_the_contract_extrem
     assert (covers == LONGEST).all()
     found = _c4_chunks(build, rows, {"omega_age": OMEGA_MAX}, tmp_path / "extremes",
                        size=EXTREMES_CHUNK)
+    assert not found, _mismatch_lines(found)
+
+
+@pytest.mark.cython
+def test_the_compiled_model_computes_what_modelx_computes_at_the_frame_s_edge(sec_build,
+                                                                             tmp_path):
+    """C4 at the frame's edge on the scenario basis: the longest frame ``proj_len()``
+    admits past ``omega_age_max``, every cell compiled.
+
+    The scenario basis reads no table, and its limiting age is held to no bound, so there
+    the frame alone, held to the table basis's longest, 1,392 months from the start, keeps
+    the reads in the caches.  The worked example at the frame's edge, the worst
+    configuration they meet (:func:`_frame_edge`), value protection on the first death,
+    issued 120 months on, both lives at 1 under a limiting age of 117 set on both engines
+    (:data:`FRAME_REFS`), reads ``t`` to 1,512, ``k`` to 1,392, ``y`` to 117 and ``a`` to
+    115, the furthest ``spec_sec.py`` sizes for.  modelx sweeps it fully, and the compiled
+    model must agree everywhere; a guarantee a month longer is refused alike, message for
+    message (:data:`NOT_ISSUED`, the refusal test).
+    """
+    build = sec_build(SEC)
+    table = _frame_edge(LONGEST)(_committed()).loc[[1]]
+    found = _c4_chunks(build, table, FRAME_REFS, tmp_path / "edge", size=EXTREMES_CHUNK)
     assert not found, _mismatch_lines(found)
 
 

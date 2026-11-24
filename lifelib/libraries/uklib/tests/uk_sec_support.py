@@ -2144,19 +2144,20 @@ SEC_SPECS: dict[str, SecSpec] = {
     #   t 0..1,513: a life issued at issue_age_min, 0, the youngest issue age of every
     #     life, since S projects any age on the scenario basis, to the age stop at the
     #     contract's largest limiting age, omega_age_max, 116, the shipped table's last age
-    #     plus one, or a guarantee of as many months on the table basis, 12 x (116 - 0) =
-    #     1,392, starting future_horizon_mth, 120 months, after the valuation date, a frame
-    #     of 1,512 months, its closing time point t = proj_len(), which lives_if and
-    #     cum_annuity_all read, and one of headroom;
+    #     plus one, or a guarantee of as many months, 12 x (116 - 0) = 1,392, the longest
+    #     frame proj_len() admits, starting future_horizon_mth, 120 months, after the
+    #     valuation date, a frame of 1,512 months, its closing time point t = proj_len(),
+    #     which lives_if and cum_annuity_all read, and one of headroom;
     #   k 0..1,393, the policy time points to the stop rule's, 1,392; y 0..117, whose
     #     openings survival and the payments to date are blocked by, to the policy year of
     #     the closing time point; a 0..116 and x 0..116, the anniversaries and the ages read;
     #     and every 2-D cache 4 wide, the kinds' VP, PROP, ANNUITANT and ALL.
     # proj_len() refuses an issue age of any life below issue_age_min, on the table basis an
-    # omega_age above omega_age_max, and a guarantee above 12 x (omega_age -
-    # issue_age_min) months, the longest frame from the start date, each naming the point.
-    # The scenario basis's omega_age is bounded by nothing, as at stage E: there a frame
-    # longer than 1,392 months from the start raises IndexError, compiled alone.
+    # omega_age above omega_age_max, a guarantee above 12 x (omega_age - issue_age_min)
+    # months, the longest frame from the start date, and on either basis a frame above
+    # 12 x (omega_age_max - issue_age_min) months, 1,392, the table basis's longest, each
+    # naming the point.  The scenario basis's omega_age is bounded by nothing, as at stage
+    # E, but its frame is, by that rule, which refuses there a frame stage E projected.
     "PA_UK_SEC": SecSpec(
         twin="PA_UK_S",
         derived=((1, 17), (9, 16), (3, 120), (7, 24), (6, 30), (2, 101), (10, 170),
