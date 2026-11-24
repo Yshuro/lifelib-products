@@ -17,8 +17,10 @@ also by run 54 (§6.1, *Record — the anniversary at the valuation date*), so e
 built so far follows it. Whole of life's compile step, M6, and income protection's in-force
 step, M7, are done too, 2026-11-24, by run 55 (§6.4, *Record — M6*, and §6.3, *Record —
 M7*), with-profits' in-force step, M13, by run 56 (§6.5, *Record — M13*), the pension
-annuity's compile step, M12, by run 57 (§6.7, *Record — M12*), and with-profits', M14, by
-run 58 (§6.5, *Record — M14*). Income protection's compile step, M8, is under way (§7).
+annuity's compile step, M12, by run 57 (§6.7, *Record — M12*), with-profits', M14, by run
+58 (§6.5, *Record — M14*), and income protection's, M8, by runs 59 and 60 (§6.3, *Record —
+M8*). So all seven products run in force and compile; the close, M15, has not started
+(§7).
 Like USLIB-SEC-PLAN.md, this document is both the
 specification and the record: each milestone records what it actually did, including where
 the implementation departed from the plan.
@@ -2195,6 +2197,297 @@ passed at the first attempt:
   - A static test checks each of its exemptions is needed.
   - A shared harness change states the property it rests on, and refuses what breaks it.
 
+#### Record — M8, done 2026-11-24
+
+**Commits.** M8 was built in three commits on M13's landing:
+- the C step (`21fb8cc`);
+- its docs with C6 and the default run's figures, and a test holding each sum's order
+  (`0c6d90e`);
+- the full grid's and the shard's figures (`3b87091`).
+
+Two more followed from the review: the rework (`00c6c80`) and the figures of each run the
+gate makes (`f1fb88a`). One more followed from the verification: the kept model takes no
+Reference, and the temporaries' equality (`abeca21`). After landing, one more held the
+conventions' twin test on Python 3.11 (`a90d3d2`, *Python 3.11's `sum`* below).
+
+It ran beside WP's compile step, M14, and landed after it.
+
+**The build and the review.**
+- One agent built it, injecting 24 faults. 22 were caught at once, and one more after a
+  test was added: `pols_recovery` summed in reverse passed the test against S's bits,
+  since no rounding there told the orders apart, so a test now reads each sum's order
+  from modelx's stack trace. The last, `result_states` returning None, is missed by
+  design: C3 cannot type an R17 report, and T2 catches it in modelx.
+- A second agent reviewed it against §6.3, the plan and USLIB-SEC-PLAN.md, injecting 22
+  faults of its own in 24 runs: 17 were caught, two missed and two are equivalent.
+  - **No number had moved.** On rows of its own, stage E and EC agreed bit for bit on
+    16,738,506 values, the sign of zero included. The rows:
+    - 623 opening cohorts, and a 131-month claim on a policy issued at 59 to expire at
+      70;
+    - S's point 5 at months 170 and 179, and point 2 at 300 and 359;
+    - recoveries on point 7 at 13, 30, 61 and 200;
+    - the inception floor's splice;
+    - four `derived_refs` rows;
+    - six anniversary valuations;
+    - future rows, a 744-month frame among them;
+    - each under the shipped References and all four splice sets.
+  - **Its first finding was memory.** The default run without the compile tests, which
+    the `sec_uk` legs run on macOS's 7 GB runners, peaked at 5.9 GB:
+    - the 19 committed points, swept once and held for the module, took 2.0 GB, about
+      2.9 KB a cache entry, most of it the four sums' dependency records;
+    - the cold chains at the longest cover added 1.3 GB at peak;
+    - closed models waited for a collection.
+  - **Its second was the caches' widths** (*The caches' widths* below):
+    - The C step kept the timings and kinds as caches of 746 by 4 and gave the cohorts
+      an outer size of their own, 747 by 626. That departs from §9 item 11's letter and
+      from uslib's one inner width a model, and neither departure was recorded.
+    - The text said Cython names its converters by the outer size. It names them by the
+      inner type.
+    - A pickled compiled point did not read back as the text claimed.
+  - Gaps in what the tests saw:
+    - The refusals' labels were held on the committed table alone, where each label is
+      its position plus one. A refusal naming the point by position passed, in modelx
+      and compiled.
+    - No test held the four cohort sums' check of a sum past the floats.
+  - Plausible:
+    - `also` was held to the test's own list of codes, not to the model's;
+    - the cohort base at `t_entry()` replaced by `t == 0` moved no value and passed.
+- **The rework.** The builder fixed all of them, with 14 faults more, each caught. The
+  not-cython default's peak fell from 5,884 to 2,564 MiB.
+- **The verification.** The reviewer verified the rework with 16 kinds of fault in 17
+  runs, each re-injected survivor among them, and every one was caught but one equivalent.
+  It held the kept records to a fresh sweep: 1,091,008 values identical bit for bit, types
+  included, and the cohorts' mask exact over 1,535,424 elements. The tests that need
+  modelx's own machinery, the order test, the rule sweep, the formula reads and T2, still
+  read live models. It found two latent defects in the kept model, and three gaps in the
+  text and the tests:
+  - **The kept model accepted a Reference and served stale values.** Set on the kept
+    `Projection`, a Reference changed only the wrapper; set on `Data`, it changed the real
+    `Data`, and a cache miss would then compute under it beside kept values. No test sets
+    one (K7), but nothing refused it.
+  - **A record fell back to the base `Projection` for any name it lacked**, a cell's
+    among them, which then computed silently at `idx` 0. With `pols_recovery` left out of
+    the record, one test alone caught it.
+  - The page's memory sentence read as a peak above 4 GB, and the temporaries' equality
+    was said to compare the outer size alone, where it compares the element type too.
+  - The generated-C test read only the caches it named, so a later cache of a third shape
+    would go unchecked.
+  - `abeca21` closes all five. The kept model, its `Data` and each kept point
+    refuse a Reference, naming K7, and a test sets one on each. A kept point serves every
+    cell of the space, one its record lacks from the point read afresh, its own `idx`, and
+    its References, and raises for any other name. The generated-C test reads every 2-D
+    cache the spec sizes. I re-injected one fault at landing: `Data`'s proxy passing a
+    Reference through failed the new test.
+
+**What exists now.**
+- *`IP_UK_SEC` at stage EC*, compiled under modelx-cython and checked against modelx.
+- *The restructure.* `IP_UK_S`'s tuples, `sick_cohorts(t)` and `claim_rate_vectors()`,
+  are `pols_sick_dur(t, z)`, a recursion of two parameters:
+  - `z = 1` from `pols_inception(t − 1)`;
+  - any other `z` from `(t − 1, z − 1)` times `claim_surv_step(z − 1)`;
+  - at `t_entry()`, the count times the companion's `[idx, z]` share.
+
+  The five sums, `pols_sick`, `pols_sick_surv`, `pols_recovery`, `pols_death_sick` and
+  `pv_benefits`, are Neumaier's summation written out in `z` order, each stopping at
+  `claim_dur_live(t)`, past which every cohort is exactly 0.0. Each is `IP_UK_S`'s `sum`
+  to the last bit, negative zero included, on Python 3.12 and later (*Python 3.11's `sum`*
+  below). T1 exempts S's three tuple cells, and the module maps `sick_cohorts` onto
+  `pols_sick_dur` element by element on every splice row.
+- *`Data`:* 31 vectors, arrays and extents. Inception is an array by schedule and age, 40
+  schedules of sex, occupation class and deferred period, reproducing S's interpolation,
+  extrapolation and floor. Termination runs by duration year, mortality by sex and age,
+  lapse by policy year, and the companion by `[idx, z]`.
+- *`Projection`:*
+  - It takes `idx`, `point_id()` naming the point by its label in every refusal, as a
+    relabelled extract holds in both engines.
+  - Of its 89 cells, 9 reporting cells stay Python. A compiled ItemSpace is 6,082,800
+    bytes, 5,611,464 of them the cohorts' cache.
+  - The timings `BEF_NB` 0 to `AFT_DECR` 2, in a width of 4; the kinds `BENEFIT`, `DEATH`,
+    `LAPSE` and `ALL`, `claims(t, ALL)` written left to right, since at most one kind is
+    non-zero in a month.
+  - No chain is blocked (*The stack* below), and no refusal is formatted on a chain.
+- *The limits:* `proj_len()` refuses by point a cover from issue longer than 624 months
+  and a frame longer than 744, in both engines, naming the point. The caches: `t` 746,
+  `z` 626 and the cohorts 747 by 626, each derived in `spec_sec.py` and held by a test.
+- *Beside the model:*
+  - `sample_sec.py`, under a recursion limit of 6,000;
+  - `spec_sec.py`;
+  - the registry at stage `"EC"`, with `idx` and five reporting labels;
+  - `run_sec.py --cython`;
+  - `model-sec.md`'s *The compiled model*;
+  - uklib's `index.md`;
+  - the `cython_uk` job's `income_protection` shard.
+- *Tests*, as the builder measured them on the reworked tree:
+
+  | Run | Result | Time | Peak |
+  |---|---|---|---|
+  | default, without the compile tests, which the `sec_uk` legs run | 534 passed | 808 s | 2,564 MiB |
+  | default, with them | 558 passed | 1,603 s | 2,709 MiB |
+  | the full grid, without them, `sec_uk`'s Ubuntu leg | 630 passed | 1,967 s | 2,950 MiB |
+  | the shard on the full grid, `cython_uk`'s Ubuntu leg | 27 passed | 1,414 s | 3,537 MiB |
+
+**The memory.** The module keeps each committed point as its sweep left it, its values
+alone: the cohorts as an array of months by claim durations with a mask, the rest as
+dicts, about 0.3 GB for the 19 points. It then releases the ItemSpace. A call the sweep
+did not cache is computed on the point read afresh and released as the test ends. The
+verification held the kept values to a fresh sweep, bit for bit. What sets the peak now is
+a test's own closed models, the in-force interface's edges with a 624-month cover among
+them, before the cyclic collector frees them. The reviewer measured the not-cython default
+at 796 s and 2,565 MiB, where the review had measured 700 s and 5,884 MiB.
+
+**The stack.** No chain needed blocking.
+- A cold call at the longest cover, one cell a month back to `t_entry()`, runs a chain of
+  611 to 623 cells, and modelx 5 to 8 more, which a test holds head by head.
+- Compiled, every head ran on 136 KiB and not 128. The oldest cohort the last month can
+  hold, whose diagonal runs back to the month it opened and there into the healthy
+  count's chain, ran on 144 and not 136. That is well inside the 256 KiB the C step allows
+  itself here. On CI's Ubuntu runner the same heads needed 384 KiB, a margin of 2.7 in the
+  1 MiB thread, the thinnest of uklib's compiled models (the table below).
+- The export needs a recursion limit of 1,282.
+
+**Departures and precisions.**
+- *The caches' widths.* §9 item 11 asked that the timings and kinds become cells of `t`
+  alone, so that only the cohorts carry a cache 626 wide. uslib holds one inner width a
+  model (USLIB-SEC-PLAN.md §6.1 step 6, M15).
+  - **What was done instead:** the timings and kinds keep `IP_UK_S`'s two-parameter cells,
+    `pols_if_at(t, timing)` and `claims(t, kind)`, which T1 compares and R9 reads, in
+    caches of 746 by 4. The cohorts' cache takes an outer size of its own, 747 by 626.
+  - **Why it builds:** Cython names its converters by the inner type. What caches of one
+    outer size share is the unpickle function's temporary: `allocate_temp` pools
+    temporaries by C type, and Cython's C-array type equality compares the element type
+    and the outer size, not the inner size. So `claims` and `pols_if_at` share one
+    temporary of 746 by 4, and the cohorts have their own.
+  - **Its guard:** this rests on an internal of Cython 3.3.1. gcc and clang refuse a
+    shared temporary of two widths under `build_sec_cy.py`'s
+    `-Werror=incompatible-pointer-types`, so CI's Linux leg would fail. MSVC only warns,
+    so a test reads the generated C's unpickle function and requires each 2-D cache,
+    values and flags, to have a temporary of its own shape. It fails on a warn-only build
+    with the outer sizes equal.
+  - **What it keeps:** the end item 11 asked. The cohorts are `IP_UK_S`'s bit for bit,
+    none pooled, and they alone are 626 wide.
+
+  I decided to keep it, since item 11's literal form would have broken T1 and R9.
+- *Pickling, a known limit.* `pickle.dumps` of a compiled point fails on `Data`'s typed
+  memoryviews. The state alone reads back on a thread of 8 MiB and crashes the interpreter
+  on 4, 2 and 1 MiB, since the unpickle function holds the cohorts' two temporaries, 5.6
+  MB, on the C stack. Nothing in the library pickles a point.
+- *The frame and cover bounds* refuse, by point, what stage E accepted past the caches:
+  a cover from issue past 624 months, or a frame past 744.
+- *`rate_age_min` and `rate_age_max`* are `Data` References held to the contract's ages.
+- *The premium history's guards* are reachable but unobservable: the kept check raises
+  the same message.
+- *`sex()` refuses* any code but M and F.
+- *The horizon's refusal* prints it as an int, as a compiled local double would print
+  120.0.
+- *The default run is past U6's five minutes*: 808 s without the compile tests. The page
+  records what a cut to five minutes would cost.
+- *Python 3.11's `sum`.* The five sums write out the compensated summation Python's `sum`
+  does for floats from 3.12, so that there they are `IP_UK_S`'s bit for bit. Python 3.11's
+  `sum` adds left to right, and there `IP_UK_S`'s sums part from these in their last bits.
+  Two residuals that are roundings about zero carry the difference, the count's
+  roll-forward in 107 places of the twins and the states' in 48, each by 1e-16 or less, and
+  the `test` job's T1, which holds every cell to 1e-9 relative with no absolute floor,
+  failed on Python 3.11 alone in run 59. As `Term_UK_SEC`'s ledger residual does, the two
+  now keep their own floor, only where `sum` does not compensate, read from `sum` itself.
+  A left-to-right `sum` put in place of the built-in reproduced the 155 places here, and
+  the floors pass them. The product module, which CI runs on Python 3.13, holds the sums
+  to `sum` by their bits, and would part on 3.11.
+
+**Measured for K6.** On the shared 4-CPU Linux machine:
+- C6, each figure the median of three runs, with the range:
+
+  | Engine | `net_cf`, a point | `result_cf`, a point | Peak |
+  |---|---|---|---|
+  | compiled | 2.82 ms (2.73–2.82) | 3.36 ms (3.31–3.37) | 134 MB |
+  | export | 56.7 ms (56.1–57.1) | 57.0 ms (57.0–57.7) | 99 MB |
+  | modelx | 1,430 ms (1,420–1,460) | 1,470 ms (1,450–1,490) | 280 MB |
+
+  - On `net_cf` the compiled model runs 20.2 times its export and 508 times modelx.
+  - On `result_cf` it runs 17.2 and 437 times.
+  - The cohorts are the work: each month a point sums its triangle of cohorts four times.
+  - The release keeps a block of 6,004 points within 0.3 MB, while modelx's rose by 181
+    MB over its 19.
+- Stage E against EC: 1,805,221 values on the committed points and 10,986,993 on the
+  splice grid's 129 rows, 0 apart. 117 differ in type alone, S's empty `sum()` an int 0
+  against 0.0.
+- At landing, `abeca21` ran its gate here in two jobs:
+  - the full grid, its compile tests apart: 631 passed, in 1,910 s, at a peak of 2.8 GiB;
+  - the `income_protection` shard on the full grid: 27 passed, in 1,465 s, at 3.7 GiB. The
+    1 MiB test's heads ran on 144 KiB and not on 128;
+  - the `toolchain` shard;
+  - the conventions, harness and S suites of all seven products: 1,090 passed and 19
+    skipped, in 1,364 s;
+  - the generators' and fingerprints' checks for all seven uklib SEC models;
+  - the harness check, and md_lint;
+  - doccheck at 0 warnings;
+  - the scaffolding at 0 files.
+
+In CI, the Tests workflow's run 59 on `abeca21` ran 111 jobs, the `cython_uk` job's eight
+shards among them. M8's legs passed at the first attempt:
+- the `cython_uk` `income_protection` legs, the first to compile `IP_UK_SEC`, 27 tests
+  each:
+  - 1,409 s on Ubuntu, on the full grid;
+  - 627 s on Windows;
+- `sec_uk`'s three IP legs: the full grid on Ubuntu in 23.1 min, and the core on Windows in
+  11.9 and on macOS in 11.1;
+- the `test` job on Python 3.14 and Ubuntu, in 43.7 min.
+
+The `test` job on Python 3.11 failed on all three runners, in one test of 7,215, T1's twin
+comparison for `IP_UK_SEC` (*Python 3.11's `sum`* above). Three macOS legs were never
+given a runner, uklib's `critical_illness` core and uslib's universal life and deferred
+income annuity cores, each cancelled after 75 to 80 minutes in the queue with no log. Run
+58's two such legs ran in run 59 and passed.
+
+Run 60 on `a90d3d2` ran the same 111 jobs. The `test` job on Python 3.11 passed on every
+runner, on Ubuntu 7,215 tests and 129 skipped in 49 min 31 s, its harness step agreeing.
+M8's legs passed again: the `income_protection` compile legs in 19.1 min on Ubuntu and
+12.9 on Windows, and `sec_uk`'s IP legs, the full grid on Ubuntu in 33.7 and the cores in
+13.5 on Windows and 7.8 on macOS. Two macOS legs were never given a runner, and each was
+cancelled after 89 minutes in the queue with no log: uklib's `pension_annuity` core, which
+passed in run 59, and uslib's deferred income annuity core, which passed in run 58. The
+other 109 jobs passed, and the run concluded in failure for those two alone.
+
+The compiled cold call's stack, as its test records it in its coarser steps, each head in
+an ItemSpace of its own:
+
+| Where | Ran on | Not on |
+|---|---|---|
+| Here | 144 KiB | 128 KiB |
+| Ubuntu | 384 KiB | 256 KiB |
+| Windows | 256 KiB | 192 KiB |
+
+**Faults.** Each was injected into a copy of its own.
+- **The builder:** 24, then 14 on the rework. All were caught but `result_states`
+  returning None, which is missed by design.
+- **The review:** 22 in 24 runs, of which two survived:
+  - two refusals naming the point by position;
+  - the cohort sums' finiteness check dropped.
+
+  Two were equivalent: the cohort base at `t == 0`, and the live extent one long, which
+  reads a 0.0. Each is caught since the rework.
+- **The verification:** 16 kinds in 17 runs, all caught but the kept cohorts' mask read
+  one `z` off, which is equivalent, since every cohort that holds lives is cached and the
+  shifted mask reroutes only zeros. The builder's five on its items were each caught or,
+  for a cell a record lacks, served bit for bit from the point read afresh.
+
+**Carried into M15.**
+- *The shared conventions' C4* on the committed points runs without `also`, for every
+  model (*Record — M12*).
+- *The caches' widths rest on a Cython internal.* A Cython release that changed how the
+  unpickle function pools its temporaries would fail the Linux build and the generated-C
+  test, not the numbers.
+- *The product modules assume Python 3.12 or later* where they hold a sum to `sum`'s bits:
+  `IP_UK_SEC`'s cohort sums, and the claims totals of `CI_UK_SEC` and `WP_UK_SEC`. CI runs
+  them on 3.13 alone.
+
+**The template, for later products:**
+- A state whose length the point decides compiles as a recursion of two parameters, its
+  sums written out in S's order, held to S's bits and to S's order by a stack trace.
+- Keep a module's swept points as their values, not as models, where a sweep's dependency
+  records are large.
+- Caches of one outer size share one inner width; read the generated C where a compiler
+  only warns.
+
 ### 6.4 Whole of life — `WOL_UK_SEC` (E: M, C: S)
 
 *Today:* the policy clock from issue, new business only; `proj_len() =
@@ -3334,7 +3627,10 @@ It ran beside IP's compile step, M8, and landed first.
 
 In CI, the Tests workflow's run 58 on `2dd7242` ran 109 jobs, the `cython_uk` job's seven
 shards among them. When this record was written 100 had passed and nine were still
-running, none of them M14's. M14's legs passed at the first attempt:
+running, none of them M14's. Seven of the nine passed. The other two, uslib's `sec` core
+legs for term life and variable universal life on macOS, were never given a runner, and
+each was cancelled after 86 minutes in the queue with no log, so the run concluded in
+failure; both passed in run 59 (*Record — M8*). M14's legs passed at the first attempt:
 - the `cython_uk` `with_profits` legs, the first to compile `WP_UK_SEC`, 21 tests each:
   - 678 s on Ubuntu, on the full grid;
   - 413 s on Windows;
