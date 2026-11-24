@@ -145,7 +145,7 @@ there reaches back over no month already run (UKLIB-SEC-PLAN.md K14, §9 item 5)
 | `unit_price_init` | pounds per unit | the start of month 0 | on the bond, the with-profits unit price the declarations have raised the seed price to; on a policy not yet in force, the seed price its premium buys units at, an issue value |
 | `attaching_bonus_init` | pounds per policy | the start of month 0 | on the endowment, the reversionary bonuses already added to the sum assured; 0 on the bond |
 | `smoothed_payout_init` | pounds per policy | the start of month 0 | the smoothed payout the year-on-year cap works from; 0 where the asset share has floored at 0 |
-| `bonus_rate_init` | a rate a year | the policy year under way | the declared bonus rate of the policy year under way: of every year with the bonus rule off, and of the year under way with it on; on a policy not yet in force, its first year's |
+| `bonus_rate_init` | a rate a year | the last declaration before the valuation date, at the end of policy month `12 × duration(0) − 1` | the bonus rate declared there: of every year with the bonus rule off, and with it on the rate the first declaration in the frame starts from; on a policy not yet in force, the rate its first declaration starts from |
 | `guar_charge_cum_pp_init` | pounds per policy | the end of month −1 | the guarantee charges taken since issue, which the charge's lifetime cap of 2% of the asset share is measured against |
 | `smoothing_account_init` | pounds per policy in force | the end of month −1 | the estate's smoothing and guarantee cost on the exits since issue, over the policies in force: of either sign |
 
@@ -164,10 +164,12 @@ what `WP_UK_S` assumes there. Here:
 - `guar_charge_cum_pp(t)` opens at `guar_charge_cum_pp_init()`, which the cap's test reads
   in month 0;
 - `smoothing_account(t)` opens at `smoothing_account_init() × pols_if_init()`;
-- `bonus_rate(t)` is `bonus_rate_init()` in every policy year with the rule off, and with
-  it on in the year under way at the valuation date, as `WP_UK_S`'s first projected year
-  takes its column; each later year's rate is then declared by the rule, from the year
-  before's.
+- `bonus_rate(t)` is `bonus_rate_init()` in every policy year with the rule off. With it
+  on, every declaration in the frame is the rule's, at today's References, from this
+  model's own asset share and guarantee: a declaration at or after the valuation date is
+  the projection's own event (D6), and one at the end of month 0 is month 0's. The first
+  starts from `bonus_rate_init()`, each later one from the rate declared a year before, and
+  every month of a policy year reads its year's declaration.
 
 No balance is needed at a second instant: a declaration costs the month's own opening
 values, and no annual quantity reads the balance entering the policy year, so there is no
@@ -415,7 +417,8 @@ replaces, and `attaching_bonus`, renamed. One Reference is new, `issue_age_min`.
 | `units`, `unit_price` | from the columns at `proj_start()` | from the columns at `t_entry()`; past the floats refused | The opening state |
 | `guar_charge_cum_pp`, `guar_charge_rate` | from 0 at `proj_start()` | from `guar_charge_cum_pp_init()` at `t_entry()` | A cumulant `WP_UK_S` restarts at 0 |
 | `smoothing_account` | from 0 at `proj_start()` | from `smoothing_account_init() × pols_if_init()`; 0 outside the frame | A cumulant `WP_UK_S` restarts at 0 |
-| `bonus_rate` | the column, or with the rule on the rule from S's second projected year, each month reading its year's declaration, past the frame where a forced encashment ends it mid-year | the column, or with the rule on the rule from the second year on the books, each month reading its year's declaration where the frame reaches it, and the year before's rate where it does not | R2's read bounded by the frame; it changes the `bonus_rate` column of `result_payout` in such a year alone |
+| `bonus_rate` | the column, or with the rule on its column through its first projected year and the rule from its second, each month reading its year's declaration, past the frame where a forced encashment ends it mid-year | the column, or with the rule on the rule at every declaration in the frame, the first from `bonus_rate_init()`, each month reading its year's declaration where the frame reaches it, and the year before's rate where it does not | D6: a declaration at or after the valuation date is made at today's References, so under the rule `WP_UK_S`'s points in force, its new business and a point valued inside its first projected year part from it at their first declaration in the frame, where it keeps its column; and R2's read bounded by the frame, which changes the `bonus_rate` column of `result_payout` in a cut year alone |
+| `bonus_supportable` | the growth to the horizon unchecked | refused past the largest float and, from a return net of charges below 0, below the smallest, where a horizon of 4,500 years would read as no asset share at all | An underflowed factor declared 0.5% where 4,000 years declares 0 |
 | `pols_if`, `pols_if_at`, `pols_if_init` | `pols_if` a recursion of its own, three cells a month, from the column's 1.0 at `proj_start()` | `pols_if` is `"BEF_DECR"`, the `"BEF_NB"` chain plus the month's new business, one cell a month from `t_entry()`; `pols_if_init()` is 0 unless in force | Policies in force at the valuation date open the count; new business joins it in its issue month |
 | `inflation_factor` | `1.03^duration(t)`, from issue | `1.03^(t // 12)`, from the valuation date | Unit costs in valuation-date pounds |
 | `mort_rate`, `surr_rate_base`, `surr_rate`, `premium_pp`, `wd_pp`, the balances, the counts | no `WP_UK_S` frame has a month before issue | zero outside cover, before any table or rate is read; an age past the table refused by name; the lapse table's extent from `Data` | Before issue `WP_UK_S` reads the tables at ages and policy years the policy never has |
@@ -493,10 +496,37 @@ would pass the largest float, and C's `pow` gives an infinity there. So the infl
 factor, the bonus rule's growth to its horizon and the endowment's discount on its bonus
 cost each catch the one and test for the other, and raise `ValueError` naming the point
 and the References, `PA_UK_SEC`'s form (*Record — M11*); the discount is refused below the
-smallest float too, since the cost divides by it. The C step keeps the test and drops the
+smallest float too, since the cost divides by it. The bonus rule's growth factor is refused below the smallest float as well, since a long
+horizon decays a negative net return to 0.0 and the rule would read no asset share. The C
+step keeps the test and drops the
 `try` for uslib's M22 form.
 
 ## Tests
+
+**The default run and the full grid.** The default run takes the core of the splice grid
+and the default cases of the slower tests; the full grid, `UKLIB_SEC_FULL=1`, runs the
+rest, and one leg of the `sec_uk` job runs it. Only on the full grid: the splice's other
+cases; the every-state test's sets but S as shipped, the splice's main and rule sets and
+the two sets of the committed rows' own References; the depth test's withdrawing bond and
+each shape's row issued 120 months on; the other committed points of the scaling, ten
+million, extract and month-on tests; and the whole-limit test's later rows. The
+every-state test restates each S point by default at every month of its first policy year
+and the first anniversary, the declaration and the anniversary of every fifth policy year,
+policy months 106 to 120 and the frame's last month, and on the full grid at every month.
+UKLIB-SEC-PLAN.md U6 asks for about five minutes by default (K6): the default run took
+about 316 s at the M13 review, at a peak of 3.4 GiB, so it runs over by about a minute,
+on a machine shared with other builds. Moving the every-state test's main and rule sets to
+the full grid saves about 30 s; moving the splice's rule set there too would save about a
+minute more, but leave no core row declaring under the rule, which the review asked for.
+
+**Branches the core reaches.** A test asserts the core reaches each branch, keyed by the
+set of References it runs under where the set matters. A withdrawal is capped at the unit
+fund in every withdrawing bond's issue month, whose fund opens at 0, as well as in the
+month its units run out, which the frame does not project. The surrender rate reaches its
+bound inside the domains, under an MVR deterrent of 25, on the down scenario from policy
+month 68, which the splice's third set of References holds. The rule's cut held to its cap
+above the floor is reached by a 6% rate on the down scenario, and the MVR held to its
+contractual bound by a 20% bonus on a 12% return, two variants of S's points.
 
 - **The twin identity**, in `tests/test_model_conventions_uk.py`: on points 5 and 7, the
   endowment and the bond issued at the valuation date, every cell of `WP_UK_S`'s agrees at

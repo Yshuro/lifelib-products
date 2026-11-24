@@ -145,7 +145,15 @@ S_POINTS = (1, 2, 3, 4, 5, 6, 7)
 #   cap binds from 442, the cap a +5% bond reopened late without its charges misses;
 # 12, S point 7 at 5% with them: its cap from 197, and its units exhausted at 303;
 # 13, S point 7 without withdrawals: the -15% bond issued at the valuation date, its charges
-#   stopping from 101, which a bond reopened at 60 without them would charge on past.
+#   stopping from 101, which a bond reopened at 60 without them would charge on past;
+# 14, S point 2 at a 6% bonus: under the rule, its first declaration in S's rule, at 83, cut
+#   by the change cap, 1.5%, to 4.5%, above the floor;
+# 15, S point 1 at a 12% return and a 20% bonus: its guarantee outruns its asset share,
+#   whose rise outruns the smoothed payout, so that the MVR is held to its contractual
+#   bound, the guarantee less the asset share, from 71;
+# 16, S point 7 at 5% with a 6% withdrawal: under the rule its units run out at policy
+#   month 287, so its frame ends the month before a declaration, the bonus rate's frame
+#   bound at its edge.
 #
 # Each variant is (the S point it changes, the columns it changes); the policy_id keeps the
 # generated ids apart.  11 to 13 are new business, so their twins are cases too: an issue
@@ -158,6 +166,10 @@ VARIANTS = {
              "bonus_rate": 0.02}),
     12: (7, {"policy_id": "WP-900012", "fund_return": 0.05, "bonus_rate": 0.02}),
     13: (7, {"policy_id": "WP-900013", "wd_rate": 0.0}),
+    14: (2, {"policy_id": "WP-900014", "bonus_rate": 0.06}),
+    15: (1, {"policy_id": "WP-900015", "fund_return": 0.12, "bonus_rate": 0.20}),
+    16: (7, {"policy_id": "WP-900016", "fund_return": 0.05, "bonus_rate": 0.02,
+             "wd_rate": 0.06}),
 }
 
 # T2's months under the main set of References (UKLIB-SEC-PLAN.md §6.5), S months, each
@@ -170,7 +182,8 @@ VARIANTS = {
 # where it flickers monthly; the withdrawing bond's cap from 284 and its exhaustion at
 # 403, its last month 402; on the endowment the cap's ceiling at 289 and 290 and maturity
 # at 299; the bond variant's cap from 88, and past it at 100, its floor from 196 and its
-# last month, 266; and the limiting age's last month, 779.  The events are S's under SPLICED_REFS, whose estate
+# last month, 266; and the limiting age's last month, 779.  The events are S's under
+# SPLICED_REFS, whose estate
 # distribution moves the charge's cap and the floor a few months from where S ships them.
 SPLICE_MTHS = {
     1: (61, 65, 71, 72, 119, 120, 125, 778, 779),
@@ -184,7 +197,7 @@ SPLICE_MTHS = {
 }
 VARIANT_MTHS = {8: (65, 119, 779), 9: (61, 65, 66, 71, 92, 115, 116, 119, 153, 154),
                 10: (71, 119), 11: (1, 441, 442, 443), 12: (1, 196, 197, 198, 302),
-                13: (1, 100, 101, 102, 600)}
+                13: (1, 100, 101, 102, 600), 15: (71, 85)}
 
 # The second set's months, with the bonus rule on: each declaration the rule sets, the
 # first in S's frame at 83 on the bonds in force and at 11 and 23 on the bonds issued at the
@@ -193,7 +206,12 @@ VARIANT_MTHS = {8: (65, 119, 779), 9: (61, 65, 66, 71, 92, 115, 116, 119, 153, 1
 # policy year, the partial year whose rate the frame bounds: restated before that year, at
 # 395, and inside it, at 397, where its rate is the row's own.
 RULE_MTHS = {1: (61, 83, 84, 125), 2: (83, 84, 119), 5: (11, 12, 13, 150, 299),
-             7: (1, 23, 24, 100), 12: (1, 302, 395, 397)}
+             7: (1, 23, 24, 100), 12: (1, 302, 395, 397), 14: (83, 95), 16: (275, 280)}
+
+# The third set's months, a deterrent of 25, under which the surrender rate is held to its
+# bound, 1, wherever the market value reduction applies: the down scenario the month before
+# it turns on, 67.
+BOUND_MTHS = {2: (67,)}
 
 # T3's months: issued one month on, which puts the policy anniversaries a month off the
 # valuation years; twelve, which puts them back on; and the horizon, 120, the latest the
@@ -238,6 +256,8 @@ SPLICES = (tuple(("derived", p, d, "main") for p in S_POINTS for d in SPLICE_MTH
            + tuple(("derived", p, d, "main") for p, mths in VARIANT_MTHS.items()
                    for d in mths)
            + tuple(("derived", p, d, "rule") for p, mths in RULE_MTHS.items()
+                   for d in mths)
+           + tuple(("derived", p, d, "bound") for p, mths in BOUND_MTHS.items()
                    for d in mths))
 IN_FORCE_TWINS = (tuple(("twin", p, ENTRY[p], "main") for p in (*S_POINTS, *VARIANTS))
                   + tuple(("twin", p, ENTRY[p], "rule") for p in (1, 5, 6, 7, 12)))
@@ -273,10 +293,16 @@ CORE_SPLICES = {
     ("derived", 10, 71, "main"): "a bond on the pension tax basis",
     ("derived", 11, 443, "main"): "the +5% bond issued at t = 0, past its charge cap",
     ("derived", 13, 102, "main"): "the -15% bond issued at t = 0, past its charge cap",
-    ("derived", 1, 84, "rule"): "the rule's first declared year under way",
+    ("twin", 1, 60, "rule"): "S's worked example in force: its first declaration, D6's",
+    ("derived", 1, 83, "rule"): "the rule's declaration as month 0's own event",
+    ("derived", 1, 84, "rule"): "the rule's year under way, from S's declared rate",
     ("derived", 2, 84, "rule"): "the down scenario under the rule, its rate floored",
     ("derived", 5, 150, "rule"): "the endowment under the rule, mid-term",
-    ("derived", 12, 1, "rule"): "the withdrawing bond under the rule, to its partial year",
+    ("derived", 12, 302, "rule"): "the withdrawing bond under the rule, to its cut year",
+    ("derived", 14, 83, "rule"): "a 6% rate the rule cuts by its cap, above the floor",
+    ("derived", 16, 280, "rule"): "a frame ending the month before a declaration",
+    ("derived", 15, 71, "main"): "a 20% bonus on a 12% return: the MVR at its bound",
+    ("derived", 2, 67, "bound"): "a deterrent of 25: the surrender rate at its bound",
 }
 CORE_FUTURES = {
     (7, 1, "main"): "the bond variant a month off the valuation anniversaries",
@@ -326,7 +352,11 @@ SPLICED_REFS = {"inflation_rate": 0.0, "misc_surplus_rate": 0.0001,
 # they ship equal to.
 RULE_REFS = {**SPLICED_REFS, "bonus_rule_on": True, "guar_fill_target": 0.85,
              "bonus_change_cap": 0.015}
-REF_SETS = {"main": SPLICED_REFS, "rule": RULE_REFS}
+# The third set: the main one with the MVR deterrent at 25, which takes the surrender rate
+# to its bound, 1, wherever the market value reduction applies (UKLIB-SEC-PLAN.md §6.5;
+# ULB_UK_SEC's T2 variant for its own bound).
+BOUND_REFS = {**SPLICED_REFS, "mvr_deterrent_factor": 25.0}
+REF_SETS = {"main": SPLICED_REFS, "rule": RULE_REFS, "bound": BOUND_REFS}
 
 # Every switch that ships off, on, for T4, at the shipped inflation: the second set's.
 SWITCHED_ON = {ref: value for ref, value in RULE_REFS.items() if ref != "inflation_rate"}
@@ -630,9 +660,28 @@ def _departure(s_proj, month):
         return None
     end = s_proj.proj_len()
     first = 12 * ((end - 1) // 12)
-    if end % 12 == 0 or first <= month:
+    if end % 12 == 0:
         return None
     return first, s_proj.bonus_rate(first - 1)
+
+
+def _carried_cut(s_proj, month):
+    """The S month of a row's first declaration in the frame, where S makes it from its
+    carried column rather than by its rule; or ``None``.
+
+    Under the rule every declaration in this model's frame is the rule's, at today's
+    References (D6), but ``WP_UK_S``'s first frame year keeps its column: so a twin of S's
+    points, in force or new, and a row valued inside S's first frame year, part from S at
+    their first declaration in the frame, the departure ``model-sec.md`` records.  The
+    comparison runs to the month before it, S month ``cut``, but on the ``bonus_rate``,
+    which every month of the year reads from that declaration.
+    """
+    if not s_proj.bonus_rule_on:
+        return None
+    first = 11 if month < 0 else 12 * (month // 12) + 11
+    if first <= s_proj.proj_start() + 11 and first < s_proj.proj_len():
+        return first
+    return None
 
 
 def _s_result_pols(s_proj):
@@ -666,41 +715,61 @@ def _compare(s_proj, sec_proj, month, exempt, columns=None):
     floor of 1e-9 passes an error of 1% in any value below 1e-7.  Then the cells of
     :data:`RESIDUALS` and :data:`DIFFERENCES` alone, at the floor of 1e-9: a residual's
     exact value is 0, and a difference's is in many months, and the computed one moves by
-    an ulp of what it closes when an opening state comes back from the CSV one ulp off.  The bonus rate's recorded departure (:func:`_departure`) is compared over the
-    months before it, and held to its own rate in its months.  Returns the mismatch lines,
-    empty when the row is S's.
+    an ulp of what it closes when an opening state comes back from the CSV one ulp off.  The
+    bonus rate's recorded departure in a cut year (:func:`_departure`) is compared over the
+    months before it, and held to its own rate in its months; a row whose first declaration
+    S makes from its carried column (:func:`_carried_cut`) is compared to the month before
+    that declaration.  Returns the mismatch lines, empty when the row is S's.
     """
     found = []
-    gone = _departure(s_proj, month)
-    arg_map = None
+    cut = _carried_cut(s_proj, month)
+    gone = None if cut is not None else _departure(s_proj, month)
+
+    def arg_map(name, args):
+        if cut is not None and (name == "bonus_rate"
+                                or (args and _month(args[0]) and args[0] >= cut)):
+            return None
+        if gone is not None and name == "bonus_rate" and args[0] >= gone[0]:
+            return None
+        return args
+
     for report, keep in (("result_cf", columns), ("result_payout", None),
                          ("result_pols", None)):
         sec_df = sec_proj.cells[report]()
         s_df = (_s_result_pols(s_proj) if report == "result_pols"
                 else s_proj.cells[report]())
+        if cut is not None:
+            if cut <= month:
+                continue                    # month 0's declaration: nothing before it
+            names = [c for c in (s_df.columns if keep is None else keep)
+                     if c in sec_df.columns and c != "bonus_rate"]
+            found += [f"{report} before the first declaration: {line}"
+                      for line in frame_mismatches(
+                          s_df[s_df.index < cut], sec_df[sec_df.index < cut - month],
+                          t_offset=month, columns=names, atol=0.0)]
+            continue
         if report == "result_payout" and gone is not None:
-            cut = gone[0] - month
             found += [f"{report}: {line}" for line in frame_mismatches(
                 s_df, sec_df, t_offset=month,
                 columns=[c for c in s_df.columns if c != "bonus_rate"], atol=0.0)]
-            found += [f"{report} before the departure: {line}" for line in frame_mismatches(
-                s_df[s_df.index < gone[0]], sec_df[sec_df.index < cut], t_offset=month,
-                columns=["bonus_rate"], atol=0.0)]
-            held = sec_df.loc[sec_df.index >= cut, "bonus_rate"]
+            start = gone[0] - month
+            if start > 0:
+                found += [f"{report} before the departure: {line}"
+                          for line in frame_mismatches(
+                              s_df[s_df.index < gone[0]], sec_df[sec_df.index < start],
+                              t_offset=month, columns=["bonus_rate"], atol=0.0)]
+            held = sec_df.loc[sec_df.index >= start, "bonus_rate"]
             if not (held == gone[1]).all():
                 found.append(f"the departure's months hold {sorted(set(held))}, not the "
                              f"rate declared before them, {gone[1]}")
             continue
         found += [f"{report}: {line}" for line in frame_mismatches(
             s_df, sec_df, t_offset=month, columns=keep, atol=0.0)]
-    if gone is not None:
-        def arg_map(name, args):
-            return None if name == "bonus_rate" and args[0] >= gone[0] else args
     found += twin_mismatches(s_proj, sec_proj, t_offset=month, exempt=exempt | FLOORED,
                              arg_map=arg_map, atol=0.0, codes=codes(sec_proj))
     return found + twin_mismatches(s_proj, sec_proj, t_offset=month,
                                    exempt=exempt | (set(s_proj.cells) - FLOORED),
-                                   atol=FLOOR, codes=codes(sec_proj))
+                                   arg_map=arg_map, atol=FLOOR, codes=codes(sec_proj))
 
 
 def _continues_s(s_proj, sec_proj, month):
@@ -943,9 +1012,11 @@ def _first_year(x):
 # applied and waived on a guarantee date, the guarantee exercised, the imminent window,
 # the charge's cap binding and released, a forced encashment and a maturity paid, the
 # limiting age paying nothing, the lapse table inside and past its last year, and with the
-# rule on a declaration set by it, held to its cap and floored at 0.  A withdrawal capped
-# at the unit fund is the month the units run out, the month after a frame's last, and the
-# surrender rate's bound reaches no rate the tables hold, so neither is in a frame.
+# rule on a declaration set by it, its rise and its cut held to the cap and its rate floored
+# at 0, a withdrawal capped at the unit fund, which it is in every withdrawing bond's issue
+# month, its fund 0, the surrender rate at its bound, under a deterrent of 25, and the MVR
+# held to its contractual bound.  Each at-valuation kind is keyed by the set its row runs
+# under: the main set must reach every one, and the rule set its declarations' months.
 AT_VALUATION = {
     "asset_share_init above 0": lambda x: x.asset_share_init() > 0.0,
     "asset_share_init 0 in force": lambda x: (
@@ -1022,21 +1093,54 @@ IN_FRAME = {
     "past the lapse table's last year": lambda x, t: (
         _active(x, t) and x.policy_year(t) > x.data.lapse_last_year(x.chassis())),
     "a rate set by the rule": lambda x, t: (
-        _active(x, t) and x.bonus_rule_on and x.is_declaration_month(t)
-        and x.duration(t) > x.duration(x.t_entry())),
-    "a rule's change held to its cap": lambda x, t: (
-        _active(x, t) and x.bonus_rule_on and x.is_declaration_month(t)
-        and x.duration(t) > x.duration(x.t_entry())
-        and abs(abs(x.bonus_rate(t) - x.bonus_rate(t - 12)) - x.bonus_change_cap) < 1e-12),
+        _active(x, t) and x.bonus_rule_on and x.is_declaration_month(t)),
+    "a rule's rise held to its cap": lambda x, t: (
+        _declared(x, t) and _rule_step(x, t)[1] == x.bonus_change_cap),
+    "a rule's cut held to its cap, above the floor": lambda x, t: (
+        _declared(x, t) and _rule_step(x, t)[1] == -x.bonus_change_cap
+        and sum(_rule_step(x, t)) > 0.0),
     "a rule's rate floored at 0": lambda x, t: (
-        _active(x, t) and x.bonus_rule_on and x.is_declaration_month(t)
-        and x.duration(t) > x.duration(x.t_entry()) and x.bonus_rate(t) == 0.0),
+        _declared(x, t) and sum(_rule_step(x, t)) < 0.0),
+    "a withdrawal capped at the unit fund": lambda x, t: (
+        _active(x, t) and x.is_unitised() and x.wd_rate() > 0.0
+        and x.wd_pp(t) < x.wd_rate() * x.premium_single_pp() / 12.0),
+    "the surrender rate's bound": lambda x, t: _active(x, t) and x.surr_rate(t) == 1.0,
+    "the MVR at its contractual bound": lambda x, t: (
+        x.mvr_pp(t) > 0.0 and x.guar_benefit_pp(t) - x.asset_share(t)
+        < x.guar_benefit_pp(t) - x.smoothed_payout(t)),
 }
 
+# The at-valuation kinds the rule set's core must reach as well as the main set's: the
+# months the rule declares in, so that a core row holds a declaration as month 0's own
+# event under the rule, and the months either side of one (the M13 review).
+RULE_AT_VALUATION = ("valued on an anniversary", "valued mid-year",
+                     "valued in a declaration month")
+REACHED = frozenset({*(f"{what} [main]" for what in AT_VALUATION),
+                     *(f"{what} [rule]" for what in RULE_AT_VALUATION), *IN_FRAME})
 
-def _branches(x):
-    """The names in :data:`AT_VALUATION` and :data:`IN_FRAME` that hold of row ``x``."""
-    reached = {what for what, holds in AT_VALUATION.items() if holds(x)}
+
+def _prev_rate(x, t):
+    """The rate the declaration at the end of month ``t`` starts from: the one before it, or
+    in the frame's first the rate declared before the valuation date."""
+    return x.bonus_rate(t - 12) if t - 12 >= x.t_entry() else x.bonus_rate_init()
+
+
+def _rule_step(x, t):
+    """``(the rate the declaration at the end of month t starts from, its step clamped)``."""
+    prev = _prev_rate(x, t)
+    step = x.bonus_speed * (x.bonus_supportable(t) - prev)
+    return prev, max(-x.bonus_change_cap, min(x.bonus_change_cap, step))
+
+
+def _declared(x, t):
+    """Whether month ``t`` carries a declaration the rule makes."""
+    return _active(x, t) and x.bonus_rule_on and x.is_declaration_month(t)
+
+
+def _branches(x, refs):
+    """The names in :data:`AT_VALUATION`, keyed by ``refs``, the set the row runs under, and
+    in :data:`IN_FRAME` that hold of row ``x``."""
+    reached = {f"{what} [{refs}]" for what, holds in AT_VALUATION.items() if holds(x)}
     frame = range(x.t_entry(), x.proj_len())
     return reached | {what for what, holds in IN_FRAME.items()
                       if any(holds(x, t) for t in frame)}
@@ -1054,7 +1158,7 @@ def _settle(records, case, model, key):
     try:
         proj = projection(model, key)
         record = _rule_breaches(proj)
-        record["branches"] = _branches(proj)
+        record["branches"] = _branches(proj, case[3])
         record["failed"] = None
     except Exception as err:                    # recorded, and reported by the rules test
         record = {"negative": [], "early": [], "ahead": [], "outside": [], "raised": [],
@@ -1359,7 +1463,8 @@ def _longest_cover(tmp_path, shape):
 # modelx warns as its stack trace starts and stops, which is all the test does with it.
 @pytest.mark.filterwarnings("ignore:call stack trace:UserWarning")
 @pytest.mark.parametrize("shape", [pytest.param(s, id=s.replace(" ", "_"),
-                                                marks=() if s == "bond" else FULL_ONLY)
+                                                marks=() if s != "withdrawing bond"
+                                                else FULL_ONLY)
                                    for s in SHAPES])
 def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path, shape):
     """Called cold, each chain runs one cell a month back to ``t_entry()``, no more.
@@ -1374,9 +1479,10 @@ def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path, shape):
     own, with :data:`SWITCHED_ON` set, so that the bonus rule declares from the asset share
     and the estate distribution reads it.  On each shape at the contract's longest cover,
     1,224 months from issue age 18, issued now and, with the full grid, 120 months on
-    (:func:`_longest_cover`), each row's frame asserted first.  The bonus rule's own chain, one cell a year, is held to
-    a year a cell and :data:`RULE_OVERHEAD` more.  The bond runs by default, the endowment
-    and the withdrawing bond with the full grid.
+    (:func:`_longest_cover`), each row's frame asserted first.  The bonus rule's own chain,
+    one cell a year, is held to a year a cell and :data:`RULE_OVERHEAD` more.  The bond and
+    the endowment run by default, its guarantee's chain among them, and the withdrawing bond
+    with the full grid.
     """
     folder, frames = _longest_cover(tmp_path, shape)
     frames = frames if SEC_FULL else frames[:1]
@@ -1594,7 +1700,8 @@ def _month_on(p):
         unit_price_init=p.unit_price(0),
         attaching_bonus_init=(0.0 if p.is_unitised()
                               else p.guar_benefit_pp(0) - p.sum_assured()),
-        smoothed_payout_init=p.smoothed_payout(0), bonus_rate_init=p.bonus_rate(1),
+        smoothed_payout_init=p.smoothed_payout(0),
+        bonus_rate_init=p.bonus_rate(0) if p.is_declaration_month(0) else p.bonus_rate_init(),
         guar_charge_cum_pp_init=p.guar_charge_cum_pp(0),
         smoothing_account_init=p.smoothing_account(0) / count)
 
@@ -1607,8 +1714,9 @@ def test_a_point_restated_a_month_on_continues_its_own_flows(tmp_path, grid):
     a month on, opened with what this model carries into its month 1 (:func:`_month_on`):
     its count, ``pols_if_at(1, "BEF_NB")``; its asset share, units, unit price, guarantee
     less the sum assured on the endowment, smoothed payout and two cumulants at the close
-    of month 0, the smoothing account per policy in force at month 1; and the rate of the
-    policy year under way at month 1.  The restatement must continue the point's own
+    of month 0, the smoothing account per policy in force at month 1; and the rate declared
+    at the last declaration before month 1, month 0's own where month 0 declares, and the
+    point's opening rate otherwise (D6).  The restatement must continue the point's own
     frames, its row ``t`` the point's row ``t + 1``, in ``result_cf``, ``result_payout``
     and ``result_pols``, every flow among them, to 1e-9 relative, floored at 1e-9 for what a
     state read back from the CSV an ulp off moves about 0.  Scaling every count alike
@@ -1839,10 +1947,13 @@ MALFORMED = [
      "{file}: guar_charge_cum_pp_init " + _NOT_YET + "[19]"),
     ("a smoothing account at issue", _set("smoothing_account_init", [5], -1.0),
      "{file}: smoothing_account_init " + _NOT_YET + "[5]"),
+    ("a payout of 0 beside an asset share", _set("smoothed_payout_init", [8], 0.0),
+     "{file}: smoothed_payout_init must be above 0 on a policy in force with an asset share, "
+     "which holds the payout above 0; it is not at point_id [8]"),
     ("a bond in force without units", _set("units_init", [14], 0.0),
      "{file}: units_init must be above 0 on a bond in force, whose units are spent only "
      "when it is encashed; it is not at point_id [14]"),
-    # Rule 13 holds the endowment's attaching bonus to 0, to the cent, before its first
+    # Rule 14 holds the endowment's attaching bonus to 0, to the cent, before its first
     # declaration: a cent past 0 is refused, and half a cent read (the edges test).
     ("an attaching bonus a cent past 0 at 11", _set("attaching_bonus_init", [15], 0.01),
      "{file}: attaching_bonus_init must be 0, to the cent, on a conventional endowment in "
@@ -2125,27 +2236,29 @@ def test_a_bond_spent_in_its_first_month_is_refused_by_proj_len(tmp_path, case, 
 # Each Reference proj_len() holds to a domain, as (case, the References set, the S point
 # whose twin is read, the message where refused, and where the frame accepts a value the
 # reports refuse, the start of their message).  The point is the bond variant issued at the
-# valuation date, whose 267 months read every bond Reference, its market value reduction
-# and its guarantee date among them, or for the rule and the discount the endowment.  NaN
-# and the infinities are outside every domain.  WP_UK_S reads mort_be_factor inside the cap's min, which reads an infinity as
-# certain death; amc_rate, guar_charge_rate_base and smooth_cap through twelfth roots with no
-# real value past 1, and the two charges together as one factor on the balance; corridor_lo
-# and corridor_hi, the guarantee-imminent and MVR-deterrent factors and
-# guarantee_exercise_rate through a max and a min, the surrender rate's bound first, which
-# reads a NaN as certain surrender; the estate distribution and the death uplift before a
-# floor, which reads a NaN as an exhausted share; bonus_change_cap through a clamp a NaN is
-# lost through; and the limits in comparisons a NaN switches off, omega_age sizing every
-# bond's frame.  Each is refused at the nearest value outside each edge of its domain, and
-# accepted at the edge itself, whose reports then project, in finite floats over the whole
-# frame (M11's template), or are refused where a value first leaves the floats, or where
-# the contract refuses it, a bond that buys no units being spent in its issue month: the
-# largest finite float an edge of each domain unbounded above.  The horizon's largest
-# whole number grows the worked example's +7% past the floats, where the down scenario's
-# return decays to 0.  issue_age_min, omega_age and
-# bonus_horizon are whole numbers below 2**53, which the compiled model holds as long long,
-# printed through int() once whole: each is refused at a fraction and at exactly 2**53, and
-# its largest whole number accepted, or refused by a later rule.  The rule's References are
-# read with the rule on, on the endowment, point 5, where its every term is read.
+# valuation date, whose 267 months read every bond Reference, its market value reduction and
+# its guarantee date among them, or for the rule and the discount the endowment.  NaN and
+# the infinities are outside every domain.  WP_UK_S reads mort_be_factor inside the cap's
+# min, which reads an infinity as certain death; amc_rate, guar_charge_rate_base and
+# smooth_cap through twelfth roots with no real value past 1, and the two charges together
+# as one factor on the balance; corridor_lo and corridor_hi, the guarantee-imminent and
+# MVR-deterrent factors and guarantee_exercise_rate through a max and a min, the surrender
+# rate's bound first, which reads a NaN as certain surrender; the estate distribution and
+# the death uplift before a floor, which reads a NaN as an exhausted share; bonus_change_cap
+# through a clamp a NaN is lost through; and the limits in comparisons a NaN switches off,
+# omega_age sizing every bond's frame.  Each is refused at the nearest value outside each
+# edge of its domain, and accepted at the edge itself, whose reports then project, in finite
+# floats over the whole frame (M11's template), or are refused where a value first leaves
+# the floats, or where the contract refuses it, a bond that buys no units being spent in its
+# issue month: the largest finite float an edge of each domain unbounded above.  The
+# horizon's largest whole number grows the worked example's +7% past the floats, and decays
+# the down scenario's below the smallest, each refused, the latter by the frame, whose
+# exhaustion search declares on that withdrawing bond: a horizon of 4,500 underflows there,
+# where 4,000 does not.  issue_age_min, omega_age and bonus_horizon are whole numbers below
+# 2**53, which the compiled model holds as long long, printed through int() once whole: each
+# is refused at a fraction and at exactly 2**53, and its largest whole number accepted, or
+# refused by a later rule.  The rule's References are read with the rule on, on the
+# endowment, point 5, where its every term is read.
 RULE = {"bonus_rule_on": True}
 
 
@@ -2231,14 +2344,20 @@ DOMAINS = [
        f"point_id 7: bonus_rule_on must be True or False, not {value!r}", None)
       for value in (2, 0.5, math.nan, None, "yes")],
     *_domain("guar_fill_target", "a finite number, 0 or more",
-             {0.0: None, BIG: "point_id 5: the supportable bonus rate bonus_supportable(23) "
+             {0.0: None, BIG: "point_id 5: the supportable bonus rate bonus_supportable(11) "
                               "is inf, not a finite number"}, (BELOW_0,), point=5, also=RULE),
     *_domain("bonus_speed", *_SHARE, point=5, also=RULE),
     *_domain("bonus_change_cap", *_FINITE_0, point=5, also=RULE),
     *_whole_domain("bonus_horizon", (1, 10.0), least=1, also=RULE),
-    ("bonus_horizon=2**53-1", {**RULE, "bonus_horizon": WHOLE - 1}, 7, None, None),
+    ("bonus_horizon=2**53-1", {**RULE, "bonus_horizon": WHOLE - 1}, 7,
+     "point_id 7: the bonus rule's growth factor (1 + r_e)^m in bonus_supportable(11) is "
+     "0.0, below the smallest float", None),
+    ("bonus_horizon=4500", {**RULE, "bonus_horizon": 4500}, 7,
+     "point_id 7: the bonus rule's growth factor (1 + r_e)^m in bonus_supportable(11) is "
+     "0.0, below the smallest float", None),
+    ("bonus_horizon=4000", {**RULE, "bonus_horizon": 4000}, 7, None, None),
     ("bonus_horizon=2**53-1 at +7%", {**RULE, "bonus_horizon": WHOLE - 1}, 1, None,
-     "point_id 1: the bonus rule's growth factor (1 + r_e)^m in bonus_supportable(23) is "
+     "point_id 1: the bonus rule's growth factor (1 + r_e)^m in bonus_supportable(11) is "
      "past the largest float"),
     *_domain("mvr_deterrent_factor", *_FINITE_0),
     *_domain("guarantee_exercise_rate", *_SHARE),
@@ -2392,8 +2511,8 @@ PAST_THE_FLOATS = [
      "point_id 1: the inflation factor inflation_factor(24) is past the largest float, under "
      "inflation_rate 1e+200"),
     ("the bonus rule's growth", _set("fund_return", [1], 1e20),
-     {"bonus_rule_on": True, "bonus_horizon": 20}, 1, ("bonus_rate", 23), "result_cf",
-     "point_id 1: the bonus rule's growth factor (1 + r_e)^m in bonus_supportable(23) is past "
+     {"bonus_rule_on": True, "bonus_horizon": 20}, 1, ("bonus_rate", 11), "result_cf",
+     "point_id 1: the bonus rule's growth factor (1 + r_e)^m in bonus_supportable(11) is past "
      "the largest float, under fund_return 1e+20, amc_rate 0.01"),
     ("the endowment's discount", None, {"surr_disc_rate": 1e200}, 5,
      ("cost_of_bonus_pp", 11), "result_cf",
@@ -2637,13 +2756,13 @@ def test_every_state_s_reaches_is_accepted_in_force(s_model, tmp_path):
     the states differ (precised at M9):
 
     * S as shipped, its seven points under its own References (``s_model``);
-    * the splice's main set, its points and six variants under :data:`SPLICED_REFS`, the
-      estate distribution on, a woman, the crash and the pension basis among them;
-    * the splice's second set, under :data:`RULE_REFS`, the bonus rule on, on S's points,
-      and with ``UKLIB_SEC_FULL=1`` on the variants too;
-    * with ``UKLIB_SEC_FULL=1``, the guarantee charge doubled, :data:`CHARGE_SET`, and the
-      smoothing cap halved, :data:`SMOOTH_SET`, on S's points, the committed rows' own
-      References.
+    * with ``UKLIB_SEC_FULL=1``, the others: the splice's main set, its points and variants
+      under :data:`SPLICED_REFS`, the estate distribution on, a woman, the crash and the
+      pension basis among them; its second set, under :data:`RULE_REFS`, the bonus rule on;
+      the guarantee charge doubled, :data:`CHARGE_SET`, and the smoothing cap halved,
+      :data:`SMOOTH_SET`, on S's points, the committed rows' own References.  The default
+      run takes S as shipped alone, at the cost of the other sets' states, which the full
+      grid's leg asks (the M13 review; UKLIB-SEC-PLAN.md U6, as VA and IUL do).
 
     Each set but the first is read into an S model of its own, which is closed once its
     states are asked, so that one set's projections are held at a time.
@@ -2655,10 +2774,10 @@ def test_every_state_s_reaches_is_accepted_in_force(s_model, tmp_path):
     """
     variants = temp_inputs(tmp_path / "variants", model_path(TWIN),
                            model_points=_s_table_with_variants())
-    sets = {"shipped": (None, {}), "main": (variants, SPLICED_REFS),
-            "rule": (variants if SEC_FULL else model_path(TWIN), RULE_REFS)}
+    sets = {"shipped": (None, {})}
     if SEC_FULL:
-        sets.update(charge=(model_path(TWIN), CHARGE_SET),
+        sets.update(main=(variants, SPLICED_REFS), rule=(variants, RULE_REFS),
+                    charge=(model_path(TWIN), CHARGE_SET),
                     smooth=(model_path(TWIN), SMOOTH_SET))
     found, states = {}, {}
     for tag, (folder, refs) in sets.items():
@@ -2677,6 +2796,8 @@ def test_every_state_s_reaches_is_accepted_in_force(s_model, tmp_path):
         if refused:
             found[tag] = f"{len(refused)} refused, first: {refused[:5]}"
     assert not found, found
+    if not SEC_FULL:
+        return
     apart = {tag: _states_apart(states["shipped"], states[tag]) for tag in sets
              if tag != "shipped"}
     assert set().union(*apart.values()) == {"policy_count", *STATE}, apart
@@ -3075,7 +3196,10 @@ def test_each_history_column_is_read_from_the_model_point(s_model, tmp_path, col
     0 opens with the column, to the float's rounding (the history's ``opened``), and the
     two rows' reports part; and with the References set in both models the row is S's
     under them through its whole frame, in every cell and the three reports
-    (:func:`_continues_s`), which for a committed row the test before this one asserts.  For the
+    (:func:`_continues_s`), which for a committed row the test before this one asserts.
+    And the rate declared before the valuation date is where today's rule starts from (D6):
+    with the rule on at today's References, the first declaration in the frame is the
+    rule's step from the column, and from today's value another.  For the
     cumulants, what they move: the charges taken stop the charge at the cap where today's
     history, or none, would charge on, and the smoothing account runs the column's distance
     from today's in every month, per policy times the count.  Each Reference is set on a
@@ -3115,6 +3239,17 @@ def test_each_history_column_is_read_from_the_model_point(s_model, tmp_path, col
             gap = (mine - theirs) * p.pols_if_init()
             assert all(p.smoothing_account(t) - q.smoothing_account(t)
                        == pytest.approx(gap, rel=1e-9) for t in range(p.proj_len()))
+        if column == "bonus_rate_init":
+            sec = mx.read_model(folder, name=_name("history_rule"))
+            for ref, value in RULE_REFS.items():
+                setattr(sec.Projection, ref, value)
+            declared = [_rule_from(_point(sec, row), rate)
+                        for row, rate in ((label, mine), (twin.index[0], theirs))]
+            assert declared[0][0] == declared[0][1], declared
+            assert declared[1][0] == declared[1][1], declared
+            assert declared[0][0] != declared[1][0], declared
+            sec.close()
+            sec = None
         if committed:
             return
         sec = mx.read_model(folder, name=_name("history_sec"))
@@ -3129,6 +3264,80 @@ def test_each_history_column_is_read_from_the_model_point(s_model, tmp_path, col
                 model.close()
 
 
+def _rule_from(p, prev):
+    """``(the rate p declares first in its frame, the rule's step from prev at it)``."""
+    d = p.declaration_month(0)
+    step = p.bonus_speed * (p.bonus_supportable(d) - prev)
+    step = max(-p.bonus_change_cap, min(p.bonus_change_cap, step))
+    return p.bonus_rate(d), max(0.0, prev + step)
+
+
+# Rows on which D6's declarations are asserted under the rule, at today's References: the
+# worked example's bond valued in a declaration month, 71, its declaration month 0's own
+# event, and the down scenario valued mid-year, 68, its year-end declaration at t = 3.
+DECLARED = ((("derived", 1, 71), 0), (("derived", 2, 68), 3))
+
+
+def test_each_declaration_in_the_frame_is_made_at_today_s_references():
+    """A declaration at or after the valuation date is the projection's own event (D6).
+
+    With the bonus rule on, set on the committed model just read, every declaration in the
+    frame is the rule's at today's References, from this model's own asset share and
+    guarantee, and the first starts from ``bonus_rate_init()``, the rate declared before
+    the valuation date.  On the row valued in a declaration month (:data:`DECLARED`) that
+    declaration is month 0's own event: its rule reads the opening state, the asset share
+    the month opens with being ``asset_share_init()`` and the guarantee the units at the
+    opening price, and the price steps by it at ``t = 0``.  On the row valued mid-year the
+    year-end declaration, at ``t = 3``, is the rule's from the opening rate, and every month
+    of the year reads it.  Each differs from the rate the row opens with.
+    """
+    model = mx.read_model(model_path(SEC), name=_name("declared"))
+    try:
+        for ref, value in RULE_REFS.items():
+            setattr(model.Projection, ref, value)
+        for case, d0 in DECLARED:
+            p = _row(model, *case)
+            assert p.declaration_month(0) == d0 and p.is_declaration_month(d0), case
+            init = p.bonus_rate_init()
+            got, want = _rule_from(p, init)
+            assert got == want != init, (case, got, want, init)
+            assert [p.bonus_rate(t) for t in range(d0 + 1)] == [got] * (d0 + 1), case
+            opened = p.unit_price_init() if d0 == 0 else p.unit_price(d0 - 1)
+            assert p.unit_price(d0) == opened * (1.0 + got), case
+        p = _row(model, *DECLARED[0][0])
+        assert p.asset_share_at(0, "BEF_PREM") == p.asset_share_init()
+        assert p.guar_benefit_open(0) == p.units_init() * p.unit_price_init()
+    finally:
+        model.close()
+
+
+def test_under_the_rule_a_first_declaration_s_carries_departs_by_d6(spliced):
+    """Where S's first frame year keeps its column, this model declares by the rule (D6).
+
+    ``WP_UK_S``'s first projected year keeps its column under the rule; this model makes
+    every declaration in its frame by the rule at today's References.  So under the rule
+    set the twin of S's worked example in force at 60 parts from S at its first
+    declaration, policy month 71, ``t = 11``: S keeps the 2% it carries, and this model
+    declares the rule's step from it.  Before it the row is S's in every cell and report
+    but the bonus rate, which every month of the year reads from that declaration (T2,
+    :func:`_carried_cut`); the price steps apart there.  The departure ``model-sec.md``
+    records.  At the shipped References the rule is off, and the committed twins are S's.
+    """
+    s, sec = spliced["rule"]
+    sp = _point(s, 1)
+    assert _carried_cut(sp, 60) == 71
+    key = _row_key(sec, "twin", 1, 60)
+    p = projection(sec, key)
+    try:
+        assert sp.bonus_rate(71) == sp.bonus_rate_init() == p.bonus_rate_init() == 0.02
+        got, want = _rule_from(p, p.bonus_rate_init())
+        assert got == want != 0.02, (got, want)
+        assert p.unit_price(10) == sp.unit_price(70)
+        assert p.unit_price(11) == sp.unit_price(70) * (1.0 + got) != sp.unit_price(71)
+    finally:
+        _release(sec, key)
+
+
 def test_the_bonus_rate_read_is_bounded_by_the_frame(spliced):
     """With the bonus rule on, a frame ending mid-year reads no declaration past it.
 
@@ -3138,29 +3347,34 @@ def test_the_bonus_rate_read_is_bounded_by_the_frame(spliced):
     an asset share and a payout it projects past its own last month, which a compiled
     cache sized to the frame does not hold.  This model reads the rate declared before the
     year instead, the recorded departure (``bonus_rate``'s docstring; UKLIB-SEC-PLAN.md
-    §6.5): on the withdrawing variant under the rule, restated at its month 1, whose units
+    §6.5): on the withdrawing variant under the rule, restated at its month 302, whose units
     run out at policy month 400, the months of its 34th policy year, from policy month 396
-    to the frame's last, hold the rate S declared at 395, where S's own read the declaration
-    of policy month 407, past its frame, which differs.  No other cell moves
-    (T2, :func:`_departure`), and no read of the rate lies past the frame.
+    to the frame's last, hold the rate declared at 395, where S's own read the declaration
+    of policy month 407, past its frame, which differs.  And at the bound's edge: the
+    variant withdrawing 6%, whose units run out at policy month 287, restated at 280, ends
+    its frame the month before its year's declaration, 287, which it does not read.  No
+    other cell moves (T2, :func:`_departure`), and no read of the rate lies past the frame.
     """
     s, sec = spliced["rule"]
-    sp = _point(s, 12)
-    gone = _departure(sp, 1)
-    assert gone is not None and sp.proj_len() == 400, (gone, sp.proj_len())
-    first, rate = gone
-    assert first == 396 and sp.declaration_month(first) == 407 >= sp.proj_len()
-    key = _row_key(sec, "derived", 12, 1)
-    p = projection(sec, key)
-    try:
-        months = range(first - 1, sp.proj_len() - 1)
-        assert p.proj_len() == sp.proj_len() - 1
-        assert [p.bonus_rate(t) for t in months] == [rate] * len(months)
-        assert all(sp.bonus_rate(t + 1) != rate for t in months)
-        p.result_payout()
-        assert max(p.cells["bonus_rate"].keys()) < p.proj_len()
-    finally:
-        _release(sec, key)
+    for s_point, month, end, first, after in ((12, 302, 400, 396, 407),
+                                               (16, 280, 287, 276, 287)):
+        sp = _point(s, s_point)
+        gone = _departure(sp, month)
+        assert gone is not None and sp.proj_len() == end, (s_point, gone, sp.proj_len())
+        assert gone[0] == first and sp.declaration_month(first) == after >= end, s_point
+        key = _row_key(sec, "derived", s_point, month)
+        p = projection(sec, key)
+        try:
+            assert p.proj_len() == end - month
+            months = range(max(first - month, 0), p.proj_len())
+            assert [p.bonus_rate(t) for t in months] == [gone[1]] * len(months), s_point
+            assert all(sp.bonus_rate(t + month) != gone[1] for t in months), s_point
+            if s_point == 16:
+                assert p.declaration_month(0) == p.proj_len()
+            p.result_payout()
+            assert max(p.cells["bonus_rate"].keys()) < p.proj_len(), s_point
+        finally:
+            _release(sec, key)
 
 
 def test_the_exhaustion_search_s_never_is_a_month_past_cover(sec_model, s_model):
@@ -3734,40 +3948,40 @@ def test_no_cell_takes_a_default_but_the_claims_total():
 CODES = frozenset({*TIMINGS, *AS_TIMINGS, *CLAIM_KINDS, "UWP_bond", "CWP_endowment"})
 
 # The cells the static check leaves to the C step, each an item of UKLIB-SEC-PLAN.md §6.5's
-# C list or a cell that stays Python: the reports and the checks; the label accessors, which
-# become reporting cells; the guarantee dates' tuple and the two cells that read it, which
-# become a flag array; the two readers of the assumption tables, which become arrays; and
-# the claims total, the compensated total of three kinds.
-STATIC_EXEMPT = {
+# C list or a cell that stays Python: the reports and the five checks that build a
+# generator; the two label accessors that test a code against a tuple, which the codes
+# replace; the guarantee dates' tuple and the two cells that read it, which become a flag
+# array; the two readers of the assumption tables, which become arrays; and the claims
+# total, the compensated total of three kinds.  Each is needed: the test takes each away
+# in turn and the scan finds its cell.
+STATIC_EXEMPT = frozenset({
     "result_cf", "result_payout", "result_pols", "check_pols_roll_fwd",
     "check_asset_share_roll_fwd", "check_fb_mvr_exclusive", "check_mvr_bound",
-    "check_fund_nonneg", "check_payout_corridor", "check_declaration_is_annual",
-    "model_point", "chassis", "sex", "tax_basis", "guarantee_years", "is_guarantee_date",
-    "guarantee_imminent", "mort_rate", "surr_rate_base", "claims"}
+    "check_fund_nonneg", "chassis", "tax_basis", "guarantee_years", "is_guarantee_date",
+    "guarantee_imminent", "mort_rate", "surr_rate_base", "claims"})
 
 
-def test_no_computed_cell_builds_a_python_object(sec_model):
-    """No computed cell builds a tuple, a text or a generator but to raise (§6.5, *C*).
+def _static_findings(exempt):
+    """What the C step's static check finds in the Projection source, ``exempt`` aside.
 
-    The C step's static check refuses a Python object in a computed cell, and turns
-    ``WP_UK_S``'s own into the C forms UKLIB-SEC-PLAN.md §6.5 lists (:data:`STATIC_EXEMPT`).
-    So that the C step restructures nothing beyond that list, no other ``Projection`` cell
-    holds a tuple, a list, a set, a dict, a comprehension, a generator or an f-string, or a
-    text other than a timing, a kind or a chassis (:data:`CODES`) or the name of a column it
-    reads off ``model_point()``, but inside a ``raise`` statement, read from the source as
-    the build reads it (*Record — M11*).  ``try`` is allowed: a power that leaves the floats
-    raises Python's ``OverflowError``, which the cell names.  Every cell of the Space is
-    read, and every exemption is a cell of it.
+    A tuple, a list, a set, a dict, a comprehension, a generator, an f-string or a lambda,
+    a text other than a code (:data:`CODES`) or a column read off ``model_point()``, each
+    outside a ``raise``; and a call of a cell that returns a tuple, whose membership test or
+    loop no node of the caller shows, as M7's check now flags.  ``(cells read, findings)``,
+    each finding led by its cell's name.
     """
     source = (model_path(SEC) / "Projection" / "__init__.py").read_text(encoding="utf-8")
     built = (ast.Tuple, ast.List, ast.Set, ast.Dict, ast.GeneratorExp, ast.ListComp,
              ast.SetComp, ast.DictComp, ast.JoinedStr, ast.Lambda)
-    found, read = [], set()
-    for node in ast.parse(source).body:
-        if not isinstance(node, ast.FunctionDef):
-            continue
-        read.add(node.name)
-        if node.name in STATIC_EXEMPT:
+    cells = [node for node in ast.parse(source).body if isinstance(node, ast.FunctionDef)]
+    tuples = {node.name for node in cells for r in ast.walk(node)
+              if isinstance(r, ast.Return) and (
+                  isinstance(r.value, ast.Tuple)
+                  or (isinstance(r.value, ast.Call)
+                      and getattr(r.value.func, "id", None) == "tuple"))}
+    found = []
+    for node in cells:
+        if node.name in exempt:
             continue
         raises = {id(n) for r in ast.walk(node) if isinstance(r, ast.Raise)
                   for n in ast.walk(r)}
@@ -3785,9 +3999,38 @@ def test_no_computed_cell_builds_a_python_object(sec_model):
                   and inner.value not in CODES and id(inner) not in columns):
                 found.append(f"{node.name}: the text {inner.value!r} at line "
                              f"{inner.lineno}")
+            elif (isinstance(inner, ast.Call) and getattr(inner.func, "id", None) in tuples
+                  and node.name not in tuples):
+                found.append(f"{node.name}: a call of {inner.func.id}, a tuple, at line "
+                             f"{inner.lineno}")
+    return {node.name for node in cells}, found
+
+
+def test_no_computed_cell_builds_a_python_object(sec_model):
+    """No computed cell builds a tuple, a text or a generator but to raise (§6.5, *C*).
+
+    The C step's static check refuses a Python object in a computed cell, and turns
+    ``WP_UK_S``'s own into the C forms UKLIB-SEC-PLAN.md §6.5 lists (:data:`STATIC_EXEMPT`).
+    So that the C step restructures nothing beyond that list, no other ``Projection`` cell
+    holds a tuple, a list, a set, a dict, a comprehension, a generator or an f-string, or a
+    text other than a timing, a kind or a chassis (:data:`CODES`) or the name of a column it
+    reads off ``model_point()``, but inside a ``raise`` statement, nor calls a cell that
+    returns a tuple, ``policy_year(t) in guarantee_years()`` among them, read from the
+    source as the build reads it (:func:`_static_findings`; *Record — M11*, and M7's
+    check).  ``try`` is allowed: a power that leaves the floats raises Python's
+    ``OverflowError``, which the cell names.  Every cell of the Space is read, and every
+    exemption is a cell of it and needed: with any one exemption taken away, the scan finds
+    that cell, so that no exemption is inert, as one was under pandas 3 at M7, where a text
+    column reads as ``str``.
+    """
+    read, found = _static_findings(STATIC_EXEMPT)
     assert read == set(sec_model.Projection.cells)
     assert STATIC_EXEMPT <= read
     assert not found, found
+    inert = [name for name in sorted(STATIC_EXEMPT)
+             if not any(f.startswith(f"{name}: ")
+                        for f in _static_findings(STATIC_EXEMPT - {name})[1])]
+    assert not inert, f"exemptions the scan needs none of: {inert}"
 
 
 def _docs(model):
@@ -4043,13 +4286,14 @@ def test_the_core_grid_reaches_every_branch(spliced, splice_records):
     reached = set()
     for case in sorted(CORE_GRID):
         reached |= _record_of(spliced, splice_records, case)["branches"]
-    missing = [what for what in (*AT_VALUATION, *IN_FRAME) if what not in reached]
+    missing = sorted(REACHED - reached)
     assert not missing, f"no core row reaches: {missing}"
     if SEC_FULL:
         beyond = set()
         for case in GRID:
             if case not in CORE_GRID:
                 beyond |= _record_of(spliced, splice_records, case)["branches"]
+        beyond &= REACHED
         assert beyond <= reached, f"the full grid alone reaches: {sorted(beyond - reached)}"
 
 

@@ -1755,6 +1755,17 @@ def _wp_charges(s, d):
     return s.guar_charge_cum_pp(d - 1) if d > s.proj_start() else 0.0
 
 
+def _wp_rate(s, d):
+    """``WP_UK_S``'s bonus rate declared at the last declaration before month ``d``, at the
+    end of policy month ``12 x duration(d) - 1`` (D6): the declarations from month ``d`` on
+    are the SEC model's, at today's References, and start from it.  S's own declaration
+    where its frame has made it by its rule, past its first frame year, and S's carried
+    column otherwise, which its first frame year keeps.  With the rule off the two are
+    the column."""
+    last = 12 * s.duration(d) - 1
+    return s.bonus_rate(last) if last > s.proj_start() + 11 else s.bonus_rate_init()
+
+
 def _wp_smoothing(s, d):
     """``WP_UK_S``'s smoothing account entering month ``d``, per policy in force then.
 
@@ -1774,8 +1785,9 @@ def _wp_smoothing(s, d):
 # asset share, S's asset_share_at(d, "BEF_PREM"); the units and the unit price, S's of month
 # d - 1 (_wp_units, _wp_price); on the endowment the attaching bonus, the guarantee month d
 # opens with less the sum assured (_wp_attaching); the smoothed payout month d opens with,
-# S's smoothed_payout_open(d); the bonus rate of the policy year under way, S's own
-# bonus_rate(d); and the two cumulants S restarts at 0 where its frame opens, the
+# S's smoothed_payout_open(d); the bonus rate declared at the last declaration before
+# month d, from which the SEC model's own declarations start (_wp_rate); and the two
+# cumulants S restarts at 0 where its frame opens, the
 # guarantee charges taken (_wp_charges) and the smoothing account per policy in force
 # (_wp_smoothing).  At a twin's source_mth, S's frame opening, these are what S itself
 # assumes there: its own columns, the units, the price, the attaching bonus, the asset
@@ -1787,7 +1799,7 @@ _WP_STATE = {
     "unit_price_init": _wp_price,
     "attaching_bonus_init": _wp_attaching,
     "smoothed_payout_init": lambda s, d: s.smoothed_payout_open(d),
-    "bonus_rate_init": lambda s, d: s.bonus_rate(d),
+    "bonus_rate_init": _wp_rate,
     "guar_charge_cum_pp_init": _wp_charges,
     "smoothing_account_init": _wp_smoothing,
 }
@@ -2219,7 +2231,9 @@ SEC_SPECS: dict[str, SecSpec] = {
     # where today's would at 88, and the 5% bond's at 207 where today's would at 487.  The
     # bond and the endowment at 150 from S under the bonus rule, its unit price 1.48623 and
     # its guarantee 22,091.61 where the rates held level give 1.268242 and 23,912.36, and the
-    # year's rate the rule declared, 5.69% and 0.60%.  And the worked example's bond at 156
+    # rate the rule declared at the last declaration before 150, at policy month 143, 5.66%
+    # and 0.62%, from which the SEC model's own declarations start (D6).  And the worked
+    # example's bond at 156
     # from S under a smoothing cap of 5%, its payout held below its asset share and its
     # smoothing account run below 0.  At the shipped References the committed model projects
     # each from that history at today's.

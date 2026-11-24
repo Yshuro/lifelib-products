@@ -724,16 +724,17 @@ def fund_return():
 
 
 def bonus_rate_init():
-    """The declared bonus rate of the policy year under way at the valuation date.
+    """The bonus rate declared at the last declaration before the valuation date.
 
     :mod:`~.WP_UK_S`'s ``bonus_rate`` column, renamed to D6's vocabulary: 2.00% on the bond
     chassis and 1.50% compound on the endowment, both **[std]**: declarations are not
     published in firms' principles and practices documents.  It is the rate of every
-    policy year in the base run, and with ``bonus_rule_on`` the rate of the year under way
-    at the valuation date, as :mod:`~.WP_UK_S`'s is the rate of its first projected year;
-    the setting rule takes each later year's from it.  On a policy not yet in force, the
-    rate of its first policy year, an issue value.  A finite number, zero or more, the
-    declared bonus being floored at 0, which ``Data`` requires.
+    policy year in the base run.  With ``bonus_rule_on`` it is the state before the
+    valuation date (D6): the rate declared at the end of policy month
+    ``12 x duration(0) - 1``, from which the rule sets the first declaration in the frame,
+    the one closing the policy year under way, at today's References.  On a policy not yet
+    in force, the rate its first declaration starts from, an issue value.  A finite number,
+    zero or more, the declared bonus being floored at 0, which ``Data`` requires.
     """
     return float(model_point()["bonus_rate_init"])
 
@@ -1759,7 +1760,9 @@ def bonus_supportable(t):
     factor past the largest float, which only a return or a horizon past every bond's
     makes, is refused, naming the point and the References: Python's power raises
     ``OverflowError`` there, naming neither, and C's gives an infinity
-    (``PA_UK_SEC``'s form, *Record — M11*).  So is a rate past the floats, which a
+    (``PA_UK_SEC``'s form, *Record — M11*).  So is a factor below the smallest float, which
+    a horizon long enough makes of a return net of charges below 0, and which would read as
+    no asset share at the horizon.  So is a rate past the floats, which a
     projected asset share or a target past them makes.
     """
     m = (int(bonus_horizon) if is_unitised()                         # noqa: F821
@@ -1777,6 +1780,12 @@ def bonus_supportable(t):
         raise ValueError(
             f"point_id {point_id}: the bonus rule's growth factor (1 + r_e)^m in "  # noqa: F821
             f"bonus_supportable({t}) is past the largest float, under fund_return "
+            f"{fund_return()}, amc_rate {float(amc_rate)}, the guarantee charge's rate "  # noqa: F821
+            f"{guar_charge_rate(t)} and a horizon of {m} years")
+    if grown == 0.0 and 1.0 + r_e != 0.0:
+        raise ValueError(
+            f"point_id {point_id}: the bonus rule's growth factor (1 + r_e)^m in "  # noqa: F821
+            f"bonus_supportable({t}) is 0.0, below the smallest float, under fund_return "
             f"{fund_return()}, amc_rate {float(amc_rate)}, the guarantee charge's rate "  # noqa: F821
             f"{guar_charge_rate(t)} and a horizon of {m} years")
     proj = asset_share_at(t, "BEF_PREM") * grown
@@ -1814,11 +1823,17 @@ def bonus_rate(t):
     their principles and practices, which is a discipline **per declaration** and would
     be a different rule applied twelve times a year.
 
-    The policy year under way at the valuation date keeps :func:`bonus_rate_init`, as
-    :mod:`~.WP_UK_S`'s first projected year keeps its column, and each later year's rate is
-    set at its declaration, from the year before's, ``bonus_rate(d - 12)``, a valuation
-    month a year back.  A month before its year's declaration reads it ahead, up to 11
-    months, the anniversary read R2 admits, bounded by the frame: where the frame ends
+    Every declaration in the frame is the rule's, made at today's References from this
+    model's own asset share and guarantee (USLIB-SEC-PLAN.md D6: an annual event at or
+    after the valuation date is the projection's), the one closing the policy year under
+    way among them, and a declaration at the end of month 0 is month 0's own event.  Each
+    starts from the rate declared before it, ``bonus_rate(d - 12)``, a valuation month a
+    year back, and the first in the frame from :func:`bonus_rate_init`, the rate declared
+    at the last declaration before the valuation date.  :mod:`~.WP_UK_S`'s first
+    projected year keeps its column instead, so under the rule its points in force, and a
+    point valued inside that year, part from it at their first declaration in the frame,
+    by D6 (``model-sec.md``).  A month before its year's declaration reads it ahead, up to
+    11 months, the anniversary read R2 admits, bounded by the frame: where the frame ends
     before the year's declaration, as a forced encashment ends it mid-year, no
     declaration is made, and the year reads the rate declared before it, where
     :mod:`~.WP_UK_S` reads past its frame.  The bound changes nothing but the
@@ -1829,14 +1844,12 @@ def bonus_rate(t):
         return 0.0
     if not bonus_rule_on:                                            # noqa: F821
         return bonus_rate_init()
-    if duration(t) <= duration(t_entry()):
-        return bonus_rate_init()
     d = declaration_month(t)
     if t != d:
         if d >= proj_len():
-            return bonus_rate(d - 12)
+            return bonus_rate(d - 12) if d - 12 >= t_entry() else bonus_rate_init()
         return bonus_rate(d)
-    prev = bonus_rate(d - 12)
+    prev = bonus_rate(d - 12) if d - 12 >= t_entry() else bonus_rate_init()
     step = bonus_speed * (bonus_supportable(d) - prev)               # noqa: F821
     step = max(-bonus_change_cap, min(bonus_change_cap, step))       # noqa: F821
     return max(0.0, prev + step)
