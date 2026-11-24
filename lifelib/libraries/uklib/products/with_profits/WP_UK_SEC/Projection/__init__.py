@@ -625,18 +625,17 @@ What running in force adds is the contract's own bounds, which :func:`proj_len` 
 point to: an issue age of ``issue_age_min``, 18, or more, the youngest the mortality table
 rates, though the bond admits issue from 3 months; the bond's cover from issue to
 ``omega_age`` and the endowment's to a maturity no later than it, so that every attained
-age in cover is one the table rates, ``omega_age`` being at most ``omega_age_max``, 121,
-the shipped table's last age plus one; and a policy still in cover at the valuation date.
-``Data`` bounds future new business by ``future_horizon_mth``, 120 months. Those bounds
-are the contract the compiled model's caches are sized from (``spec_sec.py``): a cover of
-at most 1,236 months from issue at 18 to 121, starting at most 120 months after the
-valuation date. So each of the three is held to the value the caches are sized from too:
-:func:`proj_len` refuses an ``issue_age_min`` below 18 and an ``omega_age_max`` above 121,
-and ``Data`` a horizon above 120, so that no value of a Reference admits a frame the
-compiled model would read past its caches, raising ``IndexError`` where modelx projects.
-And :func:`proj_len` holds every Reference a formula reads through a bound, a power or a
-product to its domain, NaN and the infinities outside each, its docstring naming each
-domain and its reason.
+age in cover is one the table rates; and a policy still in cover at the valuation date.
+``Data`` bounds future new business by ``future_horizon_mth``, 120 months. The compiled
+model's caches are sized from the shipped References and table (``spec_sec.py``): a cover
+of at most 1,236 months, from issue at 18 to 121, the table's last age plus one, and a
+frame of at most 1,356, issued at most 120 months after the valuation date. Each
+Reference keeps its domain, and :func:`proj_len` refuses, by point and in both engines, a
+cover or a frame longer than the caches hold, so that no point is projected whose reads
+would pass a cache, raising ``IndexError`` where modelx projects, and every frame they hold
+projects, whatever the References. And :func:`proj_len` holds every Reference a formula
+reads through a bound, a power or a product to its domain, NaN and the infinities outside
+each, its docstring naming each domain and its reason.
 """
 
 from modelx.serialize.jsonvalues import *
@@ -857,15 +856,14 @@ def is_guarantee_year(y):
     The one cell that reads ``Data.guarantee_flags``, the point's ``guarantee_dates``
     decoded by policy year, where :mod:`~.WP_UK_S` parses the column into a tuple of years,
     ``guarantee_years``, and tests a year's membership of it: 1 at each year the column
-    names, so that ``is_guarantee_year(y)`` is ``y in guarantee_years()``.  False below
-    year 1, which no column names, and past ``Data.guarantee_year_last``, a year no cover
+    names, so that ``is_guarantee_year(y)`` is ``y in guarantee_years()``.  False below year
+    1, which no column names, and past ``Data.guarantee_year_last``, a year no cover
     reaches, which the array does not hold, so that no read meets either end of it.
     :func:`is_guarantee_date` reads it at the policy year of a declaration month, and
     :func:`guarantee_imminent` at the year whose date is the next a month's window waits
-    for, so ``y`` runs from 1 to the year after the longest cover's last, 104 at the
-    contract's longest, issue at ``issue_age_min``, 18, to ``omega_age_max``, 121
-    (``spec_sec.py``).  Never True on the endowment chassis, which ``Data`` holds to no
-    guarantee dates.
+    for, so ``y`` runs from 1 to the year after the longest cover's last, 104 at the longest
+    cover :func:`proj_len` admits, 1,236 months (``spec_sec.py``).  Never True on the
+    endowment chassis, which ``Data`` holds to no guarantee dates.
     """
     if y < 1 or y > data.guarantee_year_last():                      # noqa: F821
         return False
@@ -1070,7 +1068,13 @@ def fund_exhaust_mth():
     :func:`duration_mth_init` rather than read.  It reads the units of the month of
     exhaustion, one past the frame's last, as :mod:`~.WP_UK_S`'s search does.  It starts at
     :func:`t_entry`, not at 0, because a bond issued later holds no units before its issue
-    month, which a search from 0 would read as exhausted at once.
+    month, which a search from 0 would read as exhausted at once.  And it stops at month
+    1,356 of the valuation clock, the month whose run-out ends the longest frame the
+    compiled model's caches hold, 1,356 months (:func:`proj_len`, ``spec_sec.py``): units
+    lasting past it leave a frame longer than that, which :func:`proj_len` refuses whichever
+    month they would run out in, so the search reads no month past the caches, and its
+    "never" there is "not by month 1,356".  Every frame the shipped horizon admits ends by
+    then, so the stop changes nothing a report reads.
 
     "Never" is ``cover_end_mth() + 1``, a month past cover.  :mod:`~.WP_UK_S`'s was 0, safe
     there because its month 0 is a bond's issue month, which the single premium funds; on
@@ -1079,7 +1083,7 @@ def fund_exhaust_mth():
     """
     if not is_unitised() or wd_rate() <= 0.0:
         return cover_end_mth() + 1
-    for t in range(t_entry(), cover_end_mth() - duration_mth_init()):
+    for t in range(t_entry(), min(cover_end_mth() - duration_mth_init(), 1357)):
         if units(t) <= 1e-9:
             return duration_mth_init() + t
     return cover_end_mth() + 1
@@ -1100,23 +1104,29 @@ def proj_len():
     These raise here, naming the point, rather than project nothing, a frame the contract
     does not have, or one that no value of a Reference defines, each checked in this order:
 
-    * ``issue_age_min`` that is not a whole number, 18 or more, below ``2**53``: an age,
-      which a NaN would switch off, every comparison with it failing, and the youngest
-      the compiled model's caches are sized from (``spec_sec.py``), so that a lower one
-      would admit frames past them;
+    * ``issue_age_min`` that is not a whole number, 0 or more, below ``2**53``: an age,
+      which a NaN would switch off, every comparison with it failing;
     * a policy issued below ``issue_age_min``, 18, the youngest age the mortality table
       rates, though the bond admits issue from 3 months;
     * ``omega_age`` that is not a whole number below ``2**53``, above ``issue_age_min`` and
       at most a year past the mortality table's last age, ``Data.mort_age_last() + 1``,
       since cover reads attained ages to ``omega_age - 1``: the limiting age sizes every
       bond's frame, and a NaN, an infinity or a fraction of a year would leave the frame's
-      months no whole number; and ``omega_age`` above ``omega_age_max``, 121, which is
-      itself a whole number below ``2**53`` and 121 or less, the largest limiting age the
-      caches are sized from, whatever mortality table is read;
+      months no whole number;
     * a bond issued at or past ``omega_age``, which has no cover from issue, and an
       endowment maturing past it, at ``age_at_entry() + policy_term()``, whose last
       attained ages the table would not rate: :mod:`~.WP_UK_S` bounds no term, and reads
       them at ``omega_age``;
+    * a cover longer than 1,236 months, ``12 x (121 - 18)``, from issue at 18, the shipped
+      ``issue_age_min``, to 121, the shipped table's last age plus one: the longest the
+      compiled model's caches are sized from, whose policy years run to 104, the year
+      after the last of such a cover, whose date its last month's window waits for
+      (``spec_sec.py``).  Covers are whole years, so the next is 1,248 months, whose
+      window reads year 105, past the cache.  The shipped References and table admit no
+      longer cover; an ``issue_age_min`` below 18 or a table rating ages past 120 admits
+      one, which the in-force step projected and this one refuses, by point, a cover of
+      1,236 months or less projecting whatever the References (model-sec.md, *Departures
+      from WP_UK_S*);
     * a policy whose cover had ended by the valuation date, at or past
       :func:`cover_end_mth`, which an in-force extract should not carry;
     * any point while a Reference is off its domain, which the message names. NaN and the
@@ -1163,41 +1173,49 @@ def proj_len():
 
     * a bond whose units run out in its first month on the books, month 0 for a bond in
       force, its issue month for one not yet in force: the frame would end before it
-      began.
+      began;
+    * a frame longer than 1,356 months, the longest cover, 1,236 months, issued 120 months,
+      the shipped ``Data.future_horizon_mth``, after the valuation date: the longest the
+      compiled model's caches are sized from, whose months run to 1,357, the count carried
+      into the month after the frame's end, which its roll-forward residual reads
+      (``spec_sec.py``).  The shipped horizon admits no longer frame; a longer one admits
+      one, which the in-force step projected and this one refuses, by point, a frame of
+      1,356 months or less projecting whatever the horizon.  :func:`fund_exhaust_mth`
+      searches no month past 1,356, so a bond whose units last past it is refused
+      whichever month they would run out in.
 
     The rules read this Space's References, which ``Data`` cannot see, so they are checked
-    here.  They are the contract the compiled model's caches are sized from
-    (``spec_sec.py``): a cover of at most ``omega_age_max - issue_age_min`` years, 103, from
-    issue at 18 to a limiting age of 121, starting at most ``Data.future_horizon_mth``, 120
-    months, after the valuation date, so a frame of at most 1,356 months, and attained ages
-    from 18 to ``omega_age - 1`` on the mortality table.  Every report reads this cell
-    first, and so does every count, so no point outside them is projected, in modelx as
-    compiled; and the three bounds are held to the values the caches are sized from, the
-    issue age at 18 or more, the limiting age at 121 or less and the horizon at 120 or less,
-    so that no value of a Reference admits a frame the compiled model would read past its
-    caches, raising ``IndexError`` where modelx projects.  Each check is a comparison
-    written out, a finite bound the largest float, 1.7976931348623157e308, and a whole one
-    ``2**53``, so that a compiled cell runs it in C, and each Reference is printed as the
-    compiled model types it: ``issue_age_min``, ``omega_age``, ``omega_age_max`` and
-    ``bonus_horizon`` through ``int()`` once they are whole numbers, and every other through
-    ``float()``; ``omega_age`` is then read as the ``int`` it is.  A value a formula
-    computes past the floats, from References and an opening state each in its domain, is
-    refused in the cell where it first is, naming the point: the premium, the asset share
-    and the parts of its month that a Reference multiplies, the units, the unit price, the
-    guarantee, the death uplift, the cost of bonus and its transfer, the two cumulants, each
-    flow and the net cash flow.  So is a power past the floats, which Python's ``**`` raises
-    as ``OverflowError``, naming neither the point nor the Reference, and C's ``pow`` gives
-    as an infinity: the inflation factor, the bonus rule's growth to its horizon and the
-    endowment's discount on its bonus cost, which below the smallest float is refused too,
-    since the cost divides by it (``PA_UK_SEC``'s form, *Record — M11*).
+    here.  They are the contract a compiled model's caches are sized from: attained ages
+    from 18 to ``omega_age - 1`` on the mortality table, and a frame of at most
+    ``omega_age - issue_age_min`` years and the future horizon, which the caches hold to the
+    shipped References and table, a cover of 1,236 months and a frame of 1,356, the two
+    bounds above (``spec_sec.py``).  Every report reads this cell first, and so does every
+    count, so no point outside them is projected, in modelx as compiled, and none whose
+    reads would pass a cache, raising ``IndexError`` where modelx projects; each Reference
+    keeps the domain the in-force step gave it, so that no value in it refuses a point
+    whose frame the caches hold.  Each check is a comparison written out, a finite bound the
+    largest float, 1.7976931348623157e308, and a whole one ``2**53``, so that a compiled
+    cell runs it in C, and each Reference is printed as the compiled model types it:
+    ``issue_age_min``, ``omega_age`` and ``bonus_horizon`` through ``int()`` once they are
+    whole numbers, and every other through ``float()``; ``omega_age`` is then read as the
+    ``int`` it is.  A value a formula computes past the floats, from References and an
+    opening state each in its domain, is refused in the cell where it first is, naming the
+    point: the premium, the asset share and the parts of its month that a Reference
+    multiplies, the units, the unit price, the guarantee, the death uplift, the cost of
+    bonus and its transfer, the two cumulants, each flow and the net cash flow.  So is a
+    power past the floats, which Python's ``**`` raises as ``OverflowError``, naming neither
+    the point nor the Reference, and C's ``pow`` gives as an infinity: the inflation factor,
+    the bonus rule's growth to its horizon and the endowment's discount on its bonus cost,
+    which below the smallest float is refused too, since the cost divides by it
+    (``PA_UK_SEC``'s form, *Record — M11*).
     """
     if not (issue_age_min > -9007199254740992.0                       # noqa: F821
             and issue_age_min < 9007199254740992.0                    # noqa: F821
             and issue_age_min == issue_age_min // 1):                 # noqa: F821
         raise ValueError(f"point_id {point_id()}: issue_age_min must be a whole number "  # noqa: F821
                          f"below 2**53, not {float(issue_age_min)}")  # noqa: F821
-    if issue_age_min < 18:                                           # noqa: F821
-        raise ValueError(f"point_id {point_id()}: issue_age_min must be 18 or more, "  # noqa: F821
+    if issue_age_min < 0:                                            # noqa: F821
+        raise ValueError(f"point_id {point_id()}: issue_age_min must be 0 or more, "  # noqa: F821
                          f"not {int(issue_age_min)}")                # noqa: F821
     x = age_at_entry()
     if x < issue_age_min:                                            # noqa: F821
@@ -1214,17 +1232,6 @@ def proj_len():
             f"point_id {point_id()}: omega_age must be above issue_age_min, "  # noqa: F821
             f"{int(issue_age_min)}, and at most {data.mort_age_last() + 1}, a year past "  # noqa: F821
             f"mort_table.csv's last age, not {int(omega_age)}")      # noqa: F821
-    if not (omega_age_max > -9007199254740992.0                       # noqa: F821
-            and omega_age_max < 9007199254740992.0                    # noqa: F821
-            and omega_age_max == omega_age_max // 1):                 # noqa: F821
-        raise ValueError(f"point_id {point_id()}: omega_age_max must be a whole number "
-                         f"below 2**53, not {float(omega_age_max)}")  # noqa: F821
-    if omega_age_max > 121:                                          # noqa: F821
-        raise ValueError(f"point_id {point_id()}: omega_age_max must be 121 or less, "
-                         f"not {int(omega_age_max)}")                # noqa: F821
-    if omega_age > omega_age_max:                                    # noqa: F821
-        raise ValueError(f"point_id {point_id()}: omega_age, {int(omega_age)}, is above "  # noqa: F821
-                         f"omega_age_max, {int(omega_age_max)}")     # noqa: F821
     if is_unitised():
         if cover_end_mth() <= 0:
             raise ValueError(f"point_id {point_id()}: the issue age, {x}, is at or past "  # noqa: F821
@@ -1234,6 +1241,11 @@ def proj_len():
             f"point_id {point_id()}: the endowment matures at age {x + policy_term()}, "  # noqa: F821
             f"past omega_age, {int(omega_age)}, whose attained ages mort_table.csv "  # noqa: F821
             f"may not rate")
+    if cover_end_mth() > 1236:
+        raise ValueError(
+            f"point_id {point_id()}: the cover, {cover_end_mth()} months from issue, is "
+            f"longer than 1236 months, issue at 18 to 121, the longest the compiled "
+            f"model's caches hold")
     d = duration_mth_init()
     if d >= cover_end_mth():
         raise ValueError(
@@ -1337,7 +1349,13 @@ def proj_len():
         raise ValueError(
             f"point_id {point_id()}: the bond's units run out in its first month on the "  # noqa: F821
             f"books, policy month {exhaust}, so its frame would end before it began")
-    return min(cover_end_mth(), exhaust) - d
+    n = min(cover_end_mth(), exhaust) - d
+    if n > 1356:
+        raise ValueError(
+            f"point_id {point_id()}: the frame is longer than 1356 months, the longest the "
+            f"compiled model's caches hold: cover ends {n} months after the valuation "
+            f"date")
+    return n
 
 
 def is_forced_encashment():
@@ -1606,8 +1624,8 @@ def guar_charge_cum_pp_py(y):
     months, on the compiled model's C stack.  :func:`guar_charge_cum_pp` and its refusal,
     :func:`guar_charge_cum_refusal` read it in the first month of policy year ``y``, in
     cover and after :func:`t_entry`, so ``y`` runs from 2 to the policy year of the longest
-    cover's last month, 103 at the contract's longest, issue at ``issue_age_min``, 18, to
-    ``omega_age_max``, 121 (``spec_sec.py``); no other cell reads it.
+    cover's last month, 103 at the longest cover :func:`proj_len` admits, 1,236 months
+    (``spec_sec.py``); no other cell reads it.
     """
     d = duration_mth_init()
     first = max(t_entry(), 12 * (y - 2) - d)
@@ -1800,9 +1818,8 @@ def asset_share_py(y):
     month back to :func:`t_entry` would run the contract's longest cover, 1,236 months, on
     the compiled model's C stack.  :func:`asset_share` read it in the first month of policy
     year ``y``, in cover and after :func:`t_entry`, so ``y`` runs from 2 to the policy year
-    of the longest cover's last month, 103 at the contract's longest, issue at
-    ``issue_age_min``, 18, to ``omega_age_max``, 121 (``spec_sec.py``); no other cell reads
-    it.
+    of the longest cover's last month, 103 at the longest cover :func:`proj_len` admits,
+    1,236 months (``spec_sec.py``); no other cell reads it.
     """
     d = duration_mth_init()
     first = max(t_entry(), 12 * (y - 2) - d)
@@ -1883,8 +1900,8 @@ def unit_price_py(y):
     the compiled model's C stack.  :func:`unit_price` and its refusal,
     :func:`unit_price_refusal` read it in the first month of policy year ``y``, in cover and
     after :func:`t_entry`, so ``y`` runs from 2 to the policy year of the longest cover's
-    last month, 103 at the contract's longest, issue at ``issue_age_min``, 18, to
-    ``omega_age_max``, 121 (``spec_sec.py``); no other cell reads it.
+    last month, 103 at the longest cover :func:`proj_len` admits, 1,236 months
+    (``spec_sec.py``); no other cell reads it.
     """
     d = duration_mth_init()
     first = max(t_entry(), 12 * (y - 2) - d)
@@ -1966,9 +1983,8 @@ def units_py(y):
     back to :func:`t_entry` would run the contract's longest cover, 1,236 months, on the
     compiled model's C stack.  :func:`units` and its refusal, :func:`units_refusal` read it
     in the first month of policy year ``y``, in cover and after :func:`t_entry`, so ``y``
-    runs from 2 to the policy year of the longest cover's last month, 103 at the contract's
-    longest, issue at ``issue_age_min``, 18, to ``omega_age_max``, 121 (``spec_sec.py``); no
-    other cell reads it.
+    runs from 2 to the policy year of the longest cover's last month, 103 at the longest
+    cover :func:`proj_len` admits, 1,236 months (``spec_sec.py``); no other cell reads it.
     """
     d = duration_mth_init()
     first = max(t_entry(), 12 * (y - 2) - d)
@@ -2061,8 +2077,8 @@ def guar_benefit_pp_py(y):
     months, on the compiled model's C stack.  :func:`guar_benefit_pp` and its refusal,
     :func:`guar_benefit_refusal` read it in the first month of policy year ``y``, in cover
     and after :func:`t_entry`, so ``y`` runs from 2 to the policy year of the longest
-    cover's last month, 103 at the contract's longest, issue at ``issue_age_min``, 18, to
-    ``omega_age_max``, 121 (``spec_sec.py``); no other cell reads it.
+    cover's last month, 103 at the longest cover :func:`proj_len` admits, 1,236 months
+    (``spec_sec.py``); no other cell reads it.
     """
     d = duration_mth_init()
     first = max(t_entry(), 12 * (y - 2) - d)
@@ -2518,9 +2534,8 @@ def smoothed_payout_py(y):
     cell a month back to :func:`t_entry` would run the contract's longest cover, 1,236
     months, on the compiled model's C stack.  :func:`smoothed_payout` read it in the first
     month of policy year ``y``, in cover and after :func:`t_entry`, so ``y`` runs from 2 to
-    the policy year of the longest cover's last month, 103 at the contract's longest, issue
-    at ``issue_age_min``, 18, to ``omega_age_max``, 121 (``spec_sec.py``); no other cell
-    reads it.
+    the policy year of the longest cover's last month, 103 at the longest cover
+    :func:`proj_len` admits, 1,236 months (``spec_sec.py``); no other cell reads it.
     """
     d = duration_mth_init()
     first = max(t_entry(), 12 * (y - 2) - d)
@@ -2864,9 +2879,8 @@ def pols_if_py(y):
     less its deaths and surrenders: the product ``pols_if_at(t, BEF_NB)`` forms at the next
     month, in the same order, bit for bit.  ``pols_if_at(t, BEF_NB)`` reads it in the first
     month of policy year ``y``, in cover, in the frame and after :func:`t_entry`, so ``y``
-    runs from 2 to the policy year of the longest cover's last month, 103 at the contract's
-    longest, issue at ``issue_age_min``, 18, to ``omega_age_max``, 121 (``spec_sec.py``); no
-    other cell reads it.
+    runs from 2 to the policy year of the longest cover's last month, 103 at the longest
+    cover :func:`proj_len` admits, 1,236 months (``spec_sec.py``); no other cell reads it.
     """
     d = duration_mth_init()
     first = max(t_entry(), 12 * (y - 2) - d)
@@ -3146,8 +3160,8 @@ def smoothing_account_py(y):
     months, on the compiled model's C stack.  :func:`smoothing_account` and its refusal,
     :func:`smoothing_account_refusal` read it in the first month of policy year ``y``, in
     cover and after :func:`t_entry`, so ``y`` runs from 2 to the policy year of the longest
-    cover's last month, 103 at the contract's longest, issue at ``issue_age_min``, 18, to
-    ``omega_age_max``, 121 (``spec_sec.py``); no other cell reads it.
+    cover's last month, 103 at the longest cover :func:`proj_len` admits, 1,236 months
+    (``spec_sec.py``); no other cell reads it.
     """
     d = duration_mth_init()
     first = max(t_entry(), 12 * (y - 2) - d)
@@ -3490,8 +3504,6 @@ CWP_ENDOWMENT = 1
 issue_age_min = 18
 
 omega_age = 120
-
-omega_age_max = 121
 
 mort_be_factor = 0.6
 

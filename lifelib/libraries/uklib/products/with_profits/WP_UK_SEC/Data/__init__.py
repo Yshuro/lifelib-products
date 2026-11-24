@@ -60,8 +60,7 @@ account. :func:`model_point_table` refuses a table that lacks one, repeats a
 issued more than ``future_horizon_mth`` months after the valuation date, 120 as shipped:
 future new business is written over a stated horizon, so that no frame runs longer than
 cover from issue plus that horizon. Set to 0, the Reference refuses future new business
-altogether; set above 120 it is itself refused, since the compiled model's caches are
-sized from 120 (``spec_sec.py``) and a longer horizon would admit frames past them. It refuses, too, what :mod:`~.WP_UK_S` projects without a word or meets only
+altogether. It refuses, too, what :mod:`~.WP_UK_S` projects without a word or meets only
 when a projection reaches it: a code that names no chassis, sex or tax basis, guarantee
 dates that are no anniversaries or that a conventional endowment carries, an age, an
 amount, a rate or a term that is not a number in its range, a fund return at which the
@@ -216,10 +215,11 @@ def model_point_table():
     5. no policy is issued more than ``future_horizon_mth`` months after the valuation
        date, so ``duration_mth`` is ``-future_horizon_mth`` or more. At 0 the model takes
        no future new business, and the message says so; a horizon that is not a whole
-       number of months from 0 to 120 is itself refused, since a NaN one fails every
-       comparison and so would admit every policy, an infinite one bounds nothing, and
-       one above 120 admits frames past the compiled model's caches, which are sized
-       from 120 (``spec_sec.py``);
+       number of months, 0 or more, below ``2**53``, is itself refused, since a NaN one
+       fails every comparison and so would admit every policy, and an infinite one bounds
+       nothing.  A longer horizon than the shipped 120 is read as set: a frame longer
+       than the compiled model's caches hold, 1,356 months, is refused by point, by
+       ``Projection.proj_len``, and every shorter one projects;
     6. ``chassis`` is UWP_bond or CWP_endowment, ``sex`` M or F and ``tax_basis`` life_net
        or pension_gross, the codes the formulas branch on and the tables are keyed by,
        which :mod:`~.WP_UK_S` refuses only once a projection reaches them;
@@ -295,9 +295,9 @@ def model_point_table():
         raise ValueError(f"{name}: duration_mth must be below 2**53 months; it is not at "
                          f"point_id {bad}")
     horizon = future_horizon_mth                                     # noqa: F821
-    if not (horizon >= 0 and horizon <= 120 and horizon % 1 == 0):
-        raise ValueError(f"future_horizon_mth must be a whole number of months from 0 to "
-                         f"120, not {horizon}")
+    if not (horizon >= 0 and horizon < 2.0 ** 53 and horizon % 1 == 0):
+        raise ValueError(f"future_horizon_mth must be a whole number of months, 0 or more, "
+                         f"below 2**53, not {float(horizon)}")
     horizon = int(horizon)
     bad = table.index[months < -horizon].tolist()
     if bad and horizon == 0:
@@ -823,10 +823,13 @@ def guarantee_year_last():
 
     The year after the last a cover can reach.  ``Projection.proj_len`` admits a limiting
     age, ``omega_age``, of at most a year past the mortality table's last age, and an
-    issue age of 0 or more, so no cover runs past policy year ``mort_age_last() + 1``; and
-    the guarantee-imminent window of a cover's last month, the twelfth of its last policy
-    year, reads the date a year on.  A later guarantee date is one no frame reads, and is
-    not tabled.  122 as shipped.
+    issue age of ``issue_age_min``, 0 or more, so no cover runs past policy year
+    ``mort_age_last() + 1``; and the guarantee-imminent window of a cover's last month, the
+    twelfth of its last policy year, reads the date a year on.  A later guarantee date is
+    one no frame reads, and is not tabled.  122 as shipped.  The array is read by value,
+    not cached, so it may run past the policy years ``Projection``'s caches hold, to 104,
+    the year a cover of 1,236 months, the longest ``Projection.proj_len`` admits, reads
+    last.
     """
     return mort_age_last() + 2
 

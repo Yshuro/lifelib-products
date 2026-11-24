@@ -48,10 +48,10 @@ import sys
 
 # The export does not raise the recursion limit as modelx does (F7).  The deepest call the
 # contract allows, a cold net_cf in the last month of the longest cover, the endowment
-# issued at 18 for 103 years to the contract's largest omega_age, omega_age_max, 121, now
-# or 120 months on, with the bonus rule and the estate's distribution on, needs a limit of
-# 490 in the export, the guarantee's and the unit price's 489, and the reports and checks
-# below, which run in ascending t, need 128 from a script's top level (measured at M14).
+# issued at 18 for 103 years to 121, the longest cover proj_len admits, now or 120 months
+# on, with the bonus rule and the estate's distribution on, needs a limit of 490 in the
+# export, the guarantee's and the unit price's 489, and the reports and checks below,
+# which run in ascending t, need 128 from a script's top level (measured at M14).
 # The eight chains are blocked by policy year, so a cold call runs one cell a month within
 # its year and two cells a year before it.  So the build itself needs 128, and the rest is
 # margin for an edit that calls a cell cold.  The limit is four times the first, rounded

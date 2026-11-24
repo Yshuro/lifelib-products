@@ -5,30 +5,28 @@
 # frame and in the month after it, t = proj_len(), which the roll-forward reads and C4's
 # full sweep evaluates every monthly cell at; plus one because the index starts at 0.  No
 # size has headroom past that: each is held to its derivation by a test.  mx2cy keys a
-# size by a cell's parameter names, so every cell taking t alone shares one.  The contract
-# is three References and one of Data's.  Projection.proj_len refuses a point issued below
-# issue_age_min, 18, the youngest age the mortality table rates; an omega_age, the
-# limiting age every bond's cover ends at, above omega_age_max, 121, the shipped table's
-# last age plus one, the most the table admits; and an endowment maturing past omega_age;
-# and Data refuses a point issued more than future_horizon_mth, 120 months, after the
-# valuation date.  And each of the three is held to the value these sizes are derived
-# from: proj_len refuses an issue_age_min below 18 and an omega_age_max above 121, and
-# Data a future_horizon_mth above 120, so that no value of a Reference admits a frame the
-# compiled model would read past its caches, raising IndexError where modelx projects
-# (UKLIB-SEC-PLAN.md 6.5, Record -- M14).  So no point a report projects outruns these
-# sizes, and a bound moved is moved in the model's check, here and in the spec test
-# together, and the model rebuilt.  The units' exhaustion only shortens a frame, and its
-# search reads the units in the months of cover alone.  The ages bound no cache: an age
-# indexes Data's mortality table, not a cache.
+# size by a cell's parameter names, so every cell taking t alone shares one.  The sizes
+# are derived from the shipped References and mortality table: Projection.proj_len refuses
+# a point issued below issue_age_min, 18, the youngest age the table rates, and a cover
+# past omega_age, at most the table's last age plus one, 121; and Data a point issued more
+# than future_horizon_mth, 120 months, after the valuation date.  Each Reference keeps its
+# domain, and a cover or a frame longer than these sizes hold is refused by point instead,
+# in both engines: proj_len refuses a cover longer than 1,236 months and a frame longer
+# than 1,356, the two bounds derived below, so that no point a report projects outruns
+# these sizes, and none is refused that they hold (UKLIB-SEC-PLAN.md 6.5, Record -- M14).
+# A size moved is moved with its bound in proj_len, here and in the spec test together,
+# and the model rebuilt.  The units' exhaustion only shortens a frame, and its search
+# reads the units in the months of cover to month 1,356 alone.  The ages bound no cache:
+# an age indexes Data's mortality table, not a cache, and Projection.mort_rate refuses one
+# the table does not rate.
 #
 # t, months from the valuation date.  The longest frame is the longest cover, a bond issued
-# at issue_age_min, 18, whose units last to omega_age_max, 121, or an endowment maturing
-# there: 12 * (121 - 18) = 1,236 months from issue, issued future_horizon_mth, 120 months,
-# after the valuation date: 1,356 months, t = 0 .. 1,355, and 1,356 in the month after it;
-# and the roll-forward's residual there, check_pols_roll_fwd_resid(1356), reads the count
-# carried into 1,357, pols_if(1357): 1,358, which is 12 * (omega_age_max - issue_age_min) +
-# future_horizon_mth + 2.  A longer future_horizon_mth, a higher omega_age_max or a lower
-# issue_age_min needs t raised to 12 * (omega_age_max - issue_age_min) + the horizon + 2.
+# at 18 whose units last to 121, or an endowment maturing there: 12 * (121 - 18) = 1,236
+# months from issue, issued 120 months after the valuation date: 1,356 months, t = 0 ..
+# 1,355, and 1,356 in the month after it; and the roll-forward's residual there,
+# check_pols_roll_fwd_resid(1356), reads the count carried into 1,357, pols_if(1357):
+# 1,358, which is the frame's bound in proj_len, 1,356, + 2.  A longer frame needs t raised
+# to its length + 2, and that bound with it.
 # timing, beside t in pols_if_at and asset_share_at: BEF_NB = 0 to AFT_DECR = 3, the
 # count's, and BEF_PREM = 4 to AFT_MC = 9, the asset share's, one numbering for the two
 # families, the count's first: 10.
@@ -49,8 +47,9 @@
 # year 1235 // 12 + 1 = 103.  The guarantee-imminent window of that last month, the
 # twelfth of policy year 103, waits for the date that closes policy year 104, which
 # is_guarantee_year is asked of in that month and in the month after it, the frame's
-# end: 105, which is omega_age_max - issue_age_min + 2.  A higher omega_age_max or a lower
-# issue_age_min needs y raised to omega_age_max - issue_age_min + 2; the horizon moves no
-# policy year.
+# end: 105, which is the cover's bound in proj_len in years, 1,236 / 12 = 103, + 2.  A
+# cover is a whole number of years, so the next, 1,248 months, would read year 105.  A
+# longer cover needs y raised to its years + 2, and that bound with it; the horizon moves
+# no policy year.
 {"spaces": {"Projection": {"cells_param_size": {
     "t": 1358, ("t", "timing"): (1358, 10), ("t", "kind"): (1358, 10), "y": 105}}}}

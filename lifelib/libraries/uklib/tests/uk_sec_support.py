@@ -2312,21 +2312,21 @@ SEC_SPECS: dict[str, SecSpec] = {
     # refusing any value but its codes as chassis() and tax_basis() refuse theirs: each
     # returns the column of its own name.
     #
-    # Phase 2 sizes its caches from the contract (spec_sec.py holds each derivation):
-    #   t 0..1,357: a bond issued at issue_age_min, 18, to omega_age_max, 121, the largest
-    #     omega_age proj_len() accepts, a year past mort_table.csv's last age, or an
+    # Phase 2 sizes its caches from the shipped References and table (spec_sec.py holds
+    # each derivation):
+    #   t 0..1,357: a bond issued at issue_age_min, 18, to 121, the largest omega_age
+    #     proj_len() accepts on the shipped table, a year past its last age, or an
     #     endowment maturing there, a cover of 1,236 months, issued future_horizon_mth, 120
     #     months, after the valuation date: a frame of 1,356 months, t 0..1,355, its month
     #     after, and the roll-forward's t + 1 there.  The exhaustion search reads the units
-    #     in the months of cover alone;
+    #     in the months of cover to month 1,356 alone;
     #   y 1..104: the policy years whose openings the eight blocked chains read, 2 to 103,
     #     and the guarantee year the longest cover's last month waits for, 104.
-    # proj_len() refuses an issue age below issue_age_min, an omega_age above
-    # omega_age_max, a bond issued at or past omega_age, an endowment maturing past it,
-    # and a policy at or past the end of cover, each naming the point; and it holds
-    # issue_age_min to 18 or more and omega_age_max to 121 or less, and Data the horizon to
-    # 120 or less, the values the caches are sized from, so that no Reference's value
-    # admits a frame past them.
+    # proj_len() refuses an issue age below issue_age_min, an omega_age past the table, a
+    # bond issued at or past omega_age, an endowment maturing past it, and a policy at or
+    # past the end of cover, each naming the point; and, by point, in both engines, a cover
+    # longer than 1,236 months and a frame longer than 1,356, the two bounds the caches
+    # hold, each Reference keeping its in-force domain.
     "WP_UK_SEC": SecSpec(
         twin="WP_UK_S",
         column_map={"duration_inforce": None, "units": "units_init",
@@ -3226,7 +3226,10 @@ with open(job_path, "rb") as f:
     job = pickle.load(f)
 model = importlib.import_module(package).mx_model
 for ref, value in job["refs"].items():
-    setattr(model.Projection, ref, value)
+    if ref.startswith("Data."):
+        setattr(model.Data, ref[len("Data."):], value)
+    else:
+        setattr(model.Projection, ref, value)
 
 # Whether each space's class came from an extension module: a package whose build lost one
 # still imports, from the translated .py beside it, and computes the same numbers.
@@ -3339,14 +3342,14 @@ def run_compiled(case_dir, package, job, *, stack_kib=1024, main_thread=False,
 
     ``job`` is ``{"refs": {name: value}, "calls": {idx: [(cell, args), ...]}}``, and may
     name ``"data"``, a list of ``Data`` cells to read once the calls are made.  The child
-    sets each Reference on the base ``Projection`` before any ItemSpace is made, then makes
-    each point's calls in order, on ``Projection[idx]``, in a thread whose stack is
-    ``stack_kib`` KiB or, with ``main_thread``, on its main thread, which is what
-    ``run_sec.py --cython`` runs on.  A compiled chain of cells runs on the C stack, which
-    the interpreter's recursion limit does not count (F7).  The thread's stack is
-    reserved at that size on every platform: ``threading.stack_size`` sets it on POSIX,
-    and on Windows, where that sets only the stack a thread commits, the child makes the
-    thread itself (``COMPILED_RUNNER``).
+    sets each Reference on the base ``Projection``, or one named ``"Data.<name>"`` on
+    ``Data``, before any ItemSpace is made or any cell computed, then makes each point's
+    calls in order, on ``Projection[idx]``, in a thread whose stack is ``stack_kib`` KiB or,
+    with ``main_thread``, on its main thread, which is what ``run_sec.py --cython`` runs on.
+    A compiled chain of cells runs on the C stack, which the interpreter's recursion limit
+    does not count (F7).  The thread's stack is reserved at that size on every platform:
+    ``threading.stack_size`` sets it on POSIX, and on Windows, where that sets only the
+    stack a thread commits, the child makes the thread itself (``COMPILED_RUNNER``).
 
     Returns ``{"exit": code, "stderr": its last lines}``, and when the child exited 0:
     ``"compiled"``, whether each space's class came from an extension module; ``"values"``,
@@ -4150,16 +4153,17 @@ def compiled_mismatches(build, folder, *, refs=None, stack_kib=65536, limit=50,
     by cell.
 
     ``folder`` is the model folder of a case :func:`compiled_case` made, so modelx and the
-    compiled package beside it read the same CSVs.  The model is read from it afresh,
-    under a name of its own, ``refs`` are set on its ``Projection``, and every point is
-    swept (:func:`full_sweep`): every value modelx then holds in a cache, at every
-    argument, is the expectation, and so is every raise.  A fresh read, because the sweep
-    evaluates what no projection asks for, a rate before issue among them, which a test
-    of the same model's instance may forbid.  The compiled package then makes the same
-    calls on the same points with the same ``refs``, in a child (:func:`run_compiled`), on
-    a thread of ``stack_kib`` KiB, and reads every ``Data`` cell whose modelx value is an
-    array or a number.  ``also``, a callable of one modelx point, adds what it calls to
-    the expectation, and so to the compiled run's calls (:func:`c4_expected`).
+    compiled package beside it read the same CSVs.  The model is read from it afresh, under
+    a name of its own, ``refs`` are set on its ``Projection``, a name ``"Data.<name>"`` on
+    its ``Data``, and every point is swept (:func:`full_sweep`): every value modelx then
+    holds in a cache, at every argument, is the expectation, and so is every raise.  A fresh
+    read, because the sweep evaluates what no projection asks for, a rate before issue among
+    them, which a test of the same model's instance may forbid.  The compiled package then
+    makes the same calls on the same points with the same ``refs``, in a child
+    (:func:`run_compiled`), on a thread of ``stack_kib`` KiB, and reads every ``Data`` cell
+    whose modelx value is an array or a number.  ``also``, a callable of one modelx point,
+    adds what it calls to the expectation, and so to the compiled run's calls
+    (:func:`c4_expected`).
 
     They must agree: a number identical where ``exact`` holds, by default where
     :func:`exact_here` does, and elsewhere within :data:`COMPILED_RTOL` relative, floored
@@ -4176,7 +4180,10 @@ def compiled_mismatches(build, folder, *, refs=None, stack_kib=65536, limit=50,
     model = mx.read_model(folder, name=f"{build.name}_c4_{next(_c4_names)}")
     try:
         for ref, value in refs.items():
-            setattr(model.Projection, ref, value)
+            if ref.startswith("Data."):
+                setattr(model.Data, ref[len("Data."):], value)
+            else:
+                setattr(model.Projection, ref, value)
         labels = list(model.Data.model_point_table().index)
         keys, expected = point_keys(model), {}
         for key in keys:

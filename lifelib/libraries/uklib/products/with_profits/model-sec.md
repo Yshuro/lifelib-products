@@ -245,13 +245,15 @@ admits issue from 3 months; a bond issued at or past the limiting age, `omega_ag
 endowment maturing past it, `age_at_entry() + policy_term() > omega_age`, whose last
 attained ages the table may not rate, where `WP_UK_S` bounds no term and reads them at
 `omega_age`. `omega_age` itself must lie above `issue_age_min` and at most a year past the
-mortality table's last age. Each is a lower-case Reference, the contract a compiled
-model's caches will be sized from: a frame of at most 1,224 months from issue age 18, on
-either chassis, and the horizon, and attained ages from 18 to 119 on the mortality table.
-A whole limiting age written as a float, `120.0`, is read as the `int` it is, so that the
-frame is a whole number of months, as it will be compiled. And `proj_len()` refuses a bond
-whose units run out in its first month on the books, which would leave no month to
-project. On every point `proj_len()` also refuses a Reference off its domain (below). A
+mortality table's last age. Each is a lower-case Reference. The compiled model's caches
+are sized from the shipped References and table: a cover of at most 1,236 months, from
+issue at 18 to 121, the table's last age plus one, and a frame of at most 1,356 months,
+that cover issued 120 months after the valuation date. So `proj_len()` refuses a point
+whose cover or frame is longer, naming it, in modelx as compiled, and each Reference keeps
+its domain (*The bounds the caches hold*, below). A whole limiting age written as a
+float, `120.0`, is read as the `int` it is, so that the frame is a whole number of
+months, as it is compiled. And `proj_len()` refuses a bond whose units run out in its
+first month on the books, which would leave no month to project. On every point `proj_len()` also refuses a Reference off its domain (below). A
 loop over the block meets such a row only when it reaches it, so `run_sec.py --block` asks
 every point for its frame before it projects any, and stops before it prints anything.
 
@@ -423,8 +425,8 @@ replaces, and `attaching_bonus`, renamed. One Reference is new, `issue_age_min`.
 | Cells | `WP_UK_S` | `WP_UK_SEC` | Why |
 |---|---|---|---|
 | `duration_mth`, `duration`, `age`, `policy_year` | `t`, `t // 12` | `duration_mth_init() + t`, `duration_mth(t) // 12` | The policy clock, opened from the model point |
-| `proj_len`; `cover_end_mth`, new | `12 × policy_term()`, or `min(12 × (omega_age − x), fund_exhaust_mth())`, from issue | `min(cover_end_mth(), fund_exhaust_mth()) − duration_mth_init()`, from the valuation date; raises past cover, outside the contract's bounds, on a Reference off its domain and on units spent in the first month | The frame starts at the valuation date |
-| `fund_exhaust_mth` | the first `t` from `proj_start()` whose units are at or below 1e-9, 0 if none | the same as a policy month, from `t_entry()`; `cover_end_mth() + 1` if none | 0 is a real month on either clock |
+| `proj_len`; `cover_end_mth`, new | `12 × policy_term()`, or `min(12 × (omega_age − x), fund_exhaust_mth())`, from issue | `min(cover_end_mth(), fund_exhaust_mth()) − duration_mth_init()`, from the valuation date; raises past cover, outside the contract's bounds, on a Reference off its domain, on units spent in the first month and on a cover or a frame longer than the compiled model's caches hold | The frame starts at the valuation date |
+| `fund_exhaust_mth` | the first `t` from `proj_start()` whose units are at or below 1e-9, 0 if none | the same as a policy month, from `t_entry()` to month 1,356 at most; `cover_end_mth() + 1` if none | 0 is a real month on either clock; no frame the compiled model's caches hold ends later |
 | `is_forced_encashment` | `fund_exhaust_mth() > 0` and the frame ends there | `fund_exhaust_mth()` inside cover | The new "never" |
 | `is_declaration_month`, `declaration_month` | `(t + 1) % 12 == 0`; the policy month `12 × duration(t) + 11` | `(duration_mth(t) + 1) % 12 == 0`; the valuation month `t + 11 − duration_mth(t) % 12`, `WholeLife_US_SEC`'s `anniv_mth` | A declaration falls in a policy year's twelfth month, and `bonus_rate` passed the policy month back as `t` |
 | `guarantee_imminent` | `0 < 12g − 1 − t ≤ 12` | `0 < 12g − 1 − duration_mth(t) ≤ 12` | A guarantee date is a policy anniversary |
@@ -473,7 +475,7 @@ assumption:
 
 | Reference | Domain | Off it |
 |---|---|---|
-| `issue_age_min`, `omega_age`, `omega_age_max` | a whole number below `2**53`; the first 18 or more, the third 121 or less, and the second above the first, at most a year past the mortality table's last age and at most the third | a NaN bound refuses nothing and an infinite one bounds nothing; a lower first or a higher third admits frames past the compiled model's caches, sized from 18 and 121 |
+| `issue_age_min`, `omega_age` | a whole number below `2**53`; the first 0 or more, the second above the first and at most a year past the mortality table's last age | a NaN bound refuses nothing and an infinite one bounds nothing |
 | `mort_be_factor`, `misc_surplus_rate`, `death_benefit_factor`, `mvr_deterrent_factor`, `guarantee_imminent_factor`, `guar_fill_target`, `bonus_change_cap`, `expense_maint` | a finite number, 0 or more | a negative rate, charge, uplift or expense; a NaN lost in a `min` or a `max` |
 | `amc_rate`, `guar_charge_rate_base`, `guar_charge_cap`, `prem_alloc_rate`, `smooth_cap`, `corridor_lo`, `bonus_speed`, `guarantee_exercise_rate` | a number from 0 to 1 | past 1 a monthly rate `1 − (1 − c)^(1/12)` has no real value, or a share is more than the whole |
 | `amc_rate` and `guar_charge_rate_base` together | their monthly rates summing to 1 or less | the charges' factor on the balance, `1 − c_amc_m − c_g_m`, turns negative |
@@ -486,10 +488,10 @@ assumption:
 
 Each domain is a comparison no NaN passes, a finite one bounded by the largest float, and
 a whole number one of which `x == x // 1` holds below `2**53`, which an infinity fails, and
-each Reference is printed as the compiled model types it, the four integers through
+each Reference is printed as the compiled model types it, the three integers through
 `int()` once whole and every other through `float()`. `Data.future_horizon_mth` is held to
-a whole number of months from 0 to 120 by `Data` itself, as it reads the table, the caches
-being sized from 120.
+a whole number of months, 0 or more, below `2**53`, by `Data` itself, as it reads the
+table, and printed as a float.
 
 **Values past the floats, refused in their cell.** From an opening state and References
 each in its domain, a return can take the asset share past the largest float, a bonus
@@ -766,29 +768,46 @@ tests' full sweep evaluates every monthly cell at; plus one because the index st
 
 | Parameters | Size | The largest argument |
 |---|---|---|
-| `t` | 1,358 | 1,357. The longest frame is the longest cover, a bond issued at 18, `issue_age_min`, to the largest limiting age, 121, `omega_age_max`, or an endowment maturing there, issued 120 months after the valuation date, the furthest ahead `Data.future_horizon_mth` admits: 12 × (121 − 18) + 120 = 1,356 months, `t = 0 … 1,355`, and the month after, 1,356, whose roll-forward residual reads the count carried into 1,357. The exhaustion search reads the units of the month they run out, one past a frame it ends, inside the same months |
+| `t` | 1,358 | 1,357. The longest frame `proj_len()` admits is the longest cover, a bond issued at 18, the shipped `issue_age_min`, to the largest limiting age the shipped table admits, 121, or an endowment maturing there, issued 120 months after the valuation date, the shipped `Data.future_horizon_mth`: 12 × (121 − 18) + 120 = 1,356 months, `t = 0 … 1,355`, and the month after, 1,356, whose roll-forward residual reads the count carried into 1,357. The exhaustion search reads the units of the month they run out, one past a frame it ends, to month 1,356 at most |
 | `t`, `timing`; `t`, `kind` | 1,358 by 10 | `t` as above, by the ten timings of the two families, and by the four kinds and the total, widened to ten. Every 2-D cache of a model shares one inner width, the widest: Cython's unpickle code converts them with one function, and two widths are refused by gcc 14, as uslib's `WholeLife_US_SEC` found (USLIB-SEC-PLAN.md §7.2) |
 | `y` | 105 | 104: the policy year of the longest cover's last month, 1,235 months from issue, is 103, whose first month reads the eight openings, and that month's guarantee-imminent window waits for the date closing policy year 104 |
 
-**The bounds the caches hold.** `omega_age` may be set to a year past the mortality
-table's last age, 121 on the shipped table, as `WP_UK_S` and the in-force step allow, and
-the frame then runs a year longer than at the shipped 120. A longer table would let it run
-longer still, so the contract has its own bound, `omega_age_max`, 121, the shipped table's
-last age plus one, and `proj_len()` refuses an `omega_age` above it, naming the point.
-`proj_len()` refuses an issue age below `issue_age_min`, and `Data` a point issued more
-than `future_horizon_mth` months ahead, so no report on a point the model projects runs
-past these caches. Those three References are the contract the sizes are derived from,
-and each is held where the sizes are derived from it, from the side that would lengthen a
-frame: `proj_len()` refuses an `issue_age_min` below 18 and an `omega_age_max` above 121,
-and `Data` a `future_horizon_mth` above 120, each in both engines, naming the value. So no
-value of a Reference, and no table, admits a frame the compiled model would read past its
-caches, raising a bare `IndexError` where modelx projects, as a `PA_UK_SEC` edge did
-(UKLIB-SEC-PLAN.md §6.7, *Record — M12*). Each may be set inside its bound, narrowing the
-contract. To lengthen it, derive the sizes again, as `spec_sec.py` derives them, move the
-bound in `proj_len()` or `Data` and in the spec test with them, and rebuild: `t` to 12 ×
-(`omega_age_max` − `issue_age_min`) + the horizon + 2 and `y` to `omega_age_max` −
-`issue_age_min` + 2. The ages bound no cache: an age indexes `Data`'s mortality table, not
-a cache.
+**The bounds the caches hold.** The sizes are derived from the shipped References and
+table, and the in-force step projected whatever its References admitted: an
+`issue_age_min` below 18, a mortality table rating ages past 120, which lets `omega_age`
+run to a year past its last age, and a `future_horizon_mth` past 120 each admit a longer
+cover or frame. Each Reference keeps its in-force domain, and `proj_len()` refuses, by
+point, in modelx as compiled, a cover longer than 1,236 months, which reads the policy
+years past the `y` cache, and a frame longer than 1,356 months, which reads the months
+past the `t` cache, each naming the point: `point_id 302: the frame is longer than 1356
+months, the longest the compiled model's caches hold: cover ends 1357 months after the
+valuation date`, and `point_id 303: the cover, 1248 months from issue, is longer than 1236
+months, issue at 18 to 121, the longest the compiled model's caches hold`. Covers are
+whole years, so the next past 1,236 is 1,248, and a frame is refused a month past 1,356.
+The exhaustion search reads no month past 1,356, so a bond whose units last past it is
+refused whichever month they would run out in, and its "never" there is "not by month
+1,356". So no report on a point the model projects runs past these caches, raising a
+bare `IndexError` where modelx projects, as a `PA_UK_SEC` edge did (UKLIB-SEC-PLAN.md
+§6.7, *Record — M12*), and every point whose frame they hold projects, whatever the
+References; a test runs the longest frame and the longest cover compiled against modelx,
+under References that admit longer, and refuses a month and a year past them in both,
+message for message. To lengthen a bound, derive the sizes again, as `spec_sec.py`
+derives them, move the bound in `proj_len()` and in the spec test with them, and
+rebuild: `t` to the frame's bound + 2 and `y` to the cover's bound in years + 2. The ages
+bound no cache: an age indexes `Data`'s mortality table, not a cache, and `mort_rate`
+refuses one the table does not rate.
+
+**The frames the in-force step projected that this refuses.** Only those two, each reached
+through a Reference set past its shipped value or a longer table, never at the shipped
+ones: a cover longer than 1,236 months, a policy issued below 18 under a lowered
+`issue_age_min` and in force past the table's first age, a bond issued at 15 to 120, say,
+1,260 months, or one issued at 18 to a limiting age past 121 on a longer table; and a
+frame longer than 1,356 months, a policy issued more than 120 months after the valuation
+date under a longer horizon whose frame then runs past it, the bond issued at 18 to 121
+and 121 months on, say. The compiled model's caches cannot hold either, and a cache sized
+to the longest any value of a Reference admits would have no size, so the frame refuses
+them by point, naming the point and the bound, as `PA_UK_SEC` refuses, on its scenario
+basis, a frame past its table basis's longest (*Record — M12*).
 
 ### Two compiler directives
 
@@ -867,17 +886,20 @@ and on an anniversary, the claims total past the floats, a key read beyond the m
 table, what the vectors cannot hold and each code a cell does not take inside its cache,
 in a cell typed `long long` or `double` as in a Python one.
 
-A message prints each Reference as the compiled model holds it: a rate as a float, and an
-age or a count of years as an int; and it names a timing or a kind by its code,
-`claims(19, 1)` for the surrenders, in both engines. An int Reference, `issue_age_min`,
-`omega_age`, `omega_age_max` or `bonus_horizon`, and `Data`'s `future_horizon_mth`, is a
-C `long long` compiled, and a float set on it is truncated as it is set, 120.5 to 120, or
-a horizon of 12.5 to 12, where modelx refuses 120.5 and 12.5 as not whole numbers, and a
-NaN or an infinity cannot be set on it at all; so set each as a whole number. The switch,
-`bonus_rule_on`, is a C `bint`, which takes any value's truth as it is set, 2 and `"yes"`
-as True and `None` as False, where modelx refuses each; so set it as True or False. The
-compiled refusal test sets `Data`'s References as it sets `Projection`'s: the horizon is
-refused at −1, at 121 and at `2**53` as in modelx, and at 12.5 does what 12 does.
+A message prints each Reference as the compiled model holds it: a rate as a float, an
+age or a count of years as an int, and the horizon, which `Data` refuses before it is
+read as one, as a float, `not 9007199254740992.0` whether it was set as `2**53` or as
+`2.0**53`; and it names a timing or a kind by its code, `claims(19, 1)` for the
+surrenders, in both engines. An int Reference, `issue_age_min`, `omega_age` or
+`bonus_horizon`, and `Data`'s `future_horizon_mth`, is a C `long long` compiled, and a
+float set on it is truncated as it is set, 120.5 to 120, or a horizon of 12.5 to 12,
+where modelx refuses 120.5 and 12.5 as not whole numbers, and a NaN or an infinity
+cannot be set on it at all; so set each as a whole number. The switch, `bonus_rule_on`,
+is a C `bint`, which takes any value's truth as it is set, 2 and `"yes"` as True and
+`None` as False, where modelx refuses each; so set it as True or False. The compiled
+refusal test sets `Data`'s References as it sets `Projection`'s: the horizon is refused
+at −1 and at `2**53`, as ints and as floats, as in modelx, read at 121 and 121.0, and at
+12.5 does what 12 does.
 
 - What `Data` cannot decode or hold, when the vector is first read, naming every point or
   line at fault: a `point_id` that is not a whole number, or is `2**53` or more in size; a
@@ -886,35 +908,34 @@ refused at −1, at 121 and at `2**53` as in modelx, and at 12.5 does what 12 do
   are no anniversaries or that an endowment carries, and an age, a term or an amount the
   contract cannot have. A key written as a float, an age `70.0`, is read by its value, as
   `WP_UK_S`'s lookups match it. The tables' checks find a gap from the keys a table holds,
-  so that a key far from the rest, `2**53 − 1`, is refused as a gap at once. - A key
-  beyond the mortality table, by the one cell that reads it, where `WP_UK_S`'s lookup
-  raised `KeyError`: `point_id 7: mort_table.csv has no rate at attained age 18`, from
-  `mort_rate`, on a table that starts at 20. - A bound the caches are sized from, moved
-  past them: `point_id 7: issue_age_min must be 18 or more, not 17`, `omega_age_max must
-  be 121 or less, not 122`, and `Data`'s `future_horizon_mth must be a whole number of
-  months from 0 to 120, not 121`. - A value past the floats, in the cell where it first
-  is, naming the point, the month and what makes it (*Departures from WP_UK_S*), the six
-  chains' through their refusal cells, each in its opening month and, from an opening
-  state, columns and References each in its domain, mid-year, on a declaration month and
-  on an anniversary where its chain moves there. The unit price and the endowment's
-  guarantee move on a declaration alone. The cumulant of the charges is capped by the
-  asset share it is charged on, so it leaves the floats after its first month only where
-  an estate distribution holds that asset share level near the largest float, as the
-  test's does. Each refusal cell repeats its chain's formula, branch by branch, and a test
-  holds it to its chain, bit for bit, in every month of every committed point, since C4
-  compares two engines that would share a drift. - A power past the largest float, or
-  below the smallest, which Python's float power refuses with `OverflowError` where C's
-  `pow` gives an infinity: the inflation factor, the bonus rule's growth and the
-  endowment's discount call Python's own power where theirs is infinite from a finite
-  base, inside the `try` that names the point and the References, so that the compiled
-  model raises the in-force step's own message as modelx does (uslib's *Record — M22*
-  form), rather than carry an infinity on; and each tests its result for 0 where a long
-  horizon or a rate a hair above −1 decays it below the smallest float. Only inputs far
-  outside the product reach them: an inflation of 1e200 at the second anniversary, a fund
-  return of 1e20 over a horizon of 20 years, a discount rate of 1e200, and the largest
-  horizon on the down scenario. - A timing or a kind no cell takes, by the cell, as
-  `WP_UK_S`'s are: `invalid timing` and `invalid kind`, each code inside the width of ten
-  that a cell does not take among them.
+  so that a key far from the rest, `2**53 − 1`, is refused as a gap at once.
+- A key beyond the mortality table, by the one cell that reads it, where `WP_UK_S`'s
+  lookup raised `KeyError`: `point_id 7: mort_table.csv has no rate at attained age 18`,
+  from `mort_rate`, on a table that starts at 20.
+- A cover or a frame longer than the caches hold, by `proj_len()`, naming the point and
+  the bound (*The bounds the caches hold*, above), under References each in its domain.
+- A value past the floats, in the cell where it first is, naming the point, the month and
+  what makes it (*Departures from WP_UK_S*), the six chains' through their refusal cells,
+  each in its opening month and, from an opening state, columns and References each in its
+  domain, mid-year, on a declaration month and on an anniversary where its chain moves
+  there. The unit price and the endowment's guarantee move on a declaration alone. The
+  cumulant of the charges is capped by the asset share it is charged on, so it leaves the
+  floats after its first month only where an estate distribution holds that asset share
+  level near the largest float, as the test's does. Each refusal cell repeats its chain's
+  formula, branch by branch, and a test holds it to its chain, bit for bit, in every month
+  of every committed point, since C4 compares two engines that would share a drift.
+- A power past the largest float, or below the smallest, which Python's float power
+  refuses with `OverflowError` where C's `pow` gives an infinity: the inflation factor,
+  the bonus rule's growth and the endowment's discount call Python's own power where
+  theirs is infinite from a finite base, inside the `try` that names the point and the
+  References, so that the compiled model raises the in-force step's own message as modelx
+  does (uslib's *Record — M22* form), rather than carry an infinity on; and each tests its
+  result for 0 where a long horizon or a rate a hair above −1 decays it below the smallest
+  float. Only inputs far outside the product reach them: an inflation of 1e200 at the
+  second anniversary, a fund return of 1e20 over a horizon of 20 years, a discount rate of
+  1e200, and the largest horizon on the down scenario.
+- A timing or a kind no cell takes, by the cell, as `WP_UK_S`'s are: `invalid timing` and
+  `invalid kind`, each code inside the width of ten that a cell does not take among them.
 
 An argument outside a cache raises `IndexError` in the compiled model alone:
 `net_cf(1358)`, or `net_cf(-1)` on a point issued at the valuation date, which modelx
@@ -1077,8 +1098,9 @@ contractual bound by a 20% bonus on a 12% return, two variants of S's points.
   policies.
 - **Validation and regeneration**: each malformed row of the table refused naming its
   point, and naming its label on an extract labelled otherwise than by position; the
-  horizon a Reference; a point past its cover, one the contract does not issue and a bond
-  spent in its first month refused by `proj_len()`; each Reference off its domain, at the
+  horizon a Reference; a point past its cover, one the contract does not issue, a bond
+  spent in its first month, and a cover or a frame longer than the compiled model's caches
+  hold refused by `proj_len()`; each Reference off its domain, at the
   value next outside each edge, NaN and both infinities, where each edge is accepted and
   projects its reports; each value past the floats refused in its cell, the powers'
   among them; each assumption table a reader cannot read refused naming its lines;

@@ -1416,7 +1416,7 @@ def test_the_policy_clock_is_a_closed_form_and_no_recursion_runs_backward(sec_re
 # chains a month at a time: the count, the asset share, the smoothed payout and the
 # endowment's guarantee, which M13 wrote one cell a month, and the units, the unit price
 # and the two cumulants, which were already.  One cell a month, a cold net_cf at the
-# longest cover, 1,236 months from issue at 18 to the contract's largest limiting age, 121,
+# longest cover, 1,236 months from issue at 18 to the largest limiting age, 121,
 # needed 292 KiB of C stack compiled, past the 256 KiB the C step allows itself
 # (UKLIB-SEC-PLAN.md §6.4, *Record -- M6*, *Carried into M8 and M14*), so each chain is
 # blocked by policy year, its year's opening a cell that walks the year before (OPENINGS),
@@ -1447,11 +1447,12 @@ CHAIN_OVERHEAD = {("net_cf", None): 25, ("pols_if_at", "BEF_NB"): 13, ("asset_sh
 # each shape, where M13's chains, one cell a month, put 30 beneath it.
 RULE_OVERHEAD = 20
 
-# The contract's longest cover (held by proj_len()): issued at issue_age_min, 18, to the
-# largest limiting age the contract allows, omega_age_max, 121, the shipped table's last age
-# plus one, 1,236 months on the bond, and an endowment maturing there, 103 years.
-# LONGEST_REFS sets omega_age there, beside the switches that ship off, for each test of
-# the longest cover.  At the shipped limiting age, 120, the longest cover is LONGEST.
+# The longest cover proj_len() admits, 1,236 months, the compiled model's caches' bound:
+# issued at issue_age_min, 18, to the largest limiting age the shipped mortality table
+# admits, 121, its last age plus one, on the bond, and an endowment maturing there, 103
+# years.  LONGEST_REFS sets omega_age there, beside the switches that ship off, for each
+# test of the longest cover.  At the shipped limiting age, 120, the longest cover is
+# LONGEST.
 YOUNGEST = 18
 LONGEST = 12 * (120 - YOUNGEST)
 OMEGA_MAX = 121
@@ -1510,8 +1511,8 @@ def _longest_cover(tmp_path, shapes):
     now and 120 months on, and each row's label, shape, frame and ``t_entry()``, under
     :data:`LONGEST_REFS`.
 
-    Each shape's twin, issued at 18, 1,236 months from the contract's largest limiting age,
-    121, issued at the valuation date and 120 months after it, the shipped
+    Each shape's twin, issued at 18, 1,236 months from the largest limiting age the shipped
+    table admits, 121, issued at the valuation date and 120 months after it, the shipped
     ``future_horizon_mth``: frames of 1,236 and 1,356 months, whose chains stop at
     ``t_entry()``.  The shipped tables serve every age from 18 to 120.
     """
@@ -1539,12 +1540,12 @@ def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path, shape):
     """Called cold, each chain runs one cell a month within its policy year, and two cells a
     year before it, back to ``t_entry()``, no more (D5, as blocked at M14).
 
-    No number shows how deep a chain runs, and a compiled model runs it on the C stack, so
-    a chain of several cells a month, which gives the same numbers, needs that many times
-    the stack on every platform (F7).  ``WP_UK_S``'s asset share runs seven cells a month: a
-    cold read of ``asset_share(779)`` on the worked example's bond runs 5,042 deep.  One cell
-    a month, as M13 left them, this model's chains ran 1,236 cells at the longest cover, and
-    compiled the count's needed 292 KiB of C stack, past what the C step allows
+    No number shows how deep a chain runs, and a compiled model runs it on the C stack, so a
+    chain of several cells a month, which gives the same numbers, needs that many times the
+    stack on every platform (F7).  ``WP_UK_S``'s asset share runs seven cells a month: a
+    cold read of ``asset_share(779)`` on the worked example's bond runs 5,042 deep.  One
+    cell a month, as M13 left them, this model's chains ran 1,236 cells at the longest
+    cover, and compiled the count's needed 292 KiB of C stack, past what the C step allows
     (UKLIB-SEC-PLAN.md §6.5, *Record -- M14*).  So the eight chains are blocked by policy
     year, each year's opening a cell that walks the year before in ascending order
     (:data:`OPENINGS`).  On a model just read, nothing is cached, so modelx's stack trace
@@ -1552,7 +1553,7 @@ def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path, shape):
     measured overhead more, :data:`CHAIN_OVERHEAD`: each head of :data:`CHAIN_HEADS` in the
     last month of the frame, each on a read of its own, with :data:`LONGEST_REFS` set, so
     that the bonus rule declares from the asset share, the estate distribution reads it and
-    the limiting age is the contract's largest.  On each shape at the contract's longest
+    the limiting age is the largest the shipped table admits.  On each shape at the longest
     cover, 1,236 months from issue age 18, issued now and, with the full grid, 120 months on
     (:func:`_longest_cover`), each row's frame asserted on its own read first.  The bonus
     rule's own chain, one cell a year, is held to a year a cell and :data:`RULE_OVERHEAD`
@@ -2360,12 +2361,15 @@ def test_the_future_horizon_is_a_reference_that_bounds_future_business(tmp_path)
     reads at the shipped 120 months and at 13, the shortest horizon that admits it, and is
     refused at 12, by name.  At 0 the model takes no future new business, D4's fallback for
     a product that cannot support it, and the message says so.  A horizon that is not a
-    whole number of months from 0 to 120 is itself refused, a NaN and an infinity among
-    them, either of which would admit every policy, and 121 and ``2**53 - 1``, which would
-    admit frames past the compiled model's caches, sized from a horizon of 120
-    (``spec_sec.py``): a horizon above 120 is no input the compiled model can hold.  A
-    whole number written as a float, ``13.0``, reads as 13 does.  Setting the Reference
-    clears the table, so each value is read afresh.
+    whole number of months, 0 or more, below ``2**53``, is itself refused, printed as a
+    float, as the compiled model prints the ``long long`` it holds: a NaN and an infinity
+    among them, either of which would admit every policy, and ``2**53`` and ``-1``, as ints
+    and as floats.  A longer horizon than 120 reads, as at the in-force step, ``121``,
+    ``121.0`` and ``2**53 - 1`` among them: the compiled model's caches, sized from 120,
+    hold frames to 1,356 months, and ``proj_len()`` refuses a longer one by point (the
+    caches' bounds test), so no value of the Reference refuses a table.  A whole number
+    written as a float, ``13.0``, reads as 13 does.  Setting the Reference clears the
+    table, so each value is read afresh.
     """
     future = _label(_committed(), "future", 7, -13)
     later = (f"{TABLE}: duration_mth must be -12 or more, a policy issued at most 12 months "
@@ -2375,11 +2379,13 @@ def test_the_future_horizon_is_a_reference_that_bounds_future_business(tmp_path)
     model = mx.read_model(_sec_inputs(tmp_path, _committed()), name=_name("horizon"))
     try:
         assert model.Data.future_horizon_mth == 120
-        off = "future_horizon_mth must be a whole number of months from 0 to 120, not {}"
+        off = ("future_horizon_mth must be a whole number of months, 0 or more, below "
+               "2**53, not {}")
         for horizon, refusal in ((13, None), (12, later), (0, no_future), (13.0, None),
-                                 *((h, off.format(h)) for h in (
-                                     -1, 12.5, 121, math.nan, math.inf, -math.inf,
-                                     WHOLE - 1, WHOLE)),
+                                 *((h, off.format(float(h))) for h in (
+                                     -1, -1.0, 12.5, math.nan, math.inf, -math.inf,
+                                     2 ** 53, WHOLE)),
+                                 (121, None), (121.0, None), (WHOLE - 1, None),
                                  (120, None)):
             model.Data.future_horizon_mth = horizon
             if refusal is None:
@@ -2549,6 +2555,90 @@ def test_a_bond_spent_in_its_first_month_is_refused_by_proj_len(tmp_path, case, 
         model.close()
 
 
+# The two bounds the compiled model's caches hold (spec_sec.py), which proj_len() refuses a
+# point past, by point and in both engines, each Reference keeping its in-force domain, so
+# that a table the in-force step projected is refused only at a point whose own cover or
+# frame would pass a cache (UKLIB-SEC-PLAN.md §6.5, *Record -- M14*): a cover of 1,236
+# months, from issue at 18 to 121, the shipped table's last age plus one, whose policy
+# years the y cache holds, and a frame of 1,356 months, that cover issued 120 months after
+# the valuation date, whose months the t cache holds to the count carried into the month
+# after the month after it.  As (case, the committed twin it is made from, as new business,
+# its columns, its frame or the refusal after its label), each read under CACHE_REFS, a
+# limiting age of 121, an issue_age_min of 17 and a horizon of 200 months, each in its
+# domain: the bond issued at 18, 120 months on, the longest frame, and a month later; a
+# bond and an endowment issued at 17, a cover a year longer, covers being whole years; and
+# a bond issued 200 months on withdrawing at +7%, whose units run out in month 1,356,
+# ending the longest frame, or in month 1,357, or never, the last two refused alike, since
+# the exhaustion search reads no month past 1,356.  Each withdrawal rate is the middle of
+# the window of rates whose units run out in that month, measured at M14 by bisection.
+CACHE_REFS = {"omega_age": OMEGA_MAX, "issue_age_min": YOUNGEST - 1,
+              "Data.future_horizon_mth": 200}
+_LATER = {"age_at_entry": YOUNGEST, "fund_return": 0.07, "duration_mth": -200}
+_PAST_FRAME = ("the frame is longer than 1356 months, the longest the compiled model's "
+               "caches hold: cover ends {} months after the valuation date")
+_PAST_COVER = ("the cover, 1248 months from issue, is longer than 1236 months, issue at 18 "
+               "to 121, the longest the compiled model's caches hold")
+CACHE_EDGES = [
+    ("the longest frame", 7,
+     {"age_at_entry": YOUNGEST, "wd_rate": 0.0, "duration_mth": -120}, 1356),
+    ("a frame a month longer", 7,
+     {"age_at_entry": YOUNGEST, "wd_rate": 0.0, "duration_mth": -121},
+     _PAST_FRAME.format(1357)),
+    ("a bond's cover a year longer", 7, {"age_at_entry": YOUNGEST - 1, "wd_rate": 0.0},
+     _PAST_COVER),
+    ("an endowment's cover a year longer", 5,
+     {"age_at_entry": YOUNGEST - 1, "policy_term": OMEGA_MAX - YOUNGEST + 1}, _PAST_COVER),
+    ("the longest frame a run-out ends", 7, {**_LATER, "wd_rate": 0.0160762}, 1356),
+    ("a run-out a month later", 7, {**_LATER, "wd_rate": 0.0160679},
+     _PAST_FRAME.format(1436)),
+    ("units that never run out", 7, {**_LATER, "wd_rate": 0.01}, _PAST_FRAME.format(1436)),
+]
+
+
+def _cache_edges():
+    """:data:`CACHE_EDGES`' rows, each its committed twin as new business with its columns,
+    under labels 301 on, none its position plus one."""
+    committed = _committed()
+    rows = [_new_business(committed.loc[[twin]]).assign(**changes).set_axis([301 + n])
+            for n, (_, twin, changes, _) in enumerate(CACHE_EDGES)]
+    return pd.concat(rows).rename_axis("point_id")
+
+
+def test_a_cover_or_a_frame_past_the_caches_is_refused_by_point(tmp_path):
+    """``proj_len()`` refuses a point whose cover or frame the compiled caches cannot hold,
+    naming it, and projects every other, whatever the References (§6.5).
+
+    The caches are sized from the shipped References and table (``spec_sec.py``), and the
+    in-force step projected any table its References admit: an ``issue_age_min`` below 18,
+    a longer mortality table and a horizon past 120 months each admit a longer cover or
+    frame.  Rather than hold the References to the shipped values, which would refuse
+    whole tables the in-force step projected, the frame refuses, by point, a cover longer
+    than 1,236 months and a frame longer than 1,356 (:data:`CACHE_EDGES`), under
+    References that admit both: the longest frame projects, a month longer is refused; a
+    cover a year longer is refused on either chassis; and a bond whose units run out in
+    month 1,356 projects the longest frame, its exhaustion found there and its survivors
+    encashed, while one whose units last a month longer, or never run out, is refused, the
+    search reading no month past 1,356 and so finding none.  A bound a month too long
+    admits a frame the compiled model reads past its ``t`` cache, raising ``IndexError``
+    where modelx projects; the compile tests hold both engines to these rows.
+    """
+    model = mx.read_model(_sec_inputs(tmp_path, _cache_edges()), name=_name("caches"))
+    try:
+        _set_refs(model, CACHE_REFS)
+        for n, (case, _, _, outcome) in enumerate(CACHE_EDGES):
+            p = _point(model, 301 + n)
+            if isinstance(outcome, int):
+                assert p.proj_len() == outcome, case
+            else:
+                _refused(p.result_cf, f"point_id {301 + n}: {outcome}")
+        ended, later, never = (_point(model, 301 + n) for n in (4, 5, 6))
+        assert ended.fund_exhaust_mth() == 1156 and ended.is_forced_encashment()
+        for p in (later, never):
+            assert p.fund_exhaust_mth() == p.cover_end_mth() + 1 == 1237
+    finally:
+        model.close()
+
+
 # Each Reference proj_len() holds to a domain, as (case, the References set, the S point
 # whose twin is read, the message where refused, and where the frame accepts a value the
 # reports refuse, the start of their message).  The point is the bond variant issued at the
@@ -2570,14 +2660,14 @@ def test_a_bond_spent_in_its_first_month_is_refused_by_proj_len(tmp_path, case, 
 # horizon's largest whole number grows the worked example's +7% past the floats, and decays
 # the down scenario's below the smallest, each refused, the latter by the frame, whose
 # exhaustion search declares on that withdrawing bond: a horizon of 4,500 underflows there,
-# where 4,000 does not.  issue_age_min, omega_age, omega_age_max and bonus_horizon are whole
-# numbers below 2**53, which the compiled model holds as long long, printed through int()
-# once whole: each is refused at a fraction and at exactly 2**53, and its largest whole
-# number accepted, or refused by a later rule.  The issue age is 18 or more and the largest
-# limiting age 121 or less, the bounds the compiled model's caches are sized from
-# (spec_sec.py), each refused a year past them, so that no value admits a frame the
-# compiled model reads past its caches.  The rule's References are read with the rule on,
-# on the endowment, point 5, where its every term is read.
+# where 4,000 does not.  issue_age_min, omega_age and bonus_horizon are whole numbers below
+# 2**53, which the compiled model holds as long long, printed through int() once whole:
+# each is refused at a fraction and at exactly 2**53, and its largest whole number
+# accepted, or refused by a later rule.  issue_age_min is 0 or more, as at the in-force
+# step, and accepted at 0: a value of it refuses no point whose frame the compiled model's
+# caches hold, which proj_len() holds by point instead (CACHE_EDGES).  The rule's
+# References are read with the rule on, on the endowment, point 5, where its every term is
+# read.
 RULE = {"bonus_rule_on": True}
 
 
@@ -2687,16 +2777,9 @@ DOMAINS = [
                                "number, from expense_maint 30.0 and inflation_rate "
                                "1.7976931348623157e+308"},
              (math.nextafter(-1.0, -2.0),)),
-    *_whole_domain("issue_age_min", (18, 18.0), least=18),
+    *_whole_domain("issue_age_min", (0, 18.0), least=0),
     ("issue_age_min=2**53-1", {"issue_age_min": WHOLE - 1}, 7,
      f"point_id 7: the issue age, 55, is below issue_age_min, {int(WHOLE - 1)}", None),
-    *_whole_domain("omega_age_max", (121, 121.0, 120), least=None),
-    ("omega_age_max=122", {"omega_age_max": 122}, 7,
-     "point_id 7: omega_age_max must be 121 or less, not 122", None),
-    ("omega_age_max=2**53-1", {"omega_age_max": WHOLE - 1}, 7,
-     f"point_id 7: omega_age_max must be 121 or less, not {int(WHOLE - 1)}", None),
-    ("omega_age_max=119", {"omega_age_max": 119}, 7,
-     "point_id 7: omega_age, 120, is above omega_age_max, 119", None),
     *_whole_domain("omega_age", (120, 121, 120.0), least=None),
     ("omega_age=122", {"omega_age": 122}, 7, OMEGA.format(122), None),
     ("omega_age=18", {"omega_age": 18}, 7, OMEGA.format(18), None),
@@ -3280,13 +3363,15 @@ def test_a_read_beyond_the_mortality_table_is_refused_naming_its_point(tmp_path)
     """An attained age the mortality table lacks is refused by the cell that reads it.
 
     ``proj_len()`` holds the limiting age to a year past the table's last age, and the
-    issue age to ``issue_age_min``, 18 or more, the shipped table's first, so no frame the
-    shipped tables admit reads past them.  On a copy of the mortality table cut to start at
-    20, the bond variant issued at the valuation date at 18 is admitted by the frame and
-    reads an age the table lacks: ``mort_rate`` refuses it, naming the point and the age,
-    where ``WP_UK_S``'s lookup raised ``KeyError``, and so does every report; at 20 it
-    reads the table.  ``issue_age_min`` cannot go below 18, the age the compiled model's
-    caches are sized from, so the table, not the bound, is what admits the point.
+    issue age to ``issue_age_min``, 18 as shipped, the shipped table's first, so no frame
+    the shipped tables admit reads past them.  On a copy of the mortality table cut to
+    start at 20, the bond variant issued at the valuation date at 18 is admitted by the
+    frame and reads an age the table lacks: ``mort_rate`` refuses it, naming the point and
+    the age, where ``WP_UK_S``'s lookup raised ``KeyError``, and so does every report; at
+    20 it reads the table.  A lowered ``issue_age_min`` admits an issue age below the
+    shipped table's too, as at the in-force step, but a bond issued below 18 to 120 has a
+    cover past the compiled model's caches, which ``proj_len()`` refuses first
+    (:data:`CACHE_EDGES`), so the cut table is what admits the point here.
     """
     cut = {MORT: _dropped(lambda t: t["age"] < 20)}
     model = _read_edited(tmp_path, _then(_set("age_at_entry", [7], 18),
@@ -5415,57 +5500,52 @@ def test_the_spec_sizes_each_cache_as_its_comment_derives():
 
     The spec check, C3, holds the compiled caches to the spec, and C4 at the contract's
     extremes holds the spec to the largest argument a projection reads; neither sees a
-    size above the comment's.  So this reads the spec as mx2cy does, and the bounds of the
-    contract from the model's own References, and holds each size to the comment's
-    derivation from them: ``t`` to ``12 * (omega_age_max - issue_age_min) +
-    future_horizon_mth + 2`` and ``y`` to ``omega_age_max - issue_age_min + 2``; every 2-D
-    cache to one inner width, the widest family's, the timings' 10, since gcc refuses two
-    widths and MSVC, which builds the Windows leg, accepts them (USLIB-SEC-PLAN.md §7.2,
-    *Record -- M15*); and the codes dense from 0, ints, as the caches index them, each
-    family in its own numbering, the count's timings then the asset share's in one, and
-    the chassis's too.  And the three bounds are held where the sizes are derived from
-    them: ``proj_len()`` refuses an ``issue_age_min`` a year below the shipped one and an
-    ``omega_age_max`` a year above it, and ``Data`` a ``future_horizon_mth`` a month above
-    it, so that no value of a Reference admits a frame past the caches.  A change to a
-    bound or a size is derived again in the comment and here.
+    size above the comment's.  So this reads the spec as mx2cy does, and derives the two
+    bounds the caches hold from the model's shipped References and table: the longest
+    cover, from issue at ``issue_age_min`` to a year past the mortality table's last age,
+    1,236 months, and the longest frame, that cover issued ``Data.future_horizon_mth``
+    months on, 1,356.  It holds each size to the comment's derivation from them: ``t`` to
+    the frame's bound + 2 and ``y`` to the cover's bound in years + 2; every 2-D cache to
+    one inner width, the widest family's, the timings' 10, since gcc refuses two widths
+    and MSVC, which builds the Windows leg, accepts them (USLIB-SEC-PLAN.md §7.2, *Record
+    -- M15*); and the codes dense from 0, ints, as the caches index them, each family in
+    its own numbering, the count's timings then the asset share's in one, and the
+    chassis's too.  And it holds each bound where ``proj_len()`` refuses a point past it,
+    by point (:data:`CACHE_EDGES`): the frame's own check and message, the cover's, and the
+    exhaustion search's last month, the frame's bound, so that a bound moved without its
+    size, or a size without its bound, fails here.  A change to either is derived again in
+    the comment, in ``proj_len()`` and here.
     """
     source, comment = _comment("spec_sec.py")
-    for formula in ("12 * (omega_age_max - issue_age_min) + future_horizon_mth + 2",
-                    "omega_age_max - issue_age_min + 2"):
-        assert formula in comment, formula
     sizes = ast.literal_eval(source)["spaces"]["Projection"]["cells_param_size"]
     proj, data = _references("Projection"), _references("Data")
     for names in (TIMING_CODES, CLAIM_CODES, CHASSIS_CODES):
         values = [proj[name] for name in names]
         assert values == list(range(len(names))), (names, values)
         assert all(type(v) is int for v in values), (names, values)
-    span = proj["omega_age_max"] - proj["issue_age_min"]
-    t = 12 * span + data["future_horizon_mth"] + 2
-    width = max(len(TIMING_CODES), len(CLAIM_CODES))
-    assert sizes == {"t": t, ("t", "timing"): (t, width), ("t", "kind"): (t, width),
-                     "y": span + 2}, sizes
-    assert len({size[1] for size in sizes.values() if isinstance(size, tuple)}) == 1
-    assert (t, width, span + 2) == (1358, 10, 105)
-    bounds = [({"issue_age_min": proj["issue_age_min"] - 1},
-               f"issue_age_min must be {proj['issue_age_min']} or more"),
-              ({"omega_age_max": proj["omega_age_max"] + 1},
-               f"omega_age_max must be {proj['omega_age_max']} or less")]
-    for refs, message in bounds:
-        model = mx.read_model(model_path(SEC), name=_name("bounds"))
-        try:
-            for ref, value in refs.items():
-                setattr(model.Projection, ref, value)
-            _refused(_point(model, 7).proj_len, message)
-        finally:
-            model.close()
     model = mx.read_model(model_path(SEC), name=_name("bounds"))
     try:
-        model.Data.future_horizon_mth = data["future_horizon_mth"] + 1
-        _refused(model.Data.model_point_table,
-                 f"future_horizon_mth must be a whole number of months from 0 to "
-                 f"{data['future_horizon_mth']}")
+        last = model.Data.mort_age_last()
+        frame_check = model.Projection.proj_len.formula.source
+        search = model.Projection.fund_exhaust_mth.formula.source
     finally:
         model.close()
+    cover = 12 * (last + 1 - proj["issue_age_min"])
+    frame = cover + data["future_horizon_mth"]
+    for text in (f"the frame's bound in proj_len, {frame:,}, + 2",
+                 f"the cover's bound in proj_len in years, {cover:,} / 12 = {cover // 12}, + 2"):
+        assert text in comment, text
+    t, width = frame + 2, max(len(TIMING_CODES), len(CLAIM_CODES))
+    assert sizes == {"t": t, ("t", "timing"): (t, width), ("t", "kind"): (t, width),
+                     "y": cover // 12 + 2}, sizes
+    assert len({size[1] for size in sizes.values() if isinstance(size, tuple)}) == 1
+    assert (t, width, cover // 12 + 2) == (1358, 10, 105)
+    for text in (f"if cover_end_mth() > {cover}:", f"longer than {cover} months",
+                 f"if n > {frame}:", f"longer than {frame} months"):
+        assert text in frame_check, text
+    assert f"cover_end_mth() - duration_mth_init(), {frame + 1}))" in search
+    assert f"longer than {frame} months" in _PAST_FRAME
+    assert f"longer than {cover} months" in _PAST_COVER
 
 
 def test_the_sample_raises_the_recursion_limit_its_comment_derives():
@@ -6999,11 +7079,10 @@ C4_MONTHS = 6000
 
 def _frames(table, refs, root):
     """``proj_len()`` of each row of ``table``, read under ``refs`` from a copy in
-    ``root``, in table order."""
+    ``root``, in table order, a ``"Data.<name>"`` Reference set on ``Data``."""
     model = mx.read_model(_sec_inputs(root, table), name=_name("frames"))
     try:
-        for ref, value in (refs or {}).items():
-            setattr(model.Projection, ref, value)
+        _set_refs(model, refs or {})
         return [projection(model, key).proj_len() for key in point_keys(model)]
     finally:
         model.close()
@@ -7073,11 +7152,12 @@ def test_the_compiled_model_computes_what_modelx_computes_on_the_splice_grid(spl
     assert not found, _mismatch_lines(found)
 
 
-# The contract's extremes (held by proj_len()): each shape of the chains' tests at its
-# longest cover, issued at the youngest issue age, 18, to the contract's largest limiting
-# age, 121, as (the S point it changes, its changes): the anchor bond, the endowment for 103
-# years and the bond withdrawing 1% a year at +7%, whose units never run out.  Each is made
-# from S's new business, the bond variant (7) and the endowment (5).
+# The contract's extremes (held by proj_len(), CACHE_EDGES): each shape of the chains'
+# tests at its longest cover, issued at the youngest issue age, 18, to the largest limiting
+# age the shipped table admits, 121, as (the S point it changes, its changes): the anchor
+# bond, the endowment for 103 years and the bond withdrawing 1% a year at +7%, whose units
+# never run out.  Each is made from S's new business, the bond variant (7) and the
+# endowment (5).
 EXTREMES = {
     31: (7, {"age_at_entry": YOUNGEST, "wd_rate": 0.0, "fund_return": 0.07}),
     32: (5, {"age_at_entry": YOUNGEST, "policy_term": OMEGA_MAX - YOUNGEST}),
@@ -7139,6 +7219,30 @@ def test_the_compiled_model_computes_what_modelx_computes_at_the_contract_extrem
     frames = _frames(rows, LONGEST_REFS, tmp_path / "frames")
     assert max(frames) == LONGEST_MAX + 120 == 1356 and frames.count(LONGEST_MAX) == 3
     found = _c4_chunks(build, rows, LONGEST_REFS, tmp_path / "extremes")
+    assert not found, _mismatch_lines(found)
+
+
+@pytest.mark.cython
+def test_the_compiled_model_computes_what_modelx_computes_at_the_caches_bounds(
+        sec_build, tmp_path):
+    """C4 at the two bounds the caches hold, under References that admit past them.
+
+    The rows of :data:`CACHE_EDGES` that project, each a frame of 1,356 months, the longest
+    the ``t`` cache holds, under :data:`CACHE_REFS`, a lowered ``issue_age_min`` and a
+    horizon of 200 months, which admit longer covers and frames, ``proj_len()`` refusing
+    those by point: the bond issued at 18 and 120 months on, whose cover, 1,236 months, is
+    the longest the ``y`` cache holds, and the bond issued 200 months on whose units run out
+    in month 1,356, the last the exhaustion search reads.  modelx sweeps both fully, every
+    Reference, ``Data.future_horizon_mth`` among them, set on both engines before either
+    computes, and the compiled model must agree everywhere; a frame a month longer and a
+    cover a year longer are refused in both, message for message
+    (:func:`test_the_compiled_model_refuses_what_modelx_refuses`).
+    """
+    build = sec_build(SEC)
+    rows = _cache_edges().iloc[[n for n, (*_, outcome) in enumerate(CACHE_EDGES)
+                                if isinstance(outcome, int)]]
+    assert _frames(rows, CACHE_REFS, tmp_path / "frames") == [1356, 1356]
+    found = _c4_chunks(build, rows, CACHE_REFS, tmp_path / "caches")
     assert not found, _mismatch_lines(found)
 
 
@@ -7441,7 +7545,7 @@ def _named(outcome, files):
 # take a domain's cases at whole numbers and at True and False alone, and model-sec.md says
 # to set each integer as a whole number and the switch as True or False (UKLIB-SEC-PLAN.md
 # §6.1, *Record -- M2*).
-INT_REFERENCES = frozenset({"issue_age_min", "omega_age", "omega_age_max", "bonus_horizon"})
+INT_REFERENCES = frozenset({"issue_age_min", "omega_age", "bonus_horizon"})
 BOOL_REFERENCES = frozenset({"bonus_rule_on"})
 
 
@@ -7455,12 +7559,15 @@ def _held_compiled(refs):
 
 # Data's integer Reference, which the compiled model holds as a long long, as it holds
 # Projection's (INT_REFERENCES), and which the child sets as it sets theirs: the horizon
-# is refused at -1, at 121 and at 2**53 in both engines, message for message, and a
-# fraction is truncated as it is set, 12.5 to 12, where modelx refuses 12.5 (the horizon
-# test), so that compiled, 12.5 does what 12 does in modelx: it refuses the point issued 13
-# months on.  model-sec.md says to set it as a whole number.
+# is refused at -1 and at 2**53, each as an int and as a float, in both engines, message
+# for message, its value printed as a float, as the compiled model prints the long long it
+# holds; read at 121 and at 121.0, past the shipped 120, as the in-force step reads it
+# (READ_HORIZONS); and a fraction is truncated as it is set, 12.5 to 12, where modelx
+# refuses 12.5 (the horizon test), so that compiled, 12.5 does what 12 does in modelx: it
+# refuses the point issued 13 months on.  model-sec.md says to set it as a whole number.
 DATA_INT_REFERENCES = frozenset({"future_horizon_mth"})
-HORIZONS = (-1, 12.5, 121, 2 ** 53)
+HORIZONS = (-1, -1.0, 12.5, 121, 121.0, 2 ** 53, 2.0 ** 53)
+READ_HORIZONS = frozenset({121})
 
 
 def _as_held(ref, value):
@@ -7600,9 +7707,19 @@ def _refusal_cases():
     cases.append(("codes no cell takes, inside the caches", extract(), None, {},
                   [(at(1), cell, args) for cell, args, _ in CODES_IN_CACHE], ()))
     for horizon in HORIZONS:
+        if horizon in READ_HORIZONS:
+            future = _label(committed, "future", 7, -13)
+            cases.append((f"accepted: future_horizon_mth at {horizon!r}", extract(), None,
+                          {"Data.future_horizon_mth": horizon},
+                          [(at(future), "proj_len", ()), (at(1), "net_cf", (0,))], ()))
+            continue
         cases.append((f"future_horizon_mth at {horizon!r}", extract(), None,
                       {"Data.future_horizon_mth": horizon}, [(at(1), "result_cf", ())],
                       ("model_point_table",)))
+    cases.append(("the caches' bounds", _cache_edges(), None, dict(CACHE_REFS),
+                  [(n, cell, ()) for n, (*_, outcome) in enumerate(CACHE_EDGES)
+                   if not isinstance(outcome, int) for cell in ("result_cf", "proj_len")],
+                  ()))
     return cases
 
 
@@ -7621,8 +7738,12 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
     ``proj_len``; every case of :data:`DOMAINS` that refuses and that the compiled model
     can hold, its integer References whole and its switch True or False
     (:func:`_held_compiled`), each printed as the compiled model types it, by the frame or
-    by the report the value past the floats first reaches, the bounds the caches are sized
-    from among them, an issue age below 18 and a limiting age above 121; each value of
+    by the report the value past the floats first reaches; each row of
+    :data:`CACHE_EDGES` that refuses, by ``result_cf`` and ``proj_len``, under
+    :data:`CACHE_REFS`, set by the child on ``Projection`` and ``Data`` alike: a frame a
+    month longer than the ``t`` cache holds, a cover a year longer than the ``y`` cache
+    holds on either chassis, and a bond whose units last past month 1,356, which the
+    compiled exhaustion search must not read past the cache to find; each value of
     :data:`PAST_THE_FLOATS` by its cell and by a report, a kind named by its code, the three
     powers past the floats and below the smallest among them, which the compiled cells
     reach through Python's own power where C's gives an infinity or 0, uslib's M22 form,
@@ -7634,9 +7755,11 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
     ``Data.point_id``; each code of :data:`CODES_IN_CACHE`, inside the caches, which the
     cell's own formula refuses; and ``Data.future_horizon_mth`` at each of :data:`HORIZONS`,
     set by the child as every space's References are, refused by a projection and by
-    ``Data``'s reader: at ``-1``, ``121`` and ``2**53`` as modelx refuses it, and at
-    ``12.5``, which the compiled model truncates as it is set, as modelx refuses 12
-    (:func:`_as_held`).
+    ``Data``'s reader at ``-1`` and ``2**53``, as ints and as floats, as modelx refuses
+    it, its value printed as a float in both, and at ``12.5``, which the compiled model
+    truncates as it is set, as modelx refuses 12 (:func:`_as_held`); and read at ``121``
+    and ``121.0`` (:data:`READ_HORIZONS`), as modelx reads them, the frame of the point
+    issued 13 months on and the worked example's first cash flow each modelx's.
 
     And the refusals that are the compiled model's alone (:data:`COMPILED_ONLY`): a month
     past the ``t`` cache either side, a timing and a kind past their codes, and a policy
@@ -7717,6 +7840,14 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
                         "raised", "IndexError"):
                     found.append(f"{where}: compiled {compiled_did}, not IndexError")
                 continue
+            if case.startswith("accepted: "):
+                computed += 1
+                if modelx_did[0] != "ok" or not (
+                        compiled_did[0] == "ok" and _as_modelx(compiled_did[1],
+                                                               modelx_did[1])):
+                    found.append(f"{where}: compiled {compiled_did}, modelx {modelx_did}, "
+                                 f"where both read the value")
+                continue
             if case.startswith("later: ") and n % 3 == 0:
                 computed += 1
                 if modelx_did[0] != "ok" or not (
@@ -7744,7 +7875,7 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
                          f"row {edges[23, cell, args]}")
     assert edges[-1, "point_id", ()][0] == ("ok", EXTRACT_LABELS[-1]), edges
     assert not found, "\n".join(found[:40])
-    assert computed == len(CHAINS_PAST)
+    assert computed == len(CHAINS_PAST) + sum(2 for h in HORIZONS if h in READ_HORIZONS)
     assert refused + computed == sum(len(calls) + len(data)
                                      for *_, calls, data in cases[:plain])
 
@@ -7786,28 +7917,27 @@ def test_the_longest_cover_runs_cold_on_a_one_megabyte_stack(sec_build, tmp_path
     """The deepest call the contract allows runs compiled on a 1 MiB stack (F7).
 
     On the rows of :func:`_longest_cover`, each shape of :data:`SHAPES` at its longest
-    cover, issued at 18 now and 120 months on, the limiting age at the contract's largest,
-    121, 1,236 months from issue: the anchor bond, the endowment for 103 years and the
-    bond withdrawing 1% a year, whose exhaustion search runs the units over the whole
-    cover.  Each of :data:`STACK_HEADS`, cold in the last month, runs the chains back to
-    ``t_entry()``, one cell a month within the policy year and two a year before it, the
+    cover, issued at 18 now and 120 months on, the limiting age at the largest the shipped
+    table admits, 121, 1,236 months from issue: the anchor bond, the endowment for 103 years
+    and the bond withdrawing 1% a year, whose exhaustion search runs the units over the
+    whole cover.  Each of :data:`STACK_HEADS`, cold in the last month, runs the chains back
+    to ``t_entry()``, one cell a month within the policy year and two a year before it, the
     eight chains being blocked by policy year: 216 to 240 cells deep in modelx
     (:func:`test_every_chain_runs_one_cell_a_month_from_a_cold_start`), with every switch
     that ships off on (:data:`LONGEST_REFS`).  Each runs in an ItemSpace of its own, on a
     copy of its row, so that each is cold: in one ItemSpace the second would run on the
     first's caches, a few cells deep.  Compiled they run on the C stack, which the
-    interpreter's recursion limit does not count, and one cell a month they needed up to
-    292 KiB of it here, the count's, and blocked 64 (UKLIB-SEC-PLAN.md §6.5, *Record --
-    M14*).  1 MiB is the stack MSVC gives an executable's main thread unless the
-    executable asks for more: a host that embeds Python, where python.exe itself asks for
-    2,000,000 bytes.  A thread whose stack is reserved at 1 MiB stands in for it on every
-    platform (``uk_sec_support.run_compiled``), and in one each call runs cold and returns
-    modelx's number, identically on x86-64 (``uk_sec_support.exact_here``) and to 1e-12
-    elsewhere.  A stack too small kills the child, and the test fails naming the stack.
-    The thread's stack is read back too, from Windows or from glibc, and must be at most 1
-    MiB and a page: a stand-in larger than asked for would stand for nothing.  And the
-    calls run again on the child's main thread, which is what ``run_sec.py --cython`` runs
-    on.
+    interpreter's recursion limit does not count, and one cell a month they needed up to 292
+    KiB of it here, the count's, and blocked 64 (UKLIB-SEC-PLAN.md §6.5, *Record -- M14*).
+    1 MiB is the stack MSVC gives an executable's main thread unless the executable asks for
+    more: a host that embeds Python, where python.exe itself asks for 2,000,000 bytes.  A
+    thread whose stack is reserved at 1 MiB stands in for it on every platform
+    (``uk_sec_support.run_compiled``), and in one each call runs cold and returns modelx's
+    number, identically on x86-64 (``uk_sec_support.exact_here``) and to 1e-12 elsewhere.  A
+    stack too small kills the child, and the test fails naming the stack. The thread's stack
+    is read back too, from Windows or from glibc, and must be at most 1 MiB and a page: a
+    stand-in larger than asked for would stand for nothing.  And the calls run again on the
+    child's main thread, which is what ``run_sec.py --cython`` runs on.
 
     The calls run first at each size of :data:`STACK_KIB`, before anything is asserted,
     and every size's outcome goes into a warning, which the job's summary shows, and into
