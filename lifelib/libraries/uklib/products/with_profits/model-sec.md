@@ -427,7 +427,7 @@ replaces, and `attaching_bonus`, renamed. One Reference is new, `issue_age_min`.
 | Cells | `WP_UK_S` | `WP_UK_SEC` | Why |
 |---|---|---|---|
 | `duration_mth`, `duration`, `age`, `policy_year` | `t`, `t // 12` | `duration_mth_init() + t`, `duration_mth(t) // 12` | The policy clock, opened from the model point |
-| `proj_len`; `cover_end_mth`, new | `12 × policy_term()`, or `min(12 × (omega_age − x), fund_exhaust_mth())`, from issue | `min(cover_end_mth(), fund_exhaust_mth()) − duration_mth_init()`, from the valuation date; raises past cover, outside the contract's bounds, on a Reference off its domain, on units spent in the first month and on a cover or a frame longer than the compiled model's caches hold | The frame starts at the valuation date |
+| `proj_len`; `cover_end_mth`, new | `12 × policy_term()`, or `min(12 × (omega_age − x), fund_exhaust_mth())`, from issue | `min(cover_end_mth(), fund_exhaust_mth()) − duration_mth_init()`, from the valuation date; raises past cover, outside the contract's bounds, on a Reference off its domain, on units spent in the first month and on a cover or a frame longer than the compiled model's caches are sized for | The frame starts at the valuation date |
 | `fund_exhaust_mth` | the first `t` from `proj_start()` whose units are at or below 1e-9, 0 if none | the same as a policy month, from `t_entry()` to month 1,356 at most; `cover_end_mth() + 1` if none | 0 is a real month on either clock; no frame the compiled model's caches hold ends later |
 | `is_forced_encashment` | `fund_exhaust_mth() > 0` and the frame ends there | `fund_exhaust_mth()` inside cover | The new "never" |
 | `is_declaration_month`, `declaration_month` | `(t + 1) % 12 == 0`; the policy month `12 × duration(t) + 11` | `(duration_mth(t) + 1) % 12 == 0`; the valuation month `t + 11 − duration_mth(t) % 12`, `WholeLife_US_SEC`'s `anniv_mth` | A declaration falls in a policy year's twelfth month, and `bonus_rate` passed the policy month back as `t` |
@@ -787,29 +787,39 @@ valuation date`, and `point_id 303: the cover, 1248 months from issue, is longer
 months, issue at 18 to 121, the longest the compiled model's caches hold`. Covers are
 whole years, so the next past 1,236 is 1,248, and a frame is refused a month past 1,356.
 The exhaustion search reads no month past 1,356, so a bond whose units last past it is
-refused whichever month they would run out in, and its "never" there is "not by month
-1,356". So no report on a point the model projects runs past these caches, raising a
+refused whichever month they would run out in, and its "never" there is "not by
+month 1,356". So no report on a point the model projects runs past these caches, raising a
 bare `IndexError` where modelx projects, as a `PA_UK_SEC` edge did (UKLIB-SEC-PLAN.md
-§6.7, *Record — M12*), and every point whose frame they hold projects, whatever the
-References; a test runs the longest frame and the longest cover compiled against modelx,
-under References that admit longer, and refuses a month and a year past them in both,
-message for message. To lengthen a bound, derive the sizes again, as `spec_sec.py`
-derives them, move the bound in `proj_len()` and in the spec test with them, and
-rebuild: `t` to the frame's bound + 2 and `y` to the cover's bound in years + 2. The ages
-bound no cache: an age indexes `Data`'s mortality table, not a cache, and `mort_rate`
-refuses one the table does not rate.
+§6.7, *Record — M12*), and every point whose cover and frame they hold projects, whatever
+the References. The cover's bound is conservative: it refuses a cover past 1,236 months
+even where a bond's units would run out within the caches. A bond issued at 17 under an
+`issue_age_min` of 17, to 121, in force at 24 and withdrawing 3% at +5%, has a cover of
+1,248 months, but its units run out at policy month 798, a frame of 774 months, whose
+reads stay at `t` 775 and policy year 67 and which the in-force step projects; this one
+refuses it, by its cover, a departure from the in-force step reachable only through a
+lowered `issue_age_min` or a longer table. The bound is kept because it is read before the
+exhaustion search, whose own months it bounds and would otherwise need bounding by the
+cover; a test holds that bond refused in both engines, message for message. A test runs
+the longest frame and the longest cover compiled against modelx, under References that
+admit longer, and refuses a month and a year past them in both, message for message. To
+lengthen a bound, derive the sizes again, as `spec_sec.py` derives them, move the bound in
+`proj_len()` and in the spec test with them, and rebuild: `t` to the frame's bound + 2 and
+`y` to the cover's bound in years + 2. The ages bound no cache: an age indexes `Data`'s
+mortality table, not a cache, and `mort_rate` refuses one the table does not rate.
 
 **The frames the in-force step projected that this refuses.** Only those two, each reached
 through a Reference set past its shipped value or a longer table, never at the shipped
 ones: a cover longer than 1,236 months, a policy issued below 18 under a lowered
 `issue_age_min` and in force past the table's first age, a bond issued at 15 to 120, say,
-1,260 months, or one issued at 18 to a limiting age past 121 on a longer table; and a
-frame longer than 1,356 months, a policy issued more than 120 months after the valuation
-date under a longer horizon whose frame then runs past it, the bond issued at 18 to 121
-and 121 months on, say. The compiled model's caches cannot hold either, and a cache sized
-to the longest any value of a Reference admits would have no size, so the frame refuses
-them by point, naming the point and the bound, as `PA_UK_SEC` refuses, on its scenario
-basis, a frame past its table basis's longest (*Record — M12*).
+1,260 months, or one issued at 18 to a limiting age past 121 on a longer table, refused
+even where a bond's units run out within the caches, as above; and a frame longer than
+1,356 months, a policy issued more than 120 months after the valuation date under a longer
+horizon whose frame then runs past it, the bond issued at 18 to 121 and 121 months on,
+say. The caches cannot hold a frame longer than 1,356 months, nor the policy years of a
+cover longer than 1,236 run to its end, and a cache sized to the longest any value of a
+Reference admits would have no size, so the frame refuses them by point, naming the point
+and the bound, as `PA_UK_SEC` refuses, on its scenario basis, a frame past its table
+basis's longest (*Record — M12*).
 
 ### Two compiler directives
 
@@ -914,8 +924,9 @@ at −1 and at `2**53`, as ints and as floats, as in modelx, read at 121 and 121
 - A key beyond the mortality table, by the one cell that reads it, where `WP_UK_S`'s
   lookup raised `KeyError`: `point_id 7: mort_table.csv has no rate at attained age 18`,
   from `mort_rate`, on a table that starts at 20.
-- A cover or a frame longer than the caches hold, by `proj_len()`, naming the point and
-  the bound (*The bounds the caches hold*, above), under References each in its domain.
+- A cover or a frame longer than the caches are sized for, by `proj_len()`, naming the
+  point and the bound (*The bounds the caches hold*, above), under References each in its
+  domain, the cover's bound even where a bond's units would run out within the caches.
 - A value past the floats, in the cell where it first is, naming the point, the month and
   what makes it (*Departures from WP_UK_S*), the six chains' through their refusal cells,
   each in its opening month and, from an opening state, columns and References each in its

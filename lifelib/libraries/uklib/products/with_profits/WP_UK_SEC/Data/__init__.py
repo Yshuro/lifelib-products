@@ -219,7 +219,8 @@ def model_point_table():
        fails every comparison and so would admit every policy, and an infinite one bounds
        nothing.  A longer horizon than the shipped 120 is read as set: a frame longer
        than the compiled model's caches hold, 1,356 months, is refused by point, by
-       ``Projection.proj_len``, and every shorter one projects;
+       ``Projection.proj_len``, and every shorter one projects whose cover is no longer
+       than the caches are sized for, 1,236 months;
     6. ``chassis`` is UWP_bond or CWP_endowment, ``sex`` M or F and ``tax_basis`` life_net
        or pension_gross, the codes the formulas branch on and the tables are keyed by,
        which :mod:`~.WP_UK_S` refuses only once a projection reaches them;

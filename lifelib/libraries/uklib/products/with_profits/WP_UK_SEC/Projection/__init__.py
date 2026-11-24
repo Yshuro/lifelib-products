@@ -631,11 +631,14 @@ model's caches are sized from the shipped References and table (``spec_sec.py``)
 of at most 1,236 months, from issue at 18 to 121, the table's last age plus one, and a
 frame of at most 1,356, issued at most 120 months after the valuation date. Each
 Reference keeps its domain, and :func:`proj_len` refuses, by point and in both engines, a
-cover or a frame longer than the caches hold, so that no point is projected whose reads
-would pass a cache, raising ``IndexError`` where modelx projects, and every frame they hold
-projects, whatever the References. And :func:`proj_len` holds every Reference a formula
-reads through a bound, a power or a product to its domain, NaN and the infinities outside
-each, its docstring naming each domain and its reason.
+cover or a frame longer than the caches are sized for, so that no point is projected whose
+reads would pass a cache, raising ``IndexError`` where modelx projects, and every point
+whose cover and frame they hold projects, whatever the References. The cover's bound is
+conservative: it refuses a cover past 1,236 months even where a bond's units would run
+out within the caches, a departure from the in-force step reachable only through a
+lowered ``issue_age_min`` or a longer table. And :func:`proj_len` holds every Reference a
+formula reads through a bound, a power or a product to its domain, NaN and the infinities
+outside each, its docstring naming each domain and its reason.
 """
 
 from modelx.serialize.jsonvalues import *
@@ -1119,14 +1122,17 @@ def proj_len():
       them at ``omega_age``;
     * a cover longer than 1,236 months, ``12 x (121 - 18)``, from issue at 18, the shipped
       ``issue_age_min``, to 121, the shipped table's last age plus one: the longest the
-      compiled model's caches are sized from, whose policy years run to 104, the year
-      after the last of such a cover, whose date its last month's window waits for
-      (``spec_sec.py``).  Covers are whole years, so the next is 1,248 months, whose
-      window reads year 105, past the cache.  The shipped References and table admit no
-      longer cover; an ``issue_age_min`` below 18 or a table rating ages past 120 admits
-      one, which the in-force step projected and this one refuses, by point, a cover of
-      1,236 months or less projecting whatever the References (model-sec.md, *Departures
-      from WP_UK_S*);
+      compiled model's caches are sized from, whose policy years run to 104, the year after
+      the last of such a cover, whose date its last month's window waits for
+      (``spec_sec.py``).  Covers are whole years, so the next is 1,248 months, whose window
+      reads year 105, past the cache.  The shipped References and table admit no longer
+      cover; an ``issue_age_min`` below 18 or a table rating ages past 120 admits one, which
+      the in-force step projected and this one refuses, by point, a cover of 1,236 months or
+      less projecting whatever the References (model-sec.md, *The bounds the caches hold*).
+      The bound refuses such a cover even where a bond's units would run out within the
+      caches, its frame one they hold, as the in-force step's would not: it is read before
+      the exhaustion search, whose own months it bounds, and which would otherwise need
+      bounding by the cover;
     * a policy whose cover had ended by the valuation date, at or past
       :func:`cover_end_mth`, which an in-force extract should not carry;
     * any point while a Reference is off its domain, which the message names. NaN and the
@@ -1192,9 +1198,9 @@ def proj_len():
     bounds above (``spec_sec.py``).  Every report reads this cell first, and so does every
     count, so no point outside them is projected, in modelx as compiled, and none whose
     reads would pass a cache, raising ``IndexError`` where modelx projects; each Reference
-    keeps the domain the in-force step gave it, so that no value in it refuses a point
-    whose frame the caches hold.  Each check is a comparison written out, a finite bound the
-    largest float, 1.7976931348623157e308, and a whole one ``2**53``, so that a compiled
+    keeps the domain the in-force step gave it, so that no value in it refuses a point whose
+    cover and frame the caches hold.  Each check is a comparison written out, a finite bound
+    the largest float, 1.7976931348623157e308, and a whole one ``2**53``, so that a compiled
     cell runs it in C, and each Reference is printed as the compiled model types it:
     ``issue_age_min``, ``omega_age`` and ``bonus_horizon`` through ``int()`` once they are
     whole numbers, and every other through ``float()``; ``omega_age`` is then read as the

@@ -1,24 +1,28 @@
-# mx2cy's spec for WP_UK_SEC: the length of each C-array cache in Projection, by the
-# cells' parameters (USLIB-SEC-PLAN.md F4, section 6.1 step 6; UKLIB-SEC-PLAN.md 6.5).  A
-# compiled cache raises IndexError for an argument outside [0, size), so each size covers
-# the largest argument any cell is called with on a point the contract allows, in its
-# frame and in the month after it, t = proj_len(), which the roll-forward reads and C4's
-# full sweep evaluates every monthly cell at; plus one because the index starts at 0.  No
-# size has headroom past that: each is held to its derivation by a test.  mx2cy keys a
-# size by a cell's parameter names, so every cell taking t alone shares one.  The sizes
-# are derived from the shipped References and mortality table: Projection.proj_len refuses
-# a point issued below issue_age_min, 18, the youngest age the table rates, and a cover
-# past omega_age, at most the table's last age plus one, 121; and Data a point issued more
-# than future_horizon_mth, 120 months, after the valuation date.  Each Reference keeps its
-# domain, and a cover or a frame longer than these sizes hold is refused by point instead,
-# in both engines: proj_len refuses a cover longer than 1,236 months and a frame longer
-# than 1,356, the two bounds derived below, so that no point a report projects outruns
-# these sizes, and none is refused that they hold (UKLIB-SEC-PLAN.md 6.5, Record -- M14).
-# A size moved is moved with its bound in proj_len, here and in the spec test together,
-# and the model rebuilt.  The units' exhaustion only shortens a frame, and its search
-# reads the units in the months of cover to month 1,356 alone.  The ages bound no cache:
-# an age indexes Data's mortality table, not a cache, and Projection.mort_rate refuses one
-# the table does not rate.
+# mx2cy's spec for WP_UK_SEC: the length of each C-array cache in Projection, by the cells'
+# parameters (USLIB-SEC-PLAN.md F4, section 6.1 step 6; UKLIB-SEC-PLAN.md 6.5).  A compiled
+# cache raises IndexError for an argument outside [0, size), so each size covers the largest
+# argument any cell is called with on a point the contract allows, in its frame and in the
+# month after it, t = proj_len(), which the roll-forward reads and C4's full sweep evaluates
+# every monthly cell at; plus one because the index starts at 0.  No size has headroom past
+# that: each is held to its derivation by a test.  mx2cy keys a size by a cell's parameter
+# names, so every cell taking t alone shares one.  The sizes are derived from the shipped
+# References and mortality table: Projection.proj_len refuses a point issued below
+# issue_age_min, 18, the youngest age the table rates, and a cover past omega_age, at most
+# the table's last age plus one, 121; and Data a point issued more than future_horizon_mth,
+# 120 months, after the valuation date.  Each Reference keeps its domain, and a cover or a
+# frame longer than these sizes hold is refused by point instead, in both engines: proj_len
+# refuses a cover longer than 1,236 months and a frame longer than 1,356, the two bounds
+# derived below, so that no point a report projects outruns these sizes, and none whose
+# cover and frame they hold is refused (UKLIB-SEC-PLAN.md 6.5, Record -- M14).  The cover's
+# bound is conservative: it refuses a cover past 1,236 months even where a bond's units
+# would run out within these sizes, a departure from the in-force step reachable only
+# through a lowered issue_age_min or a longer table, kept because it is read before the
+# exhaustion search, whose own months would otherwise need bounding by the cover.  A size
+# moved is moved with its bound in proj_len, here and in the spec test together, and the
+# model rebuilt.  The units' exhaustion only shortens a frame, and its search reads the
+# units in the months of cover to month 1,356 alone.  The ages bound no cache: an age
+# indexes Data's mortality table, not a cache, and Projection.mort_rate refuses one the
+# table does not rate.
 #
 # t, months from the valuation date.  The longest frame is the longest cover, a bond issued
 # at 18 whose units last to 121, or an endowment maturing there: 12 * (121 - 18) = 1,236
