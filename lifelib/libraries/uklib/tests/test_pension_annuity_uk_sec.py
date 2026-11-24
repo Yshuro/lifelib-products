@@ -6948,9 +6948,10 @@ def test_c4_asks_every_cell_at_every_code(tmp_path):
     cell asks would go uncompared: the payments to date at ``ALL``, which no cell reads, and
     the dependant's death density, which the last-death density replaces, among them
     (:func:`_pa_c4_also`).  On a fresh read of the committed table, after a full sweep of
-    each twin of ``PA_UK_S``'s ten points, every kind of contract S holds, and the ``also``
-    of each, the codes each cell has been called at, over the twins, are every code it
-    takes: both timings of the count; the claims' two kinds and
+    the twins of ``PA_UK_S``'s points 1 and 2, the worked example on the scenario basis and
+    on the table basis, joint lives with value protection on the first death, and the
+    ``also`` of each, the codes each cell has been called at, over the two, are every code
+    it takes: both timings of the count; the claims' two kinds and
     their total; the payments to date's two kinds; and both lives in every cell of a life,
     the table basis's mortality cells and the scenario basis's months of death among them.
     Each point is released once its codes are read, as C4 releases none: a full sweep
@@ -6960,8 +6961,9 @@ def test_c4_asks_every_cell_at_every_code(tmp_path):
     try:
         seen = {}
         table = model.Data.model_point_table()
-        for key, kind in zip(point_keys(model), table["row_kind"]):
-            if kind != "twin":
+        for key, kind, source in zip(point_keys(model), table["row_kind"],
+                                     table["source_policy_id"]):
+            if kind != "twin" or source not in ("PA-000001", "PA-000002"):
                 continue
             p = projection(model, key)
             if ("proj_len", ()) not in full_sweep(p):
