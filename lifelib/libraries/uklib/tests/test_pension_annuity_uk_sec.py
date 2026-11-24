@@ -2488,6 +2488,32 @@ def test_a_text_value_no_decode_knows_raises_pa_uk_s_message(tmp_path, case, edi
         model.close()
 
 
+@pytest.mark.parametrize("case, edit, point, message", UNDECODABLE,
+                         ids=[c[0] for c in UNDECODABLE])
+def test_a_text_value_no_decode_knows_is_refused_naming_the_extract_s_label(
+        tmp_path, case, edit, point, message):
+    """Each decode's refusal names the extract's label, never the row's position (T5).
+
+    The committed labels are their positions plus one, so a decode that named its point by
+    its place in the table, ``idx + 1``, would pass every case of :data:`UNDECODABLE` on
+    them, and the compiled refusal test, which compares the two engines, would see both
+    name the same wrong point.  So each case's table is the committed one with its fault,
+    made by its own labels, and then relabelled :data:`EXTRACT_LABELS`, as
+    :data:`MALFORMED`'s are, and each refusal must name the extract's label.
+    """
+    committed = _committed()
+    relabel = dict(zip(committed.index, EXTRACT_LABELS))
+    table = edit(committed).rename(index=relabel)
+    model = mx.read_model(_sec_inputs(tmp_path, table), name=_name("undecodable_extract"))
+    try:
+        assert len(model.Data.model_point_table()) == len(committed)
+        assert relabel[point] != point
+        _refused(_point(model, relabel[point]).result_cf,
+                 f"point_id {relabel[point]}: {message}")
+    finally:
+        model.close()
+
+
 # A column only some points' projections read, refused by the point that reads it and by
 # no other (USLIB-SEC-PLAN.md R7, precised at M23; UKLIB-SEC-PLAN.md §6.7, *Record --
 # M11*, carried): as (case, the column, the value, the point that reads the column, the
@@ -7068,22 +7094,25 @@ def test_the_compiled_model_computes_what_modelx_computes_at_the_frame_s_edge(se
 def _pa_c4_also(proj):
     """C4's ``also`` on every row it compares: the cells and codes no swept cell reads.
 
-    A sweep evaluates every cell without parameters and every cell of ``t`` alone, at
-    every month of the frame and the month after, the payments to date on every stream and
-    their refusal among them, and every other cell only where those read it.  So it calls,
-    besides: the dependant's death density, ``lives_death(t, 2)``, at every month, which the
-    last-death density replaces in every flow; the payments to date at ``ALL`` at every key
-    the frame reads, which no cell reads; where value protection is on the first death,
-    the annuitant's, ``ANNUITANT``, there and its refusal, which only an overflow calls; the
-    income's refusal in every policy year the frame reads; and each life's label.  A row
-    whose annuitant's payments to date no projection reads is not asked them: on RPI-linked
-    escalation they open from ``cum_annuity_pp_init``, which such a row leaves blank, so
-    they are NaN there, refused past the first key in both engines, and never read.
-    :func:`test_c4_asks_every_cell_at_every_code` holds the sweep and this to every code.
+    A sweep evaluates every cell without parameters and every cell of ``t`` alone, at every
+    month of the frame and the month after, the payments to date on every stream and their
+    refusal among them, and every other cell only where those read it.  So it calls,
+    besides: each life's death density, ``lives_death(t, life)``, at every month, which the
+    last-death density replaces in every flow but the claim on the first death, and so the
+    dependant's on every row and the annuitant's on a single life; the payments to date at
+    ``ALL`` at every key the frame reads, which no cell reads; where value protection is on
+    the first death, the annuitant's, ``ANNUITANT``, there and its refusal, which only an
+    overflow calls; the income's refusal in every policy year the frame reads; and each
+    life's label.  A row whose annuitant's payments to date no projection reads is not
+    asked them: on RPI-linked escalation they open from ``cum_annuity_pp_init``, which such
+    a row leaves blank, so they are NaN there, refused past the first key in both engines,
+    and never read.  :func:`test_c4_asks_every_cell_at_every_code` holds the sweep and this
+    to every code.
     """
     end = proj.proj_len()
     for t in range(end + 1):
-        proj.lives_death(t, 2)
+        for life in (1, 2):
+            proj.lives_death(t, life)
     annuitant = proj.vp_pct() > 0.0 and proj.is_first_death()
     for k in range(max(proj.duration_mth_init(), 0), proj.duration_mth(end) + 1):
         proj.cum_annuity_pp(k, _code(proj, "ALL"))
@@ -7098,55 +7127,91 @@ def _pa_c4_also(proj):
 
 # The codes each cell that takes one is called at, on every row C4 compares, by the sweep
 # and _pa_c4_also between them: the timings, the kinds of the claims and of the payments
-# to date, and the two lives in every cell of a life.
+# to date, and the two lives in every cell of a life that the row's basis reads.  The
+# scenario basis reads each life's month of death and no mortality; the table basis the
+# mortality cells, survival blocked by policy year, and no month of death.
 CODED = {"pols_if_at": "timing", "claims": "kind", "cum_annuity_pp": "kind"}
-LIFE_CELLS = ("age_at_entry", "sex", "mort_schedule", "rating_factor", "death_mth",
-              "lives_if_init", "age", "mort_rate_base", "improve_rate", "improve_factor",
-              "mort_rate", "mort_rate_mth", "lives_if", "lives_death", "lives_if_py",
-              "mort_rate_base_at")
+LIFE_CELLS = {
+    "scenario": ("age_at_entry", "sex", "death_mth", "lives_if_init", "lives_if",
+                 "lives_death"),
+    "table": ("age_at_entry", "sex", "mort_schedule", "rating_factor", "lives_if_init",
+              "age", "mort_rate_base", "improve_rate", "improve_factor", "mort_rate",
+              "mort_rate_mth", "lives_if", "lives_death", "lives_if_py",
+              "mort_rate_base_at")}
+# The cells of a life a single-life contract is asked at either life: the label, which
+# returns the column as read, survival, which reads the second life as none, and the death
+# densities _pa_c4_also asks.  Every other is asked at the annuitant alone, a second life
+# being refused, invalid life.
+EITHER_LIFE = ("sex", "lives_if", "lives_death")
+
+# The stand-ins test_c4_asks_every_cell_at_every_code reads the codes on, a row of each
+# basis and each kind, as (basis, kind, the row): joint contracts with value protection on
+# the first death, which read every code, the worked example's twin on the scenario basis,
+# point 1, and on the table basis, point 2; each restated in payment, at 17 months, point
+# 11, and at 101, point 16; and starting 13 months after the valuation date, the RPI
+# catch-up, point 20, and the worked example, which no committed row is, made here from
+# point 1 (None).  And a single life on the table basis, the rated twin, point 8, which
+# reads no annuitant's payments to date.
+CODE_ROWS = (("scenario", "twin", 1), ("scenario", "derived", 11),
+             ("scenario", "future", None), ("table", "twin", 2), ("table", "derived", 16),
+             ("table", "future", 20), ("table", "twin", 8))
 
 
 def test_c4_asks_every_cell_at_every_code(tmp_path):
-    """C4's sweep and its ``also`` ask every cell that takes a code at every code it takes.
+    """C4's sweep and its ``also`` ask every cell that takes a code at every code it takes,
+    on each row they compare.
 
     C4 compares the compiled model with modelx at the arguments modelx caches, so a code no
     cell asks would go uncompared: the payments to date at ``ALL``, which no cell reads, and
-    the dependant's death density, which the last-death density replaces, among them
-    (:func:`_pa_c4_also`).  On a fresh read of the committed table, after a full sweep of
-    the twins of ``PA_UK_S``'s points 1 and 2, the worked example on the scenario basis and
-    on the table basis, joint lives with value protection on the first death, and the
-    ``also`` of each, the codes each cell has been called at, over the two, are every code
-    it takes: both timings of the count; the claims' two kinds and
-    their total; the payments to date's two kinds; and both lives in every cell of a life,
-    the table basis's mortality cells and the scenario basis's months of death among them.
-    Each point is released once its codes are read, as C4 releases none: a full sweep
-    holds the survival check's quadratic record (:data:`C4_CHUNK`).
+    the death densities, which the last-death density replaces, among them
+    (:func:`_pa_c4_also`).  What a row asks depends on its basis and its kind, so the codes
+    are held row by row, on a stand-in of each basis and each kind of row
+    (:data:`CODE_ROWS`), each swept fully on a fresh read, with the ``also``: both timings
+    of the count; the claims' two kinds and their total; the payments to date at ``ALL``,
+    and at ``ANNUITANT`` under value protection on the first death; and both lives in every
+    cell of a life the row's basis reads (:data:`LIFE_CELLS`), on a single life in those
+    that read the second life as none (:data:`EITHER_LIFE`) and the annuitant alone in the
+    rest.  A code asked on one row alone would leave the others uncompared there, which a
+    union over the rows would not see.  Each row is released once its codes are read, as
+    C4 releases none: a full sweep holds the survival check's quadratic record
+    (:data:`C4_CHUNK`).
     """
-    model = mx.read_model(_sec_inputs(tmp_path, _committed()), name=_name("codes"))
+    committed = _committed()
+    late = committed.loc[[1]].assign(duration_mth=-13, row_kind="future", source_mth=-13)
+    late.index = pd.Index([committed.index.max() + 1], name="point_id")
+    model = mx.read_model(_sec_inputs(tmp_path, pd.concat([committed, late])),
+                          name=_name("codes"))
     try:
-        seen = {}
         table = model.Data.model_point_table()
-        for key, kind, source in zip(point_keys(model), table["row_kind"],
-                                     table["source_policy_id"]):
-            if kind != "twin" or source not in ("PA-000001", "PA-000002"):
-                continue
+        found = {}
+        for basis, kind, label in CODE_ROWS:
+            label = late.index[0] if label is None else label
+            assert (table.at[label, "mort_basis"], table.at[label, "row_kind"]) == (
+                basis, kind), label
+            key = _key(model, label)
             p = projection(model, key)
             if ("proj_len", ()) not in full_sweep(p):
                 _pa_c4_also(p)
-            for name in (*CODED, *LIFE_CELLS):
+            seen = {}
+            for name in (*CODED, *LIFE_CELLS["table"], "death_mth"):
                 cells = p.cells[name]
                 where = list(cells.parameters).index(CODED.get(name, "life"))
                 for args in cells.keys():
                     args = args if isinstance(args, tuple) else (args,)
                     seen.setdefault(name, set()).add(args[where])
+            joint = p.is_joint()
+            want = {"pols_if_at": {p.BEF_NB, p.BEF_DECR},
+                    "claims": {p.VP, p.PROP, p.ALL},
+                    "cum_annuity_pp": ({p.ANNUITANT, p.ALL} if p.vp_pct() > 0.0
+                                       and p.is_first_death() else {p.ALL}),
+                    **{name: {1, 2} if joint or name in EITHER_LIFE else {1}
+                       for name in LIFE_CELLS[basis]}}
+            if seen != want:
+                found[basis, kind, label] = {
+                    name: (seen.get(name), want.get(name))
+                    for name in {*seen, *want} if seen.get(name) != want.get(name)}
             _release(model, key)
-        p = projection(model, point_keys(model)[0])
-        want = {"pols_if_at": {p.BEF_NB, p.BEF_DECR},
-                "claims": {p.VP, p.PROP, p.ALL},
-                "cum_annuity_pp": {p.ANNUITANT, p.ALL},
-                **{name: {1, 2} for name in LIFE_CELLS}}
-        assert seen == want, {name: (seen.get(name), codes) for name, codes in want.items()
-                              if seen.get(name) != codes}
+        assert not found, found
     finally:
         model.close()
 
