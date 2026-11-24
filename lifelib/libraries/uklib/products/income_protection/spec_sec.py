@@ -42,17 +42,20 @@
 # reads each 2-D cache back through a C-array temporary, with a converter named by the
 # inner type, __Pyx_carray_from_py_double___5b_626_5d_ for double[626].  It pools its
 # temporaries by C type (Code.py's allocate_temp), and its C-array types compare equal on
-# the outer size alone, the inner one not compared (PyrexTypes.py's CArrayType.__eq__).
-# So caches of one outer size share one temporary of the first one's shape: claims and
-# pols_if_at share a double[746][4], and the cohorts, at 747, get a double[747][626] of
-# their own.  At an outer size of 746 the cohorts' converter would be handed the [746][4]
-# temporary, which gcc and clang refuse under -Werror=incompatible-pointer-types, as
-# tools/build_sec_cy.py builds on Linux and macOS, and gcc 14 by default, and which MSVC
-# only warns of, and then writes 746 x 626 doubles into it as a point is unpickled.  This
-# rests on an internal of Cython 3.3.1, measured at M8 and read at its review; uslib's
-# rule of one inner width a model (USLIB-SEC-PLAN.md 6.1 step 6, 7.2's Record -- M15) is
-# one width an outer size here, held by a test of these sizes and one of the generated
-# C's temporaries.  The month past t's, 746, is one no call reaches.
+# the outer size and the element type, the inner size not compared (PyrexTypes.py's
+# CArrayType.__eq__): int[746][4] and double[746][4] are two types, double[746][4] and
+# double[746][626] one.  So caches of one outer size share a temporary of the first one's
+# shape for their values, and another for their flags: claims and pols_if_at share a
+# double[746][4] and an int[746][4], and the cohorts, at 747, get a double[747][626] and
+# an int[747][626] of their own.  At an outer size of 746 the cohorts' converter would be
+# handed the [746][4] temporary, which gcc and clang refuse under
+# -Werror=incompatible-pointer-types, as tools/build_sec_cy.py builds on Linux and macOS,
+# and gcc 14 by default, and which MSVC only warns of, and then writes 746 x 626 doubles
+# into it as a point is unpickled.  This rests on an internal of Cython 3.3.1, measured at
+# M8 and read at its review; uslib's rule of one inner width a model (USLIB-SEC-PLAN.md
+# 6.1 step 6, 7.2's Record -- M15) is one width an outer size here, held by a test of
+# these sizes and one of the generated C's temporaries.  The month past t's, 746, is one
+# no call reaches.
 {"spaces": {"Projection": {"cells_param_size": {
     "t": 746, ("t", "timing"): (746, 4), ("t", "kind"): (746, 4), "z": 626,
     ("t", "z"): (747, 626)}}}}

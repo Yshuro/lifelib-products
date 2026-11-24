@@ -957,6 +957,14 @@ class _KeptCohorts(_KeptCell):
                 *self._values]
 
 
+def _refuse_set(what, name):
+    """A kept model takes no Reference: refuse ``what``'s ``name`` set, naming K7."""
+    raise AttributeError(
+        f"{what}.{name}: the committed model is kept as its sweep left it (sec_read), and "
+        f"a Reference set on it would change nothing kept; set it on a model of the "
+        f"test's own, read afresh, before anything is computed (K7)")
+
+
 class _Kept:
     """One committed point as :func:`sec_read`'s sweep left it, kept as its values.
 
@@ -965,44 +973,85 @@ class _Kept:
     a cell, read by four sums, about 2.9 KB an entry (measured at M8's review).  So each
     point is kept as what its sweep cached, a value and its arguments, and its ItemSpace
     released, and a test reads it as it read the swept point: through its cells
-    (:class:`_KeptCell`), by name or as ``cells[name]``; its References and every other
-    attribute are the committed ``Projection``'s.  A cell called where the sweep did not is
-    computed on the point read afresh (:meth:`_KeptModel.live`).
+    (:class:`_KeptCell`), by name or as ``cells[name]``, every cell of the space among
+    them, one the record holds nothing of computed on the point read afresh
+    (:meth:`_KeptModel.live`), as is a call the sweep did not cache; ``idx`` and ``refs``
+    are the point's own; ``data`` is ``Data`` as kept (:class:`_KeptData`); and its other
+    References are the committed ``Projection``'s.  Any other attribute raises
+    ``AttributeError``, and so does setting one (:func:`_refuse_set`).
     """
 
     def __init__(self, owner, key, proj):
-        self._owner, self._key = owner, key
-        self.cells = {}
+        state = self.__dict__
+        state["_owner"], state["_key"], state["cells"] = owner, key, {}
         for name, cells in proj.cells.items():
             n = len(cells.parameters)
             values = {k: cells(*(() if n == 0 else (k,) if n == 1 else k))
                       for k in list(cells.keys())}
             kind = _KeptCohorts if name == "pols_sick_dur" else _KeptCell
             self.cells[name] = kind(self, name, tuple(cells.parameters), values)
+        for name, cells in owner.model.Projection.cells.items():
+            if name not in self.cells:          # none in the record: each call is live
+                self.cells[name] = _KeptCell(self, name, tuple(cells.parameters), {})
 
     def live(self):
         """The point's ItemSpace, read afresh, for a call its sweep did not cache."""
         return self._owner.live(self._key)
 
     def __getattr__(self, name):
-        cells = self.__dict__.get("cells", {})
-        if name in cells:
-            return cells[name]
-        return getattr(self._owner.model.Projection, name)
+        state = self.__dict__
+        if name in state.get("cells", {}):
+            return state["cells"][name]
+        if "_owner" not in state:
+            raise AttributeError(name)
+        space = state["_owner"].model.Projection
+        if name in space.parameters:            # idx: the point's own, as its ItemSpace's
+            return state["_key"]
+        if name == "refs":
+            return {**dict(space.refs), **dict.fromkeys(space.parameters, state["_key"])}
+        if name == "data":                      # Data as kept, which takes no Reference
+            return state["_owner"].Data
+        if name in space.refs:                  # a Reference, the space's and the point's
+            return space.refs[name]
+        raise AttributeError(f"a kept committed point (sec_read) has no {name!r}: it holds "
+                             f"the space's cells, its References, idx and refs")
+
+    def __setattr__(self, name, value):
+        _refuse_set("a kept point", name)
 
 
 class _KeptSpace:
     """The committed model's ``Projection`` as kept: indexed by the registry's keys, it
-    gives each point kept (:class:`_Kept`); anything else is the space's own."""
+    gives each point kept (:class:`_Kept`); anything else it reads is the space's own, and
+    a Reference set on it is refused (:func:`_refuse_set`)."""
 
     def __init__(self, owner):
-        self._owner = owner
+        self.__dict__["_owner"] = owner
 
     def __getitem__(self, key):
         return self._owner.points[key]
 
     def __getattr__(self, name):
-        return getattr(self._owner.model.Projection, name)
+        return getattr(self.__dict__["_owner"].model.Projection, name)
+
+    def __setattr__(self, name, value):
+        _refuse_set("sec_model.Projection", name)
+
+
+class _KeptData:
+    """The committed model's ``Data`` as kept: every read is the space's own, as its
+    sweep left it, and a Reference set on it is refused (:func:`_refuse_set`), since a
+    point kept would hold the values of the one before and a call it did not cache would
+    compute under the new."""
+
+    def __init__(self, data):
+        self.__dict__["_data"] = data
+
+    def __getattr__(self, name):
+        return getattr(self.__dict__["_data"], name)
+
+    def __setattr__(self, name, value):
+        _refuse_set("sec_model.Data", name)
 
 
 # Each kept model, whose points read afresh after a test are released (_release_live).
@@ -1018,17 +1067,19 @@ KEPT_COLLECT = 250_000
 class _KeptModel:
     """The committed model as :func:`sec_read` swept it, each point kept (:class:`_Kept`).
 
-    ``Data`` is the model's own, as its sweep left it, its tables read once; ``Projection``
-    gives the kept points (:class:`_KeptSpace`).  A point a test calls where its sweep did
-    not is read afresh, held until the test ends or until three more are (:meth:`live`),
-    and released, so that the module holds the swept points' values and not their
-    ItemSpaces.  ``uk_registry``'s helpers take it as they take a model.
+    ``Data`` is the model's own, as its sweep left it, its tables read once
+    (:class:`_KeptData`); ``Projection`` gives the kept points (:class:`_KeptSpace`).
+    Neither takes a Reference: a test that needs others reads a model of its own (K7).  A
+    point a test calls where its sweep did not is read afresh, held until the test ends or
+    until three more are (:meth:`live`), and released, so that the module holds the swept
+    points' values and not their ItemSpaces.  ``uk_registry``'s helpers take it as they
+    take a model.
     """
 
     LIVE = 3
 
     def __init__(self, model):
-        self.model, self.name, self.Data = model, model.name, model.Data
+        self.model, self.name, self.Data = model, model.name, _KeptData(model.Data)
         self.points, self.held = {}, []
         self.Projection = _KeptSpace(self)
         _KEPT.append(self)
@@ -1677,6 +1728,32 @@ def test_the_policy_clock_is_a_closed_form_and_no_recursion_runs_backward(sec_re
     assert record["duration_mth(500)"] == 500
     assert record["keys"] == [500]
     assert not record["deep"], f"under a recursion limit of {CALL_DEPTH}: {record['deep']}"
+
+
+def test_the_kept_committed_model_takes_no_reference(sec_model):
+    """The committed model, kept as its sweep left it, refuses a Reference set, and each
+    kept point reads as its own ItemSpace would.
+
+    The swept model recomputed after a Reference was set; the kept one cannot, since its
+    points are values (:func:`sec_read`).  So setting a Reference on its ``Projection``,
+    on its ``Data`` or on a point raises ``AttributeError`` naming K7, before any test can
+    read a value of the References before beside one computed under the new, and the
+    model's own References are as shipped after.  A kept point's ``idx`` is its own
+    position, not the base space's 0, its ``refs`` hold it, and an attribute that is no
+    cell, Reference, ``idx`` or ``refs`` of it raises (M8's verification).
+    """
+    key = point_keys(sec_model)[8]
+    p = projection(sec_model, key)
+    for target, name, value in ((sec_model.Projection, "rpi_rate", 0.12),
+                                (sec_model.Data, "rate_age_min", 36.0),
+                                (p, "rpi_rate", 0.12), (p.data, "rate_age_min", 36.0)):
+        with pytest.raises(AttributeError, match=r"\(K7\)"):
+            setattr(target, name, value)
+    assert (sec_model.Projection.rpi_rate, sec_model.Data.rate_age_min) == (0.03, 18.0)
+    assert (p.rpi_rate, p.data.rate_age_min) == (0.03, 18.0)
+    assert p.idx == p.refs["idx"] == key == 8 and p.point_id() == 9
+    with pytest.raises(AttributeError, match="has no 'nonesuch'"):
+        p.nonesuch
 
 
 # How deep a cold call may run beyond its chain, one cell a month from its month back to
@@ -5953,15 +6030,15 @@ def test_the_spec_sizes_each_cache_as_its_comment_derives():
     width, 4, the most codes a family has; ``z`` to ``12 * (expiry_age_max -
     issue_age_min) + 2``; and the cohorts' to ``z``'s width and ``t``'s months and one
     more, the outer size no other 2-D cache has, since Cython's unpickle code reads the
-    caches of one outer size back through one temporary, which two widths break
-    (``spec_sec.py``; the generated C is held by
-    :func:`test_each_2d_cache_is_unpickled_through_a_temporary_of_its_shape`).  And
-    ``proj_len()``'s two bounds
-    to the longest cover and the longest frame the sizes are for, 624 and 744 months, so
-    that no input it accepts reads past a cache; ``Data``'s interpolated ages to the ages
-    the contract admits, ``issue_age_min`` to ``expiry_age_max - 1``; and the codes dense
-    from 0, ints, as the caches index them, each family in its own numbering, the recovery
-    bases too.  A change to a bound or a size is derived again in the comment and here.
+    caches of one outer size and element type back through one temporary, its C-array
+    types comparing no inner size, which two widths break (``spec_sec.py``; the generated
+    C is held by :func:`test_each_2d_cache_is_unpickled_through_a_temporary_of_its_shape`).
+    And ``proj_len()``'s two bounds to the longest cover and the longest frame the sizes are
+    for, 624 and 744 months, so that no input it accepts reads past a cache; ``Data``'s
+    interpolated ages to the ages the contract admits, ``issue_age_min`` to
+    ``expiry_age_max - 1``; and the codes dense from 0, ints, as the caches index them, each
+    family in its own numbering, the recovery bases too.  A change to a bound or a size is
+    derived again in the comment and here.
     """
     source, comment = _comment("spec_sec.py")
     for formula in ("12 * (expiry_age_max - issue_age_min) + future_horizon_mth + 2",
@@ -7742,24 +7819,44 @@ def test_the_c4_comparisons_ask_every_code_and_their_rows(sec_model, spliced):
     assert {label for rows in read_for.values() for label in rows} <= set(RPI_ROWS)
 
 
-# The 2-D caches, by their cells and the parameters spec_sec.py sizes them by.
-TWO_D_CACHES = {"pols_if_at": ("t", "timing"), "claims": ("t", "kind"),
-                "pols_sick_dur": ("t", "z")}
+def _two_d_caches():
+    """``{cell: (outer, width)}``: each cell of ``Projection`` whose parameters
+    ``spec_sec.py`` sizes in two dimensions, the cells read from the space's own formulas,
+    so that a 2-D cache added later is held with the others."""
+    source, _ = _comment("spec_sec.py")
+    sizes = ast.literal_eval(source)["spaces"]["Projection"]["cells_param_size"]
+    formulas = (model_path(SEC) / "Projection" / "__init__.py").read_text(encoding="utf-8")
+    caches = {}
+    for node in ast.parse(formulas).body:
+        if isinstance(node, ast.FunctionDef):
+            params = tuple(arg.arg for arg in node.args.args)
+            if len(params) > 1 and isinstance(sizes.get(params), tuple):
+                caches[node.name] = sizes[params]
+    return caches
+
+
+_TWO_D = r"^  \w+(?: \w+)* ({name})\[(\d+)\]\[(\d+)\];$"
 
 
 def _unpickled_through(source):
-    """``{member: (outer, width, temporary)}``: each C-array member of the compiled
-    ``Projection`` that its unpickle function, ``__pyx_unpickle__c_Projection__set_state``,
-    in the generated C ``source``, reads back through a 2-D temporary, by the length and
-    the inner width the converter is called with; and ``{temporary: (outer, width)}``, the
-    shape each 2-D temporary of that function is declared with."""
+    """What the generated C ``source`` declares and its unpickle function,
+    ``__pyx_unpickle__c_Projection__set_state``, does, as three dicts: each 2-D C-array
+    member of the compiled ``Projection``'s struct, a cache's values or flags, by its
+    declared shape, ``{member: (outer, width)}``; each member the function reads back
+    through a 2-D temporary, by the length and the inner width the converter is called
+    with, ``{member: (outer, width, temporary)}``; and each 2-D temporary of the function
+    by its declared shape, ``{temporary: (outer, width)}``."""
+    struct = re.search(r"\nstruct __pyx_obj_\w+__c_Projection \{\n(.*?)\n\};\n", source,
+                       re.S)
     match = re.search(r"\nstatic PyObject \*__pyx_f_\w+___pyx_unpickle__c_Projection__set_"
                       r"state\(struct \w+ \*__pyx_v___pyx_result, PyObject \*\w+\) \{\n"
                       r"(.*?)\n\}\n", source, re.S)
-    assert match, "no unpickle function in the generated C: its layout has changed"
+    assert struct and match, "no Projection struct or unpickle function in the generated C"
+    members = {name: (int(outer), int(width)) for name, outer, width in re.findall(
+        _TWO_D.format(name=r"_(?:v|has)_\w+"), struct.group(1), re.M)}
     body = match.group(1)
     declared = {name: (int(outer), int(width)) for name, outer, width in re.findall(
-        r"^  \w+(?: \w+)* (__pyx_t_\d+)\[(\d+)\]\[(\d+)\];$", body, re.M)}
+        _TWO_D.format(name=r"__pyx_t_\d+"), body, re.M)}
     read, pending = {}, None
     for line in body.splitlines():
         call = re.search(r"__Pyx_carray_from_py_\w+?___5b_(\d+)_5d_\(\w+, (__pyx_t_\d+), "
@@ -7771,7 +7868,37 @@ def _unpickled_through(source):
                          line)
         if copy and pending and copy.group(2) == pending[2]:
             read[copy.group(1)], pending = pending, None
-    return read, declared
+    return members, read, declared
+
+
+def _unpickle_faults(source, caches):
+    """Where the generated C ``source`` reads a 2-D cache back other than through a
+    temporary of its own shape as a point is unpickled, a line each
+    (:func:`_unpickled_through`): every 2-D member of the compiled ``Projection``, and the
+    values and flags of each cache of ``caches``, ``{cell: (outer, width)}``, at that
+    shape, must be read through a temporary declared with the member's own outer size and
+    inner width, by a converter of that width called with that length, and no temporary
+    may serve two shapes."""
+    members, read, declared = _unpickled_through(source)
+    found, temporaries = [], {}
+    for cell, shape in caches.items():
+        for member in (f"_v_{cell}", f"_has_{cell}"):
+            if members.get(member) != shape:
+                found.append(f"{member}: declared {members.get(member)}, where "
+                             f"spec_sec.py sizes {cell} {shape}")
+    for member, shape in sorted(members.items()):
+        if member not in read:
+            found.append(f"{member}: read back through no 2-D temporary")
+            continue
+        length, inner, temporary = read[member]
+        temporaries.setdefault(shape, set()).add(temporary)
+        if (length, inner) != shape or declared.get(temporary) != shape:
+            found.append(f"{member}, a {shape[0]} by {shape[1]} cache: read with a "
+                         f"converter of width {inner} and length {length} through "
+                         f"{temporary}, declared {declared.get(temporary)}")
+    found += [f"{a} and {b} share a temporary" for a, ta in temporaries.items()
+              for b, tb in temporaries.items() if a < b and ta & tb]
+    return found
 
 
 @pytest.mark.cython
@@ -7781,43 +7908,29 @@ def test_each_2d_cache_is_unpickled_through_a_temporary_of_its_shape(sec_build):
 
     Cython's unpickle code reads each C-array cache back through a temporary, with a
     converter named by the inner type, and pools its temporaries by C type, its C-array
-    types comparing equal on the outer size alone: so the caches of one outer size share
-    one temporary, of the first one's shape (``spec_sec.py``).  That is why the cohorts'
-    cache takes an outer size of its own, 747 by 626, beside the timings' and kinds' 746 by
-    4.  Were the two outer sizes one, the cohorts would be read into a temporary of 746 by
-    4: gcc and clang refuse the build under ``-Werror=incompatible-pointer-types``, which
-    ``tools/build_sec_cy.py`` passes on Linux and macOS, and the spec test holds the sizes,
-    but MSVC, on the ``cython_uk`` job's Windows legs, only warns, and the build would
-    write 746 x 626 doubles into it.  So this reads the generated C, which Cython writes
-    alike for every compiler: in ``__pyx_unpickle__c_Projection__set_state``, the value
-    cache and the flags of each 2-D cache (:data:`TWO_D_CACHES`) are each read through a
-    2-D temporary declared with the cache's own outer size and inner width, as
-    ``spec_sec.py`` gives them, by a converter of that width called with that length.  A
-    layout this cannot read fails here, rather than passing unread.
+    types comparing equal on the outer size and the element type, the inner size not
+    compared: so the caches of one outer size share a temporary of the first one's shape
+    for their values, and another for their flags (``spec_sec.py``).  That is why the
+    cohorts' cache takes an outer size of its own, 747 by 626, beside the timings' and
+    kinds' 746 by 4.  Were the two outer sizes one, the cohorts would be read into a
+    temporary of 746 by 4: gcc and clang refuse the build under
+    ``-Werror=incompatible-pointer-types``, which ``tools/build_sec_cy.py`` passes on Linux
+    and macOS, and the spec test holds the sizes, but MSVC, on the ``cython_uk`` job's
+    Windows legs, only warns, and the build would write 746 x 626 doubles into it.  So this
+    reads the generated C, which Cython writes alike for every compiler: in
+    ``__pyx_unpickle__c_Projection__set_state``, every 2-D member of the compiled
+    ``Projection``'s struct, values and flags, the caches ``spec_sec.py`` sizes in two
+    dimensions among them, at its sizes (:func:`_two_d_caches`), is read through a 2-D
+    temporary declared with the member's own shape, by a converter of that width called
+    with that length (:func:`_unpickle_faults`), so that a 2-D cache added later is held
+    too.  A layout this cannot read fails here, rather than passing unread.
     """
     build = sec_build(SEC)
-    source, _ = _comment("spec_sec.py")
-    sizes = ast.literal_eval(source)["spaces"]["Projection"]["cells_param_size"]
-    read, declared = _unpickled_through(
-        (build.package / "_mx_classes.c").read_text(encoding="utf-8", errors="replace"))
-    found, temporaries = [], {}
-    for cell, params in TWO_D_CACHES.items():
-        outer, width = sizes[params]
-        for member in (f"_v_{cell}", f"_has_{cell}"):
-            if member not in read:
-                found.append(f"{member}: read back through no 2-D temporary")
-                continue
-            length, inner, temporary = read[member]
-            temporaries.setdefault((outer, width), set()).add(temporary)
-            shape = declared.get(temporary)
-            if (length, inner) != (outer, width) or shape != (outer, width):
-                found.append(f"{member}, a {outer} by {width} cache: read with a converter "
-                             f"of width {inner} and length {length} through {temporary}, "
-                             f"declared {shape}")
+    caches = _two_d_caches()
+    assert set(caches) >= {"pols_if_at", "claims", "pols_sick_dur"}, caches
+    source = (build.package / "_mx_classes.c").read_text(encoding="utf-8", errors="replace")
+    found = _unpickle_faults(source, caches)
     assert not found, found
-    shared = [(a, b) for a, ta in temporaries.items() for b, tb in temporaries.items()
-              if a < b and ta & tb]
-    assert not shared, (shared, temporaries)
 
 
 @pytest.mark.cython
