@@ -74,7 +74,9 @@ the table basis whose rating is blank is refused, by its own projection.
 
 **The mortality table is checked before a value of it is read.** Its keys are read by
 their value, so an age written ``65.0`` is age 65, and a key that is not whole, text among
-them, is refused; so are keys that repeat or leave a gap the projection would read. A rate
+them, or is ``2**53`` or more in size, which int64 would hold inexactly, is refused; so are
+keys that repeat or leave a gap the projection would read, found from the keys the table
+holds, so that a key far from the rest is refused as a gap at once. A rate
 that is blank, text, infinite or outside 0 to 1 is refused, whether or not a point reads
 it: ``Projection.mort_rate`` caps the annual rate with ``min``, which keeps its first
 argument unless a later one compares smaller, and no comparison with NaN holds, so the cap
@@ -107,11 +109,15 @@ being the element at its position, ``data.annual_income()[idx]``. That is what l
 model compile to C, as ``basiclife.BasicTerm_SC`` does: each array is a numpy vector or
 table of int64 or float64, which compiles to a typed memoryview, never one of bools,
 objects or text, and each check of a table is an int. Each model point column a projection
-reads is one vector of the column's own name, read element by element as
-:mod:`~.PA_UK_S` reads the point's value, ``float()`` of an amount or a rate, ``int()`` of
-an age, a month count or a year, ``bool()`` of a flag; and where a point's value can be one
-its projection cannot use, a 0/1 vector beside it, ``<column>_ok``, says whether it is
-usable. The text the projection branches on is decoded into 0/1 flags, each with a
+reads is one vector of the column's own name, read element by element, each value by its
+own value whatever type pandas gives the column (USLIB-SEC-PLAN.md R6): ``float()`` of an
+amount or a rate, ``int()`` of the ``float()`` of an age, a month count or a year, so that
+``2026.0`` written as text is 2026, and a flag True where ``str()`` of its value, lowered,
+is ``true``. A column that holds one value pandas cannot read as a number or a flag,
+which a point that never reads the column may hold, is read as text throughout, and
+there ``bool("False")`` is True and ``int("2026.0")`` refuses, so no element is read
+through either. Where a point's value can be one its projection cannot use, a 0/1 vector
+beside it, ``<column>_ok``, says whether it is usable. The text the projection branches on is decoded into 0/1 flags, each with a
 ``has_*`` flag that says the value is one :mod:`~.PA_UK_S` names. The mortality table,
 keyed by sex and age, is tabled by schedule, one per sex, and age, padded from age 0, each
 point carrying the schedule of each life's sex:
@@ -212,7 +218,7 @@ value, the vector holds 0 or NaN there and its ``_ok`` flag 0, and the
 * text in a column of numbers, which :mod:`~.PA_UK_S`'s ``float()`` or ``int()`` refuses in
   the same cell, on every point, whether or not its projection reads the column;
 * an int of ``2**53`` or more in size, which an int64 cannot be trusted to hold, in the
-  start year and the two months of death;
+  start year and the two months of death, and a start year ``float()`` cannot read;
 * on a point whose projection reads it, a value outside the range ``model_point_table``
   would hold it to on every point: a purchase price that is not a finite number, 0 or more,
   where value protection is elected; a rating that is not a finite number, 1 or more, the
@@ -548,12 +554,15 @@ def mort_sexes():
     each refusal names the lines at fault, the header line 1.  The rules, each over the
     whole table, the first that fails raising ``ValueError``:
 
-    1. each age is a whole number, read by its value, so ``65.0`` is 65;
+    1. each age is a whole number, read by its value, so ``65.0`` is 65, and below
+       ``2**53`` in size, which int64 holds exactly, the check made before the ages are
+       cast, where numpy would cast a larger float to the least int64 without a word;
     2. each sex is M or F, the codes the model point table holds;
     3. each sex runs over the table's ages from the first to the last, one row an age,
        none below 0: the projection reads a rate at each attained age a life reaches.
        Every fault is named in one message: an age below 0 and an age a sex repeats each
-       with its lines, and each span of ages a sex lacks;
+       with its lines, and each span of ages a sex lacks, found in one pass over the ages
+       each sex holds, so that a key far from the rest costs no more than the rows;
     4. each ``mort_rate`` is a number from 0 to 1, a probability, read by the cap.
 
     So the table holds both sexes, F and M, over one span of ages, and each schedule's
@@ -566,6 +575,10 @@ def mort_sexes():
     bad = lines[(~(ages % 1 == 0)).to_numpy()].tolist()
     if bad:
         raise ValueError(f"{name}: age must be a whole number; it is not on line {bad}")
+    bad = lines[(~(ages.abs() < 2.0 ** 53)).to_numpy()].tolist()
+    if bad:
+        raise ValueError(f"{name}: age must be below 2**53 in size; it is not on line "
+                         f"{bad}")
     bad = lines[(~tbl["sex"].isin(["M", "F"])).to_numpy()].tolist()
     if bad:
         raise ValueError(f"{name}: sex must be M or F; it is not on line {bad}")
@@ -584,12 +597,11 @@ def mort_sexes():
         for a in sorted(set(run[run.duplicated()])):
             faults.append(f"sex {s}, age {a} repeats on lines "
                           f"{lines[group & (ages == a).to_numpy()].tolist()}")
-        spans = []
-        for a in sorted(set(range(first, last + 1)) - set(run)):
-            if spans and spans[-1][1] == a - 1:
-                spans[-1][1] = a
-            else:
-                spans.append([a, a])
+        spans, before = [], first - 1
+        for a in [*(int(a) for a in sorted(set(run))), last + 1]:
+            if a > before + 1:
+                spans.append([before + 1, a - 1])
+            before = a
         for low, high in spans:
             faults.append(f"no line holds sex {s}, "
                           + (f"ages {low} to {high}" if high > low else f"age {low}"))
@@ -746,29 +758,33 @@ def dependant_age():
     joint = table["dependant_present"].tolist()
     out = np.zeros(len(values), dtype="int64")                       # noqa: F821
     for i in range(len(values)):
-        if bool(joint[i]):
+        if str(joint[i]).lower() == "true":
             out[i] = int(float(values[i]))
     return out
 
 
 def is_joint():
-    """The ``dependant_present`` column, int64 by point: 1 where ``bool()`` of the value is
-    True, as :mod:`~.PA_UK_S` reads it, on values :func:`model_point_table` has held to
-    True or False."""
+    """The ``dependant_present`` column, int64 by point: 1 where the value is True, read by
+    its value, ``str()`` of it lowered being ``true``, on values :func:`model_point_table`
+    has held to True or False, as :mod:`~.PA_UK_S`'s ``bool()`` reads a True or a False.
+    ``bool()`` itself would read the text ``False`` as True, and pandas leaves a column as
+    text where one value is neither, ``tRUE`` among them, which the check reads as True."""
     values = model_point_table()["dependant_present"].tolist()
     out = np.zeros(len(values), dtype="int64")                       # noqa: F821
     for i in range(len(values)):
-        out[i] = 1 if bool(values[i]) else 0
+        out[i] = 1 if str(values[i]).lower() == "true" else 0
     return out
 
 
 def overlap():
-    """The ``overlap`` column, int64 by point: 1 where ``bool()`` of the value is True, as
-    :mod:`~.PA_UK_S` reads it."""
+    """The ``overlap`` column, int64 by point: 1 where the value is True, read by its
+    value as :func:`is_joint` reads its column.  A single-life contract may hold any text
+    there, which it never reads, and then pandas reads the whole column as text, where
+    ``bool()`` would read every joint contract's ``False`` as True."""
     values = model_point_table()["overlap"].tolist()
     out = np.zeros(len(values), dtype="int64")                       # noqa: F821
     for i in range(len(values)):
-        out[i] = 1 if bool(values[i]) else 0
+        out[i] = 1 if str(values[i]).lower() == "true" else 0
     return out
 
 
@@ -781,18 +797,20 @@ def overlap_ok():
     joint = table["dependant_present"].tolist()
     out = np.zeros(len(values), dtype="int64")                       # noqa: F821
     for i in range(len(values)):
-        if str(values[i]).lower() in ("true", "false") or not bool(joint[i]):
+        if (str(values[i]).lower() in ("true", "false")
+                or not str(joint[i]).lower() == "true"):
             out[i] = 1
     return out
 
 
 def proportion():
-    """The ``proportion`` column, int64 by point: 1 where ``bool()`` of the value is True,
-    on values :func:`model_point_table` has held to True or False."""
+    """The ``proportion`` column, int64 by point: 1 where the value is True, read by its
+    value as :func:`is_joint` reads its column, on values :func:`model_point_table` has
+    held to True or False."""
     values = model_point_table()["proportion"].tolist()
     out = np.zeros(len(values), dtype="int64")                       # noqa: F821
     for i in range(len(values)):
-        out[i] = 1 if bool(values[i]) else 0
+        out[i] = 1 if str(values[i]).lower() == "true" else 0
     return out
 
 
@@ -893,7 +911,7 @@ def dependant_rating_ok():
             v = float(values[i])
         except (TypeError, ValueError):
             continue
-        if (not (basis[i] == "table" and bool(joint[i]))
+        if (not (basis[i] == "table" and str(joint[i]).lower() == "true")
                 or (v >= 1.0 and v < float("inf"))):
             out[i] = 1
     return out
@@ -949,27 +967,31 @@ def vp_pct():
 
 
 def start_year():
-    """The ``start_year`` column, int64 by point: ``int()`` of each value, 0 where
-    :func:`start_year_ok` is 0 for want of a number ``int()`` reads below ``2**53``."""
+    """The ``start_year`` column, int64 by point: ``int()`` of the ``float()`` of each value,
+    read by its value, so that ``2026.0`` is 2026 whether pandas reads the column as numbers
+    or as text, and 0 where :func:`start_year_ok` is 0 for want of a number below ``2**53``
+    in size."""
     values = model_point_table()["start_year"].tolist()
     out = np.zeros(len(values), dtype="int64")                       # noqa: F821
     for i in range(len(values)):
         try:
-            v = int(values[i])
-        except (TypeError, ValueError, OverflowError):
+            v = float(values[i])
+        except (TypeError, ValueError):
             continue
-        if abs(v) < 2 ** 53:
-            out[i] = v
+        if abs(v) < 2.0 ** 53:
+            out[i] = int(v)
     return out
 
 
 def start_year_ok():
     """1 where the point's projection may read its ``start_year``.
 
-    0 where ``int()`` cannot read it below ``2**53`` in size, text and a blank among them;
-    and on the table basis, the one reader, where it is not a whole number, which
-    :mod:`~.PA_UK_S` truncates.  The scenario basis never reads it, and there a fraction
-    truncates, as ``int()`` does.
+    0 where ``float()`` cannot read it as a number below ``2**53`` in size, text, a blank
+    and an infinity among them; and on the table basis, the one reader, where it is not a
+    whole number, which :mod:`~.PA_UK_S` truncates.  Read by value, as :func:`start_year`
+    reads it, so that a year written ``2026.0`` reads on every point when another point,
+    which never reads its year, holds text there and pandas reads the column as text.  The
+    scenario basis never reads it, and there a fraction truncates, as ``int()`` does.
     """
     table = model_point_table()
     values = table["start_year"].tolist()
@@ -977,10 +999,10 @@ def start_year_ok():
     out = np.zeros(len(values), dtype="int64")                       # noqa: F821
     for i in range(len(values)):
         try:
-            v = int(values[i])
-        except (TypeError, ValueError, OverflowError):
+            v = float(values[i])
+        except (TypeError, ValueError):
             continue
-        if abs(v) < 2 ** 53 and (not basis[i] == "table" or float(values[i]) % 1 == 0):
+        if abs(v) < 2.0 ** 53 and (not basis[i] == "table" or v % 1 == 0):
             out[i] = 1
     return out
 

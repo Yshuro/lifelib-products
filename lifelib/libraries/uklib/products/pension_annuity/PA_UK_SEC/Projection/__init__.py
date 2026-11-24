@@ -531,17 +531,24 @@ their per-month residuals, ``*_resid``, compile to a ``double``.
 
 What running in force adds is the contract's own bounds, which :func:`proj_len` holds a
 point to: every covered life issued at ``issue_age_min``, 0, or more, the youngest age
-:mod:`~.PA_UK_S` projects; a guarantee of at most ``12 x (omega_age - issue_age_min)``
-months, the longest frame from the start date; a contract still owing a payment at the
-valuation date, short of the stop rule. ``Data`` bounds future new business by
-``future_horizon_mth``, 120 months. And :func:`proj_len` holds every Reference a formula
-reads through a bound or a power to its domain, NaN and the infinities outside each, its
-docstring naming each domain and its reason. Those bounds, with the limiting age, 115, are
-the contract the compiled model's caches are sized from (``spec_sec.py``): a frame of at
-most 1,380 months from the start date, starting at most 120 months after the valuation
-date. A limiting age above 115, an ``issue_age_min`` below 0 or a longer horizon needs the
-caches resized and the model rebuilt, and a report past them is a bare ``IndexError`` in
-the compiled model alone, where modelx projects.
+:mod:`~.PA_UK_S` projects; on the table basis a limiting age of at most
+``omega_age_max``, 116, the shipped table's last age plus one; a guarantee of at most
+``12 x (omega_age - issue_age_min)`` months, the longest frame from the start date; a
+contract still owing a payment at the valuation date, short of the stop rule. ``Data``
+bounds future new business by ``future_horizon_mth``, 120 months. And :func:`proj_len`
+holds every Reference a formula reads through a bound or a power to its domain, NaN and
+the infinities outside each, its docstring naming each domain and its reason. Those
+bounds are the contract the compiled model's caches are sized from (``spec_sec.py``): a
+frame of at most ``12 x (omega_age_max - issue_age_min)`` months, 1,392, from the start
+date, starting at most 120 months after the valuation date, so that every frame the table
+basis projects fits them, at any limiting age the table and the bound admit. The
+scenario basis reads no mortality table, and :func:`proj_len` holds its limiting age to
+no bound, as the in-force step held it to none: there a limiting age above
+``omega_age_max`` projects in modelx, and in the compiled model a frame longer than 1,392
+months from the start date, a life issued younger than ``omega_age - omega_age_max``,
+raises a bare ``IndexError`` at its first policy month past 1,393, where the caches end.
+Raising ``omega_age_max`` or the horizon, or lowering ``issue_age_min``, needs the caches
+derived again and the model rebuilt.
 """
 
 from modelx.serialize.jsonvalues import *
@@ -803,7 +810,7 @@ def payment_freq():
     if (data.frequency()[idx] == 12 or data.frequency()[idx] == 4    # noqa: F821
             or data.frequency()[idx] == 2 or data.frequency()[idx] == 1):  # noqa: F821
         return int(data.frequency()[idx])                            # noqa: F821
-    raise ValueError("invalid frequency")
+    raise ValueError(f"point_id {point_id()}: invalid frequency")
 
 
 def payment_timing():
@@ -828,10 +835,12 @@ def is_arrears():
     A decode of the model point's ``timing`` column, ``Data.is_arrears``, validated by
     ``Data.has_timing`` as :func:`payment_timing` validates it, so that the payment months,
     the survival point, the value-protection balance and the proportion rule branch on a
-    flag and no projection cell calls the label accessor, which is left to reporting.
+    flag and no projection cell calls the label accessor, which is left to reporting.  A
+    value the accessor refuses is refused here in :mod:`~.PA_UK_S`'s words, naming the
+    point, as every refusal of a value the model point holds does.
     """
     if data.has_timing()[idx] == 0:                                  # noqa: F821
-        raise ValueError("invalid timing")
+        raise ValueError(f"point_id {point_id()}: invalid timing")
     return bool(data.is_arrears()[idx])                              # noqa: F821
 
 
@@ -844,7 +853,8 @@ def proportion():
     """
     v = bool(data.proportion()[idx])                                 # noqa: F821
     if v and not is_arrears():
-        raise ValueError("proportion applies to arrears payments only")
+        raise ValueError(f"point_id {point_id()}: proportion applies to arrears payments "
+                         f"only")
     return v
 
 
@@ -870,11 +880,11 @@ def is_level():
     the label accessor, which is left to reporting.  Each reads ``Data``'s flag for its
     value, and ``Data.has_escalation_type``, which says whether the column holds one of the
     four values :func:`escalation_type` accepts, compared as it compares them, so an
-    invalid basis raises ``ValueError("invalid escalation_type")`` wherever the projection
-    first meets it.
+    invalid basis raises :mod:`~.PA_UK_S`'s ``invalid escalation_type``, naming the point,
+    wherever the projection first meets it.
     """
     if data.has_escalation_type()[idx] == 0:                         # noqa: F821
-        raise ValueError("invalid escalation_type")
+        raise ValueError(f"point_id {point_id()}: invalid escalation_type")
     return bool(data.is_level()[idx])                                # noqa: F821
 
 
@@ -885,7 +895,7 @@ def is_fixed():
     validates it.
     """
     if data.has_escalation_type()[idx] == 0:                         # noqa: F821
-        raise ValueError("invalid escalation_type")
+        raise ValueError(f"point_id {point_id()}: invalid escalation_type")
     return bool(data.is_fixed()[idx])                                # noqa: F821
 
 
@@ -896,7 +906,7 @@ def is_lpi5():
     validates it.
     """
     if data.has_escalation_type()[idx] == 0:                         # noqa: F821
-        raise ValueError("invalid escalation_type")
+        raise ValueError(f"point_id {point_id()}: invalid escalation_type")
     return bool(data.is_lpi5()[idx])                                 # noqa: F821
 
 
@@ -907,7 +917,7 @@ def is_rpi_catchup():
     validates it.
     """
     if data.has_escalation_type()[idx] == 0:                         # noqa: F821
-        raise ValueError("invalid escalation_type")
+        raise ValueError(f"point_id {point_id()}: invalid escalation_type")
     return bool(data.is_rpi_catchup()[idx])                          # noqa: F821
 
 
@@ -924,7 +934,8 @@ def escalation_rate():
                          f"is not")
     v = float(data.escalation_rate()[idx])                           # noqa: F821
     if v > esc_fixed_cap:                                            # noqa: F821
-        raise ValueError("fixed escalation exceeds the contractual cap")
+        raise ValueError(f"point_id {point_id()}: fixed escalation exceeds the "
+                         f"contractual cap")
     return v
 
 
@@ -971,7 +982,7 @@ def is_first_death():
     protection is elected.
     """
     if data.has_vp_basis()[idx] == 0:                                # noqa: F821
-        raise ValueError("invalid vp_basis")
+        raise ValueError(f"point_id {point_id()}: invalid vp_basis")
     return bool(data.is_first_death()[idx])                          # noqa: F821
 
 
@@ -997,7 +1008,7 @@ def is_scenario():
     and its check branch on a flag.
     """
     if data.has_mort_basis()[idx] == 0:                              # noqa: F821
-        raise ValueError("invalid mort_basis")
+        raise ValueError(f"point_id {point_id()}: invalid mort_basis")
     return bool(data.is_scenario()[idx])                             # noqa: F821
 
 
@@ -1038,14 +1049,14 @@ def start_year():
     starting after it, the year it will start.  The model carries no calendar valuation
     date: each point's calendar years follow from its own start year, which is why
     improvement needs nothing re-based on the valuation clock.  Read from
-    ``Data.start_year``, and refused here, naming the point, where ``int()`` cannot read it
-    below ``2**53`` in size, and on the table basis, the one reader, where it is not a
-    whole number, which :mod:`~.PA_UK_S` truncates (``Data``'s ``start_year_ok``).
+    ``Data.start_year``, by value, and refused here, naming the point, where it is not a
+    number below ``2**53`` in size, and on the table basis, the one reader, where it is
+    not a whole number, which :mod:`~.PA_UK_S` truncates (``Data``'s ``start_year_ok``).
     """
     if data.start_year_ok()[idx] == 0:                               # noqa: F821
-        raise ValueError(f"point_id {point_id()}: start_year must be a number int() "
-                         f"reads, below 2**53 in size, and a whole one on the table basis, "
-                         f"which reads it; it is not")
+        raise ValueError(f"point_id {point_id()}: start_year must be a number, below 2**53 "
+                         f"in size, and a whole one on the table basis, which reads it; it "
+                         f"is not")
     return int(data.start_year()[idx])                               # noqa: F821
 
 
@@ -1289,10 +1300,16 @@ def proj_len():
     * ``omega_age`` that is not a whole number below ``2**53``, or not above
       ``issue_age_min``: the limiting age sizes every frame, and a NaN, an infinity or a
       fraction of a year would leave the frame's months no whole number;
+    * ``omega_age_max`` that is not a whole number below ``2**53``;
     * on the table basis, a covered life of a sex the mortality table lacks
       (:func:`mort_schedule`), and ``omega_age`` more than a year past the last age the
       table rates that sex at, ``Data.mort_age_last`` of its schedule, plus 1, since the
-      table is read at attained ages to ``omega_age - 1``;
+      table is read at attained ages to ``omega_age - 1``; and then an ``omega_age`` above
+      ``omega_age_max``, the contract's largest limiting age, 116, the shipped table's last
+      age plus one, so that every limiting age the shipped table admits projects, and a
+      longer table's runs no frame past the caches (UKLIB-SEC-PLAN.md §6.6, *Record --
+      M10*).  The scenario basis reads no table, and the in-force step projected it at any
+      limiting age, so the bound is not asked there (the Space docstring);
     * a guarantee longer than ``12 x (omega_age - issue_age_min)`` months, the longest
       frame from the start date that the youngest life allows, which the compiled
       model's caches are sized from;
@@ -1339,21 +1356,24 @@ def proj_len():
 
     The rules read this Space's References, which ``Data`` cannot see, so they are checked
     here.  They are the contract a compiled model's caches are sized from: a frame of at
-    most ``omega_age - issue_age_min`` years and the future horizon (``spec_sec.py``).
+    most ``omega_age_max - issue_age_min`` years and the future horizon (``spec_sec.py``).
     Every report reads this cell first, so no point outside them is projected.  Each check
     is a comparison written out, a finite bound the largest float, 1.7976931348623157e308,
     and a whole one ``2**53``, so that a compiled cell runs it in C, and each Reference is
-    printed as the compiled model types it: ``issue_age_min``, ``omega_age`` and
-    ``mort_table_year`` through ``int()`` once they are whole numbers, and every other
-    through ``float()``.  A value a formula computes past the floats, from References and
+    printed as the compiled model types it: ``issue_age_min``, ``omega_age``,
+    ``omega_age_max`` and ``mort_table_year`` through ``int()`` once they are whole
+    numbers, and every other through ``float()``; the two improvement ages ship as floats,
+    90.0 and 110.0, so that the compiled model holds a fraction as modelx reads it.  A value a formula computes past the floats, from References and
     columns each in its domain, is refused in the cell where it first is: the income, in
     :func:`annual_income` and :func:`annual_income_init`; the payments to date, in
     :func:`cum_annuity_pp` and :func:`cum_annuity_all`; the three powers,
     :func:`inflation_factor`, :func:`rpi_index` and :func:`improve_factor`; and the
-    maintenance, in :func:`expenses`.  ``omega_age`` above 115, an ``issue_age_min`` below
-    0 and ``Data.future_horizon_mth`` above 120 are not refused: each needs the caches
-    resized and the model rebuilt, and a report past them is a bare ``IndexError`` in the
-    compiled model alone, where modelx projects.
+    maintenance, in :func:`expenses`.  On the scenario basis an ``omega_age`` above
+    ``omega_age_max`` is not refused, as the in-force step refused none, and in the
+    compiled model a frame longer than the caches raises a bare ``IndexError`` where modelx
+    projects (the Space docstring).  ``omega_age_max`` raised, ``issue_age_min`` lowered
+    or ``Data.future_horizon_mth`` raised needs the caches derived again and the model
+    rebuilt.
     """
     if not (issue_age_min > -9007199254740992.0                       # noqa: F821
             and issue_age_min < 9007199254740992.0                    # noqa: F821
@@ -1376,6 +1396,11 @@ def proj_len():
     if not omega_age > issue_age_min:                                # noqa: F821
         raise ValueError(f"point_id {point_id()}: omega_age must be above issue_age_min, "
                          f"{int(issue_age_min)}, not {int(omega_age)}")  # noqa: F821
+    if not (omega_age_max > -9007199254740992.0                       # noqa: F821
+            and omega_age_max < 9007199254740992.0                    # noqa: F821
+            and omega_age_max == omega_age_max // 1):                 # noqa: F821
+        raise ValueError(f"point_id {point_id()}: omega_age_max must be a whole number "
+                         f"below 2**53, not {float(omega_age_max)}")  # noqa: F821
     if not is_scenario():
         for life in range(1, 3 if is_joint() else 2):
             last = data.mort_age_last()[mort_schedule(life)]         # noqa: F821
@@ -1384,6 +1409,10 @@ def proj_len():
                     f"point_id {point_id()}: omega_age must be at most {int(last) + 1}, a "
                     f"year past mort_table.csv's last age, on the table basis, not "
                     f"{int(omega_age)}")                             # noqa: F821
+        if omega_age > omega_age_max:                                # noqa: F821
+            raise ValueError(f"point_id {point_id()}: omega_age, {int(omega_age)}, is "
+                             f"above omega_age_max, {int(omega_age_max)}, on the table "
+                             f"basis")                               # noqa: F821
     longest = 12 * (omega_age - issue_age_min)                       # noqa: F821
     if guarantee_mths() > longest:
         raise ValueError(
@@ -1531,6 +1560,10 @@ def rpi_index(a):
         raise ValueError(
             f"point_id {point_id()}: the index rpi_index({a}) is past the largest float, "
             f"under rpi_rate {float(rpi_rate)}") from None            # noqa: F821
+    if not index <= 1.7976931348623157e308:
+        raise ValueError(
+            f"point_id {point_id()}: the index rpi_index({a}) is past the largest float, "
+            f"under rpi_rate {float(rpi_rate)}")                      # noqa: F821
     return index
 
 
@@ -1809,6 +1842,12 @@ def improve_factor(t, life):
             f"past the largest float, (1 - {rate}) to the power {int(k)}, under "
             f"improve_rate_base {float(improve_rate_base)} and mort_table_year "  # noqa: F821
             f"{int(mort_table_year)}") from None                      # noqa: F821
+    if not factor <= 1.7976931348623157e308:
+        raise ValueError(
+            f"point_id {point_id()}: the improvement factor improve_factor({t}, {life}) is "
+            f"past the largest float, (1 - {rate}) to the power {int(k)}, under "
+            f"improve_rate_base {float(improve_rate_base)} and mort_table_year "  # noqa: F821
+            f"{int(mort_table_year)}")                                # noqa: F821
     return factor
 
 
@@ -2402,6 +2441,10 @@ def inflation_factor(t):
         raise ValueError(
             f"point_id {point_id()}: the inflation factor inflation_factor({t}) is past the "
             f"largest float, under inflation_rate {float(inflation_rate)}") from None  # noqa
+    if not factor <= 1.7976931348623157e308:
+        raise ValueError(
+            f"point_id {point_id()}: the inflation factor inflation_factor({t}) is past the "
+            f"largest float, under inflation_rate {float(inflation_rate)}")  # noqa: F821
     return factor
 
 
@@ -2622,15 +2665,17 @@ issue_age_min = 0
 
 omega_age = 115
 
+omega_age_max = 116
+
 mort_table_year = 2023
 
 annuitant_adj = 0.8
 
 improve_rate_base = 0.0125
 
-improve_flat_age = 90
+improve_flat_age = 90.0
 
-improve_taper_age = 110
+improve_taper_age = 110.0
 
 rpi_rate = 0.03
 

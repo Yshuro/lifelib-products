@@ -1552,15 +1552,19 @@ LATE_DEPTH = 10
 # cell a month runs about 1,140 cells past it, and one walked descending the same.
 CHAIN_OVERHEAD = 12
 
-# The contract's longest cover, held by proj_len() and the mortality table: a frame of
-# 12 x (omega_age - issue_age_min) = 1,380 months from the start.  On the scenario basis,
-# which reads no mortality, every covered life issued at issue_age_min, 0, reaches it by
-# the age stop.  On the table basis, which reads the table from the issue age on, a life
-# issued at its first age, 50, stops at 780 months, and the frame reaches 1,380 by a
-# guarantee of that length, which proj_len() accepts.  Each issued now, and with
-# UKLIB_SEC_FULL=1 future_horizon_mth, 120 months, on too (DEPTH_DELAYS).
+# The contract's longest cover, held by proj_len() and the mortality table: at its largest
+# limiting age, OMEGA_MAX, omega_age_max as shipped, 116, the mortality table's last age
+# plus one, which proj_len() admits on the table basis and the caches are sized from, a
+# frame of 12 x (OMEGA_MAX - issue_age_min) = 1,392 months from the start.  On the
+# scenario basis, which reads no mortality, every covered life issued at issue_age_min, 0,
+# reaches it by the age stop.  On the table basis, which reads the table from the issue
+# age on, a life issued at its first age, 50, stops at 792 months, and the frame reaches
+# 1,392 by a guarantee of that length, which proj_len() accepts at that limiting age.
+# Each issued now, and with UKLIB_SEC_FULL=1 future_horizon_mth, 120 months, on too
+# (DEPTH_DELAYS); each with omega_age set to OMEGA_MAX on the model that projects it.
+OMEGA_MAX = 116
 YOUNGEST = {"scenario": 0, "table": 50}
-LONGEST = 1380
+LONGEST = 12 * OMEGA_MAX
 
 # Each shape and the chains it runs, called cold in the last month of the frame at its own
 # longest cover, each on a read of its own: (the S point whose twin it is, its basis, its
@@ -1586,14 +1590,15 @@ SHAPES = ((1, "scenario", 0, SCENARIO_HEADS), (10, "scenario", 0, SCENARIO_HEADS
 
 # How deep each shape's deepest chain head runs, called cold in the last month of its
 # longest cover, by S point (measured at M12), issued now and, as deep, 120 months on: the
-# chain of 239 cells back to t_entry(), 11 within the last policy year and two in each of
-# the 114 before it, and 8 to 12 cells more.  The deepest, DEEPEST_SHAPE's, the payments
-# to date on every stream on the table basis under a 1,380-month guarantee, 251 cells, as
-# deep on points 6, 7 and 8, is the chain the compiled stack test runs.  One cell a month
-# it ran 1,391 cells, net_cf on the same shapes, which the in-force step measured
-# (UKLIB-SEC-PLAN.md §6.7, *Record -- M11*), and compiled it needed 244 to 276 KiB of C
-# stack (*Record -- M12*).
-SHAPE_DEPTHS = {1: 247, 10: 248, 2: 251, 6: 251, 7: 251, 8: 251}
+# chain of CHAIN cells back to t_entry(), 11 within the last policy year and two in each
+# of the 115 before it, 241, and 8 to 12 cells more.  The deepest, DEEPEST_SHAPE's, the
+# payments to date on every stream on the table basis under a 1,392-month guarantee, 253
+# cells, as deep on points 6, 7 and 8, is the chain the compiled stack test runs.  At the
+# shipped limiting age, 115, one cell a month it ran 1,391 cells, net_cf on the same shapes,
+# which the in-force step measured (UKLIB-SEC-PLAN.md §6.7, *Record -- M11*), and compiled
+# it needed 244 to 276 KiB of C stack (*Record -- M12*); blocked, 251 cells and 52 to 76 KiB.
+CHAIN = 11 + 2 * (LONGEST // 12 - 1)
+SHAPE_DEPTHS = {1: 249, 10: 250, 2: 253, 6: 253, 7: 253, 8: 253}
 DEEPEST_SHAPE = 2
 DEEPEST = SHAPE_DEPTHS[DEEPEST_SHAPE]
 
@@ -1637,6 +1642,7 @@ def _cold_calls(tmp_path, k, year_heads=()):
                                          *((True, h) for h in by_point.get(s_point, ()))]:
             fresh = mx.read_model(folder, name=_name("cold"))
             try:
+                fresh.Projection.omega_age = OMEGA_MAX
                 p = _point(fresh, label)
                 last = months - 1
                 args = (last, *(_code(p, a) if isinstance(a, str) else a for a in extra))
@@ -1659,8 +1665,9 @@ def cold_now(tmp_path_factory):
 def _longest_cover(tmp_path, k):
     """A copy whose table holds each of :data:`SHAPES` at its longest cover: the twin of
     its S point with every covered life issued at :data:`YOUNGEST` on its basis, ``k``
-    months after the valuation date.  ``(folder, [(label, frame, t_entry, heads, S
-    point)])``."""
+    months after the valuation date, each frame the one it has under an ``omega_age`` of
+    :data:`OMEGA_MAX`, which whoever reads the copy sets.  ``(folder, [(label, frame,
+    t_entry, heads, S point)])``."""
     committed = _committed()
     rows, frames = [], []
     top = committed.index.max()
@@ -1675,7 +1682,8 @@ def _longest_cover(tmp_path, k):
             row = row.assign(dependant_age=age)
         row.index = pd.Index([top], name="point_id")
         rows.append(row)
-        frames.append((top, max(12 * (115 - age), guarantee) + k, k, heads, s_point))
+        frames.append((top, max(12 * (OMEGA_MAX - age), guarantee) + k, k, heads,
+                       s_point))
     return _sec_inputs(tmp_path, pd.concat(rows)), frames
 
 
@@ -1698,10 +1706,10 @@ def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path, k, cold_n
     runs, against that chain (:func:`_chain`) and :data:`CHAIN_OVERHEAD` more, with
     modelx's recursion limit where the module leaves it: each chain head of each of
     :data:`SHAPES`, in the last month of the frame, each on a read of its own and called
-    first.  At each shape's longest cover, 1,380 months from the start, every life issued at
-    the youngest age its basis projects, and on the table basis a guarantee to that month
-    (:func:`_longest_cover`), issued ``k`` months after the valuation date; each row's
-    frame is asserted after.  Issued now, the calls are the module's :func:`cold_now`,
+    first.  At each shape's longest cover, 1,392 months from the start at the contract's
+    largest limiting age, :data:`OMEGA_MAX`, every life issued at the youngest age its basis
+    projects, and on the table basis a guarantee to that month (:func:`_longest_cover`),
+    issued ``k`` months after the valuation date; each row's frame is asserted after.  Issued now, the calls are the module's :func:`cold_now`,
     which the chain-text test reads too.  Each shape's deepest call is its measure in
     :data:`SHAPE_DEPTHS`, so that a shape left out, or a chain grown, fails here; the
     deepest of all, :data:`DEEPEST_SHAPE`'s, is the longest chain the compiled stack test
@@ -1723,7 +1731,7 @@ def test_every_chain_runs_one_cell_a_month_from_a_cold_start(tmp_path, k, cold_n
         depth = len(stack)
         deepest[s_point] = max(deepest.get(s_point, 0), depth)
         assert frame == expected, label
-        assert chain == 239, (label, chain)
+        assert chain == CHAIN == 241, (label, chain)
         if not chain <= depth <= chain + CHAIN_OVERHEAD:
             found.append(f"point {label}: {cell}{args} cold runs {depth} cells deep, where "
                          f"its chain back to t_entry(), one cell a month within its policy "
@@ -2468,12 +2476,13 @@ def test_a_text_value_no_decode_knows_raises_pa_uk_s_message(tmp_path, case, edi
     so that no projection cell compares text, and each decode raises ``PA_UK_S``'s own
     message for a value its accessor refuses, through a projection of the point; so do the
     proportion rule and the fixed escalation's cap, which ``PA_UK_S`` checks where it reads
-    them.  ``Data`` reads the table, since the checks are the accessors'.
+    them.  ``Data`` reads the table, since the checks are the accessors'.  Each names the
+    point, a refusal of a value the model point holds, in ``PA_UK_S``'s words.
     """
     model = _read_edited(tmp_path, edit)
     try:
         assert len(model.Data.model_point_table()) == len(_committed())
-        _refused(_point(model, point).result_cf, message)
+        _refused(_point(model, point).result_cf, f"point_id {point}: {message}")
     finally:
         model.close()
 
@@ -2491,8 +2500,8 @@ RATING = ("point_id {label}: {column} must be a number, and a finite one, 1 or m
           "table basis, which reads it; it is not")
 PRICE = ("point_id {label}: purchase_price must be a number, and a finite one, 0 or more, "
          "where value protection is elected, which reads it; it is not")
-YEAR = ("point_id {label}: start_year must be a number int() reads, below 2**53 in size, "
-        "and a whole one on the table basis, which reads it; it is not")
+YEAR = ("point_id {label}: start_year must be a number, below 2**53 in size, and a whole "
+        "one on the table basis, which reads it; it is not")
 OVERLAP = ("point_id {label}: overlap must be True or False on a contract with a dependant, "
            "which reads it; it is not")
 BY_POINT = [
@@ -2511,7 +2520,58 @@ BY_POINT = [
     ("a text start year", "start_year", "MMXXVI", 7, YEAR, 9),
     ("a blank overlap", "overlap", float("nan"), 3, OVERLAP, 5),
     ("an overlap written yes", "overlap", "yes", 4, OVERLAP, 8),
+    ("start years written as floats, one as text", "start_year", "MMXXVI", 7, YEAR, 9),
 ]
+
+# The edit a BY_POINT case makes to every row first, in the base table too: the start years
+# written as floats, 2026.0, as a spreadsheet may save them, which pandas reads as text
+# once another row holds text there.
+BY_POINT_BEFORE = {
+    "start years written as floats, one as text":
+        lambda t: t.assign(start_year=t["start_year"].astype(float)),
+}
+
+
+def _by_point_edit(case, column, value, points):
+    """The edit of BY_POINT's ``case``: its table-wide edit first, if it has one, then
+    ``value`` written into ``column`` at ``points``."""
+    before = BY_POINT_BEFORE.get(case, lambda t: t)
+    return lambda t: _set(column, points, value)(before(t))
+
+
+# The Data cells every point's projection reads whole, the mortality table's, which BY_POINT
+# compares whole; every other array cell of Data is a vector by point, compared by element.
+SCHEDULED = ("mort_sexes", "mort_table_array", "mort_age_first", "mort_age_last")
+
+
+def _own_vectors(column):
+    """The ``Data`` vectors that hold ``column``'s own value at a point."""
+    if column in ("annuitant_sex", "dependant_sex"):
+        return {"mort_schedule_1" if column == "annuitant_sex" else "mort_schedule_2"}
+    return {column, f"{column}_ok"}
+
+
+def _vector_mismatches(want, got, skip):
+    """Where two reads of a table's ``Data`` differ, bit for bit: the mortality table's
+    arrays whole, and every vector by point at every position, but those ``skip`` maps to
+    the vectors it leaves out there, or to None for all of them."""
+    n = len(want.Data.model_point_table())
+    found = []
+    for name, cells in want.Data.cells.items():
+        a = cells()
+        if name in SCHEDULED:
+            if np.asarray(a).tobytes() != np.asarray(got.Data.cells[name]()).tobytes():
+                found.append(f"Data.{name}()")
+            continue
+        if not (isinstance(a, np.ndarray) and a.ndim == 1 and len(a) == n):
+            continue
+        b = got.Data.cells[name]()
+        for i in range(n):
+            left_out = skip.get(i, ())
+            if left_out is not None and name not in left_out and (
+                    a[i].tobytes() != b[i].tobytes()):
+                found.append(f"Data.{name}()[{i}]: {a[i]!r} and {b[i]!r}")
+    return found
 
 
 @pytest.mark.parametrize("case, column, value, refused, message, projects", BY_POINT,
@@ -2531,14 +2591,24 @@ def test_a_column_some_points_never_read_is_refused_by_the_point_that_reads_it(
     first point's projection runs, the point that reads the column refuses it through its
     projection, naming its label, and the point that never reads it projects what it
     projects on the committed table, in both reports, exactly, its column's value read by
-    nothing.
+    nothing.  And every point but the refused one reads every ``Data`` vector as it does on
+    the committed table, bit for bit, the mortality table's arrays too, but the point that
+    never reads the column its own value there: a projection reads its own elements alone,
+    and the table's, so equal elements project equal frames.  That holds the one value at
+    no other point: a single life's overlap written ``yes`` leaves pandas reading the whole
+    column as text, where ``bool("False")`` would read every joint contract's False as
+    True; a start year written ``MMXXVI`` beside years written ``2026.0`` does too, where
+    ``int("2026.0")`` would refuse every year the table basis reads.  A case may first edit
+    every row, in both tables (:data:`BY_POINT_BEFORE`).
     """
     committed = _committed()
     relabel = dict(zip(committed.index, EXTRACT_LABELS))
-    table = _set(column, [refused, projects], value)(committed).rename(index=relabel)
+    before = BY_POINT_BEFORE.get(case, lambda t: t)
+    table = _by_point_edit(case, column, value, [refused, projects])(committed).rename(
+        index=relabel)
     model = mx.read_model(_sec_inputs(tmp_path / "edited", table), name=_name("by_point"))
-    base = mx.read_model(_sec_inputs(tmp_path / "base", committed.rename(index=relabel)),
-                         name=_name("by_point_base"))
+    base = mx.read_model(_sec_inputs(tmp_path / "base", before(committed).rename(
+        index=relabel)), name=_name("by_point_base"))
     try:
         assert len(model.Data.model_point_table()) == len(committed)
         assert len(_point(model, relabel[17]).result_cf()) > 0
@@ -2548,6 +2618,37 @@ def test_a_column_some_points_never_read_is_refused_by_the_point_that_reads_it(
             want = _point(base, relabel[projects]).cells[report]()
             got = _point(model, relabel[projects]).cells[report]()
             assert frame_mismatches(want, got, rtol=0.0, atol=0.0) == [], (case, report)
+        at = {label: i for i, label in enumerate(committed.index)}
+        found = _vector_mismatches(base, model, {at[refused]: None,
+                                                 at[projects]: _own_vectors(column)})
+        assert not found, (case, found[:20])
+    finally:
+        base.close()
+        model.close()
+
+
+def test_a_flag_reads_by_its_value_whatever_type_pandas_gives_its_column(tmp_path):
+    """Each flag reads True or False by its value, ``str()`` of it lowered, never through
+    ``bool()`` (USLIB-SEC-PLAN.md R6).
+
+    A single-life contract never reads its overlap, so ``Data`` holds no value of it there,
+    and an extract may write anything: ``n.a.`` on every single life here.  pandas then
+    reads the whole column as text, ``True`` and ``False`` among it, and ``bool("False")``
+    is True, which would read every joint contract's overlap as True, the guarantee's
+    dependant paid beside the annuitant on point 3, as stage E refused the table to avoid.
+    So the column is asserted text as read, every ``Data`` vector of every point is held to
+    the committed table's, bit for bit, and point 3's overlap read as False.
+    """
+    committed = _committed()
+    single = [label for label in committed.index
+              if str(committed.at[label, "dependant_present"]) == "False"]
+    model = _read_edited(tmp_path / "text", _set("overlap", single, "n.a."))
+    base = mx.read_model(model_path(SEC), name=_name("flags_base"))
+    try:
+        read = model.Data.model_point_table()
+        assert {"True", "False", "n.a."} <= set(read["overlap"]), read["overlap"]
+        assert not _vector_mismatches(base, model, {})
+        assert _point(model, 3).overlap() is False and _point(model, 3).is_joint() is True
     finally:
         base.close()
         model.close()
@@ -2770,7 +2871,11 @@ def test_a_point_the_contract_does_not_issue_is_refused_by_proj_len(tmp_path, ca
 # value past the floats is refused where that value first is, naming the References (the
 # PAST_FLOATS cases below), and a fixed escalation's cap of 0 is the contract's own refusal
 # of a 3% escalation.  omega_age's upper edge would size a frame of 2**53 years, which no
-# machine projects, so it is projected at 120.
+# machine projects, so it is projected at 120, on the scenario basis, which no
+# omega_age_max bounds; on the table basis omega_age_max, 116, bounds it, and is held to
+# its own domain, a whole number below 2**53, refusing the shipped 115 lowered to 114 there
+# and not on the scenario basis, and 116 under a bound lowered to 115, which a mortality
+# table longer than the shipped one would otherwise admit.
 BIG = 1.7976931348623157e308
 WHOLE = 2.0 ** 53
 BELOW_0 = math.nextafter(0.0, -1.0)
@@ -2836,7 +2941,7 @@ DOMAINS = [
     *_domain("esc_fixed_cap", "a finite number, 0 or more", 1, (0.03, BIG),
              (BELOW_0,)),
     ("esc_fixed_cap=0.0 on 1", {"esc_fixed_cap": 0.0}, 1, None,
-     "fixed escalation exceeds the contractual cap"),
+     "point_id 1: fixed escalation exceeds the contractual cap"),
     *_domain("rpi_rate", "a finite number above -1", 7, (ABOVE_MINUS_1, BIG), (-1.0,)),
     *_domain("rpi_rate", "a finite number above -1", 6, (ABOVE_MINUS_1, BIG), (-1.0,),
              {BIG: f"point_id 6: the income annual_income(2) is inf, not a finite number, "
@@ -2854,6 +2959,13 @@ DOMAINS = [
     ("omega_age=116 on 2", {"omega_age": 116}, 2, None, None),
     ("omega_age=116.0 on 2", {"omega_age": 116.0}, 2, None, None),
     ("omega_age=117 on 2", {"omega_age": 117}, 2, OMEGA_TABLE.format(117), None),
+    *_whole_domain("omega_age_max", 2, (116, 116.0, 120), below=False),
+    ("omega_age_max=114 on 2", {"omega_age_max": 114}, 2,
+     "point_id 2: omega_age, 115, is above omega_age_max, 114, on the table basis", None),
+    ("omega_age_max=114 on 1", {"omega_age_max": 114}, 1, None, None),
+    ("omega_age=116 under omega_age_max=115 on 2", {"omega_age": 116, "omega_age_max": 115},
+     2, "point_id 2: omega_age, 116, is above omega_age_max, 115, on the table basis",
+     None),
     ("rpi_rate=nan on 1", {"rpi_rate": math.nan}, 1, None, None),
     ("annuitant_adj=nan on 1", {"annuitant_adj": math.nan}, 1, None, None),
     ("esc_lpi_cap=nan on 6", {"esc_lpi_cap": math.nan}, 6, None, None),
@@ -3025,6 +3137,142 @@ def test_the_payments_to_date_past_the_floats_are_refused(tmp_path):
         _refused(_point(model, frozen).result_cf,
                  f"point_id {frozen}: the payments to date cum_annuity_pp(63, 'ANNUITANT') "
                  f"are inf, not a finite number")
+    finally:
+        model.close()
+
+
+def _anniversary_edit(root):
+    """``(last, frozen, edit)``: the last-survivor row at 170 and the catch-up row at 60,
+    and the edit that takes each's payments to date past the floats first at an
+    anniversary, read in ``root`` to measure it.
+
+    Each income is 1e300, and the opening state is the largest float less the payments
+    the frame adds up to the anniversary and half the anniversary's own step, measured on
+    the model with those incomes: so the total is finite in the month or at the key before
+    the anniversary, and past the floats at it, by half a step, far more than a rounding.
+    The last-survivor row's month 10 opens its policy year 16; the catch-up row's payments
+    to date open a policy year at the key 72, its base being the key 60, itself an
+    anniversary.  Each step is an instalment's, the month before each anniversary being
+    one of the quarterly payments in arrears.
+    """
+    committed = _committed()
+    last = _label(committed, "derived", 10, 170)
+    frozen = _label(committed, "derived", 6, 60)
+    incomes = _then(_set("annual_income", [last], 1e300),
+                    _set("annual_income_init", [frozen], 1e300))
+    model = _read_edited(root, incomes)
+    try:
+        p = _point(model, last)
+        assert (p.duration_mth(10) % 12, p.duration_mth(9) % 12) == (0, 11)
+        paid = p.cum_annuity_all(9) - p.cum_annuity_all(0)
+        step = p.cum_annuity_all(10) - p.cum_annuity_all(9)
+        q = _point(model, frozen)
+        annuitant = _code(q, "ANNUITANT")
+        assert (q.duration_mth_init(), q.duration_mth(12)) == (60, 72)
+        pp_paid = q.cum_annuity_pp(71, annuitant) - q.cum_annuity_pp(60, annuitant)
+        pp_step = q.cum_annuity_pp(72, annuitant) - q.cum_annuity_pp(71, annuitant)
+    finally:
+        model.close()
+    assert step > 1e295 and pp_step > 1e295, (step, pp_step)
+    return last, frozen, _then(incomes,
+                               _set("cum_annuity_all_init", [last], BIG - paid - step / 2),
+                               _set("cum_annuity_pp_init", [frozen],
+                                    BIG - pp_paid - pp_step / 2))
+
+
+def test_the_payments_to_date_past_the_floats_on_an_anniversary_are_refused_there(
+        tmp_path):
+    """Payments to date that first leave the floats on an anniversary are refused there.
+
+    A chain blocked by policy year reads a year's first month from the year's opening, not
+    from its monthly step, and the opening's total passes the same check, in the same cell,
+    as any month's: without it the total would be infinite there, the balance ``max(0, vP
+    - G)`` would read it as no balance, and the refusal would come a month or a key later,
+    naming another.  On the rows of :func:`_anniversary_edit`, the total is finite the
+    month or the key before the anniversary, and each chain refuses it at the anniversary,
+    naming the point and the month or the key: the payments on every stream on the
+    last-survivor row, ``cum_annuity_all(10)``, and the annuitant's on the catch-up row,
+    ``cum_annuity_pp(72, ANNUITANT)``.  The refusals in a year's other months are the
+    test above's.
+    """
+    last, frozen, edit = _anniversary_edit(tmp_path / "steps")
+    model = _read_edited(tmp_path / "edge", edit)
+    try:
+        p = _point(model, last)
+        assert p.cum_annuity_all(9) <= BIG
+        _refused(p.result_cf, f"point_id {last}: the payments to date cum_annuity_all(10) "
+                              f"are inf, not a finite number")
+        q = _point(model, frozen)
+        assert q.cum_annuity_pp(71, _code(q, "ANNUITANT")) <= BIG
+        _refused(q.result_cf, f"point_id {frozen}: the payments to date cum_annuity_pp(72, "
+                              f"'ANNUITANT') are inf, not a finite number")
+    finally:
+        model.close()
+
+
+def test_each_refusal_cell_is_its_chain_by_its_bits(sec_model):
+    """Each refusal moved off a chain computes its chain's value, by its bits, at every
+    key of every committed point.
+
+    ``annual_income_refusal``, ``cum_annuity_all_refusal`` and ``cum_annuity_pp_refusal``
+    repeat their chain's step, to name what left the floats in a frame no chain holds, and
+    return it where it is finite.  A refusal cell whose formula drifted from its chain's
+    would refuse a total the chain computes otherwise, or let one pass: so each is held to
+    its chain, ``float.hex`` of each, on every committed point, at every month of the
+    frame and the month after, at every key of the annuitant's payments to date from the
+    valuation date's where a projection reads them, and at every policy year the frame
+    reads.
+    """
+    for key in point_keys(sec_model):
+        p = projection(sec_model, key)
+        end = p.proj_len()
+        for t in range(end + 1):
+            assert p.cum_annuity_all_refusal(t).hex() == p.cum_annuity_all(t).hex(), (key, t)
+        if p.vp_pct() > 0.0 and p.is_first_death():
+            annuitant = _code(p, "ANNUITANT")
+            for k in range(max(p.duration_mth_init(), 0), p.duration_mth(end) + 1):
+                assert (p.cum_annuity_pp_refusal(k).hex()
+                        == p.cum_annuity_pp(k, annuitant).hex()), (key, k)
+        for y in range(p.policy_year_init(), p.policy_year(end - 1) + 1):
+            assert p.annual_income_refusal(y).hex() == p.annual_income(y).hex(), (key, y)
+
+
+# A power called directly with a base that is not a finite number, which proj_len() refuses
+# before any report reaches the power, as (case, the References set, the point, the call,
+# its arguments, the message): each is refused by the power's own check of its result, as
+# at stage E, where C's pow and Python's give NaN or an infinity without a raise.
+POWER_BASES = [
+    ("an inflation of NaN", {"inflation_rate": math.nan}, 1, "inflation_factor", (24,),
+     "point_id 1: the inflation factor inflation_factor(24) is past the largest float, "
+     "under inflation_rate nan"),
+    ("an RPI of infinity", {"rpi_rate": math.inf}, 6, "rpi_index", (2,),
+     "point_id 6: the index rpi_index(2) is past the largest float, under rpi_rate inf"),
+    ("an improvement of NaN", {"improve_rate_base": math.nan}, 2, "improve_factor", (0, 1),
+     "point_id 2: the improvement factor improve_factor(0, 1) is past the largest float, "
+     "(1 - nan) to the power 3, under improve_rate_base nan and mort_table_year 2023"),
+]
+
+
+@pytest.mark.parametrize("case, refs, point, cell, args, message", POWER_BASES,
+                         ids=[c[0] for c in POWER_BASES])
+def test_a_power_on_a_base_no_number_is_refused_by_its_own_check(case, refs, point, cell,
+                                                                 args, message):
+    """Each of the three powers refuses a result that is not a finite number, as at stage
+    E, besides M22's guard on a finite base.
+
+    M22's form calls Python's power where C's gives an infinity from a finite base; from a
+    base that is NaN or an infinity, Python's power gives NaN or an infinity too, without
+    a raise.  ``proj_len()`` refuses the References that make such a base before any report
+    reaches a power, so only a direct call meets one (:data:`POWER_BASES`), and each power
+    refuses it by its own check of its result, naming the point and the Reference, as at
+    stage ``E``.  Each case sets its References on a model just read (K7).
+    """
+    model = mx.read_model(model_path(SEC), name=_name("power"))
+    try:
+        for ref, value in refs.items():
+            setattr(model.Projection, ref, value)
+        p = _row(model, "twin", point, 0)
+        _refused(lambda: p.cells[cell](*args), message)
     finally:
         model.close()
 
@@ -3320,6 +3568,14 @@ UNREADABLE = [
      _ages_apart("no line holds sex F, ages 50 to 115")),
     ("a sex shorter", _dropped(_mort("F", 115)),
      _ages_apart("no line holds sex F, age 115")),
+    ("an age of 2**53", _written("age", 2.0 ** 53, _mort("M", 70)),
+     f"{MORT}: age must be below 2**53 in size; it is not on line [{_mort_line('M', 70)}]"),
+    ("an age of 1e300", _written("age", 1e300, _mort("F", 80)),
+     f"{MORT}: age must be below 2**53 in size; it is not on line [{_mort_line('F', 80)}]"),
+    ("an age of 2**53 - 1, far from the rest", _written("age", 2 ** 53 - 1, _mort("M", 70)),
+     f"{MORT}: the ages of each sex must run from 50 to {2 ** 53 - 1}, the table's first "
+     f"and last, one row an age, none below 0; no line holds sex M, age 70; no line holds "
+     f"sex M, ages 116 to {2 ** 53 - 2}; no line holds sex F, ages 116 to {2 ** 53 - 1}"),
 ]
 
 
@@ -4579,9 +4835,12 @@ def test_the_sec_model_reads_the_s_table_in_place(sec_model, s_model):
     The two ``input_dir()`` s are one directory, and SEC's filename References are S's with
     ``model_point_file`` changed, to ``model_point_table_sec.csv``: an edit to the table
     reaches both models, and the two can never drift apart.  And every Reference of S's is
-    the SEC model's at S's value, but those it adds, the youngest issue age and the C
-    step's codes, so that no assumption moves between the two; S's ``point_id`` is SEC's
-    ``idx``, the position.
+    the SEC model's at S's value, but those it adds, the youngest issue age, the largest
+    limiting age and the C step's codes, so that no assumption moves between the two; S's
+    ``point_id`` is SEC's ``idx``, the position.  The improvement ages are S's values as
+    floats, 90.0 and 110.0, which the compiled model holds as ``double``, so that a
+    fraction set on either reads in both engines as modelx reads it; each is the same
+    number as S's, and every value computed from it the same float.
     """
     assert sec_model.Data.input_dir() == s_model.Data.input_dir()
     files = {r: v for r, v in s_model.Data.refs.items() if r.endswith("_file")}
@@ -4593,8 +4852,10 @@ def test_the_sec_model_reads_the_s_table_in_place(sec_model, s_model):
     sec_refs = {r: v for r, v in sec_model.Projection.refs.items()
                 if isinstance(v, plain) and r != "idx"}
     assert s_model.Projection.point_id == 1 and sec_model.Projection.idx == 0
-    assert sec_refs == {**s_refs, "issue_age_min": 0, "BEF_NB": 0, "BEF_DECR": 1, "VP": 0,
-                        "PROP": 1, "ANNUITANT": 2, "ALL": 3}
+    assert sec_refs == {**s_refs, "issue_age_min": 0, "omega_age_max": 116, "BEF_NB": 0,
+                        "BEF_DECR": 1, "VP": 0, "PROP": 1, "ANNUITANT": 2, "ALL": 3}
+    assert {r: type(sec_refs[r]) for r in ("improve_flat_age", "improve_taper_age")} == {
+        "improve_flat_age": float, "improve_taper_age": float}
 
 
 def test_the_core_grid_reaches_every_branch(spliced, splice_records):
@@ -5078,10 +5339,12 @@ def test_the_spec_sizes_each_cache_as_its_comment_derives():
     extremes holds the spec to the largest argument a projection reads; neither sees a
     size above the comment's.  So this reads the spec as mx2cy does, and the bounds of the
     contract from the model's own References, and holds each size to the comment's
-    derivation from them: ``t`` to ``12 * (omega_age - issue_age_min) + future_horizon_mth
-    + 2``, ``k`` to ``12 * (omega_age - issue_age_min) + 2``, ``y`` to ``omega_age -
-    issue_age_min + 2``, ``a`` to ``omega_age - issue_age_min + 1`` and ``x`` to
-    ``omega_age + 1``; every 2-D cache, and the per-life 1-D one, to one inner width, the
+    derivation from them: ``t`` to ``12 * (omega_age_max - issue_age_min) +
+    future_horizon_mth + 2``, ``k`` to ``12 * (omega_age_max - issue_age_min) + 2``, ``y``
+    to ``omega_age_max - issue_age_min + 2``, ``a`` to ``omega_age_max - issue_age_min +
+    1`` and ``x`` to ``omega_age_max + 1``, ``omega_age_max`` itself being the shipped
+    mortality table's last age plus one, so that every limiting age the table admits on the
+    table basis fits; every 2-D cache, and the per-life 1-D one, to one inner width, the
     kinds', since gcc refuses two widths and MSVC, which builds the Windows leg, accepts
     them (USLIB-SEC-PLAN.md §7.2, *Record -- M15*); and the codes dense from 0, ints, as
     the caches index them, the timings, and the kinds of the claims and of the payments to
@@ -5089,9 +5352,10 @@ def test_the_spec_sizes_each_cache_as_its_comment_derives():
     again in the comment and here.
     """
     source, comment = _comment("spec_sec.py")
-    for formula in ("12 * (omega_age - issue_age_min) + future_horizon_mth + 2",
-                    "12 * (omega_age - issue_age_min) + 2", "omega_age - issue_age_min + 2",
-                    "omega_age - issue_age_min + 1", "omega_age + 1"):
+    for formula in ("12 * (omega_age_max - issue_age_min) + future_horizon_mth + 2",
+                    "12 * (omega_age_max - issue_age_min) + 2",
+                    "omega_age_max - issue_age_min + 2", "omega_age_max - issue_age_min + 1",
+                    "omega_age_max + 1"):
         assert formula in comment, formula
     sizes = ast.literal_eval(source)["spaces"]["Projection"]["cells_param_size"]
     proj, data = _references("Projection"), _references("Data")
@@ -5099,17 +5363,19 @@ def test_the_spec_sizes_each_cache_as_its_comment_derives():
         values = [proj[name] for name in names]
         assert values == list(range(len(names))), (names, values)
         assert all(type(v) is int for v in values), (names, values)
-    span = proj["omega_age"] - proj["issue_age_min"]
+    ages = pd.read_csv(model_path(TWIN).parent / MORT)["age"]
+    assert proj["omega_age_max"] == ages.max() + 1 == OMEGA_MAX, proj["omega_age_max"]
+    span = proj["omega_age_max"] - proj["issue_age_min"]
     t = 12 * span + data["future_horizon_mth"] + 2
     k = 12 * span + 2
     width = len(KINDS) + 2
     assert sizes == {"t": t, ("t", "life"): (t, width), ("t", "timing"): (t, width),
                      ("t", "kind"): (t, width), "k": k, ("k", "kind"): (k, width),
                      "y": span + 2, ("y", "life"): (span + 2, width), "a": span + 1,
-                     ("x", "life"): (proj["omega_age"] + 1, width), "life": width}, sizes
+                     ("x", "life"): (proj["omega_age_max"] + 1, width), "life": width}, sizes
     assert len({size[1] for size in sizes.values() if isinstance(size, tuple)}) == 1
-    assert (t, k, span + 2, span + 1, proj["omega_age"] + 1, width) == (
-        1502, 1382, 117, 116, 116, 4)
+    assert (t, k, span + 2, span + 1, proj["omega_age_max"] + 1, width) == (
+        1514, 1394, 118, 117, 117, 4)
 
 
 def test_the_sample_raises_the_recursion_limit_its_comment_derives():
@@ -5253,8 +5519,8 @@ NOT_HELD = [
      f"model_point_table_sec.csv: point_id must be below 2**53 in size; [{2 ** 53}] is "
      f"not"),
     ("a start year of 2**53 on the scenario basis", _set("start_year", [1], 2.0 ** 53), 1,
-     "start_year", (), "point_id 1: start_year must be a number int() reads, below 2**53 "
-     "in size, and a whole one on the table basis, which reads it; it is not"),
+     "start_year", (), "point_id 1: start_year must be a number, below 2**53 in size, and "
+     "a whole one on the table basis, which reads it; it is not"),
     ("a month of death of 2**53 on the table basis", _set("death_mth_1", [2], 2.0 ** 53), 2,
      "death_mth", (1,), "point_id 2: death_mth_1 must be blank or below 2**53 months in "
      "size; it is not"),
@@ -5266,6 +5532,8 @@ NOT_HELD = [
      "invalid kind"),
     ("a life 0", None, 1, "lives_if_init", (0,), "invalid life"),
     ("a life 3", None, 1, "age_at_entry", (3,), "invalid life"),
+    ("a life 0's month of death", None, 1, "death_mth", (0,), "invalid life"),
+    ("a life 3's month of death", None, 1, "death_mth", (3,), "invalid life"),
     ("a second life on a single life", None, 5, "mort_schedule", (2,), "invalid life"),
 ]
 
@@ -6469,7 +6737,7 @@ def _mismatch_lines(found):
 # survival check's quadratic reads among it, holds about 110 MB on a frame of 636 months
 # (*Record -- M11*): ten rows hold about half what ULB's chunks of twenty did, its rows a
 # third as long.  The record grows as the square of the frame, so a row at the contract's
-# longest cover, 1,380 to 1,500 months, holds five to six times as much, and the extremes
+# longest cover, 1,392 to 1,512 months, holds five to six times as much, and the extremes
 # go one row at a time: all eighteen in one read took the module past 6 GB (measured at
 # M12).
 C4_CHUNK = 10
@@ -6477,13 +6745,19 @@ EXTREMES_CHUNK = 1
 
 
 def _c4_chunks(build, table, refs, root, also=None, size=C4_CHUNK):
-    """C4 on ``table`` ``size`` rows at a time under ``refs``: the mismatch lines."""
-    found = []
+    """C4 on ``table`` ``size`` rows at a time under ``refs``, each row with ``also``,
+    :func:`_pa_c4_also` by default: the mismatch lines.  Each chunk's case is read back,
+    and the rows the chunks compared must be the table's, every one once, in order."""
+    found, compared = [], []
     for start in range(0, len(table), size):
         chunk = table.iloc[start:start + size]
         case = compiled_case(build, root / f"chunk{start}", model_points=chunk)
+        compared += list(pd.read_csv(case.parent / TABLE, index_col="point_id").index)
         found += [f"rows {start} on: {line}"
-                  for line in compiled_mismatches(build, case, refs=refs, also=also)]
+                  for line in compiled_mismatches(build, case, refs=refs,
+                                                  also=also or _pa_c4_also)]
+    labels = list(table["point_id"] if "point_id" in table.columns else table.index)
+    assert compared == labels, f"C4 compared {len(compared)} rows of {len(labels)}"
     return found
 
 
@@ -6563,13 +6837,14 @@ def test_the_compiled_model_computes_what_modelx_computes_on_the_unfrozen_varian
 def _contract_extremes(tmp_path):
     """The rows at the contract's extremes, built by the generator.
 
-    Each shape of :data:`SHAPES` at its longest cover, 1,380 months from the start, every
+    Each shape of :data:`SHAPES` at its longest cover, 1,392 months from the start, every
     covered life issued at :data:`YOUNGEST` on its basis, the table basis under a guarantee
-    of 1,380 months, in a copy of S's table: its twin, starting at the valuation date; the
-    same starting ``future_horizon_mth``, 120 months, after it, a frame of 1,500 months;
+    of 1,392 months, at the contract's largest limiting age, :data:`OMEGA_MAX`, in a copy of
+    S's table, S read under that limiting age: its twin, starting at the valuation date; the
+    same starting ``future_horizon_mth``, 120 months, after it, a frame of 1,512 months;
     and the same restated in payment in the last month of its frame, opened with S's state
-    there.  So ``t`` reaches 1,500, the policy month 1,380, the policy year 116, the
-    anniversary 114, the attained age 114 and each code its last, the furthest
+    there.  So ``t`` reaches 1,512, the policy month 1,392, the policy year 117, the
+    anniversary 115, the attained age 115 and each code its last, the furthest
     ``spec_sec.py`` sizes for.  Returns the rows.
     """
     s_table = _s_table()
@@ -6586,6 +6861,7 @@ def _contract_extremes(tmp_path):
     s = mx.read_model(temp_inputs(tmp_path, model_path(TWIN), model_points=pd.concat(rows)),
                       name=_name("extremes_s"))
     try:
+        s.Projection.omega_age = OMEGA_MAX
         last = {70 + i: LONGEST - 1 for i in range(1, len(SHAPES) + 1)}
         spec = dataclasses.replace(SPEC, derived=tuple(last.items()),
                                    future=tuple((p, 120) for p in last), derived_refs={})
@@ -6601,11 +6877,12 @@ def test_the_compiled_model_computes_what_modelx_computes_at_the_contract_extrem
     """C4 where the caches end: the contract's longest covers, every cell compiled.
 
     The rows of :func:`_contract_extremes`, each shape at its longest cover from the
-    youngest issue age its basis projects, the table basis under the 1,380-month guarantee
-    ``proj_len()`` admits, starting now and 120 months on and in payment in its last month,
-    read every cache as far as ``spec_sec.py`` sizes it for: ``t`` to 1,500, the frame's
-    closing time point; ``k`` to 1,380; ``y`` to 116, the opening of the year that closing
-    point begins; ``a`` to 114 and ``x`` to 114; and every timing and kind.  modelx sweeps
+    youngest issue age its basis projects, the table basis under the 1,392-month guarantee
+    ``proj_len()`` admits at the contract's largest limiting age, :data:`OMEGA_MAX`, set on
+    both engines, starting now and 120 months on and in payment in its last month, read
+    every cache as far as ``spec_sec.py`` sizes it for: ``t`` to 1,512, the frame's closing
+    time point; ``k`` to 1,392; ``y`` to 117, the opening of the year that closing point
+    begins; ``a`` to 115 and ``x`` to 115; and every timing and kind.  modelx sweeps
     every row fully, with the payments to date at every key the frame reads and their
     refusals beside them, and the compiled model must agree everywhere.  A cache one too
     small for the contract raises ``IndexError`` compiled where modelx reads on, and fails
@@ -6615,27 +6892,96 @@ def test_the_compiled_model_computes_what_modelx_computes_at_the_contract_extrem
     """
     build = sec_build(SEC)
     rows = _contract_extremes(tmp_path / "s")
-    covers = rows["guarantee_months"].clip(lower=12 * (115 - rows["annuitant_age"]))
-    assert (covers - rows["duration_mth"]).max() == 1500 and (covers == LONGEST).all()
-    found = _c4_chunks(build, rows, {}, tmp_path / "extremes", also=_payments_also,
+    covers = rows["guarantee_months"].clip(lower=12 * (OMEGA_MAX - rows["annuitant_age"]))
+    assert (covers - rows["duration_mth"]).max() == LONGEST + 120 == 1512
+    assert (covers == LONGEST).all()
+    found = _c4_chunks(build, rows, {"omega_age": OMEGA_MAX}, tmp_path / "extremes",
                        size=EXTREMES_CHUNK)
     assert not found, _mismatch_lines(found)
 
 
-def _payments_also(proj):
-    """C4's ``also``: the cells a sweep leaves, the payments to date at ``ANNUITANT`` and
-    ``ALL`` at every key the frame reads, the refusals of the income and of the payments
-    beside them, and each life's label."""
-    base = max(proj.duration_mth_init(), 0)
+def _pa_c4_also(proj):
+    """C4's ``also`` on every row it compares: the cells and codes no swept cell reads.
+
+    A sweep evaluates every cell without parameters and every cell of ``t`` alone, at
+    every month of the frame and the month after, the payments to date on every stream and
+    their refusal among them, and every other cell only where those read it.  So it calls,
+    besides: the dependant's death density, ``lives_death(t, 2)``, at every month, which the
+    last-death density replaces in every flow; the payments to date at ``ALL`` at every key
+    the frame reads, which no cell reads; where value protection is on the first death,
+    the annuitant's, ``ANNUITANT``, there and its refusal, which only an overflow calls; the
+    income's refusal in every policy year the frame reads; and each life's label.  A row
+    whose annuitant's payments to date no projection reads is not asked them: on RPI-linked
+    escalation they open from ``cum_annuity_pp_init``, which such a row leaves blank, so
+    they are NaN there, refused past the first key in both engines, and never read.
+    :func:`test_c4_asks_every_cell_at_every_code` holds the sweep and this to every code.
+    """
     end = proj.proj_len()
-    for k in range(base, proj.duration_mth(end) + 1):
-        proj.cum_annuity_pp(k, _code(proj, "ANNUITANT"))
+    for t in range(end + 1):
+        proj.lives_death(t, 2)
+    annuitant = proj.vp_pct() > 0.0 and proj.is_first_death()
+    for k in range(max(proj.duration_mth_init(), 0), proj.duration_mth(end) + 1):
         proj.cum_annuity_pp(k, _code(proj, "ALL"))
-        proj.cum_annuity_pp_refusal(k)
+        if annuitant:
+            proj.cum_annuity_pp(k, _code(proj, "ANNUITANT"))
+            proj.cum_annuity_pp_refusal(k)
     for y in range(proj.policy_year_init(), proj.policy_year(end - 1) + 1):
         proj.annual_income_refusal(y)
     for life in (1, 2):
         proj.sex(life)
+
+
+# The codes each cell that takes one is called at, on every row C4 compares, by the sweep
+# and _pa_c4_also between them: the timings, the kinds of the claims and of the payments
+# to date, and the two lives in every cell of a life.
+CODED = {"pols_if_at": "timing", "claims": "kind", "cum_annuity_pp": "kind"}
+LIFE_CELLS = ("age_at_entry", "sex", "mort_schedule", "rating_factor", "death_mth",
+              "lives_if_init", "age", "mort_rate_base", "improve_rate", "improve_factor",
+              "mort_rate", "mort_rate_mth", "lives_if", "lives_death", "lives_if_py",
+              "mort_rate_base_at")
+
+
+def test_c4_asks_every_cell_at_every_code(tmp_path):
+    """C4's sweep and its ``also`` ask every cell that takes a code at every code it takes.
+
+    C4 compares the compiled model with modelx at the arguments modelx caches, so a code no
+    cell asks would go uncompared: the payments to date at ``ALL``, which no cell reads, and
+    the dependant's death density, which the last-death density replaces, among them
+    (:func:`_pa_c4_also`).  On a fresh read of the committed table, after a full sweep of
+    each twin of ``PA_UK_S``'s ten points, every kind of contract S holds, and the ``also``
+    of each, the codes each cell has been called at, over the twins, are every code it
+    takes: both timings of the count; the claims' two kinds and
+    their total; the payments to date's two kinds; and both lives in every cell of a life,
+    the table basis's mortality cells and the scenario basis's months of death among them.
+    Each point is released once its codes are read, as C4 releases none: a full sweep
+    holds the survival check's quadratic record (:data:`C4_CHUNK`).
+    """
+    model = mx.read_model(_sec_inputs(tmp_path, _committed()), name=_name("codes"))
+    try:
+        seen = {}
+        table = model.Data.model_point_table()
+        for key, kind in zip(point_keys(model), table["row_kind"]):
+            if kind != "twin":
+                continue
+            p = projection(model, key)
+            if ("proj_len", ()) not in full_sweep(p):
+                _pa_c4_also(p)
+            for name in (*CODED, *LIFE_CELLS):
+                cells = p.cells[name]
+                where = list(cells.parameters).index(CODED.get(name, "life"))
+                for args in cells.keys():
+                    args = args if isinstance(args, tuple) else (args,)
+                    seen.setdefault(name, set()).add(args[where])
+            _release(model, key)
+        p = projection(model, point_keys(model)[0])
+        want = {"pols_if_at": {p.BEF_NB, p.BEF_DECR},
+                "claims": {p.VP, p.PROP, p.ALL},
+                "cum_annuity_pp": {p.ANNUITANT, p.ALL},
+                **{name: {1, 2} for name in LIFE_CELLS}}
+        assert seen == want, {name: (seen.get(name), codes) for name, codes in want.items()
+                              if seen.get(name) != codes}
+    finally:
+        model.close()
 
 
 @pytest.mark.cython
@@ -6672,7 +7018,7 @@ def test_the_compiled_model_computes_what_modelx_computes_where_the_cap_binds(se
         assert twin.mort_rate(575, 1) < 1.0
     finally:
         model.close()
-    found = compiled_mismatches(build, folder)
+    found = compiled_mismatches(build, folder, also=_pa_c4_also)
     assert not found, _mismatch_lines(found)
 
 
@@ -6697,7 +7043,7 @@ def test_the_compiled_model_computes_what_modelx_computes_on_every_decoded_value
     finally:
         sec.close()
         s.close()
-    found = _c4_chunks(build, twins, {}, tmp_path / "decoded", also=_payments_also)
+    found = _c4_chunks(build, twins, {}, tmp_path / "decoded")
     assert not found, _mismatch_lines(found)
 
 
@@ -6749,7 +7095,7 @@ def test_the_compiled_model_reads_keys_written_as_floats_as_modelx_does(sec_buil
     finally:
         model.close()
         as_written.close()
-    found = compiled_mismatches(build, folder)
+    found = compiled_mismatches(build, folder, also=_pa_c4_also)
     assert not found, _mismatch_lines(found)
 
 
@@ -6908,8 +7254,8 @@ def _named(outcome, files):
 # fraction is truncated as it is set, 115.5 to 115, where modelx computes with 115.5, so
 # the compiled refusals take a domain's cases at whole numbers alone, and model-sec.md says
 # to set each as a whole number (UKLIB-SEC-PLAN.md §6.1, *Record -- M2*).
-INT_REFERENCES = frozenset({"issue_age_min", "omega_age", "mort_table_year",
-                            "improve_flat_age", "improve_taper_age"})
+INT_REFERENCES = frozenset({"issue_age_min", "omega_age", "omega_age_max",
+                            "mort_table_year"})
 
 
 def _held_compiled(refs):
@@ -6927,7 +7273,8 @@ def _held_compiled(refs):
 CODES_IN_CACHE = [("pols_if_at", (0, 2)), ("pols_if_at", (0, 3)), ("claims", (0, 2)),
                   ("cum_annuity_pp", (5, 0)), ("cum_annuity_pp", (5, 1)),
                   ("lives_if_init", (0,)), ("lives_if_init", (3,)), ("age_at_entry", (0,)),
-                  ("mort_rate", (0, 3)), ("lives_if", (0, 3))]
+                  ("mort_rate", (0, 3)), ("lives_if", (0, 3)), ("death_mth", (0,)),
+                  ("death_mth", (3,))]
 
 # Projection's idx past the extract's last row, 23, and -1, beside the last row, 22, as
 # (position, cell, arguments): past the last row the first read of a vector raises
@@ -6945,14 +7292,14 @@ IDX_EDGES = [(23, "point_id", ()), (23, "result_cf", ()), (-1, "point_id", ()),
 # refuses as codes it does not take; a key, a policy year, an anniversary and an attained
 # age past their caches, each of which modelx computes or refuses as at any other.  No
 # frame of the contract reads any of them.
-COMPILED_ONLY = [("net_cf", (1502,)), ("net_cf", (-1,)), ("pols_if_at", (0, 4)),
+COMPILED_ONLY = [("net_cf", (1514,)), ("net_cf", (-1,)), ("pols_if_at", (0, 4)),
                  ("claims", (0, 4)), ("cum_annuity_pp", (5, 4)), ("lives_if", (5, 4)),
-                 ("cum_annuity_pp", (1382, 2)), ("annual_income", (117,)),
-                 ("lives_if_py", (117, 1)), ("rpi_peak", (116,)),
-                 ("mort_rate_base_at", (116, 1))]
+                 ("cum_annuity_pp", (1394, 2)), ("annual_income", (118,)),
+                 ("lives_if_py", (118, 1)), ("rpi_peak", (117,)),
+                 ("mort_rate_base_at", (117, 1))]
 
 
-def _refusal_cases():
+def _refusal_cases(anniversary=None):
     """Every refusal the compiled model must make as modelx does, as (case, the table, the
     edits, the References, [(position, cell, arguments)], the Data cells to read).
 
@@ -6978,7 +7325,8 @@ def _refusal_cases():
         cases.append((case, extract(edit), None, {}, [(0, "result_cf", ())],
                       ("model_point_table",)))
     for case, column, value, refused, _, _ in BY_POINT:
-        cases.append((f"by point: {case}", extract(_set(column, [refused], value)), None,
+        cases.append((f"by point: {case}", extract(_by_point_edit(case, column, value,
+                                                                  [refused])), None,
                       {}, [(at(refused), "result_cf", ())], ()))
     for case, edit, message in UNREADABLE:
         cases.append((case, extract(), {MORT: edit}, {}, [(at(2), "result_cf", ())],
@@ -7014,6 +7362,14 @@ def _refusal_cases():
                                 _set("cum_annuity_pp_init", [frozen], big),
                                 _set("annual_income_init", [frozen], 1e300))), None, {},
                   [(at(last), "result_cf", ()), (at(frozen), "result_cf", ())], ()))
+    if anniversary is not None:
+        on_last, on_frozen, edit = anniversary
+        cases.append(("the payments to date past the floats on an anniversary",
+                      extract(edit), None, {},
+                      [(at(on_last), "result_cf", ()), (at(on_frozen), "result_cf", ())],
+                      ()))
+    for case, refs, point, cell, args, _ in POWER_BASES:
+        cases.append((case, extract(), None, refs, [(at(point), cell, args)], ()))
     cases.append(("at its stop", extract(_set("duration_mth", [10], 636)), None, {},
                   [(at(10), "result_cf", ()), (at(10), "proj_len", ())], ()))
     cases.append(("an age below the mortality table",
@@ -7065,7 +7421,7 @@ def test_the_compiled_model_refuses_what_modelx_refuses(sec_build, tmp_path):
     names it (:func:`_named`), and modelx reads each case afresh.
     """
     build = sec_build(SEC)
-    cases = _refusal_cases()
+    cases = _refusal_cases(_anniversary_edit(tmp_path / "anniversary"))
     plain = len(cases)
     committed = _committed()
     relabelled = committed.rename(index=dict(zip(committed.index, EXTRACT_LABELS)))
@@ -7180,13 +7536,13 @@ def test_the_longest_cover_runs_cold_on_a_one_megabyte_stack(sec_build, tmp_path
     """The deepest call the contract allows runs compiled on a 1 MiB stack (F7).
 
     On the rows of :func:`_longest_cover`, each shape of :data:`SHAPES` at its longest
-    cover, 1,380 months from the start, every life issued at the youngest age its basis
-    projects, the table basis under a 1,380-month guarantee, starting now and 120 months
-    on: the worked example and the last-survivor point on the scenario basis, the worked
+    cover, 1,392 months from the start at the contract's largest limiting age,
+    :data:`OMEGA_MAX`, every life issued at the youngest age its basis projects, the table
+    basis under a 1,392-month guarantee, starting now and 120 months on: the worked example and the last-survivor point on the scenario basis, the worked
     example's table twin, the RPI catch-up, the LPI and the rated single life on the table
     basis.  Each of :data:`STACK_HEADS`, cold in the last month, runs the chains back to
     ``t_entry()``, one cell a month within the policy year and two a year before it,
-    survival and the payments to date being blocked by policy year: 251 cells deep in
+    survival and the payments to date being blocked by policy year: 253 cells deep in
     modelx at the longest cover
     (:func:`test_every_chain_runs_one_cell_a_month_from_a_cold_start`).  Each runs in an
     ItemSpace of its own, on a copy of its row, so that each is cold: in one ItemSpace the
@@ -7226,6 +7582,7 @@ def test_the_longest_cover_runs_cold_on_a_one_megabyte_stack(sec_build, tmp_path
     case = compiled_case(build, tmp_path / "longest", model_points=pd.concat(copies))
     model = mx.read_model(case, name=_name("longest"))
     try:
+        model.Projection.omega_age = OMEGA_MAX
         calls, want = {}, {}
         for label, months, entry in frames:
             for i, head in enumerate(STACK_HEADS):
@@ -7239,7 +7596,7 @@ def test_the_longest_cover_runs_cold_on_a_one_megabyte_stack(sec_build, tmp_path
         model.close()
     assert len(calls) == len(frames) * len(STACK_HEADS), "a head shares an ItemSpace"
     assert all(len(each) == 1 for each in calls.values()), "a head runs after another, warm"
-    job = {"refs": {}, "calls": calls}
+    job = {"refs": {"omega_age": OMEGA_MAX}, "calls": calls}
 
     def child(timeout, **where):
         try:

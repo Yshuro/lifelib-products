@@ -46,9 +46,10 @@ import sys
 
 # The export does not raise the recursion limit as modelx does (F7).  The deepest call the
 # contract allows, a cold cum_annuity_all or claims total in the last month of the longest
-# cover, the table basis under a guarantee of 1,380 months from 50, now or 120 months on,
-# needs a limit of 517 in the export, its net_cf 496 to 507, and the reports and checks
-# below, which run in ascending t, need 128 from a script's top level (measured at M12).
+# cover, the table basis under a guarantee of 1,392 months from 50 at the largest limiting
+# age, omega_age_max, 116, now or 120 months on, needs a limit of 521 in the export, its
+# net_cf 500 to 507, and the reports and checks below, which run in ascending t, need 128
+# from a script's top level (measured at M12).
 # The three chains are blocked by policy year, so a cold call runs one cell a month within
 # its year and two cells a year before it.  So the build itself needs 128, and the rest is
 # margin for an edit that calls a cell cold.  The limit is four times the first, rounded up
