@@ -216,10 +216,12 @@ facts they record are still those at issue:
 | `children_cover`, `indexation` | True or False | issue |
 | `premium_mode` | monthly or annual | inert, as in `CI_UK_S`: the premium is carried monthly either way |
 
-Three more columns, `row_kind`, `source_policy_id` and `source_mth`, record where the
-generator took each shipped row from (below). No formula reads them, and an in-force
-extract need not carry them: without them the model projects the same numbers, and
-`run_sec.py` runs.
+Four more columns, `row_kind`, `source_policy_id`, `source_mth` and `source_refs`, record
+where the generator took each shipped row from (below): `source_refs` names the References
+a row was read from `CI_UK_S` under, `review_prem_shock 0.1` on point 14, and is blank on
+every row read at those `CI_UK_S` ships. No formula reads them, and an in-force extract
+need not carry them: without them the model projects the same numbers, and `run_sec.py`
+runs.
 
 `Data.model_point_table()` checks the table as it reads it, over all rows at once. The
 first check that fails raises `ValueError`, naming the missing column or every point that

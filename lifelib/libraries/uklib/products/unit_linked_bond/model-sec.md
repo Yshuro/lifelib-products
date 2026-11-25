@@ -203,10 +203,11 @@ date on:
 | `wd_pattern`, `wd_rate_custom` | a code, a rate a year | the election from the valuation date on |
 | `gmdb_flag` | True or False | issue |
 
-Three more columns, `row_kind`, `source_policy_id` and `source_mth`, record where the
-generator took each shipped row from (below). No formula reads them, and an in-force
-extract need not carry them: without them the model projects the same numbers, and
-`run_sec.py` runs.
+Four more columns, `row_kind`, `source_policy_id`, `source_mth` and `source_refs`, record
+where the generator took each shipped row from (below): `source_refs` names the References
+a row was read from `ULB_UK_S` under, `fund_return 0.0` on point 12, and is blank on every
+row read at those `ULB_UK_S` ships. No formula reads them, and an in-force extract need
+not carry them: without them the model projects the same numbers, and `run_sec.py` runs.
 
 `Data.model_point_table()` checks the table as it reads it, over all rows at once. The
 first check that fails raises `ValueError`, naming the missing column or every point that

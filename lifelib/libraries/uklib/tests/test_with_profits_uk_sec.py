@@ -140,6 +140,7 @@ from uk_sec_support import (
     compiled_mismatches, exact_here, fingerprint_mismatches, frame_mismatches, full_sweep,
     label_mismatches, labels_refusing_non_text, reporting_cells, run_compiled, sweep,
     temp_inputs, twin_mismatches)
+from uk_sec_support import generated_columns
 
 SEC, TWIN = "WP_UK_SEC", "WP_UK_S"
 TABLE = "model_point_table_sec.csv"
@@ -4344,14 +4345,10 @@ def test_the_points_sum_row_by_row_into_a_block(spliced):
     assert frame_mismatches(expected, block) == []
 
 
-# The generator's columns, which an extract carries none of.
-GENERATED_COLUMNS = ("row_kind", "source_policy_id", "source_mth")
-
-
 def _extract():
     """The committed table as an administration extract would hold it: without the
     generator's columns, and labelled :data:`EXTRACT_LABELS`."""
-    extract = _committed().drop(columns=list(GENERATED_COLUMNS))
+    extract = _committed().drop(columns=list(generated_columns(SPEC)))
     extract.index = pd.Index(EXTRACT_LABELS, name="point_id")
     return extract
 
@@ -4361,8 +4358,9 @@ def test_an_in_force_extract_needs_none_of_the_generator_columns(sec_model, tmp_
     """The model reads the in-force interface and S's columns, never where a row came from,
     and names each point by its label, wherever the row stands.
 
-    ``row_kind``, ``source_policy_id`` and ``source_mth`` record how the generator made each
-    shipped row, and an administration extract carries none of them.  Read without them,
+    ``row_kind``, ``source_policy_id``, ``source_mth`` and ``source_refs`` record how the
+    generator made each shipped row, from which S row, at which month and under which
+    References, and an administration extract carries none of them.  Read without them,
     and with every label changed, every point projects what the committed table projects,
     in the three reports, to 1e-12, and ``run_sec.py``, run beside that extract, prints the
     point without saying where it came from.  On every shipped row ``source_mth`` equals
@@ -4377,7 +4375,7 @@ def test_an_in_force_extract_needs_none_of_the_generator_columns(sec_model, tmp_
     model = mx.read_model(folder, name=_name("extract"))
     try:
         table = model.Data.model_point_table()
-        assert not set(GENERATED_COLUMNS) & set(table.columns)
+        assert not set(generated_columns(SPEC)) & set(table.columns)
         assert list(table.index) == list(EXTRACT_LABELS)
         for key, base_key, label in zip(point_keys(model), point_keys(sec_model),
                                         _committed().index):

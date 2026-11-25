@@ -190,8 +190,9 @@ def model_point_table():
     and ``duration_mth``, the completed policy months at the valuation date, as in
     ``basiclife.BasicTerm_SE``, and the six of a point's opening state. The rest are
     :mod:`~.WOL_UK_S`'s, but ``pols_if_init``, which ``policy_count`` replaces, and
-    ``row_kind``, ``source_policy_id`` and ``source_mth``, which record where the generator
-    took each shipped row from and which no formula reads.
+    ``row_kind``, ``source_policy_id``, ``source_mth`` and ``source_refs``, which record
+    where the generator took each shipped row from, and under what References, and which
+    no formula reads.
 
     The checks run over the whole table at once, and the first that fails raises
     ``ValueError``, naming the missing column or every point it fails on:

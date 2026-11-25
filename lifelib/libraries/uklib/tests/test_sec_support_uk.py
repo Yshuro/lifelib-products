@@ -80,7 +80,8 @@ UKLIB-SEC-PLAN.md adopts:
   derived row and a future row with the right counts, durations, sources and ids, and no
   text that is not S's own or composed from S's keys and a month (``CLAUDE.md``); a row
   of ``derived_refs`` that is S run under its References, with S's References restored
-  after it, even when it is refused; :func:`write_generated` is a no-op on a rerun; and
+  after it, even when it is refused, and those References named in its ``source_refs``,
+  blank on every other row; :func:`write_generated` is a no-op on a rerun; and
   :func:`check_generated` reports an edited S row cell by cell, but reads a float by its
   value, so a file written on another platform checks clean.
 * C2's fingerprint: :func:`fingerprint_months` names the frame's first, last and quartile
@@ -103,6 +104,7 @@ uslib's: "uslib's M24".  modelx keeps every model in one registry, and
 ``conftest.term_assurance`` already holds the default name, so every model here is read
 under a name of its own and closed.
 """
+import csv
 import dataclasses
 import io
 import itertools
@@ -118,6 +120,7 @@ from uk_sec_support import (
     SEC_SPECS, TWIN_EXEMPT_DEFAULT, SecSpec, build_sec_table, check_generated, codes,
     fingerprint, fingerprint_mismatches, fingerprint_months, fingerprint_text,
     frame_mismatches, shift_months, sweep, temp_inputs, twin_mismatches, write_generated)
+from uk_sec_support import GENERATED_COLUMNS, _csv_text
 from uk_registry import model_path
 
 TERM = "Term_UK_S"
@@ -886,6 +889,7 @@ def test_generated_text_is_s_text_or_composed_from_s_keys(tmp_path):
     ({"companions": {"model_point_table_sec.csv": lambda m, t: t}}, "would replace"),
     ({"future_state": {"policy_count": lambda s, k: 2.0}}, "the generator owns them"),
     ({"future_state": {"duration_mth": lambda s, k: 0}}, "the generator owns them"),
+    ({"state": {"source_refs": lambda s, d: "x"}}, "the generator owns them"),
     # A row under References of its own may not take a shipped row's place, nor set none.
     # It may sit beside a companion, whose rows for it are built under its References too
     # (test_a_companion_row_of_a_derived_refs_row_is_s_run_under_its_references).
@@ -911,6 +915,8 @@ def test_a_spec_that_could_clobber_s_or_the_generator_is_refused(change, error):
     ({"future": ((8, 3),)}, "point 8 is in force in S"),
     ({"column_map": {"no_such_column": None}}, "no_such_column"),
     ({"column_map": {"sex": "shape"}}, "two columns one name"),
+    ({"column_map": {"sex": "source_refs"}},
+     "a 'source_refs' column, which the generator writes itself"),
     ({"duration_of": lambda row: -1}, "never future business"),
     ({"duration_of": lambda row: 0}, "point 8: S opens its frame at t = 60"),
     ({"model_state": lambda m: {"policy_count": lambda s, d: 2.0}},
@@ -948,10 +954,13 @@ def test_a_derived_refs_row_is_s_run_under_its_references(tmp_path):
     state are what a second read of S, run under the row's References, carries into the
     row's month, and neither is what S carries there as shipped.  The rows come last,
     numbered on after the future row, and every row before them is the table the spec makes
-    without them, exactly.  Afterwards S's References are its own again and S projects as
-    shipped; and so they are when a row is refused, here one past S's frame, after its
-    References were set.  With a ``provenance`` column in S, each row's names every
-    Reference and its value.
+    without them, exactly, but for the column ``source_refs``, which the table of a spec
+    with ``derived_refs`` alone carries, beside ``source_mth``: each such row's References
+    and their values, in the spec's order and as ``_reference_settings`` describes them,
+    blank on every other row, in the table and in the file.  Afterwards S's References are
+    its own again and S projects as shipped; and so they are when a row is refused, here one
+    past S's frame, after its References were set.  With a ``provenance`` column in S, each
+    row's names every Reference and its value too, after ``source_refs``.
     """
     model, shipped = _read("under"), _read("under_shipped")
     try:
@@ -976,8 +985,17 @@ def test_a_derived_refs_row_is_s_run_under_its_references(tmp_path):
                 assert got[1] != shipped.Projection[p].lapse_rate(d), (p, d)
             finally:
                 under.close()
+        assert table["source_refs"].tolist()[10:] == [
+            "premium_market_ratio 1.5, expense_maint 31.0", "premium_market_ratio 1.2"]
+        assert table["source_refs"].iloc[:10].isna().all()
+        assert list(table.columns)[-4:] == [*GENERATED_COLUMNS, "source_refs"]
+        written = list(csv.DictReader(io.StringIO(_csv_text(table))))
+        assert [row["source_refs"] for row in written] == [""] * 10 + [
+            "premium_market_ratio 1.5, expense_maint 31.0", "premium_market_ratio 1.2"]
         base, _ = build_sec_table(dataclasses.replace(UNDER_SPEC, derived_refs={}), model)
-        pd.testing.assert_frame_equal(table.iloc[:10], base, check_exact=True)
+        assert "source_refs" not in base.columns
+        pd.testing.assert_frame_equal(table.iloc[:10].drop(columns="source_refs"), base,
+                                      check_exact=True)
         assert (model.Projection.premium_market_ratio,
                 model.Projection.expense_maint) == (1.0, 30.0)
         assert model.Projection[1].pols_if(24) == shipped.Projection[1].pols_if(24)
@@ -1002,6 +1020,7 @@ def test_a_derived_refs_row_is_s_run_under_its_references(tmp_path):
         "1.5, expense_maint 31.0",
         "S point 2 (TA-000002) restated in force at S month 12 under premium_market_ratio "
         "1.2"]
+    assert list(table.columns)[-5:] == [*GENERATED_COLUMNS, "source_refs", "provenance"]
 
 
 def _lapses_seen(calls):

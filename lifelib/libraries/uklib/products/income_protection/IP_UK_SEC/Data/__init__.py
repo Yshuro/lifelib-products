@@ -217,9 +217,10 @@ def model_point_table():
     ``basiclife.BasicTerm_SE``, and the three of a point's opening state. The rest are
     :mod:`~.IP_UK_S`'s, but ``pols_if_init``, which ``policy_count`` replaces,
     ``claim_duration_months``, which the claim cohorts replace, and ``row_kind``,
-    ``source_policy_id`` and ``source_mth``, which record where the generator took each
-    shipped row from and which no formula reads.  :mod:`~.IP_UK_S`'s ``status`` is kept as
-    a label, which no formula reads either, so an extract may leave it out.
+    ``source_policy_id``, ``source_mth`` and ``source_refs``, which record where the
+    generator took each shipped row from, and under what References, and which no formula
+    reads.  :mod:`~.IP_UK_S`'s ``status`` is kept as a label, which no formula reads
+    either, so an extract may leave it out.
 
     The checks run over the whole table at once, and the first that fails raises
     ``ValueError``, naming the missing column or every point it fails on:

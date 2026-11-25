@@ -934,10 +934,13 @@ def shift_months(df, month_col, d, *, by=(), step=True):
 # state may supply them.  ``duration_mth`` is the twin's, from ``duration_of``, moved on by
 # ``d - source_mth`` for a derived row and set to ``-k`` for a future one.  ``provenance``
 # is S's on a twin and composed from S's keys on the other rows (D8), so no extractor may
-# write one either: that is the text ``CLAUDE.md`` holds to citing by key.
+# write one either: that is the text ``CLAUDE.md`` holds to citing by key.  The three of
+# GENERATED_COLUMNS are on every table, and SOURCE_REFS on a table whose spec has
+# ``derived_refs`` alone (generated_columns).
 GENERATED_COLUMNS = ("row_kind", "source_policy_id", "source_mth")
+SOURCE_REFS = "source_refs"
 _RESERVED = frozenset({"point_id", "policy_id", "duration_mth", "provenance",
-                       *GENERATED_COLUMNS})
+                       *GENERATED_COLUMNS, SOURCE_REFS})
 
 
 def _issued_at_valuation(row):
@@ -949,6 +952,21 @@ def _reference_settings(refs):
     """``refs``, ``{reference: value}``, as a row of ``derived_refs`` is described: each
     name and its value, ``review_prem_shock 0.1, ci_trend 0.02``, in the spec's order."""
     return ", ".join(f"{name} {_py(value)!r}" for name, value in refs.items())
+
+
+def generated_columns(spec):
+    """The columns the generator writes to ``spec``'s table, in the order it writes them:
+    :data:`GENERATED_COLUMNS`, then :data:`SOURCE_REFS` where the spec has
+    ``derived_refs``.
+
+    ``source_refs`` records, on each row read from S under References of its own, each
+    Reference and its value, in the spec's order and as :func:`_reference_settings`
+    describes them, ``review_prem_shock 0.1``; it is blank on every other row.  So such a
+    row does not read in its table as a restatement at the shipped References.  No model
+    reads it, and an in-force extract needs it no more than the other three.  A spec
+    without ``derived_refs`` has no such row, and its table no such column.
+    """
+    return GENERATED_COLUMNS + ((SOURCE_REFS,) if spec.derived_refs else ())
 
 
 @dataclasses.dataclass(frozen=True)
@@ -970,7 +988,9 @@ class SecSpec:
 
     Every row carries ``policy_count``, ``duration_mth`` (months in force at ``t = 0``,
     negative for future new business), ``row_kind``, ``source_policy_id`` (the S policy it
-    comes from) and ``source_mth``, where SEC ``t`` is S ``t + source_mth``.
+    comes from) and ``source_mth``, where SEC ``t`` is S ``t + source_mth``; and the table
+    of a spec with ``derived_refs`` carries ``source_refs`` too, the References a row was
+    read under, blank where they are S's own (:func:`generated_columns`).
 
     Fields:
 
@@ -993,15 +1013,16 @@ class SecSpec:
         own: for a history S reaches only under another assumption, such as a review
         change that has moved premiums where S ships it at 0.  Each row is the one
         ``derived`` would make of its pair had S shipped those References, which are set on
-        S's ``Projection`` while the row is read and restored after it, and its
-        ``provenance``, where the S table has one, names each Reference and its value.  A
-        pair may not be one of ``derived``'s, whose row would take its ``policy_id``; and a
-        name must be one of the References of S's ``Projection``.  Each companion's rows
-        for such a row are built under the row's References too, from the row alone
-        (:func:`build_sec_table`), so that a companion holds the state of the run its row
-        was read from; its builder must then be row-local, writing rows keyed by the
-        ``point_id`` of the rows it is given and no others, which :func:`build_sec_table`
-        checks.  Empty by default.
+        S's ``Projection`` while the row is read and restored after it.  Its
+        ``source_refs``, a column the table of such a spec alone carries, names each
+        Reference and its value, and so does its ``provenance``, where the S table has
+        one.  A pair may not be one of ``derived``'s, whose row would take its
+        ``policy_id``; and a name must be one of the References of S's ``Projection``.
+        Each companion's rows for such a row are built under the row's References too,
+        from the row alone (:func:`build_sec_table`), so that a companion holds the state
+        of the run its row was read from; its builder must then be row-local, writing rows
+        keyed by the ``point_id`` of the rows it is given and no others, which
+        :func:`build_sec_table` checks.  Empty by default.
     ``future``
         ``(S point_id, k)`` pairs; each S point must be new business.
     ``state``
@@ -1010,8 +1031,8 @@ class SecSpec:
         month-``d`` event.  ``policy_count`` may be among them: its default,
         ``s_proj.pols_if(d)``, is the wrong count for SPIA, whose ``pols_if`` is a closing
         measure (D5).  The columns the generator owns may not: the two ids,
-        ``duration_mth``, ``provenance`` and the three it adds, ``row_kind``,
-        ``source_policy_id`` and ``source_mth``.
+        ``duration_mth``, ``provenance`` and the four it adds, ``row_kind``,
+        ``source_policy_id``, ``source_mth`` and ``source_refs``.
     ``twin_state``
         SEC column to ``callable(s_proj, d)`` for the twin rows, called with ``d`` the
         twin's ``source_mth``: the opening state S itself assumes, so the twin reproduces S.
@@ -2404,9 +2425,9 @@ def _sec_columns(spec, s_table, rename, added=()):
     S's columns in S's order, renamed or dropped by ``rename``; then ``policy_count`` and
     ``duration_mth``, each where S has no column of that name; then the state columns S
     lacks, in the order the spec names them: ``added``, those ``model_state`` gave, then
-    ``twin_state``'s, ``state``'s and ``future_state``'s; then the generator's own columns;
-    and ``provenance`` last, where the S table has one, as every table in the library keeps
-    it.
+    ``twin_state``'s, ``state``'s and ``future_state``'s; then the generator's own columns,
+    :func:`generated_columns`; and ``provenance`` last, where the S table has one, as every
+    table in the library keeps it.
     """
     columns = [rename.get(c, c) for c in ["point_id", *s_table.columns]]
     columns = [c for c in columns if c is not None]
@@ -2417,11 +2438,11 @@ def _sec_columns(spec, s_table, rename, added=()):
               *spec.future_state):
         if c not in columns:
             columns.append(c)
-    for c in GENERATED_COLUMNS:
+    for c in (*GENERATED_COLUMNS, SOURCE_REFS):
         if c in columns:
             raise ValueError(f"{spec.twin}'s table has a {c!r} column, which the generator "
                              f"writes itself")
-        columns.append(c)
+    columns += generated_columns(spec)
     if provenance:
         columns.append("provenance")
     if len(set(columns)) != len(columns):
@@ -2484,9 +2505,13 @@ def build_sec_table(spec, s_model):
     by the spec, never by a hash or a filesystem.  Their ``policy_id`` is composed from S's
     and the month (``TL-000001-M120``, ``TL-000001-F3``), and where the S table has a
     ``provenance`` column theirs is composed the same way, citing S's point and policy and
-    the month, and for a ``derived_refs`` row each Reference and its value.  Every other
-    text cell is copied from S.  That is D8's rule under ``CLAUDE.md``: the generator adds
-    no name, and a reworded S cell reaches the SEC table through T6.
+    the month, and for a ``derived_refs`` row each Reference and its value.  A
+    ``derived_refs`` row names its References in ``source_refs`` too, as
+    :func:`_reference_settings` describes them, a column the table carries only where the
+    spec has such rows, blank on every other row (:func:`generated_columns`), so that the
+    table records them whether or not S's has a ``provenance``.  Every other text cell is
+    copied from S.  That is D8's rule under ``CLAUDE.md``: the generator adds no name, and
+    a reworded S cell reaches the SEC table through T6.
 
     Returns ``(table, companions)``: the table on a default index, ``point_id`` its first
     column, exactly as the file is written; and ``{filename: DataFrame}`` from the spec's
@@ -2620,6 +2645,7 @@ def build_sec_table(spec, s_model):
             for name, value in shipped.items():
                 setattr(space, name, value)
         row.update(row_kind="derived", source_policy_id=twin["policy_id"], source_mth=d)
+        row[SOURCE_REFS] = _reference_settings(refs)
         rows.append(row)
 
     table = pd.DataFrame(rows, columns=columns)

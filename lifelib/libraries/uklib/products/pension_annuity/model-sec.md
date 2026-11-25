@@ -189,10 +189,12 @@ facts they record are those at the start date:
 | `death_mth_1`, `death_mth_2` | policy months, or blank | the scenario's months of death, counted from the start date, so the same month whatever the valuation date |
 | `start_year` | a calendar year | the year the annuity started, or will start |
 
-Three more columns, `row_kind`, `source_policy_id` and `source_mth`, record where the
-generator took each shipped row from (below). No formula reads them, and an in-force
-extract need not carry them: without them the model projects the same numbers, and
-`run_sec.py` runs.
+Four more columns, `row_kind`, `source_policy_id`, `source_mth` and `source_refs`, record
+where the generator took each shipped row from (below): `source_refs` names the References
+a row was read from `PA_UK_S` under, `rpi_rate -0.02` on points 21 and 23 and
+`rpi_rate 0.08` on point 22, and is blank on every row read at those `PA_UK_S` ships. No
+formula reads them, and an in-force extract need not carry them: without them the model
+projects the same numbers, and `run_sec.py` runs.
 
 `Data.model_point_table()` checks the table as it reads it, over all rows at once. The
 first check that fails raises `ValueError`, naming the missing column or every point that

@@ -297,8 +297,9 @@ def model_point_table():
 
     The last three are blank on a point that does not read them.  The rest are
     :mod:`~.PA_UK_S`'s, ``pols_if_init`` renamed ``policy_count``, except ``row_kind``,
-    ``source_policy_id`` and ``source_mth``, which record where the generator took each
-    shipped row from and which no formula reads.
+    ``source_policy_id``, ``source_mth`` and ``source_refs``, which record where the
+    generator took each shipped row from, and under what References, and which no formula
+    reads.
 
     The checks run over the whole table at once, and the first that fails raises
     ``ValueError``, naming the missing column or every point it fails on:

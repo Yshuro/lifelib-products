@@ -915,12 +915,38 @@ def test_the_sec_table_carries_the_in_force_columns(name, model):
     the ``"twin"`` of an S row, an S point restated in force at a month ``d``
     (``"derived"``), or new business issued after the valuation date (``"future"``). SEC
     month ``t`` corresponds to month ``t + source_mth`` of the source policy in S.
+
+    A row the generator read from S under References of its own, a row of the spec's
+    ``derived_refs``, records them in ``source_refs``, a fourth column the generator writes
+    to such a spec's table alone (``uk_sec_support.generated_columns``): each Reference and
+    its value, as the spec gives them, in the form ``uk_sec_support`` describes them,
+    ``rpi_rate 0.05``.  So the rows that carry it are the spec's ``derived_refs`` rows, the
+    table's last, each restated from its S point at its month, and it is blank on every
+    other row; and the table of a spec without ``derived_refs`` has no such column.
     """
+    from uk_sec_support import SEC_SPECS, _reference_settings, generated_columns
     table = model.Data.model_point_table()
     missing = [c for c in SEC_COLUMNS if c not in table.columns]
     assert not missing, f"{name}: the model point table has no {missing}"
     unknown = sorted({str(k) for k in table["row_kind"] if k not in ROW_KINDS})
     assert not unknown, f"{name}: row_kind {unknown} is none of {sorted(ROW_KINDS)}"
+    spec = SEC_SPECS.get(name)
+    if spec is None:
+        return
+    carried = "source_refs" in table.columns
+    written = "source_refs" in generated_columns(spec)
+    assert carried == written == bool(spec.derived_refs), (name, list(table.columns))
+    if not spec.derived_refs:
+        return
+    named = table["source_refs"]
+    read = named[named.notna()]
+    want = [_reference_settings(refs) for refs in spec.derived_refs.values()]
+    assert list(read) == want, f"{name}: source_refs {list(read)}, the spec's {want}"
+    assert list(read.index) == list(table.index[-len(want):]), list(read.index)
+    for (p, d), label in zip(spec.derived_refs, read.index):
+        row = table.loc[label]
+        assert (row["row_kind"], row["source_policy_id"], int(row["source_mth"])) == (
+            "derived", table.at[p, "policy_id"], d), (name, label)
 
 
 @pytest.fixture(scope="module")

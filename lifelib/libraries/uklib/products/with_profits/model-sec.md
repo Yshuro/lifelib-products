@@ -201,10 +201,12 @@ facts they record are still those at issue:
 | `wd_rate`, `fund_return` | rates a year | the withdrawal election and the scenario's level |
 | `asset_share_init`, `unit_price_init`, `smoothed_payout_init` | as above | `WP_UK_S`'s columns of these names, measured at the valuation instant |
 
-Three more columns, `row_kind`, `source_policy_id` and `source_mth`, record where the
-generator took each shipped row from (below). No formula reads them, and an in-force
-extract need not carry them: without them the model projects the same numbers, and
-`run_sec.py` runs.
+Four more columns, `row_kind`, `source_policy_id`, `source_mth` and `source_refs`, record
+where the generator took each shipped row from (below): `source_refs` names the References
+a row was read from `WP_UK_S` under, `guar_charge_rate_base 0.002` on points 20 and 21,
+`bonus_rule_on True` on 22 and 23 and `smooth_cap 0.05` on 24, and is blank on every row
+read at those `WP_UK_S` ships. No formula reads them, and an in-force extract need not
+carry them: without them the model projects the same numbers, and `run_sec.py` runs.
 
 `Data.model_point_table()` checks the table as it reads it, over all rows at once. The
 first check that fails raises `ValueError`, naming the missing column or every point that

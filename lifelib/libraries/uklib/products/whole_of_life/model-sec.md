@@ -213,10 +213,12 @@ facts they record are still those at issue:
 | `cessation_months`, `moratorium_months` | whole policy months | issue: counts on the policy clock, 0 for premiums for life or no moratorium |
 | `variant_adb_2x`, `variant_paid_up` | True or False | issue |
 
-Three more columns, `row_kind`, `source_policy_id` and `source_mth`, record where the
-generator took each shipped row from (below). No formula reads them, and an in-force
-extract need not carry them: without them the model projects the same numbers, and
-`run_sec.py` runs.
+Four more columns, `row_kind`, `source_policy_id`, `source_mth` and `source_refs`, record
+where the generator took each shipped row from (below): `source_refs` names the References
+a row was read from `WOL_UK_S` under, `rpi_rate 0.05` on point 15, `esc_take_up 0.5` on
+point 16 and `lapse_crossover_beta 100.0` on point 17, and is blank on every row read at
+those `WOL_UK_S` ships. No formula reads them, and an in-force extract need not carry
+them: without them the model projects the same numbers, and `run_sec.py` runs.
 
 `Data.model_point_table()` checks the table as it reads it, over all rows at once. The
 first check that fails raises `ValueError`, naming the missing column or every point that

@@ -294,10 +294,12 @@ projects nothing, as S does; no committed row is one. At the shipped 3% no state
 lapse shocked by escalation, nor
 an increase capped, so two rows are read from `IP_UK_S` run under an RPI of their own,
 which the spec's `derived_refs` records, their cohorts read under it too: points 18 and
-19. At the shipped References they step at today's 3% from their next anniversary, and a
-test asserts each. A derived row's `policy_id` is the S row's with the month appended,
-`IP-000001-M60`, and a future row's carries the months to issue, `IP-000004-F13`. Row `t`
-of a generated point is month `t + source_mth` of its S point.
+19. The table records each row's RPI in a column of the generator's, `source_refs`,
+`rpi_rate 0.05` and `rpi_rate 0.12`, blank on every row read at the shipped References,
+which no formula reads. At the shipped References they step at today's 3% from their next
+anniversary, and a test asserts each. A derived row's `policy_id` is the S row's with the
+month appended, `IP-000001-M60`, and a future row's carries the months to issue,
+`IP-000004-F13`. Row `t` of a generated point is month `t + source_mth` of its S point.
 
 **The in-claim twins.** `IP_UK_S` opens its three `in_claim` points in claim at the
 valuation date with their policy clock restarted there, so they have no policy clock to

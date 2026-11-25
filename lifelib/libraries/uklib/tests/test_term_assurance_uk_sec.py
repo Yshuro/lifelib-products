@@ -147,11 +147,12 @@ import pytest
 
 from uk_registry import model_path, point_keys, projection
 from uk_sec_support import (
-    GENERATED_COLUMNS, SEC_SPECS, TWIN_EXEMPT_DEFAULT, build_sec_table, check_generated,
+    SEC_SPECS, TWIN_EXEMPT_DEFAULT, build_sec_table, check_generated,
     codes, fingerprint_mismatches, frame_mismatches, full_sweep, sweep, temp_inputs,
     twin_mismatches)
 from uk_sec_support import (
     compiled_case, compiled_mismatches, exact_here, reporting_cells, run_compiled)
+from uk_sec_support import generated_columns
 
 SEC, TWIN = "Term_UK_SEC", "Term_UK_S"
 TABLE, PIPELINE = "model_point_table_sec.csv", "wop_pipeline_sec.csv"
@@ -3812,7 +3813,7 @@ EXTRACT_LABELS = tuple(range(114, 100, -1))
 def _extract():
     """The committed table and pipeline as an administration extract would hold them:
     without the generator's columns, and labelled :data:`EXTRACT_LABELS`."""
-    extract = _committed().drop(columns=list(GENERATED_COLUMNS))
+    extract = _committed().drop(columns=list(generated_columns(SPEC)))
     relabel = dict(zip(extract.index, EXTRACT_LABELS))
     extract.index = pd.Index(EXTRACT_LABELS, name="point_id")
     pipeline = _committed_pipeline()
@@ -3839,7 +3840,7 @@ def test_an_in_force_extract_needs_none_of_the_generator_columns(sec_model, tmp_
     model = mx.read_model(folder, name=_name("extract"))
     try:
         table = model.Data.model_point_table()
-        assert not set(GENERATED_COLUMNS) & set(table.columns)
+        assert not set(generated_columns(SPEC)) & set(table.columns)
         assert list(table.index) == list(EXTRACT_LABELS)
         for key, base_key in zip(point_keys(model), point_keys(sec_model)):
             mine, base = projection(model, key), projection(sec_model, base_key)

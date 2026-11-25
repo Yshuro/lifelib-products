@@ -153,12 +153,13 @@ import pytest
 
 from uk_registry import model_path, point_keys, projection
 from uk_sec_support import (
-    GENERATED_COLUMNS, SEC_SPECS, TWIN_EXEMPT_DEFAULT, build_sec_table, check_generated,
+    SEC_SPECS, TWIN_EXEMPT_DEFAULT, build_sec_table, check_generated,
     codes, fingerprint_mismatches, frame_mismatches, full_sweep, sweep, temp_inputs,
     twin_mismatches)
 from uk_sec_support import (
     compiled_case, compiled_mismatches, exact_here, label_mismatches,
     labels_refusing_non_text, reporting_cells, run_compiled)
+from uk_sec_support import generated_columns
 
 SEC, TWIN = "WOL_UK_SEC", "WOL_UK_S"
 TABLE = "model_point_table_sec.csv"
@@ -4340,7 +4341,7 @@ EXTRACT_LABELS = tuple(range(100 + len(_committed()), 100, -1))
 def _extract():
     """The committed table as an administration extract would hold it: without the
     generator's columns, and labelled :data:`EXTRACT_LABELS`."""
-    extract = _committed().drop(columns=list(GENERATED_COLUMNS))
+    extract = _committed().drop(columns=list(generated_columns(SPEC)))
     extract.index = pd.Index(EXTRACT_LABELS, name="point_id")
     return extract
 
@@ -4350,8 +4351,9 @@ def test_an_in_force_extract_needs_none_of_the_generator_columns(sec_model, tmp_
     """The model reads the in-force interface and S's columns, never where a row came from,
     and names each point by its label, wherever the row stands.
 
-    ``row_kind``, ``source_policy_id`` and ``source_mth`` record how the generator made each
-    shipped row, and an administration extract carries none of them.  Read without them,
+    ``row_kind``, ``source_policy_id``, ``source_mth`` and ``source_refs`` record how the
+    generator made each shipped row, from which S row, at which month and under which
+    References, and an administration extract carries none of them.  Read without them,
     and with every label changed, every point projects what the committed table projects,
     in ``result_cf`` and ``result_pols``, to 1e-12, and ``run_sec.py``, run beside that
     extract, prints the point without saying where it came from.  On every shipped row
@@ -4367,7 +4369,7 @@ def test_an_in_force_extract_needs_none_of_the_generator_columns(sec_model, tmp_
     model = mx.read_model(folder, name=_name("extract"))
     try:
         table = model.Data.model_point_table()
-        assert not set(GENERATED_COLUMNS) & set(table.columns)
+        assert not set(generated_columns(SPEC)) & set(table.columns)
         assert list(table.index) == list(EXTRACT_LABELS)
         for key, base_key, label in zip(point_keys(model), point_keys(sec_model),
                                         _committed().index):

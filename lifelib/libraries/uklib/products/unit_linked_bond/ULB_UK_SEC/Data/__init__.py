@@ -187,8 +187,9 @@ def model_point_table():
     ``basiclife.BasicTerm_SE``, and the three of a bond's opening state, ``av_pp_init``,
     ``wd_cum_pp_init`` and ``allowance_cum_pp_init``. The rest are :mod:`~.ULB_UK_S`'s, but ``pols_if_init``, which
     ``policy_count`` replaces, ``uf_init``, which is ``av_pp_init`` renamed, and
-    ``row_kind``, ``source_policy_id`` and ``source_mth``, which record where the generator
-    took each shipped row from and which no formula reads.
+    ``row_kind``, ``source_policy_id``, ``source_mth`` and ``source_refs``, which record
+    where the generator took each shipped row from, and under what References, and which
+    no formula reads.
 
     The checks run over the whole table at once, and the first that fails raises
     ``ValueError``, naming the missing column or every point it fails on:
