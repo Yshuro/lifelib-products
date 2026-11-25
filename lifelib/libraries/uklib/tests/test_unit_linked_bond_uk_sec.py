@@ -149,7 +149,7 @@ from uk_sec_support import (
 from uk_sec_support import (
     compiled_case, compiled_mismatches, exact_here, labels_refusing_non_text,
     reporting_cells, run_compiled)
-from uk_sec_support import _ULB_CODED, _ulb_c4_also
+from uk_sec_support import _ULB_CODED, _LIVES, _ulb_c4_also
 from uk_sec_support import generated_columns
 
 SEC, TWIN = "ULB_UK_SEC", "ULB_UK_S"
@@ -5353,61 +5353,70 @@ def _mismatch_lines(found):
 
 
 # The cells C4 asks at every code, each with the names of the codes it takes, read from the
-# model's own References (_code): the harness's, which its _ulb_c4_also, the spec's
-# c4_also, asks in every month of every row.  What each takes is derived in modelx, row by
-# row, and these must name exactly that (test_the_c4_comparisons_ask_every_code_on_every_
-# row).
+# model's own References (_code): the harness's, which its _ulb_c4_also, the spec's c4_also,
+# asks in every month of every row.  And the cells of a life, as (those of a life alone,
+# those of a month and a life), of which the bond has none: its one life is read by cells
+# of no life.  What each takes is derived in modelx, row by row, and these must name
+# exactly that (test_the_c4_comparisons_ask_every_code_on_every_row).
 CODED = _ULB_CODED
+CELLS_OF_A_LIFE = ((), ())
 
 
 def _coded_cells(proj):
-    """The cells of ``proj`` that take a code, each of a month and a timing or a kind, read
-    from the space, so that a cell of a code added later is held with the others."""
-    return {name for name, cells in proj.cells.items()
-            if tuple(cells.parameters) in (("t", "timing"), ("t", "kind"))}
+    """``{cell: its parameters}`` for every cell of ``proj`` that takes a code or a life:
+    each of a month and one more parameter, a timing, a kind or a life, and each of a life
+    alone, read from the space, so that such a cell added later, under whatever name, is
+    held with the others."""
+    return {name: tuple(cells.parameters) for name, cells in proj.cells.items()
+            if (len(cells.parameters) == 2 and cells.parameters[0] == "t")
+            or tuple(cells.parameters) == ("life",)}
 
 
 def _inner_width():
-    """The one inner width ``spec_sec.py`` gives the caches of ``t`` and a code."""
+    """The one inner width ``spec_sec.py`` gives the caches of ``t`` and a code or a life,
+    and those of a life alone."""
     source, _ = _comment("spec_sec.py")
     sizes = ast.literal_eval(source)["spaces"]["Projection"]["cells_param_size"]
     (width,) = {size[1] for size in sizes.values() if isinstance(size, tuple)}
+    assert sizes.get("life", width) == width, sizes
     return width
 
 
 def _codes_taken(proj, width):
-    """``({cell: codes}, lines)``: the codes each cell of a code takes on point ``proj``,
-    in modelx, and a line for each other raise.
+    """``({cell: codes}, lines)``: the codes or lives each cell of :func:`_coded_cells`
+    takes on point ``proj``, in modelx, and a line for each other raise.
 
-    Each cell of :func:`_coded_cells` is asked every code of the caches' inner width,
-    ``width``, in the point's first month on the books, and the codes it takes are those it
-    does not refuse with ``invalid timing`` or ``invalid kind``.  A refused call caches
-    nothing.
+    Each such cell is asked every argument of the caches' inner width, ``width``, in the
+    point's first month on the books where it takes a month, and the arguments it takes
+    are those it does not refuse by its parameter's name, ``invalid timing``, ``invalid
+    kind`` or ``invalid life``.  A refused call caches nothing.
     """
     taken, lines, t = {}, [], proj.t_entry()
-    for cell in sorted(_coded_cells(proj)):
+    for cell, parameters in sorted(_coded_cells(proj).items()):
         taken[cell] = set()
         for code in range(width):
+            args = (t, code) if len(parameters) == 2 else (code,)
             try:
-                proj.cells[cell](t, code)
-            except Exception as err:            # a code the cell does not take
-                if not re.search(r"ValueError: invalid (timing|kind)", _raised(err)):
-                    lines.append(f"{cell}({t}, {code}) raised {_raised(err)}")
+                proj.cells[cell](*args)
+            except Exception as err:            # a code or a life the cell does not take
+                if _raised(err) != f"ValueError: invalid {parameters[-1]}":
+                    lines.append(f"{cell}{args} raised {_raised(err)}")
                 continue
             taken[cell].add(code)
     return taken, lines
 
 
 class _Asked:
-    """A stand-in for a point, which records what :func:`_ulb_c4_also` asks of each cell of
-    a code, as (month, code), over the point's frame; its References are the point's own."""
+    """A stand-in for a point, which records what :func:`_ulb_c4_also` asks of each
+    cell of a code or of a life, the arguments of each call, over the point's frame; its
+    References are the point's own."""
 
     def __init__(self, proj):
         self.refs, self.months, self.asked = proj.refs, proj.proj_len(), {}
         self.cells = {name: self._cell(name) for name in _coded_cells(proj)}
 
     def _cell(self, name):
-        return lambda t, code: self.asked.setdefault(name, set()).add((t, code))
+        return lambda *args: self.asked.setdefault(name, set()).add(args)
 
     def proj_len(self):
         return self.months
@@ -5417,23 +5426,28 @@ def test_the_c4_comparisons_ask_every_code_on_every_row(spliced):
     """C4's ``also`` asks every code its cells take, in every month of every row.
 
     Nothing in a comparison shows what it leaves out: dropped from :func:`_ulb_c4_also`, a
-    code is simply not compared.  So the cells of a code are read from the model, each of a
-    month and a timing or a kind (:func:`_coded_cells`), and what each takes is derived in
-    modelx, not read from :data:`CODED`: on a fresh read of the committed model, and on
-    every row of the splice grid this run selects, the twins, the rows restated in force
-    and the future rows among them, each such cell is asked every code in the caches' one
-    inner width, 0 to 7, in the row's first month on the books, and the codes it takes
-    are those it does not refuse, ``invalid timing`` or ``invalid kind``
-    (:func:`_codes_taken`); :data:`CODED` must name exactly those cells and codes, by the
-    model's own References, row by row.  Then :func:`_ulb_c4_also` is run on a stand-in of
-    each of those rows (:class:`_Asked`), one at a time: it must ask each cell at every
-    code the cell takes on the row, in every month of the frame and the month after it,
-    and no other, so that a code left out on one kind of row fails here, where a union over
-    the rows would pass it.  And it must be the spec's ``c4_also``, which the conventions'
-    C4 on the committed points passes (``uk_sec_support.spec_c4_also``).  Needs no
-    compiler.
+    code is simply not compared.  So the cells of a code or of a life are read from the
+    model, each of a month and one more parameter, a timing, a kind or a life, and each of a
+    life alone (:func:`_coded_cells`), and what each takes is derived in modelx, not read
+    from :data:`CODED`: on a fresh read of the committed model, and on every row of the
+    splice grid this run selects, the twins, the rows restated in force and the future rows
+    among them, each such cell is asked every argument in the caches' one inner width, 0 to
+    7, in the row's first month on the books, and the arguments it takes are those it does
+    not refuse, ``invalid timing``, ``invalid kind`` or ``invalid life``
+    (:func:`_codes_taken`).  :data:`CODED` must name exactly those cells and codes, by the
+    model's own References, row by row, and :data:`CELLS_OF_A_LIFE` the cells of a life, of
+    which the bond has none, so that one added later fails here until the ``also`` asks it.
+    Then :func:`_ulb_c4_also` is run on a stand-in of each of those rows (:class:`_Asked`),
+    one at a time: it must ask each cell at every code the cell takes on the row, in every
+    month of the frame and the month after it, and no other, so that a code left out on one
+    kind of row fails here, where a union over the rows would pass it.  And it must be the
+    spec's ``c4_also``, which the conventions' C4 on the committed points passes
+    (``uk_sec_support.spec_c4_also``).  Needs no compiler.
     """
     width, found, rows = _inner_width(), [], 0
+    alone, monthly = CELLS_OF_A_LIFE
+    named_lives = {**dict.fromkeys(alone, ("life",)),
+                   **dict.fromkeys(monthly, ("t", "life"))}
     fresh = mx.read_model(model_path(SEC), name=_name("codes"))
     try:
         for name, model in (("committed", fresh), ("spliced", spliced[1])):
@@ -5442,6 +5456,15 @@ def test_the_c4_comparisons_ask_every_code_on_every_row(spliced):
                 where = f"{name} row {label}"
                 taken, lines = _codes_taken(p, width)
                 found += [f"{where}: {line}" for line in lines]
+                of_a_life = {cell: parameters
+                             for cell, parameters in _coded_cells(p).items()
+                             if parameters[-1] == "life"}
+                lives = {cell: taken.pop(cell) for cell in of_a_life}
+                if of_a_life != named_lives or not all(
+                        took <= set(_LIVES) for took in lives.values()):
+                    found.append(f"{where}: the cells of a life are {of_a_life}, taking "
+                                 f"{lives} in modelx, CELLS_OF_A_LIFE names "
+                                 f"{CELLS_OF_A_LIFE}")
                 named = {cell: {_code(p, n) for n in names}
                          for cell, names in CODED.items()}
                 if named != taken:
@@ -5452,10 +5475,14 @@ def test_the_c4_comparisons_ask_every_code_on_every_row(spliced):
                 months = range(p.proj_len() + 1)
                 want = {cell: {(t, code) for t in months for code in codes}
                         for cell, codes in taken.items()}
+                want.update({cell: ({(life,) for life in _LIVES} if parameters == ("life",)
+                                    else {(t, life) for t in months for life in _LIVES})
+                             for cell, parameters in of_a_life.items()})
                 if stand_in.asked != want:
                     apart = {cell: sorted(stand_in.asked.get(cell, set())
                                           ^ want.get(cell, set()))[:4]
-                             for cell in {*want, *stand_in.asked}}
+                             for cell in {*want, *stand_in.asked}
+                             if stand_in.asked.get(cell) != want.get(cell)}
                     found.append(f"{where}: asked or missed {apart}")
                 rows += 1
                 if name != "committed":

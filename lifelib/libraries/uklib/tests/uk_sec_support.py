@@ -1888,18 +1888,20 @@ def _wp_claims_total(name, args):
 
 # C4's also, each model's SecSpec c4_also (UKLIB-SEC-PLAN.md, M15).  full_sweep evaluates
 # every cell without parameters and every cell of t alone, at every month of the frame and
-# the month after it, but it reaches a cell of a code only at the codes some swept cell
-# asks of it: no formula reads the count at AFT_DECR, the end of the month, for one.  So
-# each model's also asks what no swept cell reads.  Six ask every cell that takes a timing
-# or a kind at every code it takes, in every month of the frame and the month after it,
-# on every row, as each sample_sec.py calls them, IP's the cohorts besides; PA's, whose
-# sweep reaches every timing and kind but the payments to date's, asks those and the cells
-# of a life no swept cell reads.  Each cell of a model's _*_CODED takes a code of the
-# names it lists, read from the point's own References (_code_of); each code is one its
-# cell takes, so no call raises.  The conventions' C4 on the committed points passes each
-# through the spec (uk_sec_support.spec_c4_also), and each product module passes the same
-# to its own C4 comparisons, and holds it, row by row, to the codes each cell takes in
-# modelx (test_..._uk_sec.py's test of C4's codes).
+# the month after it, but it reaches a cell of a code or of a life only at the arguments
+# some swept cell asks of it: no formula reads the count at AFT_DECR, the end of the month,
+# for one, nor a life's labels.  So each model's also asks what no swept cell reads.  Six
+# ask every cell that takes a timing or a kind at every code it takes, in every month of
+# the frame and the month after it, on every row, as each sample_sec.py calls them, IP's
+# the cohorts besides, and Term's and CI's every cell of a life at both lives
+# (_ask_every_life); PA's, whose sweep reaches every timing and kind but the payments to
+# date's, asks those and the cells of a life no swept cell reads.  Each cell of a model's
+# _*_CODED takes a code of the names it lists, read from the point's own References
+# (_code_of); each code is one its cell takes, so no call raises.  The conventions' C4 on
+# the committed points passes each through the spec (uk_sec_support.spec_c4_also), and
+# each product module passes the same to its own C4 comparisons, and holds it, row by row,
+# to the codes and lives each cell takes in modelx (test_..._uk_sec.py's test of C4's
+# codes).
 
 
 def _code_of(proj, label):
@@ -1920,18 +1922,60 @@ def _ask_every_code(proj, coded):
                 proj.cells[cell](t, _code_of(proj, name))
 
 
+# The lives of a model of two, which every call of a cell of a life passes.
+_LIVES = (1, 2)
+
+
+def _ask_every_life(proj, alone, monthly):
+    """Ask each cell of a life at both lives, :data:`_LIVES`: each of ``alone``, a cell of
+    a life alone, once, and each of ``monthly``, a cell of a month and a life, in every
+    month of ``proj``'s frame and the month after it, ``t = 0 .. proj_len()``, as
+    :func:`_ask_every_code` asks the cells of a code.
+
+    A single life's point refuses its second life, ``invalid life``, wherever a cell reads
+    it: its issue age, its row of the table and its attained age always, and its rates in
+    cover, which are 0 outside it before they read a life.  Such a call is passed over.  It
+    caches nothing, so it enters no expectation, and the compiled run, which makes only
+    the calls expected, never makes it.  Any other raise is raised, since an ``also`` must
+    not raise.
+    """
+    def ask(name, args):
+        try:
+            proj.cells[name](*args)
+        except Exception as err:            # a second life a single life refuses
+            if _error_text(err) != "ValueError: invalid life":
+                raise
+
+    for name in alone:
+        for life in _LIVES:
+            ask(name, (life,))
+    for t in range(proj.proj_len() + 1):
+        for name in monthly:
+            for life in _LIVES:
+                ask(name, (t, life))
+
+
 # Term_UK_SEC's cells of a code: the count's four timings and the claims' three kinds and
 # their total.  No formula reads the count at AFT_DECR, nor at BEF_LAPSE in the month after
 # the frame or before issue; the reports reach every kind.
 _TERM_CODED = {"pols_if_at": ("BEF_NB", "BEF_DECR", "BEF_LAPSE", "AFT_DECR"),
                "claims": ("DEATH", "FIB", "LAPSE", "ALL")}
 
+# Term_UK_SEC's cells of a life, as (those of a life alone, those of a month and a life):
+# each life's issue age, labels and row of the mortality table, and its attained age and
+# two rates.  No formula reads a label, nor the age outside cover, nor on a single life the
+# rates' second life, 0 outside cover.
+_TERM_LIVES = (("age_at_entry", "sex", "smoker", "mort_group"),
+               ("age", "mort_rate_base", "mort_rate_life"))
+
 
 def _term_c4_also(proj):
     """What C4 compares of a ``Term_UK_SEC`` point beyond its full sweep (M15): every cell
-    of :data:`_TERM_CODED` at every code it takes, at ``t = 0 .. proj_len()``, the count at
-    ``AFT_DECR`` among them, as ``sample_sec.py`` calls it."""
+    of :data:`_TERM_CODED` at every code it takes, and every cell of a life,
+    :data:`_TERM_LIVES`, at both lives, at ``t = 0 .. proj_len()``, the count at
+    ``AFT_DECR`` and each life's labels among them, as ``sample_sec.py`` calls them."""
     _ask_every_code(proj, _TERM_CODED)
+    _ask_every_life(proj, *_TERM_LIVES)
 
 
 # CI_UK_SEC's cells of a code: the count's four timings, the three benefits per policy and
@@ -1942,12 +1986,21 @@ _CI_CODED = {"pols_if_at": ("BEF_NB", "BEF_DECR", "BEF_LAPSE", "AFT_DECR"),
              "benefit_pp": ("MAIN", "AP", "CHILD"),
              "claims": ("MAIN", "AP", "CHILD", "LAPSE", "ALL")}
 
+# CI_UK_SEC's cells of a life, as (those of a life alone, those of a month and a life):
+# each life's issue age, labels and row of the rate tables, and its attained age and four
+# rates.  No formula reads a label, nor the age outside cover, nor on a single life the
+# rates' second life, 0 outside cover.
+_CI_LIVES = (("age_at_entry", "sex", "smoker", "rate_group"),
+             ("age", "ci_rate_base", "mort_rate", "ci_rate", "claim_rate_life"))
+
 
 def _ci_c4_also(proj):
     """What C4 compares of a ``CI_UK_SEC`` point beyond its full sweep (M15): every cell of
-    :data:`_CI_CODED` at every code it takes, at ``t = 0 .. proj_len()``, each benefit
-    per policy in the month after the frame among them."""
+    :data:`_CI_CODED` at every code it takes, and every cell of a life,
+    :data:`_CI_LIVES`, at both lives, at ``t = 0 .. proj_len()``, each benefit per policy in
+    the month after the frame and each life's labels among them."""
     _ask_every_code(proj, _CI_CODED)
+    _ask_every_life(proj, *_CI_LIVES)
 
 
 # ULB_UK_SEC's cells of a code: the count's four timings and the fund's four, which share

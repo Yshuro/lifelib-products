@@ -443,7 +443,8 @@ def test_the_compiled_model_computes_what_modelx_computes(name, sec_build, tmp_p
     frame and the month after, and with them what the model's spec adds, its ``c4_also``
     (``uk_sec_support.spec_c4_also``): every cell of a code at every code it takes, in
     every month, the codes no swept cell reads among them, such as the count at the end of
-    the month.  Every value modelx caches is compared with the compiled model's at the same
+    the month, and on term assurance and critical illness every cell of a life at both
+    lives.  Every value modelx caches is compared with the compiled model's at the same
     arguments, to 1e-12 relative, floored at the cell's magnitude, or identically on
     x86-64, where the compiled model does modelx's arithmetic in modelx's order
     (``uk_sec_support.exact_here``); a bool or an int must keep its kind, a raise must
