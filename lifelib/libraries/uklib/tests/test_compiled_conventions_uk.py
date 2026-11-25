@@ -27,8 +27,8 @@ product meets it from the commit that moves it there, Term_UK_SEC first (M2):
   at every argument a full modelx sweep caches, with the codes no swept cell reads, which
   the model's spec adds (its ``c4_also``), every raise and every ``Data`` array, bit for
   bit on x86-64.  A test with no compiler holds the comparison to the spec's ``also``,
-  and another, reading the sources, holds every C4 comparison of each product's module to
-  the model's own.
+  and another, reading the sources, holds every C4 comparison of each product's module,
+  and of each harness function the module reaches it through, to the model's own.
 * The release: ``run_sec.py --block``, run compiled, holds one point's ItemSpace at a time
   (F5, K2).
 * The block's sum: ``run_sec.py``'s running sum is ``groupby``'s, bit for bit, on the
@@ -487,6 +487,12 @@ def test_c4_on_the_committed_points_passes_the_spec_s_also(name, monkeypatch, tm
     assert handed == [(name, {"also": SEC_SPECS[name].c4_also})], handed
 
 
+# C4's comparison, and the harness whose functions a module may reach it through, each held
+# as the module's own helpers are.
+C4 = "compiled_mismatches"
+HARNESS = LIB / "tests" / "uk_sec_support.py"
+
+
 def _calls_of(tree, name):
     """``(call, functions)`` for every call of the function ``name`` in ``tree``, with the
     functions it sits in, outermost first."""
@@ -512,7 +518,9 @@ def _parameters(function):
 
 def _argument(call, function, parameter):
     """What ``call`` passes ``function``'s ``parameter``, by keyword or by place, or its
-    default where the call leaves it out: an expression, or ``None`` where there is none."""
+    default where the call leaves it out: an expression, or ``None`` where there is none.
+    A call that unpacks ``*`` or ``**`` is refused before this reads it (:func:`_unpacked`).
+    """
     given = {keyword.arg: keyword.value for keyword in call.keywords}
     if parameter in given:
         return given[parameter]
@@ -525,77 +533,200 @@ def _argument(call, function, parameter):
     return defaults.get(parameter)
 
 
-def _calls_also(function, own):
-    """Whether ``function``'s body calls the function named ``own``."""
-    return any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-               and node.func.id == own for node in ast.walk(function))
+def _calls_any(node, names):
+    """Whether ``node`` holds, at any depth, a call of a function named in ``names``."""
+    return any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+               and n.func.id in names for n in ast.walk(node))
 
 
-def _reaches(tree, own, value, functions, none=False, seen=frozenset()):
-    """Whether ``value``, an expression inside ``functions`` of the module ``tree``, is
-    always the model's own ``also``, the function named ``own``, or a function that calls
-    it; with ``none``, ``None`` passes too, as the first operand of ``also or own`` may.
+def _reaching(trees, target):
+    """The names of the functions of ``trees`` that reach the function ``target``: each that
+    calls it, or a function that does, at any depth, by name; ``target`` among them."""
+    functions = [node for tree in trees for node in ast.walk(tree)
+                 if isinstance(node, ast.FunctionDef)]
+    names, grown = {target}, True
+    while grown:
+        grown = False
+        for function in functions:
+            if function.name not in names and _calls_any(function, names):
+                names.add(function.name)
+                grown = True
+    return names
 
-    ``own`` is ``None`` for the conventions, where the model's own is the spec's, which
-    ``spec_c4_also`` of the test's model returns.  A parameter of a helper reaches it
-    where every call of the helper passes, or leaves as its default, what does.
+
+def _returns_in(node):
+    """Whether ``node`` returns, at any depth outside a function or lambda it defines."""
+    if isinstance(node, ast.Return):
+        return True
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+        return False
+    return any(_returns_in(child) for child in ast.iter_child_nodes(node))
+
+
+def _stands_in(function, own):
+    """Whether ``function``, passed as ``also``, asks the model's own of every point it is
+    given: a statement of its own body, in no ``if``, loop or ``try``, calls ``own`` on the
+    function's first parameter alone, and no statement before it returns."""
+    first = _parameters(function)[:1]
+    for statement in function.body:
+        call = statement.value if isinstance(statement, ast.Expr) else None
+        if (isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+                and call.func.id == own and not call.keywords and first
+                and [ast.unparse(a) for a in call.args] == first):
+            return True
+        if _returns_in(statement):
+            return False
+    return False
+
+
+def _reaches(trees, own, value, place, none=False, seen=frozenset()):
+    """Whether ``value``, an expression at ``place``, ``(tree, the functions it sits in)``,
+    is always the model's own ``also``, the function named ``own``, or a function that
+    stands in for it (:func:`_stands_in`); with ``none``, ``None`` passes too, as the
+    first operand of ``also or own`` may.
+
+    ``trees`` are the module's and the harness's.  ``own`` is ``None`` for the
+    conventions, where the model's own is the spec's, which ``spec_c4_also`` of the test's
+    model returns.  A parameter of a helper reaches it where every call of the helper, in
+    the module, and in the harness for a helper there, passes, or leaves as its default,
+    what does; a parameter shadows a function of its name, ``own`` among them.
     """
+    tree, functions = place
     if value is None or isinstance(value, ast.Constant) and value.value is None:
         return none
     if isinstance(value, ast.BoolOp) and isinstance(value.op, ast.Or):
         *first, last = value.values
-        return (all(_reaches(tree, own, v, functions, True, seen) for v in first)
-                and _reaches(tree, own, last, functions, none, seen))
+        return (all(_reaches(trees, own, v, place, True, seen) for v in first)
+                and _reaches(trees, own, last, place, none, seen))
     if (isinstance(value, ast.Call) and isinstance(value.func, ast.Name)
             and value.func.id == "spec_c4_also"):
         return (own is None and len(value.args) == 1 and isinstance(value.args[0], ast.Name)
                 and any(value.args[0].id in _parameters(f) for f in functions))
     if not isinstance(value, ast.Name):
         return False
-    if value.id == own:
-        return True
     for function in reversed(functions):
         if value.id in _parameters(function):
-            key = (function.name, value.id)
+            key = (id(function), value.id)
+            callers = trees if tree is not trees[0] else trees[:1]
             return key not in seen and all(
-                _reaches(tree, own, _argument(call, function, value.id), outer, none,
-                         seen | {key})
-                for call, outer in _calls_of(tree, function.name))
-        local = [node for node in ast.walk(function)
-                 if isinstance(node, ast.FunctionDef) and node.name == value.id]
+                _reaches(trees, own, _argument(call, function, value.id), (t, outer),
+                         none, seen | {key})
+                for t in callers for call, outer in _calls_of(t, function.name))
+        local = [node for node in ast.walk(function) if isinstance(node, ast.FunctionDef)
+                 and node.name == value.id and node is not function]
         if local:
-            return _calls_also(local[0], own)
+            return _stands_in(local[0], own)
+    if value.id == own:
+        return True
     top = [node for node in tree.body
            if isinstance(node, ast.FunctionDef) and node.name == value.id]
-    return bool(top) and _calls_also(top[0], own)
+    return bool(top) and _stands_in(top[0], own)
 
 
-def _also_faults(path, own):
-    """A line for each call of ``compiled_mismatches`` in the module at ``path`` that does
-    not pass ``also`` the model's own (:func:`_reaches`), and for an ``own`` the module
-    does not import from ``uk_sec_support`` alone; none where every call does."""
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+def _bindings(tree, name):
+    """The lines where ``tree`` binds ``name`` but by importing it, as it is, from
+    ``uk_sec_support``: as a function or class, a parameter, a target, a deletion, another
+    import or alias, an exception's name, or in a ``global`` or ``nonlocal``."""
+    lines = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            bound = node.name == name
+        elif isinstance(node, ast.arg):
+            bound = node.arg == name
+        elif isinstance(node, ast.Name):
+            bound = node.id == name and not isinstance(node.ctx, ast.Load)
+        elif isinstance(node, ast.ExceptHandler):
+            bound = node.name == name
+        elif isinstance(node, (ast.Global, ast.Nonlocal)):
+            bound = name in node.names
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            bound = any((a.asname or a.name.split(".")[0]) == name
+                        and not (isinstance(node, ast.ImportFrom)
+                                 and node.module == "uk_sec_support"
+                                 and a.name == name and a.asname is None)
+                        for a in node.names)
+        else:
+            bound = False
+        if bound:
+            lines.append(node.lineno)
+    return lines
+
+
+def _unpacked(tree, label, names):
+    """A line for each call in ``tree`` of a function named in ``names`` that unpacks ``*``
+    or ``**``, whose ``also`` no reading can see."""
+    return [f"{label}:{node.lineno}: {node.func.id} is called with * or ** unpacking"
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id in names
+            and (any(isinstance(a, ast.Starred) for a in node.args)
+                 or any(k.arg is None for k in node.keywords))]
+
+
+def _uncalled(tree, label, names):
+    """A line for each use in ``tree`` of a function named in ``names`` but a call of it by
+    its name, a reference passed on or reached through an attribute among them."""
+    called = {id(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)}
+    return [f"{label}:{node.lineno}: {getattr(node, 'id', None) or node.attr} is used, "
+            f"not called by its name"
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Name) and node.id in names
+            and isinstance(node.ctx, ast.Load) and id(node) not in called
+            or isinstance(node, ast.Attribute) and node.attr in names]
+
+
+def _also_faults(path, own, harness):
+    """A line for each way a C4 comparison of the module at ``path`` may pass
+    ``compiled_mismatches`` an ``also`` other than the model's own; none where it can pass
+    no other.
+
+    ``own`` and ``compiled_mismatches`` must be imported from ``uk_sec_support`` as they are
+    and bound nowhere else in the module (:func:`_bindings`).  No call of a function that
+    reaches C4, in the module or in the harness, ``harness``'s tree, may unpack ``*`` or
+    ``**``, and the module may use each only by calling it by its name.  Then every call of
+    ``compiled_mismatches`` in the module, and in each function of the harness the module
+    reaches it through, must pass ``also`` what is always the model's own
+    (:func:`_reaches`).
+    """
+    module = ast.parse(path.read_text(encoding="utf-8"))
+    trees = (module, harness)
     found = []
-    if own is not None:
+    for name in (own, C4) if own is not None else (C4,):
         imported = any(isinstance(node, ast.ImportFrom) and node.module == "uk_sec_support"
-                       and any(a.name == own and a.asname is None for a in node.names)
-                       for node in tree.body)
-        defined = [node.lineno for node in ast.walk(tree)
-                   if isinstance(node, ast.FunctionDef) and node.name == own
-                   or isinstance(node, ast.Name) and node.id == own
-                   and isinstance(node.ctx, ast.Store)]
-        if not imported or defined:
-            found.append(f"{path.name}: {own} is not uk_sec_support's alone: imported "
-                         f"{imported}, bound at lines {defined}")
-    calls = _calls_of(tree, "compiled_mismatches")
-    if not calls:
-        found.append(f"{path.name}: no call of compiled_mismatches")
-    for call, functions in calls:
+                       and any(a.name == name and a.asname is None for a in node.names)
+                       for node in module.body)
+        bound = _bindings(module, name)
+        if not imported or bound:
+            found.append(f"{path.name}: {name} is not uk_sec_support's alone: imported "
+                         f"{imported}, bound at lines {bound}")
+    reaching = _reaching(trees, C4)
+    found += _unpacked(module, path.name, reaching)
+    found += _unpacked(harness, HARNESS.name, reaching)
+    found += _uncalled(module, path.name, reaching)
+    used = {node.func.id for node in ast.walk(module) if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)}
+    helpers = [node for node in harness.body if isinstance(node, ast.FunctionDef)
+               and node.name in used & reaching - {C4}]
+    sites = [(module, f"{path.name}:{call.lineno}", call, functions)
+             for call, functions in _calls_of(module, C4)]
+    seen = set()
+    while helpers:
+        helper = helpers.pop()
+        if helper.name in seen:
+            continue
+        seen.add(helper.name)
+        sites += [(harness, f"{HARNESS.name}:{call.lineno}, reached from {path.name}",
+                   call, [helper, *functions])
+                  for call, functions in _calls_of(helper, C4)]
+        helpers += [node for node in harness.body if isinstance(node, ast.FunctionDef)
+                    and node.name in reaching - {C4} and _calls_any(helper, {node.name})]
+    if not sites:
+        found.append(f"{path.name}: no call of {C4}")
+    for tree, where, call, functions in sites:
         given = {keyword.arg: keyword.value for keyword in call.keywords}
-        where = f"{path.name}:{call.lineno}"
         if "also" not in given:
-            found.append(f"{where}: compiled_mismatches is passed no also")
-        elif not _reaches(tree, own, given["also"], functions):
+            found.append(f"{where}: {C4} is passed no also")
+        elif not _reaches(trees, own, given["also"], (tree, functions)):
             found.append(f"{where}: also={ast.unparse(given['also'])} is not always "
                          f"{own or 'spec_c4_also of the model'}")
     return found
@@ -607,24 +738,30 @@ def test_every_c4_comparison_passes_the_model_s_own_also():
 
     Nothing in a comparison shows what it leaves out: a call that drops ``also=``, or
     passes ``None``, compares fewer calls, and passes.  So every call of
-    ``compiled_mismatches`` in each SEC model's module, ``test_<product>_uk_sec.py``, must
-    pass ``also`` what is always the model's own, the function its spec names, which the
-    module imports from ``uk_sec_support`` and binds nowhere else (:func:`_also_faults`):
-    that name; a function the call's helper defines that calls it, as income protection's
-    ``_c4`` does; ``also or`` it, where every call of the helper leaves ``also`` its
-    default ``None``, as the pension annuity's ``_c4_chunks`` has it; or a parameter of a
-    helper every call of which passes one of these (:func:`_reaches`).  And C4 on the
+    ``compiled_mismatches`` in each SEC model's module, ``test_<product>_uk_sec.py``, and in
+    each function of ``uk_sec_support.py`` the module reaches it through, must pass
+    ``also`` what is always the model's own, the function its spec names, which the module
+    imports from ``uk_sec_support`` and binds nowhere else, as no parameter or local name
+    either (:func:`_also_faults`): that name; a function that stands in for it, one the
+    module or the call's helper defines, whose own body asks it of the point it is given
+    as a statement in no ``if``, loop or ``try``, as income protection's ``_c4`` does;
+    ``also or`` it, where every call of the helper leaves ``also`` its default ``None``, as
+    the pension annuity's ``_c4_chunks`` has it; or a parameter of a helper, the module's
+    or the harness's, every call of which passes one of these (:func:`_reaches`).  No call
+    of a function that reaches C4 may unpack ``*`` or ``**``, which would hide what it
+    passes, and the module may use one only by calling it by its name.  And C4 on the
     committed points here must pass ``spec_c4_also`` of the model under test, which
     :func:`test_c4_on_the_committed_points_passes_the_spec_s_also` holds to the spec's.
     Read statically, so it needs no compiler.
     """
+    harness = ast.parse(HARNESS.read_text(encoding="utf-8"))
     found = []
     for name in SEC_MODELS:
         spec = SEC_SPECS.get(name)
         assert spec is not None and spec.c4_also is not None, f"{name} gives C4 no also"
         module = LIB / "tests" / f"test_{model_path(name).parent.name}_uk_sec.py"
-        found += _also_faults(module, spec.c4_also.__name__)
-    found += _also_faults(pathlib.Path(__file__), None)
+        found += _also_faults(module, spec.c4_also.__name__, harness)
+    found += _also_faults(pathlib.Path(__file__), None, harness)
     assert not found, "\n".join(found)
 
 
@@ -919,23 +1056,53 @@ def test_the_test_job_runs_the_harness_check():
 
 # The guard of a sum's bits in each SEC module that holds a total to sum()'s last bit: it
 # skips the rest of its test where sum() adds floats left to right, on Python 3.11, and
-# the test job runs every test that calls it on the one leg the condition names.
+# the test job runs every test that reaches it on the one leg the condition names.
 SUMS_GUARD = "_hold_the_sums_bits"
 ON_3_11 = ("matrix.python-version=='3.11'&&matrix.os=='ubuntu-latest'",
            "matrix.os=='ubuntu-latest'&&matrix.python-version=='3.11'")
 
+# Each module's test of its guard, which reaches the guard to hold it.
+GUARD_TEST = "test_the_sums_bits_skip_only_where_sum_adds_left_to_right"
+
+# How many assertions each test the 3.11 step runs makes before it first reaches the
+# guard, by product: what rests on no sum, which on Python 3.11 it holds before it skips,
+# saying "the rest was held".  Pinned, so that the guard moved before one of them, or one
+# moved past the guard, fails on every Python, as a test given the guard later fails
+# until it is pinned here.
+HELD_BEFORE_THE_GUARD = {
+    "term_assurance": {GUARD_TEST: 1, "test_the_ledger_residual_is_s_own_bit_for_bit": 2},
+    "critical_illness": {GUARD_TEST: 1, "test_the_all_total_is_s_total_bit_for_bit": 6},
+    "income_protection": {GUARD_TEST: 1, "test_the_all_total_is_s_total_bit_for_bit": 2,
+                          "test_the_cohort_sums_are_s_sums_bit_for_bit": 1},
+    "with_profits": {GUARD_TEST: 1, "test_the_all_total_is_s_total_bit_for_bit": 5},
+}
+
 
 def _guarded_tests():
-    """``{node id: test}`` for every test of a ``test_*_uk_sec.py`` that calls the guard of
-    the sums' bits, :data:`SUMS_GUARD`, read from the sources, in file order."""
+    """``{node id: (test, reaches)}`` for every test of a ``test_*_uk_sec.py`` that reaches
+    the guard of the sums' bits, :data:`SUMS_GUARD`, directly or through a function of its
+    module that does, at any depth (:func:`_reaching`), read from the sources, in file
+    order; ``reaches`` are the test's calls of the guard and of those functions."""
     found = {}
     for path in sorted((LIB / "tests").glob("test_*_uk_sec.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
+        reaching = _reaching((tree,), SUMS_GUARD)
         for node in tree.body:
-            if (isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
-                    and _calls_also(node, SUMS_GUARD)):
-                found[f"{UK_TESTS}/{path.name}::{node.name}"] = node
+            if not (isinstance(node, ast.FunctionDef) and node.name.startswith("test_")):
+                continue
+            reaches = [call for call in ast.walk(node) if isinstance(call, ast.Call)
+                       and isinstance(call.func, ast.Name) and call.func.id in reaching]
+            if reaches:
+                found[f"{UK_TESTS}/{path.name}::{node.name}"] = (node, reaches)
     return found
+
+
+def _held_before(test, reaches):
+    """How many assertions ``test`` makes before it first reaches the guard, ``reaches``
+    being its calls that do: its ``assert`` statements, at any depth, that come first."""
+    first = min((call.lineno, call.col_offset) for call in reaches)
+    return sum(isinstance(node, ast.Assert) and (node.lineno, node.col_offset) < first
+               for node in ast.walk(test))
 
 
 def _marks(test):
@@ -952,26 +1119,31 @@ def _marks(test):
 
 def test_the_test_job_runs_the_sums_bits_where_sum_adds_left_to_right():
     """CI's ``test`` job has a step that runs, on Python 3.11 on Linux, exactly the tests
-    that call the guard of the sums' bits, by node id (UKLIB-SEC-PLAN.md, M15).
+    that reach the guard of the sums' bits, by node id, and nothing else
+    (UKLIB-SEC-PLAN.md, M15).
 
-    A test that holds a total to ``sum``'s last bit calls :data:`SUMS_GUARD`, which skips
-    the rest of it where ``sum()`` adds left to right, as on Python 3.11, and goes on where
-    it compensates; each module's test of the guard calls it too.  The modules run in the
-    ``sec_uk`` job alone, on 3.13, so without this step nothing CI runs takes the skip: an
-    assertion resting on ``sum`` moved before the guard would pass in every job.  So the
-    step's condition must be ``matrix.python-version == '3.11' && matrix.os ==
-    'ubuntu-latest'``, its pytest must select no mark, and its node ids must be exactly
-    the tests that call the guard, read from the sources (:func:`_guarded_tests`), each
-    once, so that a test given a guard later fails here until its node id is added.  None
-    may carry a ``cython`` or ``docutils`` mark, which the job installs nothing for; and
-    each must assert something before it first calls the guard, so that on 3.11 it holds
-    what rests on no ``sum``, and does not skip at once with nothing held.  It skips where
-    the workflow is absent, as from a ``lifelib.create()`` copy.
+    A test that holds a total to ``sum``'s last bit reaches :data:`SUMS_GUARD`, directly
+    or through a function of its module, and the guard skips the rest of it where ``sum()``
+    adds left to right, as on Python 3.11, and goes on where it compensates; each module's
+    test of the guard reaches it too.  The modules run in the ``sec_uk`` job alone, on
+    3.13, so without this step nothing CI runs takes the skip: an assertion resting on
+    ``sum`` moved before the guard would pass in every job.  So the step's condition must
+    be ``matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest'``; it must run
+    ``pytest`` with ``-q``, ``-rs`` and node ids alone, any other option failing, ``-k``
+    and ``--deselect`` among them, and under no ``PYTEST_ADDOPTS`` or ``PYTEST_PLUGINS``,
+    since either could leave a test out; and its node ids must be exactly the tests that
+    reach the guard, read from the sources (:func:`_guarded_tests`), each once, so that a
+    test given a guard later fails here until its node id is added.  None may carry a
+    ``cython`` or ``docutils`` mark, which the job installs nothing for.  And each must
+    make before it first reaches the guard as many assertions as
+    :data:`HELD_BEFORE_THE_GUARD` pins for it (:func:`_held_before`), so that on 3.11 it
+    holds what rests on no ``sum``, as its skip says, and does not skip having held less.
+    It skips where the workflow is absent, as from a ``lifelib.create()`` copy.
     """
     if not WORKFLOW.is_file():
         pytest.skip("the test job's workflow is this repository's, and it is absent")
     want = _guarded_tests()
-    assert want, f"no test of a test_*_uk_sec.py calls {SUMS_GUARD}"
+    assert want, f"no test of a test_*_uk_sec.py reaches {SUMS_GUARD}"
     job = _job(WORKFLOW.read_text(encoding="utf-8"), "test")
     assert job is not None, f"{WORKFLOW.name} has no test job"
     runs = [step for step in _steps(job)
@@ -982,26 +1154,33 @@ def test_the_test_job_runs_the_sums_bits_where_sum_adds_left_to_right():
         f"alone, not one")
     step = runs[0]
     assert step.get("continue-on-error", "false") == "false", step
-    marks, ids = _pytest_args(step["run"])
-    assert not marks, f"the step selects the marks {marks}: {step['run']}"
+    for variable in ("PYTEST_ADDOPTS", "PYTEST_PLUGINS"):
+        given = _variable(job, step, variable)
+        assert given is None, f"the 3.11 step runs under {variable} {given!r}"
+    words = shlex.split(step["run"])
+    options = [word for word in words[1:] if word.startswith("-")]
+    ids = [word for word in words[1:] if not word.startswith("-")]
+    assert words[:1] == ["pytest"] and sorted(options) == ["-q", "-rs"], (
+        f"the 3.11 step runs {words[:1]} with the options {options}, not pytest with -q, "
+        f"-rs and node ids alone: {step['run']}")
     twice = sorted({node for node in ids if ids.count(node) > 1})
     missing = [node for node in want if node not in ids]
     extra = [node for node in ids if node not in want]
     assert not (twice or missing or extra), (
-        f"the 3.11 step runs {ids}, and the tests that call {SUMS_GUARD} are "
+        f"the 3.11 step runs {ids}, and the tests that reach {SUMS_GUARD} are "
         f"{list(want)}: add {missing}, remove {extra}, list once {twice}")
-    marked = {node: _marks(test) for node, test in want.items()
+    marked = {node: _marks(test) for node, (test, _) in want.items()
               if {"cython", "docutils"} & set(_marks(test))}
     assert not marked, f"the 3.11 step runs tests the test job cannot: {marked}"
-    unheld = []
-    for node, test in want.items():
-        guards = [call.lineno for call in ast.walk(test)
-                  if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
-                  and call.func.id == SUMS_GUARD]
-        if not any(isinstance(n, ast.Assert) and n.lineno < min(guards)
-                   for n in ast.walk(test)):
-            unheld.append(node)
-    assert not unheld, f"these call {SUMS_GUARD} before asserting anything: {unheld}"
+    pinned = {f"{UK_TESTS}/test_{product}_uk_sec.py::{name}": count
+              for product, tests in HELD_BEFORE_THE_GUARD.items()
+              for name, count in tests.items()}
+    held = {node: _held_before(test, reaches) for node, (test, reaches) in want.items()}
+    apart = {node: (held.get(node), pinned.get(node)) for node in {*held, *pinned}
+             if held.get(node) != pinned.get(node)}
+    assert not apart, (
+        f"the assertions each test makes before it reaches {SUMS_GUARD}, and those "
+        f"HELD_BEFORE_THE_GUARD pins, part: {apart}")
 
 
 def test_the_sec_uk_job_runs_every_sec_module():

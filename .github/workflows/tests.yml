@@ -91,10 +91,12 @@ jobs:
       # Their modules run in the `sec_uk` job alone, on 3.13, where no guard skips, so an
       # assertion resting on sum moved before its guard would be green in every job. This
       # step runs those tests, by node id, and each module's test of its guard, on one leg
-      # of 3.11: the guarded ones skip at the guard, the rest pass. They need neither
-      # modelx-cython nor docutils, which this job does not install, and take about a
-      # minute and a half. test_compiled_conventions_uk.py holds the list to the tests that
-      # call the guard, so that one added later without its node id here fails.
+      # of 3.11: the guarded ones skip at the guard, naming 3.11; IP's cohort sums on the
+      # full grid skip too, as everywhere UKLIB_SEC_FULL is unset; the rest pass. They need
+      # neither modelx-cython nor docutils, which this job does not install, and take about
+      # two minutes. test_compiled_conventions_uk.py holds the step to -q, -rs and the node
+      # ids of the tests that reach the guard, so that one guarded later fails until it is
+      # added here, and pins what each asserts before its guard.
       if: matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest'
       run: >-
         pytest -q -rs
