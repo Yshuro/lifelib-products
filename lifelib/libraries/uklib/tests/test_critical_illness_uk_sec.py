@@ -73,13 +73,16 @@ module holds the rest of the plan's tests (its §5) and the product's own facts:
   the cells' defaulted parameters; the docstrings; the shared input tables; and what the
   default grid reaches.
 * The C step's representation, in modelx: the claims total, a code of its own, is S's
-  total to the last bit, Neumaier's sum written out; each pivot array is S's
-  interpolation at every group and age, to the last bit; each decode is S's reading of its
-  text, on every value a column can hold; each padded array holds NaN where no rate is,
-  and its one reader refuses an age outside it, either side; each ``Data`` vector is the
-  int64 or float64 its docstring states; each parameterless cell returns a Python number;
-  the spec's sizes, the sample's recursion limit and the arrays' ages are what their
-  comments derive; and what the vectors cannot hold, or a cell cannot take, is refused.
+  total to the last bit, Neumaier's sum written out, where ``sum`` compensates, as from
+  Python 3.12: Python 3.11's ``sum`` adds left to right, and there S's total parts from
+  this one in its last bit, so the bits skip, naming 3.11, and the rest is held; each
+  pivot array is S's interpolation at every group and age, to the last bit; each decode
+  is S's reading of its text, on every value a column can hold; each padded array holds
+  NaN where no rate is, and its one reader refuses an age outside it, either side; each
+  ``Data`` vector is the int64 or float64 its docstring states; each parameterless cell
+  returns a Python number; the spec's sizes, the sample's recursion limit and the arrays'
+  ages are what their comments derive; and what the vectors cannot hold, or a cell cannot
+  take, is refused.
 * C2, the fingerprint: every committed point computes what the model computed when its E
   step ended, frozen at the end of this module before its C step changed anything
   (USLIB-SEC-PLAN.md §5.4).
@@ -4385,6 +4388,50 @@ def test_the_core_grid_reaches_every_branch(spliced, splice_records):
 # compiled section after the fingerprint holds the compiled model to modelx on it.
 
 
+# Whether sum() compensates, Neumaier's way, as it does for floats from Python 3.12 on most
+# builds, read from sum() itself as test_model_conventions_uk.py's SUM_COMPENSATES reads it.
+# The claims total is CI_UK_S's sum() written out, so it is S's bits only where sum()
+# compensates.  Python 3.11's sum() adds left to right, and there S's total parts from this
+# one in its last bit in 415 months of the twins (UKLIB-SEC-PLAN.md §6.3, *Record -- M8*,
+# *Carried into M15*): the total's bit test holds the rest and skips the bits there, with
+# this reason.
+SUM_COMPENSATES = sum([0.1] * 10) == 1.0
+SUM_311 = ("Python 3.11's sum() adds floats left to right, without the compensation it has "
+           "from 3.12, so the total written out here is not its bits; the rest was held")
+
+
+def _hold_the_sums_bits():
+    """Skip the rest of the calling test, naming Python 3.11 (:data:`SUM_311`), where
+    ``sum()`` adds floats left to right (:data:`SUM_COMPENSATES`); return where it
+    compensates, so that the test goes on to hold the bits."""
+    if not SUM_COMPENSATES:
+        pytest.skip(SUM_311)
+
+
+def test_the_sums_bits_skip_only_where_sum_adds_left_to_right(monkeypatch):
+    """The guard of the sums' bits skips where, and only where, ``sum()`` adds left to
+    right.
+
+    :data:`SUM_COMPENSATES` must be ``sum()``'s own answer on this interpreter, which
+    ``math.fsum``, rounding once, gives too: 1.0 for ten tenths where ``sum()``
+    compensates, as from Python 3.12, and not on Python 3.11.  So the bits are held
+    wherever ``sum()`` compensates; inverted, the guard would skip them there without a
+    word, CI running this module on Python 3.13 alone.  And :func:`_hold_the_sums_bits`
+    goes on where :data:`SUM_COMPENSATES` holds, and skips, naming Python 3.11, where it
+    does not.
+    """
+    assert SUM_COMPENSATES == (sum([0.1] * 10) == math.fsum([0.1] * 10)), SUM_COMPENSATES
+    module = sys.modules[__name__]
+    monkeypatch.setattr(module, "SUM_COMPENSATES", True)
+    try:
+        _hold_the_sums_bits()
+    except pytest.skip.Exception as err:
+        pytest.fail(f"the guard skips where sum() compensates: {err}")
+    monkeypatch.setattr(module, "SUM_COMPENSATES", False)
+    with pytest.raises(pytest.skip.Exception, match="Python 3.11's sum"):
+        _hold_the_sums_bits()
+
+
 def _left_to_right(p, t):
     """The four kinds' total written left to right, ``0.0 + MAIN + AP + CHILD + LAPSE``:
     ``sum``'s float only where at most two kinds are non-zero in the month (R12)."""
@@ -4461,8 +4508,13 @@ def test_the_all_total_is_s_total_bit_for_bit(sec_model, s_model, spliced, tmp_p
     largest float in every month (:func:`_infinite_main_claim`), S's ``sum`` is inf, the
     carried error being NaN, which ``sum`` leaves out: the total here is inf too, compared
     by ``repr``, where adding the carried error unchecked would make it NaN in every month.
+
+    S's bits are ``sum``'s where it compensates, from Python 3.12.  Where it does not, on
+    Python 3.11 (:data:`SUM_COMPENSATES`), S adds left to right, and the total here parts
+    from it in 415 months: there the months, the rows that take the second form and the
+    infinite claim are held, and the bits skip, naming Python 3.11 (:data:`SUM_311`).
     """
-    found, apart, months = [], 0, 0
+    found, bits, apart, months = [], [], 0, 0
     total = _code(sec_model.Projection, "ALL")
     table = sec_model.Data.model_point_table()
     for point_id in table.index[table["row_kind"] == "twin"]:
@@ -4471,18 +4523,20 @@ def test_the_all_total_is_s_total_bit_for_bit(sec_model, s_model, spliced, tmp_p
             months += 1
             want = s.claims(t)
             if p.claims(t, total).hex() != want.hex():
-                found.append(f"point {point_id}, t = {t}: {p.claims(t, total)!r}, S {want!r}")
+                bits.append(f"point {point_id}, t = {t}: {p.claims(t, total)!r}, "
+                            f"S {want!r}")
             apart += _left_to_right(p, t).hex() != want.hex()
-    assert (months, apart) == (2040, 415), (months, apart)
+    assert months == 2040, months
     s, sec = spliced
     for s_point in _s_table_with_variants().index:
         key = _row_key(sec, "twin", s_point, 0)
         try:
             sp, p = _point(s, s_point), projection(sec, key)
-            found += [f"spliced twin {s_point}, t = {t}" for t in range(p.proj_len())
-                      if p.claims(t, total).hex() != sp.claims(t).hex()]
+            bits += [f"spliced twin {s_point}, t = {t}" for t in range(p.proj_len())
+                     if p.claims(t, total).hex() != sp.claims(t).hex()]
         finally:
             _release(sec, key)
+    parts = []
     for n, (refs, counts) in enumerate(TOTAL_EDGES):
         s = mx.read_model(model_path(TWIN), name=_name(f"edge_s{n}"))
         sec = mx.read_model(model_path(SEC), name=_name(f"edge{n}"))
@@ -4497,10 +4551,11 @@ def test_the_all_total_is_s_total_bit_for_bit(sec_model, s_model, spliced, tmp_p
                     months += 1
                     want = sp.claims(t).hex()
                     if p.claims(t, total).hex() != want:
-                        found.append(f"{refs}, point {point_id}, t = {t}")
+                        bits.append(f"{refs}, point {point_id}, t = {t}")
                     taken += _neumaier(p, t)[1]
                     parted += _neumaier(p, t, swapped=True)[0].hex() != want
-            assert (months, taken, parted) == counts, (refs, months, taken, parted)
+            assert (months, taken) == counts[:2], (refs, months, taken)
+            parts.append((refs, parted, counts[2]))
         finally:
             sec.close()
             s.close()
@@ -4521,6 +4576,10 @@ def test_the_all_total_is_s_total_bit_for_bit(sec_model, s_model, spliced, tmp_p
         sec.close()
         s.close()
     assert not found, found[:10]
+    _hold_the_sums_bits()
+    assert apart == 415, apart
+    assert all(parted == want for _, parted, want in parts), parts
+    assert not bits, bits[:10]
 
 
 # The pivot table with groups whose pivot ages differ, as Data accepts them: the female

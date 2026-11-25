@@ -93,12 +93,15 @@ the product's own facts:
   and what the default grid reaches.
 * The C step's representation, in modelx: the claims total held to ``IP_UK_S``'s by its
   bits; the cohorts' sums held to ``IP_UK_S``'s ``sum`` by theirs and by their order, the
-  cohorts past the live ones zero; every schedule at every age of the inception and
-  mortality arrays, on the shipped inception table and on the floor's; every decode on
-  every value, the escalation flag read by its text alone; the padded arrays; the
-  vectors' dtypes; the parameterless cells' Python numbers; the labels' refusals; the
-  spec's and the sample's comments; the runner's rebuild; and what the vectors cannot
-  hold.
+  cohorts past the live ones zero, their bits ``sum``'s where it compensates, as from
+  Python 3.12: Python 3.11's ``sum`` adds left to right, and there ``IP_UK_S``'s sums, and
+  its claims, part from these in their last bits, so those bits skip, naming 3.11, and
+  the rest is held;
+  every schedule at every age of the inception and mortality arrays, on the shipped
+  inception table and on the floor's; every decode on every value, the escalation flag
+  read by its text alone; the padded arrays; the vectors' dtypes; the parameterless cells'
+  Python numbers; the labels' refusals; the spec's and the sample's comments; the
+  runner's rebuild; and what the vectors cannot hold.
 * C2, the fingerprint: every committed point computes what the model computed when its E
   step ended, frozen at the end of this module before its C step changed anything
   (USLIB-SEC-PLAN.md §5.4).
@@ -5391,6 +5394,50 @@ def test_the_core_grid_reaches_every_branch(spliced, splice_records):
 # the compiled model to modelx on it.
 
 
+# Whether sum() compensates, Neumaier's way, as it does for floats from Python 3.12 on most
+# builds, read from sum() itself as test_model_conventions_uk.py's SUM_COMPENSATES reads it.
+# The cohort sums are IP_UK_S's sum() written out, so they are its bits only where it
+# compensates.  Python 3.11's sum() adds left to right, and there IP_UK_S's sums, and the
+# counts, cohorts and benefit claims that read them, part from these in their last bits
+# (UKLIB-SEC-PLAN.md §6.3, *Record -- M8*, *Python 3.11's sum*): the tests of the sums' bits
+# and of the claims total hold the rest and skip those bits there, with this reason.
+SUM_COMPENSATES = sum([0.1] * 10) == 1.0
+SUM_311 = ("Python 3.11's sum() adds floats left to right, without the compensation it has "
+           "from 3.12, so the sums written out here are not its bits; the rest was held")
+
+
+def _hold_the_sums_bits():
+    """Skip the rest of the calling test, naming Python 3.11 (:data:`SUM_311`), where
+    ``sum()`` adds floats left to right (:data:`SUM_COMPENSATES`); return where it
+    compensates, so that the test goes on to hold the bits."""
+    if not SUM_COMPENSATES:
+        pytest.skip(SUM_311)
+
+
+def test_the_sums_bits_skip_only_where_sum_adds_left_to_right(monkeypatch):
+    """The guard of the sums' bits skips where, and only where, ``sum()`` adds left to
+    right.
+
+    :data:`SUM_COMPENSATES` must be ``sum()``'s own answer on this interpreter, which
+    ``math.fsum``, rounding once, gives too: 1.0 for ten tenths where ``sum()``
+    compensates, as from Python 3.12, and not on Python 3.11.  So the bits are held
+    wherever ``sum()`` compensates; inverted, the guard would skip them there without a
+    word, CI running this module on Python 3.13 alone.  And :func:`_hold_the_sums_bits`
+    goes on where :data:`SUM_COMPENSATES` holds, and skips, naming Python 3.11, where it
+    does not.
+    """
+    assert SUM_COMPENSATES == (sum([0.1] * 10) == math.fsum([0.1] * 10)), SUM_COMPENSATES
+    module = sys.modules[__name__]
+    monkeypatch.setattr(module, "SUM_COMPENSATES", True)
+    try:
+        _hold_the_sums_bits()
+    except pytest.skip.Exception as err:
+        pytest.fail(f"the guard skips where sum() compensates: {err}")
+    monkeypatch.setattr(module, "SUM_COMPENSATES", False)
+    with pytest.raises(pytest.skip.Exception, match="Python 3.11's sum"):
+        _hold_the_sums_bits()
+
+
 def test_the_all_total_is_s_total_bit_for_bit(sec_model, s_model):
     """``claims(t, ALL)`` is ``IP_UK_S``'s ``claims(t)``, its ``sum``, to the last bit.
 
@@ -5405,10 +5452,17 @@ def test_the_all_total_is_s_total_bit_for_bit(sec_model, s_model):
     the row's own three kinds there; and on every twin of S's new business, whose kinds
     are S's to the last bit, with S's ``claims(t)`` itself.  T1 compares the totals to
     1e-9; this compares their bits.
+
+    The twins' kinds are S's bits only where ``sum`` compensates, from Python 3.12: S's
+    benefit claim reads its cohort sums, which on Python 3.11 (:data:`SUM_COMPENSATES`) add
+    left to right and part from this model's in their last bits.  There the kinds counted
+    and the total against its row's own kinds are held, which one kind non-zero leaves
+    ``sum``'s on any Python, and the twins' bits skip, naming Python 3.11
+    (:data:`SUM_311`).
     """
     total = _code(sec_model.Projection, "ALL")
     kinds = [_code(sec_model.Projection, kind) for kind in KINDS]
-    found, counts = [], {0: 0, 1: 0, 2: 0, 3: 0}
+    found, bits, counts = [], [], {0: 0, 1: 0, 2: 0, 3: 0}
     table = sec_model.Data.model_point_table()
     for key, point_id in zip(point_keys(sec_model), table.index):
         p = projection(sec_model, key)
@@ -5421,14 +5475,16 @@ def test_the_all_total_is_s_total_bit_for_bit(sec_model, s_model):
             if p.claims(t, total).hex() != sum(values).hex():
                 found.append(f"point {point_id}, t = {t}: {p.claims(t, total)!r}, the "
                              f"kinds' sum {sum(values)!r}")
+    assert counts[2] == counts[3] == 0 and counts[1] > 0 and counts[0] > 0, counts
+    assert not found, found[:10]
+    _hold_the_sums_bits()
     for point_id in NEW_BUSINESS:
         s, p = _point(s_model, point_id), _point(sec_model, point_id)
         for t in range(p.proj_len()):
             if p.claims(t, total).hex() != s.claims(t).hex():
-                found.append(f"point {point_id}, t = {t}: {p.claims(t, total)!r}, S "
-                             f"{s.claims(t)!r}")
-    assert counts[2] == counts[3] == 0 and counts[1] > 0 and counts[0] > 0, counts
-    assert not found, found[:10]
+                bits.append(f"point {point_id}, t = {t}: {p.claims(t, total)!r}, S "
+                            f"{s.claims(t)!r}")
+    assert not bits, bits[:10]
 
 
 # The cells that sum the cohorts, each with S's term for cohort z holding a lives, and
@@ -5479,8 +5535,15 @@ def test_the_cohort_sums_are_s_sums_bit_for_bit(sec_model, s_model, grid):
     ``sum`` of no terms is the int 0, which each cell holds as 0.0, a C double, the one
     difference, of type alone, from ``IP_UK_S``.  The core's points by default
     (:data:`CORE_POINTS`), with the twins, and the rest on the full grid.
+
+    The bits are ``sum``'s where it compensates, from Python 3.12.  Where it does not, on
+    Python 3.11 (:data:`SUM_COMPENSATES`), ``sum`` and ``IP_UK_S`` with it add left to
+    right, and the sums here part from theirs in the last bits, and so, through the
+    recoveries back in health, do the twins' cohorts: there the cohorts past the live ones,
+    the live one's lives and each sum's type are held, and the bits skip, naming Python
+    3.11 (:data:`SUM_311`).
     """
-    found, plain = [], 0
+    found, bits, plain = [], [], 0
     table = sec_model.Data.model_point_table()
     for key, point_id in zip(point_keys(sec_model), table.index):
         if not _on_grid(grid, point_id):
@@ -5503,14 +5566,18 @@ def test_the_cohort_sums_are_s_sums_bit_for_bit(sec_model, s_model, grid):
             for cell, (term, filtered) in COHORT_SUMS.items():
                 terms = [term(p, z, a) for z, a in cohorts if a != 0.0 or not filtered]
                 want, got = float(sum(terms)), p.cells[cell](t)
-                if type(got) is not float or got.hex() != want.hex():
-                    found.append(f"point {point_id}: {cell}({t}) is {got!r}, sum {want!r}")
+                if type(got) is not float:
+                    found.append(f"point {point_id}: {cell}({t}) is {got!r}, not a float")
+                elif got.hex() != want.hex():
+                    bits.append(f"point {point_id}: {cell}({t}) is {got!r}, sum {want!r}")
                 plain += _plain(terms) != want
         terms = [p.claims(t, _code(p, "BENEFIT")) * p.disc_factor(t)
                  for t in range(p.proj_len())]
         if p.pv_benefits().hex() != float(sum(terms)).hex():
-            found.append(f"point {point_id}: pv_benefits() is {p.pv_benefits()!r}, sum "
-                         f"{sum(terms)!r}")
+            bits.append(f"point {point_id}: pv_benefits() is {p.pv_benefits()!r}, sum "
+                        f"{sum(terms)!r}")
+    assert not found, found[:10]
+    _hold_the_sums_bits()
     for point_id in NEW_BUSINESS if grid == "core" else ():
         s, p = _point(s_model, point_id), _point(sec_model, point_id)
         for t in range(p.proj_len()):
@@ -5518,17 +5585,17 @@ def test_the_cohort_sums_are_s_sums_bit_for_bit(sec_model, s_model, grid):
             mine = tuple(p.pols_sick_dur(t, z) for z in range(1, live + 1))
             if [v.hex() for v in mine] != [v.hex() for v in held[:live]] or any(
                     v != 0.0 for v in held[live:]):
-                found.append(f"point {point_id}, t = {t}: the cohorts part from S's "
-                             f"sick_cohorts({t})")
+                bits.append(f"point {point_id}, t = {t}: the cohorts part from S's "
+                            f"sick_cohorts({t})")
             for cell in COHORT_SUMS:
                 if p.cells[cell](t).hex() != float(s.cells[cell](t)).hex():
-                    found.append(f"point {point_id}: {cell}({t}) is {p.cells[cell](t)!r}, "
-                                 f"S {s.cells[cell](t)!r}")
+                    bits.append(f"point {point_id}: {cell}({t}) is {p.cells[cell](t)!r}, "
+                                f"S {s.cells[cell](t)!r}")
         if p.pv_benefits().hex() != float(s.pv_benefits()).hex():
-            found.append(f"point {point_id}: pv_benefits() is {p.pv_benefits()!r}, S "
-                         f"{s.pv_benefits()!r}")
+            bits.append(f"point {point_id}: pv_benefits() is {p.pv_benefits()!r}, S "
+                        f"{s.pv_benefits()!r}")
     assert plain > 0, "no month where a plain sum parts from sum: the test sees no order"
-    assert not found, found[:10]
+    assert not bits, bits[:10]
 
 
 def _mortality_in_claim(rate):

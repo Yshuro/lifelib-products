@@ -594,7 +594,9 @@ first (UKLIB-SEC-PLAN.md §6.1; USLIB-SEC-PLAN.md R1 to R17):
   claim, `sum`'s start, then each later kind added with its rounding error carried, and
   the carried error added once at the end, where it is finite and not 0. A test holds it
   to `CI_UK_S`'s total by its bits in every month of every twin, of S's points and of the
-  splice's, and finds the months where a sum left to right would part.
+  splice's, and finds the months where a sum left to right would part. On Python 3.11,
+  whose `sum` adds left to right, `CI_UK_S`'s total parts from this one in those months,
+  so the test holds the rest there and skips the bits, naming Python 3.11.
 - **Five powers raise as modelx does.** Past the largest float, Python's float power
   raises `OverflowError` where C's `pow` gives an infinity. So expense inflation, the
   morbidity trend, the two index factors and the review factor call Python's own power
@@ -946,8 +948,9 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   a total written left to right parts from it in 415 of the 2,040 months of S's seven, and
   under 12 additional payments a year or a survival slippage of 1, where a later kind
   outweighs the main claim and its error is carried in `sum`'s second form, and by `repr`
-  where the main claim is past the largest float in every month, the total inf as S's;
-  each pivot array is S's `pivot_interp` by its bits at every group and every age it
+  where the main claim is past the largest float in every month, the total inf as S's,
+  the bits skipped on Python 3.11, whose `sum` adds left to right; each pivot array is
+  S's `pivot_interp` by its bits at every group and every age it
   holds, on the shipped table and on one whose groups hold other pivot ages; every value
   each text column can hold decodes as `CI_UK_S` reads it, each fraction above .5 so that
   a decode that rounded would part, each life's row of the arrays holding S's rates at

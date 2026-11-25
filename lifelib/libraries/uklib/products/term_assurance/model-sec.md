@@ -606,9 +606,11 @@ taught first (USLIB-SEC-PLAN.md R1 to R17):
   `Term_UK_S`'s by its bits, on a month where both the lump sum and the instalments are
   paid among others. The ledger check's residual sums the deaths since `t_entry()`,
   hundreds of non-zero terms, so it adds them in a loop compensated as `sum` compensates
-  them, the Neumaier sum, and returns `Term_UK_S`'s number to the last bit too. Neither
-  keeps the generator `Term_UK_S` passes to `sum`, which a compiled cell would run as a
-  Python object.
+  them, the Neumaier sum, and returns `Term_UK_S`'s number to the last bit too. On Python
+  3.11, whose `sum` adds left to right as `Term_UK_S`'s ledger does, `Term_UK_S`'s
+  residual is 0 in every month and parts from this one, and the test of its bits skips
+  there, naming Python 3.11. Neither keeps the generator `Term_UK_S` passes to `sum`,
+  which a compiled cell would run as a Python object.
 - **Reporting cells stay Python.** `model_point()`, the label accessors `shape()`,
   `premium_mode()`, `mort_basis()`, `sex(life)` and `smoker(life)`, and the two reports
   return a table row, text and DataFrames, for a reader, for `run_sec.py` and for the
@@ -944,7 +946,8 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
 - **The C step's representation**, in modelx, in seconds: `claims(t, ALL)` is
   `Term_UK_S`'s total by its bits on every twin's month and on the family income benefit
   commuted in half, and so is `check_fib_ledger_resid(t)`, the Neumaier sum's residual,
-  on the twins of S's family income benefit points and that same point; every value each
+  on the twins of S's family income benefit points and that same point, skipped on
+  Python 3.11, whose `sum` adds left to right; every value each
   text column can hold decodes as `Term_UK_S` reads it, each fraction above .5 so that a
   decode that rounded would part, the mortality group's row holding S's rate at every
   age; each padded array holds NaN where no file does and nothing else, and its one

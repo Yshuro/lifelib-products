@@ -60,11 +60,14 @@ the product's own facts:
 * T6, regeneration: the committed ``model_point_table_sec.csv`` is what the generator makes
   of ``WP_UK_S`` and its table as they stand.
 * The C step's representation, in modelx (UKLIB-SEC-PLAN.md §6.5, *C*): the claims total
-  ``WP_UK_S``'s ``sum`` to the last bit; each refusal cell its chain, and each chain past
-  the floats after its first month refused there; every decode ``WP_UK_S``'s own; the
-  padded arrays, the vectors' dtypes, the Python numbers, the labels; the spec's sizes and
-  the bounds they come from; the sample; the runner's rebuild; and what the vectors cannot
-  hold.  Then C2, the Phase 1 fingerprint, and the compiled model, each test marked
+  ``WP_UK_S``'s ``sum`` to the last bit where ``sum`` compensates, as from Python 3.12:
+  Python 3.11's ``sum`` adds left to right, and there the total parts from it where the
+  kinds are of a size, so the bits skip, naming 3.11, and the rest is held; each refusal
+  cell its chain, and each chain past the floats after its first month refused there;
+  every decode ``WP_UK_S``'s own; the padded arrays, the vectors' dtypes, the Python
+  numbers, the labels; the spec's sizes and the bounds they come from; the sample; the
+  runner's rebuild; and what the vectors cannot hold.  Then C2, the Phase 1 fingerprint,
+  and the compiled model, each test marked
   ``cython``: C4 on the splice grid, the contract's extremes, the bounds that bind, the
   decoded values, float keys, the committed rows under their own References, the rule's
   declarations and the exhaustion, with every code asked of every row; the labels; the
@@ -4952,6 +4955,50 @@ def test_the_core_grid_reaches_every_branch(spliced, splice_records):
 # section after the fingerprint holds the compiled model to modelx on it.
 
 
+# Whether sum() compensates, Neumaier's way, as it does for floats from Python 3.12 on most
+# builds, read from sum() itself as test_model_conventions_uk.py's SUM_COMPENSATES reads it.
+# The claims total is WP_UK_S's sum() written out, so it is S's bits only where sum()
+# compensates.  Python 3.11's sum() adds left to right, and there S's total, and sum() of
+# the kinds, part from this one where the three kinds are of a size (UKLIB-SEC-PLAN.md
+# §6.3, *Record -- M8*, *Carried into M15*): the total's bit test holds the rest and skips
+# the bits there, with this reason.
+SUM_COMPENSATES = sum([0.1] * 10) == 1.0
+SUM_311 = ("Python 3.11's sum() adds floats left to right, without the compensation it has "
+           "from 3.12, so the total written out here is not its bits; the rest was held")
+
+
+def _hold_the_sums_bits():
+    """Skip the rest of the calling test, naming Python 3.11 (:data:`SUM_311`), where
+    ``sum()`` adds floats left to right (:data:`SUM_COMPENSATES`); return where it
+    compensates, so that the test goes on to hold the bits."""
+    if not SUM_COMPENSATES:
+        pytest.skip(SUM_311)
+
+
+def test_the_sums_bits_skip_only_where_sum_adds_left_to_right(monkeypatch):
+    """The guard of the sums' bits skips where, and only where, ``sum()`` adds left to
+    right.
+
+    :data:`SUM_COMPENSATES` must be ``sum()``'s own answer on this interpreter, which
+    ``math.fsum``, rounding once, gives too: 1.0 for ten tenths where ``sum()``
+    compensates, as from Python 3.12, and not on Python 3.11.  So the bits are held
+    wherever ``sum()`` compensates; inverted, the guard would skip them there without a
+    word, CI running this module on Python 3.13 alone.  And :func:`_hold_the_sums_bits`
+    goes on where :data:`SUM_COMPENSATES` holds, and skips, naming Python 3.11, where it
+    does not.
+    """
+    assert SUM_COMPENSATES == (sum([0.1] * 10) == math.fsum([0.1] * 10)), SUM_COMPENSATES
+    module = sys.modules[__name__]
+    monkeypatch.setattr(module, "SUM_COMPENSATES", True)
+    try:
+        _hold_the_sums_bits()
+    except pytest.skip.Exception as err:
+        pytest.fail(f"the guard skips where sum() compensates: {err}")
+    monkeypatch.setattr(module, "SUM_COMPENSATES", False)
+    with pytest.raises(pytest.skip.Exception, match="Python 3.11's sum"):
+        _hold_the_sums_bits()
+
+
 def _left_to_right(kinds):
     """``kinds`` totalled left to right from ``0.0``: ``sum``'s float only where at most
     two of them are non-zero (R12)."""
@@ -5038,10 +5085,16 @@ def test_the_all_total_is_s_total_bit_for_bit(sec_model, s_model, tmp_path):
     not, ``sum``'s carried error is NaN, which it leaves out: the total is refused as
     ``inf``, naming the three kinds, where a carried error added unchecked would make it,
     and the refusal, NaN.
+
+    The bits are ``sum``'s where it compensates, from Python 3.12.  Where it does not, on
+    Python 3.11 (:data:`SUM_COMPENSATES`), ``sum`` and S with it add left to right, and the
+    total here parts from them where the three kinds are of a size: there the kinds counted,
+    the rows of :data:`COMPARABLE`, every kind paid and the second form taken on them, and
+    the refusal are held, and the bits skip, naming Python 3.11 (:data:`SUM_311`).
     """
     total = _code(sec_model.Projection, "ALL")
     kinds = [_code(sec_model.Projection, kind) for kind in KINDS]
-    found, counts, apart = [], {0: 0, 1: 0, 2: 0, 3: 0}, 0
+    found, bits, counts, apart = [], [], {0: 0, 1: 0, 2: 0, 3: 0}, 0
     table = sec_model.Data.model_point_table()
     for key, point_id in zip(point_keys(sec_model), table.index):
         p = projection(sec_model, key)
@@ -5050,16 +5103,17 @@ def test_the_all_total_is_s_total_bit_for_bit(sec_model, s_model, tmp_path):
             counts[sum(v != 0.0 for v in values)] += 1
             apart += _left_to_right(values).hex() != sum(values).hex()
             if p.claims(t, total).hex() != sum(values).hex():
-                found.append(f"point {point_id}, t = {t}: {p.claims(t, total)!r}, the "
-                             f"kinds' sum {sum(values)!r}")
+                bits.append(f"point {point_id}, t = {t}: {p.claims(t, total)!r}, the "
+                            f"kinds' sum {sum(values)!r}")
     for point_id in table.index[table["row_kind"] == "twin"]:
         s, p = _point(s_model, point_id), _point(sec_model, point_id)
         month = int(table.at[point_id, "source_mth"])
         for t in range(p.proj_len()):
             if p.claims(t, total).hex() != s.claims(t + month).hex():
-                found.append(f"twin {point_id}, t = {t}: {p.claims(t, total)!r}, S "
-                             f"{s.claims(t + month)!r}")
-    assert counts == {0: 37, 1: 3035, 2: 6506, 3: 7} and apart == 0, (counts, apart)
+                bits.append(f"twin {point_id}, t = {t}: {p.claims(t, total)!r}, S "
+                            f"{s.claims(t + month)!r}")
+    assert counts == {0: 37, 1: 3035, 2: 6506, 3: 7}, counts
+    parts = []
     for base, factor, want in COMPARABLE:
         model = mx.read_model(_sec_inputs(tmp_path / f"rows{base}_{factor}",
                                           _comparable_rows(base), {LAPSE: _lapse_at(0.99)}),
@@ -5078,10 +5132,10 @@ def test_the_all_total_is_s_total_bit_for_bit(sec_model, s_model, tmp_path):
                 if not all(v > 0.0 for v in values):
                     found.append(f"row {base} at {factor}, idx {key}: kinds {values}")
                 if p.claims(t, total).hex() != sum(values).hex():
-                    found.append(f"row {base} at {factor}, idx {key}: "
-                                 f"{p.claims(t, total)!r}, the kinds' sum {sum(values)!r}")
-            assert (rows, parted, taken, swapped) == want, (base, factor, rows, parted,
-                                                            taken, swapped)
+                    bits.append(f"row {base} at {factor}, idx {key}: "
+                                f"{p.claims(t, total)!r}, the kinds' sum {sum(values)!r}")
+            assert (rows, taken) == (want[0], want[2]), (base, factor, rows, taken)
+            parts.append(((base, factor), (parted, swapped), (want[1], want[3])))
         finally:
             model.close()
     model = mx.read_model(_sec_inputs(tmp_path / "infinite",
@@ -5100,6 +5154,10 @@ def test_the_all_total_is_s_total_bit_for_bit(sec_model, s_model, tmp_path):
     finally:
         model.close()
     assert not found, found[:10]
+    _hold_the_sums_bits()
+    assert apart == 0, apart
+    assert all(got == want for _, got, want in parts), parts
+    assert not bits, bits[:10]
 
 
 # The six chains whose refusal of a value past the floats is a cell of its own, which

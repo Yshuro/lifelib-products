@@ -73,12 +73,15 @@ the rest of the plan's tests (its §5) and the product's own facts:
   in-force extract; the runner; the cells' defaulted parameters; the docstrings; the
   shared input tables; and what the default grid reaches.
 * The C step's representation, in modelx: the claims total, a code of its own, is S's
-  total to the last bit; each decode is S's reading of its text, on every value a column
-  can hold; each padded array holds NaN where no file does, and its one reader refuses a
-  key outside it; each ``Data`` vector is the int64 or float64 its docstring states; each
-  parameterless cell returns a Python number; the spec's sizes and the sample's recursion
-  limit are what their comments derive; and what the vectors cannot hold, or a cell cannot
-  take, is refused.
+  total to the last bit; the ledger's residual is S's too, its sum of the deaths ``sum``'s
+  where it compensates, as from Python 3.12: Python 3.11's ``sum`` adds left to right, and
+  there S's residual parts from this one, so its bits skip, naming 3.11, and the rest is
+  held; each decode is S's reading of its text, on every value a column can hold; each
+  padded array holds NaN where no file does, and its one reader refuses a key outside it;
+  each ``Data`` vector is the int64 or float64 its docstring states; each parameterless
+  cell returns a Python number; the spec's sizes and the sample's recursion limit are
+  what their comments derive; and what the vectors cannot hold, or a cell cannot take, is
+  refused.
 * C2, the fingerprint: every committed point computes what the model computed when its E
   step ended, frozen at the end of this module before its C step changed anything
   (USLIB-SEC-PLAN.md §5.4), and refrozen once since, when both models' waiver came to take
@@ -4299,6 +4302,50 @@ def test_the_core_grid_reaches_every_branch(spliced, splice_records):
 # after the fingerprint holds the compiled model to modelx on it.
 
 
+# Whether sum() compensates, Neumaier's way, as it does for floats from Python 3.12 on most
+# builds, read from sum() itself as test_model_conventions_uk.py's SUM_COMPENSATES reads it.
+# The ledger residual sums the deaths as Term_UK_S's sum() does, written out, so it is S's
+# bits only where sum() compensates.  Python 3.11's sum() adds left to right, and there
+# S's residual parts from this one in most months of a family income benefit point
+# (UKLIB-SEC-PLAN.md §6.3, *Record -- M8*, *Carried into M15*): the residual's bit test
+# holds the rest and skips the bits there, with this reason.
+SUM_COMPENSATES = sum([0.1] * 10) == 1.0
+SUM_311 = ("Python 3.11's sum() adds floats left to right, without the compensation it has "
+           "from 3.12, so the sum written out here is not its bits; the rest was held")
+
+
+def _hold_the_sums_bits():
+    """Skip the rest of the calling test, naming Python 3.11 (:data:`SUM_311`), where
+    ``sum()`` adds floats left to right (:data:`SUM_COMPENSATES`); return where it
+    compensates, so that the test goes on to hold the bits."""
+    if not SUM_COMPENSATES:
+        pytest.skip(SUM_311)
+
+
+def test_the_sums_bits_skip_only_where_sum_adds_left_to_right(monkeypatch):
+    """The guard of the sums' bits skips where, and only where, ``sum()`` adds left to
+    right.
+
+    :data:`SUM_COMPENSATES` must be ``sum()``'s own answer on this interpreter, which
+    ``math.fsum``, rounding once, gives too: 1.0 for ten tenths where ``sum()``
+    compensates, as from Python 3.12, and not on Python 3.11.  So the bits are held
+    wherever ``sum()`` compensates; inverted, the guard would skip them there without a
+    word, CI running this module on Python 3.13 alone.  And :func:`_hold_the_sums_bits`
+    goes on where :data:`SUM_COMPENSATES` holds, and skips, naming Python 3.11, where it
+    does not.
+    """
+    assert SUM_COMPENSATES == (sum([0.1] * 10) == math.fsum([0.1] * 10)), SUM_COMPENSATES
+    module = sys.modules[__name__]
+    monkeypatch.setattr(module, "SUM_COMPENSATES", True)
+    try:
+        _hold_the_sums_bits()
+    except pytest.skip.Exception as err:
+        pytest.fail(f"the guard skips where sum() compensates: {err}")
+    monkeypatch.setattr(module, "SUM_COMPENSATES", False)
+    with pytest.raises(pytest.skip.Exception, match="Python 3.11's sum"):
+        _hold_the_sums_bits()
+
+
 def _part_commuted(tmp_path, name):
     """S read on its point 10 alone, the family income benefit commuted in half, and SEC
     on that point's twin, which the generator makes from it: ``(s, sec)``, each to close.
@@ -4368,6 +4415,12 @@ def test_the_ledger_residual_is_s_own_bit_for_bit(sec_model, s_model, tmp_path):
     uncommuted, and 4, commuted whole, at the shipped take-ups, and of S's point 10, the
     same commuted in half, where the two sums agree too; S's residuals there are not all
     0, which is asserted.
+
+    S's deaths are summed by ``sum``'s bits only where it compensates, from Python 3.12.
+    Where it does not, on Python 3.11 (:data:`SUM_COMPENSATES`), S adds them left to right,
+    as its ledger adds them, so that its residual is 0 in every month and this one's is
+    not: there the points are held, and the bits and S's residuals skip, naming Python
+    3.11 (:data:`SUM_311`).
     """
     found, nonzero = [], 0
     for point_id in (3, 4):
@@ -4390,6 +4443,7 @@ def test_the_ledger_residual_is_s_own_bit_for_bit(sec_model, s_model, tmp_path):
     finally:
         sec.close()
         s.close()
+    _hold_the_sums_bits()
     assert not found, f"{len(found)} months apart, first: {found[:10]}"
     assert nonzero, "every residual of S's is 0, so no sum is seen"
 

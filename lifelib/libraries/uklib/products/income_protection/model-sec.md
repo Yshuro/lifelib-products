@@ -575,11 +575,11 @@ Python under its C declaration. So each input now reaches a cell as a number, as
   Python 3.11, whose `sum` adds left to right, `IP_UK_S`'s sums part from these in their
   last bits, and so do the count's roll-forward residual and the states' residual, each
   a rounding about zero, by 1e-16 or less: there the conventions' twin test holds the
-  two residuals to an absolute floor, and the product module, which CI runs on Python
-  3.13, would part from `IP_UK_S` in the sums' last bits. So the recursion forms the
-  cohorts that can hold lives and no others, a triangle of the months by the claim
-  durations on new business, where the whole vector would form the rectangle
-  `IP_UK_S`'s tuples do.
+  two residuals to an absolute floor, and the product module's test of the sums, which
+  CI runs on Python 3.13, holds the rest and skips their bits, naming Python 3.11. So the
+  recursion forms the cohorts that can hold lives and no others, a triangle of the months
+  by the claim durations on new business, where the whole vector would form the
+  rectangle `IP_UK_S`'s tuples do.
 - **Codes.** A timing or a kind, which `IP_UK_S` spells as text, is an int Reference
   named as the text: `BEF_NB = 0`, `BEF_DECR = 1` and `AFT_DECR = 2`, in the order of
   their instants within the month; and `claims`' kinds, `BENEFIT = 0`, `DEATH = 1` and
@@ -596,7 +596,10 @@ Python under its C declaration. So each input now reaches a cell as a number, as
   LAPSE)`: `sum`'s float wherever at most two kinds are non-zero, and here at most one is,
   the death and lapse kinds being 0 by the product's design. A test counts the kinds
   non-zero together in every month of every committed point, never two, and holds the
-  total to `IP_UK_S`'s by its bits on every twin of its new business.
+  total to `IP_UK_S`'s by its bits on every twin of its new business. On Python 3.11,
+  whose `sum` adds left to right, `IP_UK_S`'s benefit claim, which reads its cohort sums,
+  parts from this model's in its last bits, so the twins' bits skip there, naming Python
+  3.11.
 - **One inner width an outer size.** Cython's unpickle code reads each 2-D cache back
   through a C-array temporary, with a converter named by the inner type,
   `__Pyx_carray_from_py_double___5b_626_5d_` for `double[626]`. It pools its temporaries
@@ -990,11 +993,13 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
 - **The fingerprint (C2)**: every committed point's `result_cf()` and `result_pols()`,
   frozen when the in-force step ended, in a commit of its own, which every later version
   must reproduce to 1e-12, and which the C step does.
-- **The C step's representation**, in modelx, in seconds: the claims total by its bits;
+- **The C step's representation**, in modelx, in seconds: the claims total by its bits,
+  the twins' skipped on Python 3.11;
   the cohort sums and the present value against `sum` by theirs, on every committed point
   in every month, and against `IP_UK_S`'s own on its twins, the months a plain sum parts
-  from `sum` counted, the cohorts past the live ones 0 and the oldest of the live ones
-  holding lives; each sum's order of reads by modelx's stack trace; every schedule at
+  from `sum` counted, all of which skip on Python 3.11, whose `sum` adds left to right;
+  the cohorts past the live ones 0 and the oldest of the live ones holding lives; each
+  sum's order of reads by modelx's stack trace; every schedule at
   every age of the inception and mortality arrays against `IP_UK_S`'s rates, on the
   shipped inception table and on the floor's; every decode on every value, and the
   escalation flag written `" True"`, `"True "`, 1, 1.0, `True`, `" RPI"`, `"RPI "` or

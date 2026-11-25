@@ -658,7 +658,9 @@ and `WOL_UK_SEC` here:
   rest, so the test reads rows whose three kinds are of a size too, a lapse table of 99%
   and a heavier mortality, where one left to right parts in 7 to 11 rows of 60, and
   where a total past the largest float, each kind finite, is refused as `inf`, the carried
-  error, a NaN, left out.
+  error, a NaN, left out. On Python 3.11, whose `sum` adds left to right, `WP_UK_S`'s
+  total and `sum` part from this one where the three kinds are of a size, so the test
+  holds the rest there and skips the bits, naming Python 3.11.
 - **Eight chains blocked by policy year.** The count carried in, `pols_if_at(t, BEF_NB)`,
   the asset share, the smoothed payout, the endowment's guarantee, the bond's units and
   unit price, and the two cumulants each run one cell a month within a policy year, as at
@@ -1149,7 +1151,8 @@ contractual bound by a 20% bonus on a 12% return, two variants of S's points.
   `len()` of a `Data` array, each exemption checked by the check itself.
 - **The representation**, which holds the compiled form in modelx, in seconds: the claims
   total `WP_UK_S`'s `sum` to the last bit, its kinds counted and the rows where a total
-  left to right would part read; each refusal cell its chain, bit for bit, every month; each
+  left to right would part read, the bits skipped on Python 3.11, whose `sum` adds left to
+  right; each refusal cell its chain, bit for bit, every month; each
   chain past the floats after its first month refused there; every decode `WP_UK_S`'s own
   on every value a column holds, the guarantee dates' written forms among them; the padded
   arrays NaN and read inside their keys alone; each `Data` vector the dtype its docstring
