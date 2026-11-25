@@ -178,16 +178,19 @@ def describe(proj):
 
 
 def origin(label):
-    """Where the generator took the row from, where the table records it."""
+    """Where the generator took the row from, where the table records it, and the
+    References S ran under there, where they are not the shipped ones."""
     if "row_kind" not in table.columns:
         return ""
     kind, source, m = (table.at[label, c]
                        for c in ("row_kind", "source_policy_id", "source_mth"))
+    refs = table.at[label, "source_refs"] if "source_refs" in table.columns else ""
+    under = ", under {}".format(refs) if isinstance(refs, str) and refs else ""
     if kind == "derived":
-        return " (S's {} at its month {})".format(source, m)
+        return " (S's {} at its month {}{})".format(source, m, under)
     if kind == "future":
-        return " (S's {}, starting {} months on)".format(source, -m)
-    return " (S's {})".format(source)
+        return " (S's {}, starting {} months on{})".format(source, -m, under)
+    return " (S's {}{})".format(source, under)
 
 
 def product(proj):

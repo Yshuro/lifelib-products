@@ -4104,6 +4104,33 @@ def test_the_runner_sums_the_block_as_groupby_does(sec_model):
     assert not np.array_equal(plain, want)
 
 
+def test_the_runner_names_the_references_a_row_was_read_under(sec_model):
+    """``run_sec.py`` says where each row came from, and under which References.
+
+    The line it prints for a point names the row's source from the committed table's
+    generator columns (``origin``).  A row read from S under References of its own, the
+    spec's ``derived_refs``, is no restatement at the shipped ones, so its line names them
+    as ``source_refs`` records them, point 14's ``under review_prem_shock 0.1``, and no
+    other row's line names any.  ``origin`` is read from the runner, which runs the model
+    when imported, and run here on every row of the table the runner reads.
+    """
+    tree = ast.parse((model_path(SEC).parent / "run_sec.py").read_text(encoding="utf-8"))
+    found = [node for node in tree.body
+             if isinstance(node, ast.FunctionDef) and node.name == "origin"]
+    assert len(found) == 1
+    table = sec_model.Data.model_point_table()
+    space = {"table": table}
+    exec(compile(ast.Module(found, []), "run_sec.py", "exec"), space)
+    refs = table["source_refs"].fillna("")
+    assert sum(map(bool, refs)) == len(SPEC.derived_refs) > 0
+    for label, under in refs.items():
+        line = space["origin"](label)
+        assert (line.endswith(f", under {under})") if under
+                else ", under " not in line), (label, line)
+    assert space["origin"](14) == (
+        " (S's CI-000003 at its month 124, under review_prem_shock 0.1)")
+
+
 # The eight cells to which CI_UK_S gives a life defaulted to 1, which here take it with no
 # default.
 LIFE_CELLS = ("age_at_entry", "sex", "smoker", "age", "ci_rate_base", "mort_rate", "ci_rate",

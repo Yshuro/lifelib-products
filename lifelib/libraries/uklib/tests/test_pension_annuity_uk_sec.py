@@ -4795,6 +4795,33 @@ def test_the_runner_sums_the_block_as_groupby_does(sec_model):
     assert not np.array_equal(plain, want)
 
 
+def test_the_runner_names_the_references_a_row_was_read_under(sec_model):
+    """``run_sec.py`` says where each row came from, and under which References.
+
+    The line it prints for a point names the row's source from the committed table's
+    generator columns (``origin``).  A row read from S under References of its own, the
+    spec's ``derived_refs``, is no restatement at the shipped ones, so its line names them
+    as ``source_refs`` records them, point 21's ``under rpi_rate -0.02``, and no other row's
+    line names any.  ``origin`` is read from the runner, which runs the model when imported,
+    and run here on every row of the table the runner reads.
+    """
+    tree = ast.parse((model_path(SEC).parent / "run_sec.py").read_text(encoding="utf-8"))
+    found = [node for node in tree.body
+             if isinstance(node, ast.FunctionDef) and node.name == "origin"]
+    assert len(found) == 1
+    table = sec_model.Data.model_point_table()
+    space = {"table": table}
+    exec(compile(ast.Module(found, []), "run_sec.py", "exec"), space)
+    refs = table["source_refs"].fillna("")
+    assert sum(map(bool, refs)) == len(SPEC.derived_refs) > 0
+    for label, under in refs.items():
+        line = space["origin"](label)
+        assert (line.endswith(f", under {under})") if under
+                else ", under " not in line), (label, line)
+    assert space["origin"](21) == (
+        " (S's PA-000006 at its month 60, under rpi_rate -0.02)")
+
+
 def _defaulted(model_name):
     """The cells of ``model_name``'s Projection with a parameter that has a default, sorted,
     read from its source, as the C step's build reads it."""
