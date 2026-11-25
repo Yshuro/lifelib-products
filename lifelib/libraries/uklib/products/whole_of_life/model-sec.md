@@ -1070,7 +1070,7 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   truncation check; the crossover a policy month, `WOL_UK_S`'s on every row it reaches; the
   moratorium, the suicide window and commission on the policy clock; the acquisition
   expense on new business alone; the RPI's floor and caps; every guarded cell's value
-  outside cover; the block; an extract without the generator's three columns, labelled
+  outside cover; the block; an extract without the generator's columns, labelled
   otherwise, projecting the same numbers; `run_sec.py`'s numbers, for a point and for the
   block, and its sum, and its `--cython` stopping where no repository is above it; no
   cell's parameter defaulted, `WOL_UK_S`'s `claims` total settled as a code of its own;

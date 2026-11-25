@@ -957,7 +957,7 @@ before `omega_age_max` rose to 121 and every `t` cache with it by 12 elements.
   allowance on the policy clock; expense inflation on the valuation clock at the shipped
   2.5%, which only this test sees; acquisition on new business alone; every guarded cell's
   value outside cover, and after an exhausted frame; the block; an extract without the
-  generator's three columns, labelled otherwise, projecting the same numbers;
+  generator's columns, labelled otherwise, projecting the same numbers;
   `run_sec.py`'s numbers, for a point and for the block, and its sum, and its `--cython`
   stopping where no repository is above it; no cell's parameter defaulted; the
   docstrings, read through docutils as the docs build reads them where docutils is
@@ -991,15 +991,18 @@ before `omega_age_max` rose to 121 and every `t` cache with it by 12 elements.
   temporary directory and run it in child processes: in
   `tests/test_compiled_conventions_uk.py`, C3, the typing guard, on the declarations, the
   spec and the generated C; C4 on the committed points; and the release. In this model's
-  module, C4 on the splice grid, at the contract's longest covers, issued now and 120
-  months on at the limiting age of 121, the longest 1,356 months, where the cap binds, at
-  the depletion threshold's edges, on every value a decoded column holds, on keys written
-  as floats, and on the committed row in the money under its own return; the refusals, message for message, the
-  fund, the allowance and the inflation factor past the floats among them, each code
-  no cell takes inside the caches, the `IndexError`s past the caches and an `idx` past
-  the table and of −1; each shape's deepest cold call on a 1 MiB thread and on the main
-  thread; a Reference set late, which clears no cache; and `run_sec.py --cython`, which
-  prints what modelx prints.
+  module, C4, every cell at every argument a full modelx sweep evaluates, with every code
+  no swept cell reads (`_ulb_c4_also`, the spec's `c4_also`, which a test holds to asking
+  each in every month, row by row, the codes each cell takes derived in modelx, not read
+  from the test's own lists), on the splice grid, at the contract's longest covers, issued
+  now and 120 months on at the limiting age of 121, the longest 1,356 months, where the
+  cap binds, at the depletion threshold's edges, on every value a decoded column holds, on
+  keys written as floats, and on the committed row in the money under its own return; the
+  refusals, message for message, the fund, the allowance and the inflation factor past the
+  floats among them, each code no cell takes inside the caches, the `IndexError`s past the
+  caches and an `idx` past the table and of −1; each shape's deepest cold call on a 1 MiB
+  thread and on the main thread; a Reference set late, which clears no cache; and
+  `run_sec.py --cython`, which prints what modelx prints.
 
 ```bash
 python -m pytest tests/test_unit_linked_bond_uk_sec.py -q

@@ -922,7 +922,7 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   month 60 in every cell; expense inflation and the morbidity trend on the valuation
   clock, which only these tests see; the initial expense on new business alone; the
   reviews and their window on the policy clock; every guarded cell's value outside cover;
-  the block; an extract without the generator's three columns, labelled otherwise,
+  the block; an extract without the generator's columns, labelled otherwise,
   projecting the same numbers; `run_sec.py`'s numbers, for a point, the joint life among
   them, and for the block, and its sum, and its `--cython` stopping where no repository is
   above it; no cell's parameter defaulted but the `claims` total's; the docstrings, read
@@ -977,16 +977,20 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   temporary directory and run it in child processes: in
   `tests/test_compiled_conventions_uk.py`, C3, the typing guard, on the declarations, the
   spec and the generated C; C4 on the committed points; and the release. In this model's
-  module, C4 on the splice grid, at the contract's extremes, each shape at its longest
-  cover and its oldest age, issued now and 120 months on and in force in its last month,
-  where the caps on the claim rates bind and on keys written as floats, and on the total's
-  two cases, a later kind outweighing the main claim and a main claim past the largest
-  float; each life's label that is not text; the refusals, message for message, the
-  overflows of the five powers, the `IndexError`s past the caches and an `idx` past the
-  table and of −1 among them; what the compiled model does with a value an int Reference
-  cannot hold; each shape's deepest cold call on a 1 MiB thread and on the main thread; a
-  Reference set late, which clears no cache; and `run_sec.py --cython`, which prints what
-  modelx prints.
+  module, C4, every cell at every argument a full modelx sweep evaluates, with every code
+  no swept cell reads and both lives of every cell of a life (`_ci_c4_also`, the spec's
+  `c4_also`, which a test holds to asking each in every month, row by row, the codes and
+  the lives each cell takes derived in modelx, not read from the test's own lists, and
+  another to leaving no call of a life that computes uncompared), on the splice grid, at
+  the contract's extremes, each shape at its longest cover and its oldest age, issued now
+  and 120 months on and in force in its last month, where the caps on the claim rates bind
+  and on keys written as floats, and on the total's two cases, a later kind outweighing
+  the main claim and a main claim past the largest float; each life's label that is not
+  text; the refusals, message for message, the overflows of the five powers, the
+  `IndexError`s past the caches and an `idx` past the table and of −1 among them; what the
+  compiled model does with a value an int Reference cannot hold; each shape's deepest cold
+  call on a 1 MiB thread and on the main thread; a Reference set late, which clears no
+  cache; and `run_sec.py --cython`, which prints what modelx prints.
 
 ```bash
 python -m pytest tests/test_critical_illness_uk_sec.py -q

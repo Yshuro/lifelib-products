@@ -1101,7 +1101,7 @@ in modelx; the load, more than the caches, moves these figures.
   RPI one flat rate on either clock; expense inflation on the valuation clock at the
   shipped 3%, which only this test sees; improvement and the payment schedule on the
   policy clock; no premium and no acquisition; every guarded cell's value outside cover;
-  the block; an extract without the generator's three columns, labelled otherwise,
+  the block; an extract without the generator's columns, labelled otherwise,
   projecting the same numbers; `run_sec.py`'s numbers, for a point and for the block, and
   its sum, and its `--cython` stopping where no repository is above it; no cell's
   parameter defaulted, and `cum_annuity_pp`'s total refused before the valuation date's

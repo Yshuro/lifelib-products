@@ -972,15 +972,19 @@ numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`.
   temporary directory and run it in child processes: in
   `tests/test_compiled_conventions_uk.py`, C3, the typing guard, on the declarations, the
   spec and the generated C; C4 on the committed points; and the release. In this model's
-  module, C4 on the splice grid, at the contract's longest covers, issued now and 120
-  months on and in force in their last month, where the cap binds and on keys written as
-  floats, and at a commutation discount of 0, 1e-17 and 1.1e-16; each life's label that is
-  not text; the refusals, message for message, the overflows among them, the `IndexError`s
-  past the caches and an `idx` past the table and of −1; each shape's deepest cold call on
-  a 1 MiB thread and on the main thread; a Reference set late, which clears no cache; and
-  `run_sec.py --cython`, which prints what modelx prints. In
-  `tests/test_compiled_conventions_uk.py`, a static test holds the build tool's directives
-  to the two.
+  module, C4, every cell at every argument a full modelx sweep evaluates, with every code
+  no swept cell reads and both lives of every cell of a life (`_term_c4_also`, the spec's
+  `c4_also`, which a test holds to asking each in every month, row by row, the codes and
+  the lives each cell takes derived in modelx, not read from the test's own lists, and
+  another to leaving no call of a life that computes uncompared), on the splice grid, at
+  the contract's longest covers, issued now and 120 months on and in force in their last
+  month, where the cap binds and on keys written as floats, and at a commutation discount
+  of 0, 1e-17 and 1.1e-16; each life's label that is not text; the refusals, message for
+  message, the overflows among them, the `IndexError`s past the caches and an `idx` past
+  the table and of −1; each shape's deepest cold call on a 1 MiB thread and on the main
+  thread; a Reference set late, which clears no cache; and `run_sec.py --cython`, which
+  prints what modelx prints. In `tests/test_compiled_conventions_uk.py`, a static test
+  holds the build tool's directives to the two.
 
 ```bash
 python -m pytest tests/test_term_assurance_uk_sec.py -q
