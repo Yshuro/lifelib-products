@@ -1934,16 +1934,19 @@ def _ask_every_life(proj, alone, monthly):
 
     A single life's point refuses its second life, ``invalid life``, wherever a cell reads
     it: its issue age, its row of the table and its attained age always, and its rates in
-    cover, which are 0 outside it before they read a life.  Such a call is passed over.  It
-    caches nothing, so it enters no expectation, and the compiled run, which makes only
-    the calls expected, never makes it.  Any other raise is raised, since an ``also`` must
-    not raise.
+    cover, which are 0 outside it before they read a life.  Such a call is passed over,
+    and no other: the refusal at life 2 on a point that is a single life by its own
+    reading, ``is_joint()``.  It caches nothing, so it enters no expectation, and the
+    compiled run, which makes only the calls expected, never makes it.  Any other raise
+    is raised, that refusal at life 1 or on a joint point among them, since an ``also``
+    must not raise; ``test_sec_support_uk.py`` holds each.
     """
     def ask(name, args):
         try:
             proj.cells[name](*args)
         except Exception as err:            # a second life a single life refuses
-            if _error_text(err) != "ValueError: invalid life":
+            if not (args[-1] == 2 and _error_text(err) == "ValueError: invalid life"
+                    and not proj.is_joint()):
                 raise
 
     for name in alone:

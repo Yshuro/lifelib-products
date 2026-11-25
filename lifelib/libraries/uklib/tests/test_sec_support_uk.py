@@ -65,7 +65,10 @@ regeneration round trip, generates a table from Term's eight points.
   records such a row's References in its table, held by the same test and two refusals;
   and ``SecSpec.c4_also``, the ``also`` that uklib's conventions' C4 on the committed
   points passes, held on a stand-in by ``test_a_spec_s_c4_also_reaches_the_comparison``.
-  No uslib spec sets either, and no uslib table carries the column.
+  No uslib spec sets either, and no uslib table carries the column.  And of uklib's own
+  product specs, the ``also``'s ask of the cells of a life, which passes over a single
+  life's refused second life and no other raise, held on stand-ins by
+  ``test_the_also_passes_over_a_single_life_s_second_life_alone``.
 
 What each test pins, against USLIB-SEC-PLAN.md (its §4 item 3 and §5.2), which
 UKLIB-SEC-PLAN.md adopts:
@@ -2231,6 +2234,59 @@ def test_a_spec_s_c4_also_reaches_the_comparison(monkeypatch, tmp_path):
                for t in range(3))
     with pytest.raises(TypeError, match="c4_also is 5"):
         SecSpec(twin=TERM, c4_also=5)
+
+
+class _LifePoint:
+    """A stand-in for a point of three months whose cells of a life record each call, but
+    that ``cell`` raises ``error`` at ``life``; ``joint`` is its own reading of itself."""
+
+    def __init__(self, joint, error=None, life=None, cell=None):
+        self.joint, self.error, self.life, self.cell = joint, error, life, cell
+        self.asked = []
+        self.cells = {name: self._cell(name) for name in ("sex", "age")}
+
+    def _cell(self, name):
+        def cell(*args):
+            if name == self.cell and args[-1] == self.life:
+                raise self.error
+            self.asked.append((name, args))
+        return cell
+
+    def proj_len(self):
+        return 2
+
+    def is_joint(self):
+        return self.joint
+
+
+def test_the_also_passes_over_a_single_life_s_second_life_alone():
+    """Term's and CI's ``also`` pass over one raise alone as they ask the cells of a life
+    (``uk_sec_support._ask_every_life``): ``invalid life`` at life 2 on a point that is a
+    single life by its own ``is_joint()``, a call that caches nothing.
+
+    Every other raise must come through, so that a cell that fails for another reason is
+    not passed over and left uncompared, on stand-ins whose cells of a life raise
+    (:class:`_LifePoint`): that refusal at life 1, or at a joint point's life 2, and any
+    other error at either life, in a cell of a life alone or of a month and a life.  Where
+    it passes over the refusal, the ``also`` asks the rest as it would.
+    """
+    from uk_sec_support import _ask_every_life
+    refused = ValueError("invalid life")
+    single = _LifePoint(False, refused, 2, "age")
+    _ask_every_life(single, ("sex",), ("age",))
+    assert single.asked == [("sex", (1,)), ("sex", (2,))] + [("age", (t, 1))
+                                                             for t in range(3)]
+    for joint, life in ((True, 2), (False, 1)):
+        for cell in ("sex", "age"):
+            with pytest.raises(ValueError, match="invalid life"):
+                _ask_every_life(_LifePoint(joint, refused, life, cell), ("sex",), ("age",))
+    for error in (ValueError("mort_table.csv has no rate at attained age 130"),
+                  KeyError(2), ZeroDivisionError("float division by zero")):
+        for life in (1, 2):
+            for cell in ("sex", "age"):
+                with pytest.raises(type(error)):
+                    _ask_every_life(_LifePoint(False, error, life, cell), ("sex",),
+                                    ("age",))
 
 
 def test_the_full_sweep_reaches_every_cell_and_every_month_and_keeps_the_raises():

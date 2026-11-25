@@ -5784,15 +5784,20 @@ def _mismatch_lines(found):
 CODED = _TERM_CODED
 CELLS_OF_A_LIFE = _TERM_LIVES
 
+# The shapes of the cells of a life the also asks, by their parameters: of a life alone,
+# at each life, and of a month and a life, at each life in every month.  A cell of a life
+# of any other shape is asked by no also, and fails the codes test until one asks it.
+LIFE_SHAPES = (("life",), ("t", "life"))
+
 
 def _coded_cells(proj):
     """``{cell: its parameters}`` for every cell of ``proj`` that takes a code or a life:
-    each of a month and one more parameter, a timing, a kind or a life, and each of a life
-    alone, read from the space, so that such a cell added later, under whatever name, is
-    held with the others."""
+    each of a month and one more parameter, a timing, a kind or a life, and each with a life
+    among its parameters, whatever its shape, read from the space, so that such a cell
+    added later, under whatever name, is held with the others."""
     return {name: tuple(cells.parameters) for name, cells in proj.cells.items()
             if (len(cells.parameters) == 2 and cells.parameters[0] == "t")
-            or tuple(cells.parameters) == ("life",)}
+            or "life" in cells.parameters}
 
 
 def _inner_width():
@@ -5812,10 +5817,13 @@ def _codes_taken(proj, width):
     Each such cell is asked every argument of the caches' inner width, ``width``, in the
     point's first month on the books where it takes a month, and the arguments it takes
     are those it does not refuse by its parameter's name, ``invalid timing``, ``invalid
-    kind`` or ``invalid life``.  A refused call caches nothing.
+    kind`` or ``invalid life``.  A refused call caches nothing.  A cell of a life of a shape
+    no also asks (:data:`LIFE_SHAPES`) is asked nothing, and left out.
     """
     taken, lines, t = {}, [], proj.t_entry()
     for cell, parameters in sorted(_coded_cells(proj).items()):
+        if "life" in parameters and parameters not in LIFE_SHAPES:
+            continue
         taken[cell] = set()
         for code in range(width):
             args = (t, code) if len(parameters) == 2 else (code,)
@@ -5852,22 +5860,25 @@ def test_the_c4_comparisons_ask_every_code_on_every_row(spliced):
     Nothing in a comparison shows what it leaves out: dropped from :func:`_term_c4_also`, a
     code or a life is simply not compared.  So the cells of a code or of a life are read
     from the model, each of a month and one more parameter, a timing, a kind or a life, and
-    each of a life alone (:func:`_coded_cells`), and what each takes is derived in modelx,
-    not read from :data:`CODED` or :data:`CELLS_OF_A_LIFE`: on a fresh read of the committed
-    model, and on every row of the splice grid this run selects, the twins, the rows
-    restated in force and the future rows among them, each such cell is asked every argument
-    in the caches' one inner width, 0 to 3, in the row's first month on the books, and the
-    arguments it takes are those it does not refuse, ``invalid timing``, ``invalid kind`` or
-    ``invalid life`` (:func:`_codes_taken`).  :data:`CELLS_OF_A_LIFE` must name exactly the
-    cells whose parameter is a life, each taking no life there but 1 and 2, and
-    :data:`CODED` every other, with exactly the codes each takes, by the model's own
-    References, row by row.  Then :func:`_term_c4_also` is run on a stand-in of each of
-    those rows (:class:`_Asked`), one at a time: it must ask each cell of a code at every
-    code the cell takes on the row, and each cell of a life at both lives, in every month of
-    the frame and the month after it, and no other, so that a code or a life left out on one
-    kind of row fails here, where a union over the rows would pass it.  A single life's
-    second life is asked too: refused where a cell reads it, it computes elsewhere, each
-    rate 0 outside cover, and the ``also`` passes over the refusal
+    each with a life among its parameters (:func:`_coded_cells`), one of a shape no also
+    asks, neither of a life alone nor of a month and a life (:data:`LIFE_SHAPES`), failing
+    here until one asks it; and what each takes is derived in modelx, not read from
+    :data:`CODED` or :data:`CELLS_OF_A_LIFE`: on a fresh read of the committed model, and on
+    every row of the splice grid this run selects, the twins, the rows restated in force and
+    the future rows among them, each such cell is asked every argument in the caches' one
+    inner width, 0 to 3, in the row's first month on the books, and the arguments it takes
+    are those it does not refuse, ``invalid timing``, ``invalid kind`` or ``invalid life``
+    (:func:`_codes_taken`).  :data:`CELLS_OF_A_LIFE` must name exactly the cells of a life
+    of those shapes, each taking no life there but 1 and 2, and :data:`CODED` every other,
+    with exactly the codes each takes, by the model's own References, row by row.  Then
+    :func:`_term_c4_also` is run on a stand-in of each of those rows (:class:`_Asked`), one
+    at a time: it must ask each cell of a code at every code the cell takes on the row, and
+    each cell of a life at both lives, in every month of the frame and the month after it,
+    and no other, so that a code or a life left out on one kind of row fails here, where a
+    union over the rows would pass it.  A single life's second life is asked too: refused
+    where a cell reads it, it computes elsewhere, each rate 0 outside cover, and the
+    ``also`` passes over that refusal alone, at life 2 on a point that is a single life by
+    its own ``is_joint()``
     (:func:`test_c4_compares_every_cell_of_a_life_at_every_life_it_takes`).  And it must be
     the spec's ``c4_also``, which the conventions' C4 on the committed points passes
     (``uk_sec_support.spec_c4_also``).  Needs no compiler.
@@ -5884,9 +5895,13 @@ def test_the_c4_comparisons_ask_every_code_on_every_row(spliced):
                 where = f"{name} row {label}"
                 taken, lines = _codes_taken(p, width)
                 found += [f"{where}: {line}" for line in lines]
-                of_a_life = {cell: parameters
-                             for cell, parameters in _coded_cells(p).items()
-                             if parameters[-1] == "life"}
+                cells = _coded_cells(p)
+                odd = {cell: parameters for cell, parameters in cells.items()
+                       if "life" in parameters and parameters not in LIFE_SHAPES}
+                if odd:
+                    found.append(f"{where}: no also asks these cells of a life: {odd}")
+                of_a_life = {cell: parameters for cell, parameters in cells.items()
+                             if parameters in LIFE_SHAPES}
                 lives = {cell: taken.pop(cell) for cell in of_a_life}
                 if of_a_life != named_lives or not all(
                         took <= set(_LIVES) for took in lives.values()):
@@ -5944,14 +5959,16 @@ def test_c4_compares_every_cell_of_a_life_at_every_life_it_takes():
     (:func:`test_the_c4_comparisons_ask_every_code_on_every_row`), and passes over a single
     life's second life where a cell refuses it, ``invalid life``.  So each committed row is
     swept and asked as C4 asks it, on a fresh read (``uk_sec_support.c4_expected``, with
-    :func:`_term_c4_also`), and then every cell whose parameter is a life, read from the
-    model (:func:`_coded_cells`), is asked every life the model has, those its cells of a
-    life alone take on some committed row, derived on a read of its own
-    (:func:`_lives_taken`), alone or in every month of the frame and the month after it:
-    each call not cached must be refused, ``invalid life``.  So C4 leaves no call of a life
-    that computes uncompared, each life's labels and a single life's rates outside cover,
-    0, among them, and the ``also`` passed over nothing but the refusal.  Needs no
-    compiler.
+    :func:`_term_c4_also`), which must not raise, and then every cell with a life among its
+    parameters, read from the model (:func:`_coded_cells`), is asked every life the model
+    has, those its cells of a life alone take on some committed row, derived on a read of
+    its own (:func:`_lives_taken`), alone or in every month of the frame and the month after
+    it: each call not cached must be refused, ``invalid life``, and only at life 2 on a row
+    that is a single life by its own ``is_joint()``, as the ``also`` passes over that
+    refusal and no other.  A cell of a life of a shape no also asks (:data:`LIFE_SHAPES`)
+    fails.  So C4 leaves no call of a life that computes uncompared, each life's labels and
+    a single life's rates outside cover, 0, among them, and a refusal of a joint row's
+    second life, or of a first life, fails here and in C4.  Needs no compiler.
     """
     lives = _lives_taken(_inner_width())
     assert lives, "no cell of a life takes a life"
@@ -5960,9 +5977,17 @@ def test_c4_compares_every_cell_of_a_life_at_every_life_it_takes():
     try:
         for key, label in zip(point_keys(fresh), fresh.Data.model_point_table().index):
             p = projection(fresh, key)
-            c4_expected(p, _term_c4_also)
+            try:
+                c4_expected(p, _term_c4_also)
+            except Exception as err:                    # the also may not raise
+                found.append(f"row {label}: C4's also raised {_raised(err)}")
+                continue
+            joint = p.is_joint()
             for cell, parameters in _coded_cells(p).items():
-                if parameters[-1] != "life":
+                if "life" not in parameters:
+                    continue
+                if parameters not in LIFE_SHAPES:
+                    found.append(f"row {label}: no also asks {cell}{parameters}")
                     continue
                 cells = p.cells[cell]
                 cached = {k if isinstance(k, tuple) else (k,) for k in cells.keys()}
@@ -5975,7 +6000,8 @@ def test_c4_compares_every_cell_of_a_life_at_every_life_it_takes():
                         try:
                             cells(*args)
                         except Exception as err:        # refused, as it must be
-                            if _raised(err) != "ValueError: invalid life":
+                            if (life != 2 or joint
+                                    or _raised(err) != "ValueError: invalid life"):
                                 found.append(f"row {label}: {cell}{args} raised "
                                              f"{_raised(err)}")
                             continue
