@@ -127,7 +127,7 @@ four times, and modelx records each cohort's dependencies.
 | Whole of life | [`WOL_UK_SEC`](products/whole_of_life/model-sec.md) | 0.396 ms | 5.10 ms | 187 ms | 13.0× | 470× |
 | With-profits | [`WP_UK_SEC`](products/with_profits/model-sec.md) | 0.803 ms | 10.70 ms | 302 ms | 13.3× | 368× |
 | Unit-linked investment bond | [`ULB_UK_SEC`](products/unit_linked_bond/model-sec.md) | 0.236 ms | 3.13 ms | 111 ms | 13.1× | 470× |
-| Pension annuity | [`PA_UK_SEC`](products/pension_annuity/model-sec.md) | 0.393 ms | 5.92 ms | 192 ms | 15.1× | 489× |
+| Pension annuity | [`PA_UK_SEC`](products/pension_annuity/model-sec.md) | 0.364 ms | 5.31 ms | 152 ms | 14.6× | 417× |
 
 Assumption tables stay in the units they are quoted in: a mortality rate by attained age
 and a lapse rate by policy year are annual, and each model converts them month by month

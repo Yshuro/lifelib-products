@@ -965,30 +965,32 @@ range of the three beside it:
 
 | Engine | Points | `net_cf`, a point | `result_cf`, a point | Peak memory |
 |---|---|---|---|---|
-| compiled | 6,003 | 0.393 ms (0.385–0.403) | 0.907 ms (0.864–0.930) | 87–88 MB |
-| export | 621 | 5.92 ms (5.60–5.95) | 6.28 ms (5.95–6.32) | 87–88 MB |
-| modelx | 138 | 192 ms (183–192) | 192 ms (188–200) | 119–122 MB |
+| compiled | 6,003 | 0.364 ms (0.353–0.366) | 0.803 ms (0.793–0.842) | 87–88 MB |
+| export | 621 | 5.31 ms (5.31–5.31) | 5.80 ms (5.54–5.86) | 87–88 MB |
+| modelx | 138 | 152 ms (145–154) | 157 ms (146–160) | 121–122 MB |
 
-On `net_cf` the compiled model runs 15.1 times its export (13.9 to 15.5 over the three),
-and on `result_cf`, where building the DataFrame takes more than half its time, 6.8 times
-(6.6 to 7.3); it runs 489 times modelx on `net_cf` (454 to 498) and 212 on `result_cf`
-(202 to 231). The ranges are the noise of a machine other builds were using, its 1-minute
-load between 1.5 and 4.0 as the runs started. A point here costs more on every engine
-than in uklib's other compiled models, its frame being longer: 552 months on average over
-the committed points, against `ULB_UK_SEC`'s 340 and `Term_UK_SEC`'s 244. The release
-keeps a block flat: the compiled model's peak and the export's grew by less than 0.1 MB
-over their 6,003 and 621 points in every run, where modelx's rose by 31 to 35 MB in its
-loop. Reading the two files and building every `Data` vector and array for the compiled
-block took 0.04 to 0.06 s, and asking every point for its frame, the runner's first pass,
-0.16 to 0.28 s. Every engine, loop and run summed `net_cf` over a copy of the table to the same
-−5,946,586.352, to 1e-9 relative.
+On `net_cf` the compiled model runs 14.6 times its export (14.5 to 15.0 over the three),
+and on `result_cf`, where building the DataFrame takes more than half its time, 7.2 times
+(6.6 to 7.4); it runs 417 times modelx on `net_cf` (399 to 435) and 190 on `result_cf`
+(184 to 196). The ranges are the noise of a machine other work was using, its 1-minute
+load between 1.0 and 2.0 as the runs started. A point here costs more on every engine
+than one of `Term_UK_SEC`'s or `ULB_UK_SEC`'s, its frame being longer: 552 months on
+average over the committed points, against `ULB_UK_SEC`'s 340 and `Term_UK_SEC`'s 244.
+The release keeps a block flat: the compiled model's peak and the export's grew by less
+than 0.1 MB over their 6,003 and 621 points in every run, where modelx's rose by 34 to 35
+MB in its loop. Reading the two files and building every `Data` vector and array for the
+compiled block took 0.04 s, and asking every point for its frame, the runner's first
+pass, 0.15 to 0.16 s. Every engine, loop and run summed `net_cf` over a copy of the table
+to the same −5,946,586.352, to 1e-9 relative.
 
-Measured on 2026-11-23 on a machine shared with other work: 4 CPUs (an Intel Xeon at
-2.30 GHz), a 1-minute load average between 1.45 and 3.99 as the runs started; Linux,
+Measured on 2026-11-25 on a machine shared with other work: 4 CPUs (an Intel Xeon at
+2.30 GHz), a 1-minute load average between 0.98 and 1.99 as the runs started; Linux,
 Python 3.13.18 and gcc 13.3.0, with modelx 0.33.0, modelx-cython 0.1.0, Cython 3.3.1,
-numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`, made before
-`omega_age_max` raised every cache by a year, which grew the ItemSpace's struct by 0.8%,
-from 1,379,464 bytes to 1,390,576.
+numpy 2.5.3 and pandas 3.0.5, on one build of the model, `--build`, at the caches
+`omega_age_max` sets, its ItemSpace's struct 1,390,576 bytes. Timed on 2026-11-23, before
+`omega_age_max` raised every cache by a year and grew that struct by 0.8%, at a load of
+1.5 to 4.0, the model ran `net_cf` in 0.393 ms compiled, 5.92 ms as the export and 192 ms
+in modelx; the load, more than the caches, moves these figures.
 
 ## Tests
 
