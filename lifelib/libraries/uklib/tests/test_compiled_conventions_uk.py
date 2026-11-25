@@ -24,8 +24,9 @@ product meets it from the commit that moves it there, Term_UK_SEC first (M2):
   tool writes; and every reporting cell a reader asks for, a label among them, returns
   ``object``.
 * C4 on the committed points: the compiled model computes what modelx computes, every cell
-  at every argument a full modelx sweep caches, every raise and every ``Data`` array, bit
-  for bit on x86-64.
+  at every argument a full modelx sweep caches, with the codes no swept cell reads, which
+  the model's spec adds (its ``c4_also``), every raise and every ``Data`` array, bit for
+  bit on x86-64.  A test with no compiler holds the comparison to the spec's ``also``.
 * The release: ``run_sec.py --block``, run compiled, holds one point's ItemSpace at a time
   (F5, K2).
 * The block's sum: ``run_sec.py``'s running sum is ``groupby``'s, bit for bit, on the
@@ -60,6 +61,7 @@ import builtins
 import itertools
 import re
 import shlex
+import sys
 import textwrap
 import types
 
@@ -69,7 +71,8 @@ import pytest
 
 from uk_sec_support import (
     C_CALLS, SEC_SPECS, c_faults, compiled_case, compiled_mismatches, cython_shards,
-    release_faults, reporting_cells, spec_faults, static_faults, typing_faults)
+    release_faults, reporting_cells, spec_c4_also, spec_faults, static_faults,
+    typing_faults)
 from uk_sec_support import label_faults, reporting_columns_faults
 from uk_sec_support import engine_faults
 from uk_sec_support import REQUIRED_DIRECTIVES
@@ -434,18 +437,49 @@ def test_the_compiled_model_computes_what_modelx_computes(name, sec_build, tmp_p
     The build goes beside a copy of the committed inputs (``uk_sec_support.compiled_case``),
     where modelx reads them too.  modelx sweeps every point fully, every cell without
     parameters, the reports among them, and then every monthly cell at every month of the
-    frame and the month after, and every value it caches is compared with the compiled
-    model's at the same arguments, every timing included, to 1e-12 relative, floored at
-    the cell's magnitude, or identically on x86-64, where the compiled model does modelx's
-    arithmetic in modelx's order (``uk_sec_support.exact_here``); a bool or an int must
-    keep its kind, a raise must meet the same raise, and every ``Data`` array must be
-    identical (``uk_sec_support.compiled_mismatches``).  The branches the committed points
-    miss are each product's splice grid's.
+    frame and the month after, and with them what the model's spec adds, its ``c4_also``
+    (``uk_sec_support.spec_c4_also``): every cell of a code at every code it takes, in
+    every month, the codes no swept cell reads among them, such as the count at the end of
+    the month.  Every value modelx caches is compared with the compiled model's at the same
+    arguments, to 1e-12 relative, floored at the cell's magnitude, or identically on
+    x86-64, where the compiled model does modelx's arithmetic in modelx's order
+    (``uk_sec_support.exact_here``); a bool or an int must keep its kind, a raise must
+    meet the same raise, and every ``Data`` array must be identical
+    (``uk_sec_support.compiled_mismatches``).  The branches the committed points miss are
+    each product's splice grid's.
     """
     build = sec_build(name)
     folder = compiled_case(build, tmp_path / "committed")
-    found = compiled_mismatches(build, folder)
+    found = compiled_mismatches(build, folder, also=spec_c4_also(name))
     assert not found, f"{name}: {len(found)} mismatches, first:\n  " + "\n  ".join(found)
+
+
+def test_c4_on_the_committed_points_passes_the_spec_s_also(name, monkeypatch, tmp_path):
+    """C4 on the committed points hands the comparison its model's ``also``, the spec's
+    ``c4_also``, and every uklib spec gives one.
+
+    Nothing in a comparison shows what it leaves out: without its ``also``, C4 compares
+    fewer calls, and passes.  So C4 on the committed points,
+    :func:`test_the_compiled_model_computes_what_modelx_computes`, is run here with the
+    build, the case and the comparison standing in, which compile and compare nothing,
+    and what it hands the comparison is held: the model's spec's ``c4_also``, set on every
+    model at stage ``"EC"``, so that the codes no swept cell reads are compared on the
+    committed points as each product module compares them on its own rows.  Needs no
+    compiler.
+    """
+    handed = []
+
+    def comparison(build, folder, **kwargs):
+        handed.append((build.name, kwargs))
+        return []
+
+    module = sys.modules[__name__]
+    monkeypatch.setattr(module, "compiled_case", lambda build, dest, **kwargs: dest)
+    monkeypatch.setattr(module, "compiled_mismatches", comparison)
+    test_the_compiled_model_computes_what_modelx_computes(
+        name, lambda model: types.SimpleNamespace(name=model), tmp_path)
+    assert SEC_SPECS[name].c4_also is not None, f"{name}'s spec gives C4 no also"
+    assert handed == [(name, {"also": SEC_SPECS[name].c4_also})], handed
 
 
 def _block(name, points):

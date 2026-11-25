@@ -140,6 +140,7 @@ from uk_sec_support import (
     compiled_mismatches, exact_here, fingerprint_mismatches, frame_mismatches, full_sweep,
     label_mismatches, labels_refusing_non_text, reporting_cells, run_compiled, sweep,
     temp_inputs, twin_mismatches)
+from uk_sec_support import _WP_CODED, _wp_c4_also
 from uk_sec_support import generated_columns
 
 SEC, TWIN = "WP_UK_SEC", "WP_UK_S"
@@ -7204,33 +7205,11 @@ def _mismatch_lines(found):
     return f"{len(found)} mismatches, first:\n  " + "\n  ".join(found[:50])
 
 
-# The cells of a timing or a kind, each with the codes it takes, by name.
-CODED = {"pols_if_at": TIMINGS, "asset_share_at": AS_TIMINGS, "claim_pp": CLAIM_KINDS,
-         "smoothing_cost_pp": CLAIM_KINDS, "claims": (*KINDS, "ALL")}
-
-
-def _wp_c4_also(proj):
-    """What C4 compares of a ``WP_UK_SEC`` point beyond its full sweep (M14).
-
-    ``uk_sec_support.full_sweep`` evaluates every cell without parameters and every cell of
-    ``t`` alone, at every month of the frame and the month after it, ``unit_price`` on the
-    endowment, ``policy_value_pp``, ``smoothed_payout_capped``, ``bonus_supportable``,
-    ``declaration_month`` and the six refusal cells among them; but it reaches a cell of a
-    code only at the codes some swept cell asks of it: no cell reads the count at
-    ``AFT_DECR``, the end of the month, nor ``smoothing_cost_pp`` at ``GUARANTEE``, and only
-    the asset share's refusal reads ``asset_share_at(t, AFT_MC)``.  So, as ``sample_sec.py``
-    does, this calls every cell of :data:`CODED` at every code it takes, the count's four
-    timings and the asset share's six, the payouts' four kinds and the claims' three and
-    their total, at ``t = 0 .. proj_len()``, on every row, whatever its chassis; each call
-    is of a code its cell takes, so none raises.  Passed to
-    ``uk_sec_support.compiled_mismatches`` as ``also``, as ``WOL_UK_SEC`` passes its own;
-    :func:`test_the_c4_comparisons_ask_every_code_and_their_rows` holds it to every code,
-    row by row.
-    """
-    for t in range(proj.proj_len() + 1):
-        for cell, names in CODED.items():
-            for name in names:
-                proj.cells[cell](t, _code(proj, name))
+# The cells of a timing or a kind, each with the codes it takes, by name: the harness's,
+# which its _wp_c4_also, the spec's c4_also, asks at every code in every month of every
+# row.  test_the_c4_comparisons_ask_every_code_and_their_rows holds both to modelx, row by
+# row.
+CODED = _WP_CODED
 
 
 class _Asked:
@@ -7292,7 +7271,8 @@ def test_the_c4_comparisons_ask_every_code_and_their_rows(sec_model, spliced):
     row, one at a time, it must ask every cell of :data:`CODED` at every code that cell
     takes, in every month of the frame and the month after it, and no other: a code left
     out on one kind of row fails here, where a union over the rows would pass it, and a
-    code left out of :data:`CODED` fails above.
+    code left out of :data:`CODED` fails above.  It must be the spec's ``c4_also``, which
+    the conventions' C4 on the committed points passes (``uk_sec_support.spec_c4_also``).
     And each default selection is derived in modelx from the committed rows: the rows of
     :data:`OWN_REFS_ROWS` are those the spec's ``derived_refs`` read under each set; the
     rows of :data:`DECLARING_ROWS` declare in their frame under the rule, one valued on its
@@ -7341,6 +7321,7 @@ def test_the_c4_comparisons_ask_every_code_and_their_rows(sec_model, spliced):
                 _release(model, key)
     assert rows > len(sec_model.Data.model_point_table()) and not found, (
         rows, found[:10])
+    assert SPEC.c4_also is _wp_c4_also, SPEC.c4_also
     table = sec_model.Data.model_point_table()
     own = {}
     for (s_point, month), refs in SPEC.derived_refs.items():

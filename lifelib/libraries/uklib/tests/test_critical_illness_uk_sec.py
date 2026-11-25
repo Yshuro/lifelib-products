@@ -85,10 +85,12 @@ module holds the rest of the plan's tests (its §5) and the product's own facts:
   (USLIB-SEC-PLAN.md §5.4).
 * Compiled, the tests marked ``cython``, after the fingerprint: C4 on the splice grid, at
   the contract's extremes, where the caps on the claim rates bind and on keys written as
-  floats; each life's label that is not text; the refusals, the overflows of the five
-  powers among them, and an int Reference set as a float; the deepest cold call on a 1 MiB
-  stack; a Reference set late; and the runner.  ``test_compiled_conventions_uk.py`` holds
-  C3, C4 on the committed points and the release.
+  floats, each with the model's ``also``, every code no swept cell reads, which a test
+  holds to the codes each cell takes in modelx, row by row; each life's label that is not
+  text; the refusals, the overflows of the five powers among them, and an int Reference
+  set as a float; the deepest cold call on a 1 MiB stack; a Reference set late; and the
+  runner.  ``test_compiled_conventions_uk.py`` holds C3, C4 on the committed points, with
+  the same ``also``, and the release.
 
 SEC month ``t`` is S month ``t + source_mth`` throughout, the direction in which
 ``uk_sec_support`` takes its ``t_offset``: ``d`` for a point restated at S month ``d``,
@@ -152,6 +154,7 @@ from uk_sec_support import (
     twin_mismatches)
 from uk_sec_support import (
     compiled_case, compiled_mismatches, exact_here, reporting_cells, run_compiled)
+from uk_sec_support import _CI_CODED, _ci_c4_also
 from uk_sec_support import generated_columns
 
 SEC, TWIN = "CI_UK_SEC", "CI_UK_S"
@@ -5988,6 +5991,13 @@ FINGERPRINT = {
 # claim rates bind and on keys written as floats; each life's label that is not text; the
 # refusals, the five powers' overflows among them; an int Reference set as a float; the
 # deepest calls on a 1 MiB stack; a Reference set late; and the runner.
+#
+# Every C4 comparison here passes the model's also, _ci_c4_also, the spec's c4_also, which
+# the conventions' C4 passes on the committed points: every cell of a code at every code it
+# takes, in every month of the frame and the month after it, each benefit per policy in the
+# month after the frame, which no swept cell reads, among them (UKLIB-SEC-PLAN.md, M15).
+# test_the_c4_comparisons_ask_every_code_on_every_row, which needs no compiler, holds it to
+# the codes each cell takes in modelx, row by row.
 
 
 def _as_modelx(have, want):
@@ -5998,6 +6008,120 @@ def _as_modelx(have, want):
 
 def _mismatch_lines(found):
     return f"{len(found)} mismatches, first:\n  " + "\n  ".join(found[:50])
+
+
+# The cells C4 asks at every code, each with the names of the codes it takes, read from the
+# model's own References (_code): the harness's, which its _ci_c4_also, the spec's
+# c4_also, asks in every month of every row.  What each takes is derived in modelx, row by
+# row, and these must name exactly that (test_the_c4_comparisons_ask_every_code_on_every_
+# row).
+CODED = _CI_CODED
+
+
+def _coded_cells(proj):
+    """The cells of ``proj`` that take a code, each of a month and a timing or a kind, read
+    from the space, so that a cell of a code added later is held with the others."""
+    return {name for name, cells in proj.cells.items()
+            if tuple(cells.parameters) in (("t", "timing"), ("t", "kind"))}
+
+
+def _inner_width():
+    """The one inner width ``spec_sec.py`` gives the caches of ``t`` and a code."""
+    source, _ = _comment("spec_sec.py")
+    sizes = ast.literal_eval(source)["spaces"]["Projection"]["cells_param_size"]
+    (width,) = {size[1] for size in sizes.values() if isinstance(size, tuple)}
+    return width
+
+
+def _codes_taken(proj, width):
+    """``({cell: codes}, lines)``: the codes each cell of a code takes on point ``proj``,
+    in modelx, and a line for each other raise.
+
+    Each cell of :func:`_coded_cells` is asked every code of the caches' inner width,
+    ``width``, in the point's first month on the books, and the codes it takes are those it
+    does not refuse with ``invalid timing`` or ``invalid kind``.  A refused call caches
+    nothing.
+    """
+    taken, lines, t = {}, [], proj.t_entry()
+    for cell in sorted(_coded_cells(proj)):
+        taken[cell] = set()
+        for code in range(width):
+            try:
+                proj.cells[cell](t, code)
+            except Exception as err:            # a code the cell does not take
+                if not re.search(r"ValueError: invalid (timing|kind)", _raised(err)):
+                    lines.append(f"{cell}({t}, {code}) raised {_raised(err)}")
+                continue
+            taken[cell].add(code)
+    return taken, lines
+
+
+class _Asked:
+    """A stand-in for a point, which records what :func:`_ci_c4_also` asks of each cell of
+    a code, as (month, code), over the point's frame; its References are the point's own."""
+
+    def __init__(self, proj):
+        self.refs, self.months, self.asked = proj.refs, proj.proj_len(), {}
+        self.cells = {name: self._cell(name) for name in _coded_cells(proj)}
+
+    def _cell(self, name):
+        return lambda t, code: self.asked.setdefault(name, set()).add((t, code))
+
+    def proj_len(self):
+        return self.months
+
+
+def test_the_c4_comparisons_ask_every_code_on_every_row(spliced):
+    """C4's ``also`` asks every code its cells take, in every month of every row.
+
+    Nothing in a comparison shows what it leaves out: dropped from :func:`_ci_c4_also`, a
+    code is simply not compared.  So the cells of a code are read from the model, each of a
+    month and a timing or a kind (:func:`_coded_cells`), and what each takes is derived in
+    modelx, not read from :data:`CODED`: on a fresh read of the committed model, and on
+    every row of the splice grid this run selects, the twins, the rows restated in force
+    and the future rows among them, each such cell is asked every code in the caches' one
+    inner width, 0 to 4, in the row's first month on the books, and the codes it takes
+    are those it does not refuse, ``invalid timing`` or ``invalid kind``
+    (:func:`_codes_taken`); :data:`CODED` must name exactly those cells and codes, by the
+    model's own References, row by row.  Then :func:`_ci_c4_also` is run on a stand-in of
+    each of those rows (:class:`_Asked`), one at a time: it must ask each cell at every
+    code the cell takes on the row, in every month of the frame and the month after it,
+    and no other, so that a code left out on one kind of row fails here, where a union over
+    the rows would pass it.  And it must be the spec's ``c4_also``, which the conventions'
+    C4 on the committed points passes (``uk_sec_support.spec_c4_also``).  Needs no
+    compiler.
+    """
+    width, found, rows = _inner_width(), [], 0
+    fresh = mx.read_model(model_path(SEC), name=_name("codes"))
+    try:
+        for name, model in (("committed", fresh), ("spliced", spliced[1])):
+            for key, label in zip(point_keys(model), model.Data.model_point_table().index):
+                p = projection(model, key)
+                where = f"{name} row {label}"
+                taken, lines = _codes_taken(p, width)
+                found += [f"{where}: {line}" for line in lines]
+                named = {cell: {_code(p, n) for n in names}
+                         for cell, names in CODED.items()}
+                if named != taken:
+                    found.append(f"{where}: the cells of a code take {taken} in modelx, "
+                                 f"CODED names {named}")
+                stand_in = _Asked(p)
+                _ci_c4_also(stand_in)
+                months = range(p.proj_len() + 1)
+                want = {cell: {(t, code) for t in months for code in codes}
+                        for cell, codes in taken.items()}
+                if stand_in.asked != want:
+                    apart = {cell: sorted(stand_in.asked.get(cell, set())
+                                          ^ want.get(cell, set()))[:4]
+                             for cell in {*want, *stand_in.asked}}
+                    found.append(f"{where}: asked or missed {apart}")
+                rows += 1
+                if name != "committed":
+                    _release(model, key)
+    finally:
+        fresh.close()
+    assert rows > len(_committed()) and not found, (rows, found[:10])
+    assert SPEC.c4_also is _ci_c4_also, SPEC.c4_also
 
 
 # How many rows of a grid C4 compares at once.  compiled_mismatches sweeps every row of its
@@ -6036,7 +6160,8 @@ def test_the_compiled_model_computes_what_modelx_computes_on_the_splice_grid(spl
         chunk = table.iloc[start:start + C4_CHUNK]
         case = compiled_case(build, tmp_path / f"chunk{start}", model_points=chunk)
         found += [f"rows {start} on: {line}"
-                  for line in compiled_mismatches(build, case, refs=SPLICED_REFS)]
+                  for line in compiled_mismatches(build, case, refs=SPLICED_REFS,
+                                                  also=_ci_c4_also)]
     assert not found, _mismatch_lines(found)
 
 
@@ -6118,7 +6243,7 @@ def test_the_compiled_model_computes_what_modelx_computes_at_the_contract_extrem
     assert min(lives) == 18 and max(int(a) + int(n) - 1 for a, n in zip(
         rows["age_at_entry"], rows["policy_term"])) == 74
     folder = compiled_case(build, tmp_path / "extremes", model_points=rows)
-    found = compiled_mismatches(build, folder, refs=SWITCHED_ON)
+    found = compiled_mismatches(build, folder, refs=SWITCHED_ON, also=_ci_c4_also)
     assert not found, _mismatch_lines(found)
 
 
@@ -6153,7 +6278,7 @@ def test_the_compiled_model_computes_what_modelx_computes_where_the_caps_bind(se
     assert emptied.sum() == len(CAPPED_POINTS)
     rows.loc[emptied, "policy_count"] = 1.0
     folder = compiled_case(build, tmp_path / "capped", model_points=rows, edits=CAPPED)
-    found = compiled_mismatches(build, folder, refs=SPLICED_REFS)
+    found = compiled_mismatches(build, folder, refs=SPLICED_REFS, also=_ci_c4_also)
     assert not found, _mismatch_lines(found)
 
 
@@ -6179,11 +6304,12 @@ def test_the_compiled_total_is_modelx_s_where_a_later_kind_outweighs_or_is_infin
     folder = compiled_case(build, tmp_path / "committed")
     for refs, _ in TOTAL_EDGES:
         found += [f"{refs}: {line}"
-                  for line in compiled_mismatches(build, folder, refs=refs)]
+                  for line in compiled_mismatches(build, folder, refs=refs,
+                                                  also=_ci_c4_also)]
     folder = compiled_case(build, tmp_path / "infinite",
                            model_points=_infinite_main_claim()[1])
     found += [f"the infinite main claim: {line}"
-              for line in compiled_mismatches(build, folder)]
+              for line in compiled_mismatches(build, folder, also=_ci_c4_also)]
     assert not found, _mismatch_lines(found)
 
 
@@ -6235,7 +6361,7 @@ def test_the_compiled_model_reads_keys_written_as_floats_as_modelx_does(sec_buil
     finally:
         model.close()
         as_written.close()
-    found = compiled_mismatches(build, folder)
+    found = compiled_mismatches(build, folder, also=_ci_c4_also)
     assert not found, _mismatch_lines(found)
 
 

@@ -159,6 +159,7 @@ from uk_sec_support import (
 from uk_sec_support import (
     compiled_case, compiled_mismatches, exact_here, label_mismatches,
     labels_refusing_non_text, reporting_cells, run_compiled)
+from uk_sec_support import _wol_c4_also
 from uk_sec_support import generated_columns
 
 SEC, TWIN = "WOL_UK_SEC", "WOL_UK_S"
@@ -6429,25 +6430,6 @@ def _mismatch_lines(found):
     return f"{len(found)} mismatches, first:\n  " + "\n  ".join(found[:50])
 
 
-def _wol_c4_also(proj):
-    """What C4 compares of a ``WOL_UK_SEC`` point beyond its full sweep (M6).
-
-    ``uk_sec_support.full_sweep`` reaches a cell of more than ``t`` only at the codes some
-    swept cell asks of it: no cell reads the count at ``AFT_DECR``, the end of the month,
-    and on the underwritten cell none reads ``benefit_pp`` at ``NON_ACC`` or ``ACC``, which
-    only the over-50s blend reads.  So, as ``sample_sec.py`` does, this calls every timing,
-    every benefit and every kind, the claims total among them, at ``t = 0 ..
-    proj_len()``; every code inside the one inner width is one its cell takes, so none
-    raises.  Passed to ``uk_sec_support.compiled_mismatches`` as ``also``, as uslib's
-    DIA, MYGA and FIA modules pass theirs.
-    """
-    codes = {"pols_if_at": TIMINGS, "benefit_pp": BENEFITS, "claims": (*KINDS, "ALL")}
-    for t in range(proj.proj_len() + 1):
-        for cell, names in codes.items():
-            for name in names:
-                proj.cells[cell](t, _code(proj, name))
-
-
 # How many rows of a grid C4 compares at once.  compiled_mismatches sweeps every row of its
 # case in one modelx read and keeps every value of every row, in the parent and in the
 # child, until it compares them.  A WOL row runs at most 1,356 months, as ULB's do, so
@@ -6519,13 +6501,15 @@ def test_the_c4_comparisons_ask_every_code_and_their_rows(sec_model):
     :func:`_wol_c4_also` is run on a stand-in point (:class:`_Asked`), over a frame of five
     months, with the model's References read as the spec test reads them: it must ask
     ``pols_if_at``, ``benefit_pp`` and ``claims`` at every code inside the one inner width
-    ``spec_sec.py`` gives, in every month of the frame and the month after it.  And each
-    selection of :data:`OWN_REFS_ROWS` and :data:`ANNIVERSARY_ROWS` is derived in modelx
-    from the committed points: under each RPI the comparisons set, of 5%, -2% and 25%, the
-    rows whose steps move are :data:`RPI_ROWS`, and under a take-up of a half
-    :data:`ESCALATING_ROWS`; the stress's rows are the paid-up ones and those in force past
-    their crossover with lapses running, each of whose lapse rates the stress moves; and the
-    anniversary's are the escalating rows valued on an anniversary.
+    ``spec_sec.py`` gives, in every month of the frame and the month after it; and it must
+    be the spec's ``c4_also``, which the conventions' C4 on the committed points passes
+    (``uk_sec_support.spec_c4_also``).  And each selection of :data:`OWN_REFS_ROWS` and
+    :data:`ANNIVERSARY_ROWS` is derived in modelx from the committed points: under each RPI
+    the comparisons set, of 5%, -2% and 25%, the rows whose steps move are
+    :data:`RPI_ROWS`, and under a take-up of a half :data:`ESCALATING_ROWS`; the stress's
+    rows are the paid-up ones and those in force past their crossover with lapses running,
+    each of whose lapse rates the stress moves; and the anniversary's are the escalating
+    rows valued on an anniversary.
     """
     source, _ = _comment("spec_sec.py")
     sizes = ast.literal_eval(source)["spaces"]["Projection"]["cells_param_size"]
@@ -6535,6 +6519,7 @@ def test_the_c4_comparisons_ask_every_code_and_their_rows(sec_model):
     every = {(t, code) for t in range(6) for code in range(width)}
     for cell in ("pols_if_at", "benefit_pp", "claims"):
         assert stand_in.asked.get(cell) == every, (cell, sorted(stand_in.asked.get(cell, ())))
+    assert SPEC.c4_also is _wol_c4_also, SPEC.c4_also
 
     labels = dict(zip(sec_model.Data.model_point_table().index, point_keys(sec_model)))
     points = {label: projection(sec_model, key) for label, key in labels.items()}

@@ -1079,6 +1079,16 @@ class SecSpec:
         two re-based scenarios (D8).
     ``model_point_file``
         the SEC table's own filename.
+    ``c4_also``
+        ``callable(proj)``, or ``None``: what C4 compares of a point beyond its full sweep,
+        the ``also`` :func:`compiled_mismatches` takes, which the conventions' C4 on the
+        committed points passes it (:func:`spec_c4_also`).  The sweep reaches a cell of a
+        code only at the codes some swept cell asks of it, so a product whose sweep leaves
+        a code unasked, such as a count at the end of the month that no formula reads,
+        calls it here, at every month of the frame and the month after it; and its module
+        passes the same to its own comparisons.  It is called on a modelx point whose
+        ``proj_len()`` has not raised, and must not raise.  ``None``, the default, adds
+        nothing.
 
     Every file the spec writes ends ``_sec.csv``, which is checked here.  The SEC model
     shares its directory with the S model's inputs, and the suffix is what guarantees the
@@ -1101,8 +1111,12 @@ class SecSpec:
     model_state: Callable | None = None
     derived_refs: Mapping[tuple[int, int], Mapping[str, object]] = dataclasses.field(
         default_factory=dict)
+    c4_also: Callable | None = None
 
     def __post_init__(self):
+        if self.c4_also is not None and not callable(self.c4_also):
+            raise TypeError(f"c4_also is {self.c4_also!r}: C4's also is a callable of one "
+                            f"point, or None")
         for filename in (self.model_point_file, *self.companions):
             if not str(filename).endswith("_sec.csv"):
                 raise ValueError(
@@ -1872,6 +1886,217 @@ def _wp_claims_total(name, args):
     return args
 
 
+# C4's also, each model's SecSpec c4_also (UKLIB-SEC-PLAN.md, M15).  full_sweep evaluates
+# every cell without parameters and every cell of t alone, at every month of the frame and
+# the month after it, but it reaches a cell of a code only at the codes some swept cell
+# asks of it: no formula reads the count at AFT_DECR, the end of the month, for one.  So
+# each model's also asks what no swept cell reads.  Six ask every cell that takes a timing
+# or a kind at every code it takes, in every month of the frame and the month after it,
+# on every row, as each sample_sec.py calls them, IP's the cohorts besides; PA's, whose
+# sweep reaches every timing and kind but the payments to date's, asks those and the cells
+# of a life no swept cell reads.  Each cell of a model's _*_CODED takes a code of the
+# names it lists, read from the point's own References (_code_of); each code is one its
+# cell takes, so no call raises.  The conventions' C4 on the committed points passes each
+# through the spec (uk_sec_support.spec_c4_also), and each product module passes the same
+# to its own C4 comparisons, and holds it, row by row, to the codes each cell takes in
+# modelx (test_..._uk_sec.py's test of C4's codes).
+
+
+def _code_of(proj, label):
+    """The argument that selects timing or kind ``label`` on ``proj``: the model's int
+    Reference of that name where it has one, as at stage ``"EC"``, else the string, as at
+    ``"E"``; each product module's ``_code``."""
+    value = proj.refs.get(label) if label in proj.refs else None
+    return value if isinstance(value, int) and not isinstance(value, bool) else label
+
+
+def _ask_every_code(proj, coded):
+    """Ask each cell of ``coded``, ``{cell: names of the codes it takes}``, at every code it
+    takes, in every month of ``proj``'s frame and the month after it, ``t = 0 ..
+    proj_len()``: the ``also`` of a model whose cells of a code take nothing else."""
+    for t in range(proj.proj_len() + 1):
+        for cell, names in coded.items():
+            for name in names:
+                proj.cells[cell](t, _code_of(proj, name))
+
+
+# Term_UK_SEC's cells of a code: the count's four timings and the claims' three kinds and
+# their total.  No formula reads the count at AFT_DECR, nor at BEF_LAPSE in the month after
+# the frame or before issue; the reports reach every kind.
+_TERM_CODED = {"pols_if_at": ("BEF_NB", "BEF_DECR", "BEF_LAPSE", "AFT_DECR"),
+               "claims": ("DEATH", "FIB", "LAPSE", "ALL")}
+
+
+def _term_c4_also(proj):
+    """What C4 compares of a ``Term_UK_SEC`` point beyond its full sweep (M15): every cell
+    of :data:`_TERM_CODED` at every code it takes, at ``t = 0 .. proj_len()``, the count at
+    ``AFT_DECR`` among them, as ``sample_sec.py`` calls it."""
+    _ask_every_code(proj, _TERM_CODED)
+
+
+# CI_UK_SEC's cells of a code: the count's four timings, the three benefits per policy and
+# the claims' four kinds and their total.  No formula reads the count at BEF_LAPSE or
+# AFT_DECR, nor a benefit per policy, in the month after the frame, nor the count at
+# BEF_LAPSE or a benefit before issue.
+_CI_CODED = {"pols_if_at": ("BEF_NB", "BEF_DECR", "BEF_LAPSE", "AFT_DECR"),
+             "benefit_pp": ("MAIN", "AP", "CHILD"),
+             "claims": ("MAIN", "AP", "CHILD", "LAPSE", "ALL")}
+
+
+def _ci_c4_also(proj):
+    """What C4 compares of a ``CI_UK_SEC`` point beyond its full sweep (M15): every cell of
+    :data:`_CI_CODED` at every code it takes, at ``t = 0 .. proj_len()``, each benefit
+    per policy in the month after the frame among them."""
+    _ask_every_code(proj, _CI_CODED)
+
+
+# ULB_UK_SEC's cells of a code: the count's four timings and the fund's four, which share
+# the caches' inner width of 8 and refuse each other's, and the claims' two kinds and their
+# total.  No formula reads the fund at BEF_GROWTH, the count at AFT_DECR but at the end of
+# a policy year's walk, nor the count at BEF_SURR in the month after the frame or before
+# issue.
+_ULB_CODED = {"pols_if_at": ("BEF_NB", "BEF_DECR", "BEF_SURR", "AFT_DECR"),
+              "av_pp_at": ("BEF_GROWTH", "AFT_GROWTH", "AFT_CHARGE", "AFT_WD"),
+              "claims": ("DEATH", "SURRENDER", "ALL")}
+
+
+def _ulb_c4_also(proj):
+    """What C4 compares of a ``ULB_UK_SEC`` point beyond its full sweep (M15): every cell
+    of :data:`_ULB_CODED` at every code it takes, at ``t = 0 .. proj_len()``, the fund at
+    ``BEF_GROWTH`` and the count at ``AFT_DECR`` among them."""
+    _ask_every_code(proj, _ULB_CODED)
+
+
+# WOL_UK_SEC's cells of a code: the count's four timings, the four benefits per policy and
+# the claims' three kinds and their total; every code inside the one inner width is one its
+# cell takes.
+_WOL_CODED = {"pols_if_at": ("BEF_NB", "BEF_DECR", "BEF_LAPSE", "AFT_DECR"),
+              "benefit_pp": ("NON_ACC", "ACC", "DEATH", "PAID_UP"),
+              "claims": ("DEATH", "DEATH_PU", "LAPSE", "ALL")}
+
+
+def _wol_c4_also(proj):
+    """What C4 compares of a ``WOL_UK_SEC`` point beyond its full sweep (M6).
+
+    ``full_sweep`` reaches a cell of more than ``t`` only at the codes some swept cell asks
+    of it: no cell reads the count at ``AFT_DECR``, the end of the month, and on the
+    underwritten cell none reads ``benefit_pp`` at ``NON_ACC`` or ``ACC``, which only the
+    over-50s blend reads.  So, as ``sample_sec.py`` does, this calls every timing, every
+    benefit and every kind, the claims total among them (:data:`_WOL_CODED`), at ``t = 0
+    .. proj_len()``; every code inside the one inner width is one its cell takes, so none
+    raises.
+    """
+    _ask_every_code(proj, _WOL_CODED)
+
+
+def _pa_c4_also(proj):
+    """C4's ``also`` on every ``PA_UK_SEC`` row it compares: the cells and codes no swept
+    cell reads (M12).
+
+    A sweep evaluates every cell without parameters and every cell of ``t`` alone, at every
+    month of the frame and the month after, the payments to date on every stream and their
+    refusal among them, and every other cell only where those read it.  So it calls,
+    besides: each life's death density, ``lives_death(t, life)``, at every month, which the
+    last-death density replaces in every flow but the claim on the first death, and so the
+    dependant's on every row and the annuitant's on a single life; the payments to date at
+    ``ALL`` at every key the frame reads, which no cell reads; where value protection is on
+    the first death, the annuitant's, ``ANNUITANT``, there and its refusal, which only an
+    overflow calls; the income's refusal in every policy year the frame reads; and each
+    life's label.  A row whose annuitant's payments to date no projection reads is not
+    asked them: on RPI-linked escalation they open from ``cum_annuity_pp_init``, which such
+    a row leaves blank, so they are NaN there, refused past the first key in both engines,
+    and never read.  ``test_pension_annuity_uk_sec.py``'s
+    ``test_c4_asks_every_cell_at_every_code`` holds the sweep and this to every code.
+    """
+    end = proj.proj_len()
+    for t in range(end + 1):
+        for life in (1, 2):
+            proj.lives_death(t, life)
+    annuitant = proj.vp_pct() > 0.0 and proj.is_first_death()
+    for k in range(max(proj.duration_mth_init(), 0), proj.duration_mth(end) + 1):
+        proj.cum_annuity_pp(k, _code_of(proj, "ALL"))
+        if annuitant:
+            proj.cum_annuity_pp(k, _code_of(proj, "ANNUITANT"))
+            proj.cum_annuity_pp_refusal(k)
+    for y in range(proj.policy_year_init(), proj.policy_year(end - 1) + 1):
+        proj.annual_income_refusal(y)
+    for life in (1, 2):
+        proj.sex(life)
+
+
+# IP_UK_SEC's cells C4 asks at every code: the count's three timings and the claims' three
+# kinds and their total.  What each takes is derived in modelx, row by row, on every row
+# test_income_protection_uk_sec.py's C4 compares, and this must name exactly that (M8's
+# review, after M14's).
+_IP_CODED = {"pols_if_at": ("BEF_NB", "BEF_DECR", "AFT_DECR"),
+             "claims": ("BENEFIT", "DEATH", "LAPSE", "ALL")}
+
+
+def _ip_c4_also(proj):
+    """What C4 compares of an ``IP_UK_SEC`` point beyond its full sweep (M8).
+
+    ``full_sweep`` calls every cell without parameters, ``pv_benefits``, ``annuity_dis``
+    and ``premium_basis`` among them, which no report reads, and every cell of ``t`` alone
+    at ``t = 0 .. proj_len()``, ``disc_factor`` among them; it reaches a cell of more only
+    at the arguments some swept cell asks of it.  No cell reads the count at ``BEF_DECR`` or
+    ``AFT_DECR``, a claim duration's survival where no cohort holds lives, nor a cohort past
+    the ones that can hold lives, ``claim_dur_live(t)``, where the sums stop.  So, as
+    ``sample_sec.py`` does, this calls every timing and every kind, the claims total among
+    them (:data:`_IP_CODED`), in every month of the frame and the month after it, and the
+    survival of every claim duration from 1 to ``max_dur()``; and the cohorts past the live
+    ones: claim duration 0 and the first past the live ones in every month, and every claim
+    duration from 0 to ``max_dur()`` in the month the point is first on the books, the
+    month after it, the frame's last month and the month after the frame, where the live
+    triangle's edges meet the cache's.  Every other cohort is the zero of one asked here,
+    down its diagonal: the sample traces the whole rectangle in the export, where a cohort
+    costs a C double, and modelx, whose cache entry costs a thousand times that, forms the
+    triangle and its edges.  Every claim duration asked is inside the ``z`` cache, so none
+    raises.
+    """
+    last, top, entry = proj.proj_len(), proj.max_dur(), proj.t_entry()
+    edges = {entry, entry + 1, last - 1, last}
+    for t in range(last + 1):
+        for cell, names in _IP_CODED.items():
+            for name in names:
+                proj.cells[cell](t, _code_of(proj, name))
+        live = proj.cells["claim_dur_live"](t)
+        zs = (range(top + 1) if t in edges
+              else (0, *range(live + 1, min(live + 1, top) + 1)))
+        for z in zs:
+            proj.cells["pols_sick_dur"](t, z)
+    for z in range(1, top + 1):
+        proj.cells["claim_surv_step"](z)
+
+
+# WP_UK_SEC's cells of a timing or a kind, each with the codes it takes, by name: the
+# count's four timings and the asset share's six, one numbering in one inner width of 10,
+# the payouts' four kinds and the claims' three and their total.
+_WP_CODED = {"pols_if_at": ("BEF_NB", "BEF_DECR", "BEF_SURR", "AFT_DECR"),
+             "asset_share_at": ("BEF_PREM", "BEF_RETURN", "AFT_RETURN", "AFT_CHARGE",
+                                "AFT_ST", "AFT_MC"),
+             "claim_pp": ("DEATH", "SURRENDER", "GUARANTEE", "MATURITY"),
+             "smoothing_cost_pp": ("DEATH", "SURRENDER", "GUARANTEE", "MATURITY"),
+             "claims": ("DEATH", "SURRENDER", "MATURITY", "ALL")}
+
+
+def _wp_c4_also(proj):
+    """What C4 compares of a ``WP_UK_SEC`` point beyond its full sweep (M14).
+
+    ``full_sweep`` evaluates every cell without parameters and every cell of ``t`` alone,
+    at every month of the frame and the month after it, ``unit_price`` on the endowment,
+    ``policy_value_pp``, ``smoothed_payout_capped``, ``bonus_supportable``,
+    ``declaration_month`` and the six refusal cells among them; but it reaches a cell of a
+    code only at the codes some swept cell asks of it: no cell reads the count at
+    ``AFT_DECR``, the end of the month, nor ``smoothing_cost_pp`` at ``GUARANTEE``, and only
+    the asset share's refusal reads ``asset_share_at(t, AFT_MC)``.  So, as
+    ``sample_sec.py`` does, this calls every cell of :data:`_WP_CODED` at every code it
+    takes, the count's four timings and the asset share's six, the payouts' four kinds and
+    the claims' three and their total, at ``t = 0 .. proj_len()``, on every row, whatever
+    its chassis; each call is of a code its cell takes, so none raises.
+    """
+    _ask_every_code(proj, _WP_CODED)
+
+
 SEC_SPECS: dict[str, SecSpec] = {
     # Term's state is seven columns (_TERM_STATE above) and the waiver pipeline, a long
     # companion, wop_pipeline_sec.csv, keyed (point_id, lag), lag the months before the
@@ -1931,6 +2156,7 @@ SEC_SPECS: dict[str, SecSpec] = {
         exempt=frozenset({"proj_start", "duration_inforce", "result_pols"}),
         companions={"wop_pipeline_sec.csv": _term_pipeline},
         twin_arg_map=_term_claims_total,
+        c4_also=_term_c4_also,
     ),
     # CI's state is six columns (_CI_STATE above), with no companion: the reviews, the
     # latch and the factors are closed forms on the policy clock, and the count is the one
@@ -1997,6 +2223,7 @@ SEC_SPECS: dict[str, SecSpec] = {
         exempt=frozenset({"result_pols", "pivot_interp"}),
         derived_refs={(3, 124): {"review_prem_shock": 0.10}},
         twin_arg_map=_ci_claims_total,
+        c4_also=_ci_c4_also,
     ),
     # ULB's state is three columns (_ULB_STATE above): the unit fund, S's uf_init renamed
     # av_pp_init; the withdrawals and adviser charges since issue, wd_cum_pp_init, which
@@ -2067,6 +2294,7 @@ SEC_SPECS: dict[str, SecSpec] = {
         exempt=frozenset({"av_init_pp"}),
         derived_refs={(4, 66): {"fund_return": 0.0}},
         twin_arg_map=_ulb_claims_total,
+        c4_also=_ulb_c4_also,
     ),
     # WOL's state is six columns (_WOL_STATE above), with no companion: the paid-up
     # strand's count and its cover per paid-up policy, which need no cohort of conversion
@@ -2137,6 +2365,7 @@ SEC_SPECS: dict[str, SecSpec] = {
         derived_refs={(4, 120): {"rpi_rate": 0.05}, (6, 120): {"esc_take_up": 0.5},
                       (3, 180): {"lapse_crossover_beta": 100.0}},
         twin_arg_map=_wol_claims_total,
+        c4_also=_wol_c4_also,
     ),
     # PA's state is six columns per contract (_PA_STATE above), with no companion: each
     # life's survival, the payments made to date on every stream, and on RPI-linked
@@ -2220,6 +2449,7 @@ SEC_SPECS: dict[str, SecSpec] = {
         derived_refs={(6, 60): {"rpi_rate": -0.02}, (7, 42): {"rpi_rate": 0.08},
                       (7, 54): {"rpi_rate": -0.02}},
         twin_arg_map=_pa_claims_total,
+        c4_also=_pa_c4_also,
     ),
     # IP's state is three columns (_IP_STATE above), the healthy share of the count and the
     # benefit and premium entering month 0, and the claim cohorts, a sparse companion,
@@ -2297,6 +2527,7 @@ SEC_SPECS: dict[str, SecSpec] = {
         companions={"inforce_cohorts_sec.csv": _ip_cohorts},
         derived_refs={(1, 40): {"rpi_rate": 0.05}, (4, 30): {"rpi_rate": 0.12}},
         twin_arg_map=_ip_claims_total,
+        c4_also=_ip_c4_also,
     ),
     # WP's state is eight columns per policy (_WP_STATE above), with no companion: the asset
     # share, the units and the unit price, the endowment's attaching bonus, the smoothed
@@ -2396,6 +2627,7 @@ SEC_SPECS: dict[str, SecSpec] = {
                       (5, 150): {"bonus_rule_on": True},
                       (1, 156): {"smooth_cap": 0.05}},
         twin_arg_map=_wp_claims_total,
+        c4_also=_wp_c4_also,
     ),
 }
 
@@ -4218,7 +4450,8 @@ def compiled_mismatches(build, folder, *, refs=None, stack_kib=65536, limit=50,
     (:func:`run_compiled`), on a thread of ``stack_kib`` KiB, and reads every ``Data`` cell
     whose modelx value is an array or a number.  ``also``, a callable of one modelx point,
     adds what it calls to the expectation, and so to the compiled run's calls
-    (:func:`c4_expected`).
+    (:func:`c4_expected`); a model's spec gives its own as ``c4_also``
+    (:func:`spec_c4_also`).
 
     They must agree: a number identical where ``exact`` holds, by default where
     :func:`exact_here` does, and elsewhere within :data:`COMPILED_RTOL` relative, floored
@@ -4286,6 +4519,18 @@ def compiled_mismatches(build, folder, *, refs=None, stack_kib=65536, limit=50,
     if len(lines) > limit:
         lines = lines[:limit - 1] + [f"(and {len(lines) - limit + 1} more)"]
     return lines
+
+
+def spec_c4_also(name):
+    """The ``also`` of SEC model ``name``'s spec, its :class:`SecSpec` ``c4_also``:
+    ``None`` where the model has no spec or its spec gives none.
+
+    The conventions' C4 on the committed points passes it to :func:`compiled_mismatches`,
+    so that every cell of a code no swept cell reads is compared there too, as each
+    product's own comparisons compare it.
+    """
+    spec = SEC_SPECS.get(name)
+    return None if spec is None else spec.c4_also
 
 
 # ---------------------------------------------------------------------------

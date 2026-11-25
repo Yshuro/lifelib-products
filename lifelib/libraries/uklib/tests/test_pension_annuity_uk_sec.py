@@ -158,6 +158,7 @@ from uk_sec_support import (
     codes, compiled_case, compiled_mismatches, exact_here, fingerprint_mismatches,
     frame_mismatches, full_sweep, label_mismatches, labels_refusing_non_text,
     reporting_cells, run_compiled, sweep, temp_inputs, twin_mismatches)
+from uk_sec_support import _pa_c4_also
 from uk_sec_support import generated_columns
 
 SEC, TWIN = "PA_UK_SEC", "PA_UK_S"
@@ -7093,40 +7094,6 @@ def test_the_compiled_model_computes_what_modelx_computes_at_the_frame_s_edge(se
     assert not found, _mismatch_lines(found)
 
 
-def _pa_c4_also(proj):
-    """C4's ``also`` on every row it compares: the cells and codes no swept cell reads.
-
-    A sweep evaluates every cell without parameters and every cell of ``t`` alone, at every
-    month of the frame and the month after, the payments to date on every stream and their
-    refusal among them, and every other cell only where those read it.  So it calls,
-    besides: each life's death density, ``lives_death(t, life)``, at every month, which the
-    last-death density replaces in every flow but the claim on the first death, and so the
-    dependant's on every row and the annuitant's on a single life; the payments to date at
-    ``ALL`` at every key the frame reads, which no cell reads; where value protection is on
-    the first death, the annuitant's, ``ANNUITANT``, there and its refusal, which only an
-    overflow calls; the income's refusal in every policy year the frame reads; and each
-    life's label.  A row whose annuitant's payments to date no projection reads is not
-    asked them: on RPI-linked escalation they open from ``cum_annuity_pp_init``, which such
-    a row leaves blank, so they are NaN there, refused past the first key in both engines,
-    and never read.  :func:`test_c4_asks_every_cell_at_every_code` holds the sweep and this
-    to every code.
-    """
-    end = proj.proj_len()
-    for t in range(end + 1):
-        for life in (1, 2):
-            proj.lives_death(t, life)
-    annuitant = proj.vp_pct() > 0.0 and proj.is_first_death()
-    for k in range(max(proj.duration_mth_init(), 0), proj.duration_mth(end) + 1):
-        proj.cum_annuity_pp(k, _code(proj, "ALL"))
-        if annuitant:
-            proj.cum_annuity_pp(k, _code(proj, "ANNUITANT"))
-            proj.cum_annuity_pp_refusal(k)
-    for y in range(proj.policy_year_init(), proj.policy_year(end - 1) + 1):
-        proj.annual_income_refusal(y)
-    for life in (1, 2):
-        proj.sex(life)
-
-
 # The codes each cell that takes one is called at, on every row C4 compares, by the sweep
 # and _pa_c4_also between them: the timings, the kinds of the claims and of the payments
 # to date, and the two lives in every cell of a life that the row's basis reads.  The
@@ -7176,8 +7143,10 @@ def test_c4_asks_every_cell_at_every_code(tmp_path):
     rest.  A code asked on one row alone would leave the others uncompared there, which a
     union over the rows would not see.  Each row is released once its codes are read, as
     C4 releases none: a full sweep holds the survival check's quadratic record
-    (:data:`C4_CHUNK`).
+    (:data:`C4_CHUNK`).  The ``also`` must be the spec's ``c4_also``, which the
+    conventions' C4 on the committed points passes (``uk_sec_support.spec_c4_also``).
     """
+    assert SPEC.c4_also is _pa_c4_also, SPEC.c4_also
     committed = _committed()
     late = committed.loc[[1]].assign(duration_mth=-13, row_kind="future", source_mth=-13)
     late.index = pd.Index([committed.index.max() + 1], name="point_id")

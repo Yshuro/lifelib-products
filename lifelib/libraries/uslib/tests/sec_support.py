@@ -1068,6 +1068,16 @@ class SecSpec:
         two re-based scenarios (D8).
     ``model_point_file``
         the SEC table's own filename.
+    ``c4_also``
+        ``callable(proj)``, or ``None``: what C4 compares of a point beyond its full sweep,
+        the ``also`` :func:`compiled_mismatches` takes, which uklib's conventions' C4 on the
+        committed points passes it (:func:`spec_c4_also`).  The sweep reaches a cell of a
+        code only at the codes some swept cell asks of it, so a product whose sweep leaves
+        a code unasked calls it here; it is called on a modelx point whose ``proj_len()``
+        has not raised, and must not raise.  ``None``, the default, adds nothing.  No uslib
+        spec sets it: uslib's modules pass their own ``also``, ``_spia_c4_also`` and
+        ``_vul_c4_also`` among them, to their comparisons, and uslib's conventions' C4 on
+        the committed points passes none.
 
     Every file the spec writes ends ``_sec.csv``, which is checked here.  The SEC model
     shares its directory with the S model's inputs, and the suffix is what guarantees the
@@ -1090,8 +1100,12 @@ class SecSpec:
     model_state: Callable | None = None
     derived_refs: Mapping[tuple[int, int], Mapping[str, object]] = dataclasses.field(
         default_factory=dict)
+    c4_also: Callable | None = None
 
     def __post_init__(self):
+        if self.c4_also is not None and not callable(self.c4_also):
+            raise TypeError(f"c4_also is {self.c4_also!r}: C4's also is a callable of one "
+                            f"point, or None")
         for filename in (self.model_point_file, *self.companions):
             if not str(filename).endswith("_sec.csv"):
                 raise ValueError(
@@ -4977,7 +4991,8 @@ def compiled_mismatches(build, folder, *, refs=None, stack_kib=65536, limit=50,
     (:func:`run_compiled`), on a thread of ``stack_kib`` KiB, and reads every ``Data`` cell
     whose modelx value is an array or a number.  ``also``, a callable of one modelx point,
     adds what it calls to the expectation, and so to the compiled run's calls
-    (:func:`c4_expected`).
+    (:func:`c4_expected`); a model's spec gives its own as ``c4_also``
+    (:func:`spec_c4_also`).
 
     They must agree: a number identical where ``exact`` holds, by default where
     :func:`exact_here` does, and elsewhere within :data:`COMPILED_RTOL` relative, floored
@@ -5045,6 +5060,18 @@ def compiled_mismatches(build, folder, *, refs=None, stack_kib=65536, limit=50,
     if len(lines) > limit:
         lines = lines[:limit - 1] + [f"(and {len(lines) - limit + 1} more)"]
     return lines
+
+
+def spec_c4_also(name):
+    """The ``also`` of SEC model ``name``'s spec, its :class:`SecSpec` ``c4_also``:
+    ``None`` where the model has no spec or its spec gives none.
+
+    uklib's conventions' C4 on the committed points passes it to
+    :func:`compiled_mismatches`, so that every cell of a code no swept cell reads is
+    compared there too.  No uslib spec sets it, so it is ``None`` for every uslib model.
+    """
+    spec = SEC_SPECS.get(name)
+    return None if spec is None else spec.c4_also
 
 
 # ---------------------------------------------------------------------------

@@ -182,6 +182,7 @@ from uk_sec_support import (
 from uk_sec_support import (
     compiled_case, compiled_mismatches, exact_here, label_mismatches,
     labels_refusing_non_text, reporting_cells, run_compiled)
+from uk_sec_support import _IP_CODED, _ip_c4_also
 from uk_sec_support import generated_columns
 
 SEC, TWIN = "IP_UK_SEC", "IP_UK_S"
@@ -7489,9 +7490,10 @@ def _mismatch_lines(found):
 
 # The cells C4 asks at every code, each with the names of the codes it takes, read from the
 # model's own References (_code): the timings and the kinds, the claims total among them.
-# What each takes is derived in modelx, row by row, on every row C4 compares (_code_faults),
-# and these must name exactly that (M8's review, after M14's).
-CODED = {"pols_if_at": TIMINGS, "claims": CLAIM_CODES}
+# The harness's, which its _ip_c4_also, the spec's c4_also, asks.  What each takes is
+# derived in modelx, row by row, on every row C4 compares (_code_faults), and these must
+# name exactly that (M8's review, after M14's).
+CODED = _IP_CODED
 
 
 def _inner_width():
@@ -7539,44 +7541,6 @@ def _code_faults(proj, width):
             lines.append(f"point {proj.point_id()}: {cell} takes {sorted(taken[cell])} in "
                          f"modelx, CODED names {sorted(named)}")
     return lines
-
-
-def _ip_c4_also(proj):
-    """What C4 compares of an ``IP_UK_SEC`` point beyond its full sweep (M8).
-
-    ``uk_sec_support.full_sweep`` calls every cell without parameters, ``pv_benefits``,
-    ``annuity_dis`` and ``premium_basis`` among them, which no report reads, and every cell
-    of ``t`` alone at ``t = 0 .. proj_len()``, ``disc_factor`` among them; it reaches a cell
-    of more only at the arguments some swept cell asks of it.  No cell reads the count at
-    ``BEF_DECR`` or ``AFT_DECR``, a claim duration's survival where no cohort holds lives,
-    nor a cohort past the ones that can hold lives, ``claim_dur_live(t)``, where the sums
-    stop.  So, as ``sample_sec.py`` does, this calls every timing and every kind, the claims
-    total among them, in every month of the frame and the month after it, and the survival
-    of every claim duration from 1 to ``max_dur()``; and the cohorts past the live ones:
-    claim duration 0 and the first past the live ones in every month, and every claim
-    duration from 0 to ``max_dur()`` in the month the point is first on the books, the
-    month after it, the frame's last month and the month after the frame, where the live
-    triangle's edges meet the cache's.  Every other cohort is the zero of one asked here,
-    down its diagonal: the sample traces the whole rectangle in the export, where a cohort
-    costs a C double, and modelx, whose cache entry costs a thousand times that, forms
-    the triangle and its edges.  The codes are :data:`CODED`'s, each one its cell takes,
-    which :func:`_c4` holds on every row it compares (:func:`_code_faults`), and every claim
-    duration asked is inside the ``z`` cache, so none raises.  :func:`_c4` passes it to
-    ``uk_sec_support.compiled_mismatches`` as ``also``.
-    """
-    last, top, entry = proj.proj_len(), proj.max_dur(), proj.t_entry()
-    edges = {entry, entry + 1, last - 1, last}
-    for t in range(last + 1):
-        for cell, names in CODED.items():
-            for name in names:
-                proj.cells[cell](t, _code(proj, name))
-        live = proj.cells["claim_dur_live"](t)
-        zs = (range(top + 1) if t in edges
-              else (0, *range(live + 1, min(live + 1, top) + 1)))
-        for z in zs:
-            proj.cells["pols_sick_dur"](t, z)
-    for z in range(1, top + 1):
-        proj.cells["claim_surv_step"](z)
 
 
 class _Asked:
@@ -7760,12 +7724,13 @@ def test_the_c4_comparisons_ask_every_code_and_their_rows(sec_model, spliced):
     and at every claim duration from 0 to ``max_dur()`` at the four edges of the live
     triangle; and every claim duration's survival (:func:`_ask_faults`).  The same is held
     on stand-ins of shapes no such row has (:class:`_Asked`), at the codes the committed
-    rows take, one whose cohorts fill ``max_dur()`` before the frame ends among them.  And
-    each selection is derived in modelx from the committed points: the rows an RPI of 5%
-    or 12% moves, whose benefit or premium in some month differs from the shipped RPI's,
-    are :data:`RPI_ROWS`, and the row each was read for, the spec's ``derived_refs`` row,
-    :data:`OWN_REFS_ROWS`, is one of them; and the rows valued on an anniversary with RPI
-    escalation, :data:`ANNIVERSARY_ROWS`.
+    rows take, one whose cohorts fill ``max_dur()`` before the frame ends among them.  It
+    must be the spec's ``c4_also``, which the conventions' C4 on the committed points passes
+    (``uk_sec_support.spec_c4_also``).  And each selection is derived in modelx from the
+    committed points: the rows an RPI of 5% or 12% moves, whose benefit or premium in some
+    month differs from the shipped RPI's, are :data:`RPI_ROWS`, and the row each was read
+    for, the spec's ``derived_refs`` row, :data:`OWN_REFS_ROWS`, is one of them; and the
+    rows valued on an anniversary with RPI escalation, :data:`ANNIVERSARY_ROWS`.
     """
     width = _inner_width()
     found, rows, committed_takes = [], 0, None
@@ -7794,6 +7759,7 @@ def test_the_c4_comparisons_ask_every_code_and_their_rows(sec_model, spliced):
     for months, top, entry, z0 in ((5, 7, 0, 0), (6, 4, 2, 0), (4, 9, 0, 3), (8, 3, 0, 1)):
         lines = _ask_faults(_Asked(months, top, entry, z0, refs), committed_takes)
         assert not lines, ((months, top, entry, z0), lines)
+    assert SPEC.c4_also is _ip_c4_also, SPEC.c4_also
 
     labels = dict(zip(sec_model.Data.model_point_table().index, point_keys(sec_model)))
     points = {label: projection(sec_model, key) for label, key in labels.items()}

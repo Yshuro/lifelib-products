@@ -60,7 +60,12 @@ regeneration round trip, generates a table from Term's eight points.
   own, came to both harnesses with uklib's M3 rework, for ``CI_UK_SEC``'s row with review
   history, and is tested here alone, by
   ``test_a_derived_refs_row_is_s_run_under_its_references`` and five refusals among the
-  spec cases.  uslib's suite is left as it was, and no uslib spec uses the field.
+  spec cases.  uslib's suite is left as it was, and no uslib spec uses the field.  So are
+  the two the close, uklib's M15, brought to both: the column ``source_refs``, which
+  records such a row's References in its table, held by the same test and two refusals;
+  and ``SecSpec.c4_also``, the ``also`` that uklib's conventions' C4 on the committed
+  points passes, held on a stand-in by ``test_a_spec_s_c4_also_reaches_the_comparison``.
+  No uslib spec sets either, and no uslib table carries the column.
 
 What each test pins, against USLIB-SEC-PLAN.md (its §4 item 3 and §5.2), which
 UKLIB-SEC-PLAN.md adopts:
@@ -96,8 +101,9 @@ UKLIB-SEC-PLAN.md adopts:
   model, a negative literal index among them, and passes the ones it allows; the sample
   check finds an engine cell no call reaches; C4's comparison keeps a value's kind and
   floors its tolerance at the magnitude, or at a tolerance of 0 tells one ulp apart;
-  :func:`full_sweep` reaches every cell at every month and keeps each raise; and the
-  block-sum check fails a plain running sum by an ulp.  None of these compiles anything.
+  a spec's ``c4_also`` reaches it, and what it calls is compared; :func:`full_sweep`
+  reaches every cell at every month and keeps each raise; and the block-sum check fails a
+  plain running sum by an ulp.  None of these compiles anything.
 
 Every milestone named here is uslib's, and named as UKLIB-SEC-PLAN.md names one of
 uslib's: "uslib's M24".  modelx keeps every model in one registry, and
@@ -2137,6 +2143,94 @@ def test_c4_expects_what_also_calls_beyond_the_full_sweep():
         (0, 0), (0, 5), (1, 0), (1, 5), (2, 0), (2, 5)]
     assert also[("at", (2, 5))] == ("ok", 7.0)
     assert called == []
+
+
+# A toy SEC model for the hook's test below: two points, labelled 7 and 9 and keyed by
+# idx, a frame of three months, and a cell of a timing, at(t, timing), which the one
+# monthly cell reads at the timing 0 alone, so that no swept cell reads it at 5.
+TOY_ALSO = {
+    "proj_len": "lambda: 2",
+    "at": "lambda t, timing: 1.0 * t + timing",
+    "flow": "lambda t: at(t, 0)",
+}
+
+
+def _toy_c4_also(proj):
+    """The toy's C4 ``also``: ``at`` at the timing 5, which no swept cell reads, in every
+    month of the frame and the month after it."""
+    for t in range(proj.proj_len() + 1):
+        proj.at(t, 5)
+
+
+def test_a_spec_s_c4_also_reaches_the_comparison(monkeypatch, tmp_path):
+    """``SecSpec.c4_also`` reaches C4: :func:`spec_c4_also` gives it, and what it calls
+    :func:`compiled_mismatches` compares, as the conventions' C4 on the committed points
+    passes it (M15).
+
+    On a toy SEC model written to a folder (:data:`TOY_ALSO`), whose ``at(t, timing)`` no
+    swept cell reads at the timing 5, with the compiled run standing in: it makes the calls
+    it is handed on a second modelx read of the folder, and returns ``at`` at the timing 5
+    one more than modelx does, as a compiled model whose unread code had gone wrong would.
+    C4 without ``also`` compares no such call and finds nothing.  With the toy's spec
+    registered, under ``monkeypatch``, its ``c4_also`` given by :func:`spec_c4_also`, the
+    stand-in is handed the calls at the timing 5 on both points, in every month of the
+    frame and the month after it, and C4 reports each.  A model with no spec, and a spec
+    without ``c4_also``, give ``None``, and a ``c4_also`` that is no callable is refused.
+    """
+    import uk_sec_support
+    from uk_sec_support import Build, compiled_mismatches, spec_c4_also
+    folder = tmp_path / TOY
+    model = mx.new_model(_name("toy_also"))
+    try:
+        data = model.new_space("Data")
+        data.pd = pd
+        data.new_cells("model_point_table", formula=(
+            "lambda: pd.DataFrame({'policy_count': [1.0, 2.0]}, "
+            "index=pd.Index([7, 9], name='point_id'))"))
+        proj = model.new_space("Projection", formula=lambda idx: None)
+        proj.data = data
+        for name, formula in TOY_ALSO.items():
+            proj.new_cells(name, formula=formula)
+        mx.write_model(model, folder)
+    finally:
+        model.close()
+    handed = []
+
+    def compiled(case_dir, package, job, **kwargs):
+        handed.append(job)
+        read = mx.read_model(folder, name=_name("toy_also_run"))
+        try:
+            values = {}
+            for idx, calls in job["calls"].items():
+                point = read.Projection[idx]
+                values[idx] = [("ok", point.cells[name](*args) + 1.0
+                                if name == "at" and args[1] == 5
+                                else point.cells[name](*args)) for name, args in calls]
+        finally:
+            read.close()
+        return {"exit": 0, "stderr": "", "compiled": {"Data": True, "Projection": True},
+                "values": values, "data": {}, "stack": {"reserved": None}}
+
+    monkeypatch.setattr(uk_sec_support, "run_compiled", compiled)
+    build = Build(TOY, tmp_path, tmp_path / f"{TOY}_nomx_cy", "")
+    assert spec_c4_also(TOY) is None
+    assert compiled_mismatches(build, folder, also=spec_c4_also(TOY)) == []
+    monkeypatch.setitem(uk_sec_support.SEC_SPECS, TOY, SecSpec(twin=TERM))
+    assert spec_c4_also(TOY) is None
+    monkeypatch.setitem(uk_sec_support.SEC_SPECS, TOY,
+                        SecSpec(twin=TERM, c4_also=_toy_c4_also))
+    assert spec_c4_also(TOY) is _toy_c4_also
+    found = compiled_mismatches(build, folder, also=spec_c4_also(TOY))
+    assert found == [f"point {label}: at({t}, 5): modelx {t + 5.0}, compiled {t + 6.0}"
+                     for label in (7, 9) for t in range(3)], found
+    asked = {idx: [args for name, args in calls if name == "at"]
+             for idx, calls in handed[-1]["calls"].items()}
+    assert asked == {idx: [(t, 0) for t in range(3)] + [(t, 5) for t in range(3)]
+                     for idx in (0, 1)}, asked
+    assert all(("at", (t, 5)) not in calls for calls in handed[0]["calls"].values()
+               for t in range(3))
+    with pytest.raises(TypeError, match="c4_also is 5"):
+        SecSpec(twin=TERM, c4_also=5)
 
 
 def test_the_full_sweep_reaches_every_cell_and_every_month_and_keeps_the_raises():
