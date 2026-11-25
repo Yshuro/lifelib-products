@@ -84,6 +84,30 @@ jobs:
       # each library's harness still run here.
       run: pytest -q --durations=10 --ignore-glob='*test_*_us_sec.py' --ignore-glob='*test_*_uk_sec.py'
 
+    - name: Run uklib's tests of a sum's bits where sum() adds left to right
+      # Python 3.11's sum() adds floats left to right, where from 3.12 it compensates, so
+      # each uklib SEC test that holds a total to `sum`'s last bit holds what rests on no
+      # sum first, and then skips the bits there, naming 3.11 (UKLIB-SEC-PLAN.md, M15).
+      # Their modules run in the `sec_uk` job alone, on 3.13, where no guard skips, so an
+      # assertion resting on sum moved before its guard would be green in every job. This
+      # step runs those tests, by node id, and each module's test of its guard, on one leg
+      # of 3.11: the guarded ones skip at the guard, the rest pass. They need neither
+      # modelx-cython nor docutils, which this job does not install, and take about a
+      # minute and a half. test_compiled_conventions_uk.py holds the list to the tests that
+      # call the guard, so that one added later without its node id here fails.
+      if: matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest'
+      run: >-
+        pytest -q -rs
+        lifelib/libraries/uklib/tests/test_term_assurance_uk_sec.py::test_the_sums_bits_skip_only_where_sum_adds_left_to_right
+        lifelib/libraries/uklib/tests/test_term_assurance_uk_sec.py::test_the_ledger_residual_is_s_own_bit_for_bit
+        lifelib/libraries/uklib/tests/test_critical_illness_uk_sec.py::test_the_sums_bits_skip_only_where_sum_adds_left_to_right
+        lifelib/libraries/uklib/tests/test_critical_illness_uk_sec.py::test_the_all_total_is_s_total_bit_for_bit
+        lifelib/libraries/uklib/tests/test_income_protection_uk_sec.py::test_the_sums_bits_skip_only_where_sum_adds_left_to_right
+        lifelib/libraries/uklib/tests/test_income_protection_uk_sec.py::test_the_all_total_is_s_total_bit_for_bit
+        lifelib/libraries/uklib/tests/test_income_protection_uk_sec.py::test_the_cohort_sums_are_s_sums_bit_for_bit
+        lifelib/libraries/uklib/tests/test_with_profits_uk_sec.py::test_the_sums_bits_skip_only_where_sum_adds_left_to_right
+        lifelib/libraries/uklib/tests/test_with_profits_uk_sec.py::test_the_all_total_is_s_total_bit_for_bit
+
     - name: Hold uklib's SEC harness to uslib's
       # uk_sec_support.py is uslib's sec_support.py under uklib's own name, the libraries'
       # product specs apart; the check fails on any shared function, class or constant

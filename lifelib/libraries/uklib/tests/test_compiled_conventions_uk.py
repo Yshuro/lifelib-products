@@ -52,11 +52,12 @@ refusals, its deepest cold call on a 1 MiB stack, and its runner compiled.
 The ``cython_uk`` CI job runs these with the product module's in the model's own leg, one
 shard to a leg (``uk_sec_support.cython_shards``), and
 :func:`test_the_cython_job_runs_every_shard`, which needs no compiler, holds the job's
-matrix to the registry, so that no model at stage ``"EC"`` is left out of it (U7).  Three
+matrix to the registry, so that no model at stage ``"EC"`` is left out of it (U7).  Four
 more read the workflow the same way, each for a job that could otherwise go green and
 prove nothing: the ``cython_uk`` job fails a skip and collects uklib's suite alone, the
-``test`` job runs ``tools/check_sec_harness.py``, and the ``sec_uk`` job runs every SEC
-model's module, which the ``test`` job leaves out.
+``test`` job runs ``tools/check_sec_harness.py``, and on Python 3.11 every SEC test that
+guards a sum's bits, and the ``sec_uk`` job runs every SEC model's module, which the
+``test`` job leaves out.
 """
 import ast
 import builtins
@@ -914,6 +915,93 @@ def test_the_test_job_runs_the_harness_check():
 
     assert any(gates(step) for step in runs), (
         f"the test job runs tools/check_sec_harness.py only conditionally: {runs}")
+
+
+# The guard of a sum's bits in each SEC module that holds a total to sum()'s last bit: it
+# skips the rest of its test where sum() adds floats left to right, on Python 3.11, and
+# the test job runs every test that calls it on the one leg the condition names.
+SUMS_GUARD = "_hold_the_sums_bits"
+ON_3_11 = ("matrix.python-version=='3.11'&&matrix.os=='ubuntu-latest'",
+           "matrix.os=='ubuntu-latest'&&matrix.python-version=='3.11'")
+
+
+def _guarded_tests():
+    """``{node id: test}`` for every test of a ``test_*_uk_sec.py`` that calls the guard of
+    the sums' bits, :data:`SUMS_GUARD`, read from the sources, in file order."""
+    found = {}
+    for path in sorted((LIB / "tests").glob("test_*_uk_sec.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in tree.body:
+            if (isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
+                    and _calls_also(node, SUMS_GUARD)):
+                found[f"{UK_TESTS}/{path.name}::{node.name}"] = node
+    return found
+
+
+def _marks(test):
+    """The names of the marks ``test`` carries, ``pytest.mark.<name>`` as it is decorated,
+    with or without a call."""
+    marks = []
+    for decorator in test.decorator_list:
+        node = decorator.func if isinstance(decorator, ast.Call) else decorator
+        if (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Attribute)
+                and node.value.attr == "mark"):
+            marks.append(node.attr)
+    return marks
+
+
+def test_the_test_job_runs_the_sums_bits_where_sum_adds_left_to_right():
+    """CI's ``test`` job has a step that runs, on Python 3.11 on Linux, exactly the tests
+    that call the guard of the sums' bits, by node id (UKLIB-SEC-PLAN.md, M15).
+
+    A test that holds a total to ``sum``'s last bit calls :data:`SUMS_GUARD`, which skips
+    the rest of it where ``sum()`` adds left to right, as on Python 3.11, and goes on where
+    it compensates; each module's test of the guard calls it too.  The modules run in the
+    ``sec_uk`` job alone, on 3.13, so without this step nothing CI runs takes the skip: an
+    assertion resting on ``sum`` moved before the guard would pass in every job.  So the
+    step's condition must be ``matrix.python-version == '3.11' && matrix.os ==
+    'ubuntu-latest'``, its pytest must select no mark, and its node ids must be exactly
+    the tests that call the guard, read from the sources (:func:`_guarded_tests`), each
+    once, so that a test given a guard later fails here until its node id is added.  None
+    may carry a ``cython`` or ``docutils`` mark, which the job installs nothing for; and
+    each must assert something before it first calls the guard, so that on 3.11 it holds
+    what rests on no ``sum``, and does not skip at once with nothing held.  It skips where
+    the workflow is absent, as from a ``lifelib.create()`` copy.
+    """
+    if not WORKFLOW.is_file():
+        pytest.skip("the test job's workflow is this repository's, and it is absent")
+    want = _guarded_tests()
+    assert want, f"no test of a test_*_uk_sec.py calls {SUMS_GUARD}"
+    job = _job(WORKFLOW.read_text(encoding="utf-8"), "test")
+    assert job is not None, f"{WORKFLOW.name} has no test job"
+    runs = [step for step in _steps(job)
+            if "".join(re.sub(r"\$\{\{(.*?)\}\}", r"\1", step.get("if", "")).split())
+            in ON_3_11 and _pytest_args(step.get("run", "")) is not None]
+    assert len(runs) == 1, (
+        f"the test job has {len(runs)} steps that run pytest on Python 3.11 on Linux "
+        f"alone, not one")
+    step = runs[0]
+    assert step.get("continue-on-error", "false") == "false", step
+    marks, ids = _pytest_args(step["run"])
+    assert not marks, f"the step selects the marks {marks}: {step['run']}"
+    twice = sorted({node for node in ids if ids.count(node) > 1})
+    missing = [node for node in want if node not in ids]
+    extra = [node for node in ids if node not in want]
+    assert not (twice or missing or extra), (
+        f"the 3.11 step runs {ids}, and the tests that call {SUMS_GUARD} are "
+        f"{list(want)}: add {missing}, remove {extra}, list once {twice}")
+    marked = {node: _marks(test) for node, test in want.items()
+              if {"cython", "docutils"} & set(_marks(test))}
+    assert not marked, f"the 3.11 step runs tests the test job cannot: {marked}"
+    unheld = []
+    for node, test in want.items():
+        guards = [call.lineno for call in ast.walk(test)
+                  if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+                  and call.func.id == SUMS_GUARD]
+        if not any(isinstance(n, ast.Assert) and n.lineno < min(guards)
+                   for n in ast.walk(test)):
+            unheld.append(node)
+    assert not unheld, f"these call {SUMS_GUARD} before asserting anything: {unheld}"
 
 
 def test_the_sec_uk_job_runs_every_sec_module():
