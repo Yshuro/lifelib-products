@@ -2267,8 +2267,11 @@ def test_the_also_passes_over_a_single_life_s_second_life_alone():
     Every other raise must come through, so that a cell that fails for another reason is
     not passed over and left uncompared, on stand-ins whose cells of a life raise
     (:class:`_LifePoint`): that refusal at life 1, or at a joint point's life 2, and any
-    other error at either life, in a cell of a life alone or of a month and a life.  Where
-    it passes over the refusal, the ``also`` asks the rest as it would.
+    other error at either life, in a cell of a life alone or of a month and a life.  The
+    other errors include another refusal of the same form, ``invalid timing``, and the
+    refusal's words raised as another type, so that a catch that reads the words only in
+    part, or not the type, fails here.  Where it passes over the refusal, the ``also`` asks
+    the rest as it would.
     """
     from uk_sec_support import _ask_every_life
     refused = ValueError("invalid life")
@@ -2281,7 +2284,8 @@ def test_the_also_passes_over_a_single_life_s_second_life_alone():
             with pytest.raises(ValueError, match="invalid life"):
                 _ask_every_life(_LifePoint(joint, refused, life, cell), ("sex",), ("age",))
     for error in (ValueError("mort_table.csv has no rate at attained age 130"),
-                  KeyError(2), ZeroDivisionError("float division by zero")):
+                  KeyError(2), ZeroDivisionError("float division by zero"),
+                  ValueError("invalid timing"), TypeError("invalid life")):
         for life in (1, 2):
             for cell in ("sex", "age"):
                 with pytest.raises(type(error)):

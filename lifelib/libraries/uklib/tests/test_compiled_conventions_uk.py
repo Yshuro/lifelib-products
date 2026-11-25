@@ -539,12 +539,19 @@ def _calls_any(node, names):
                and n.func.id in names for n in ast.walk(node))
 
 
-def _reaching(trees, target):
+def _reads_any(node, names):
+    """Whether ``node`` reads, at any depth, a name of ``names``."""
+    return any(isinstance(n, ast.Name) and n.id in names for n in ast.walk(node))
+
+
+def _reaching(trees, target, reads=()):
     """The names of the functions of ``trees`` that reach the function ``target``: each that
-    calls it, or a function that does, at any depth, by name; ``target`` among them."""
+    calls it, or a function that does, at any depth, by name; ``target`` among them.  A
+    function that reads a name of ``reads``, as ``target`` itself may, reaches it too."""
     functions = [node for tree in trees for node in ast.walk(tree)
                  if isinstance(node, ast.FunctionDef)]
     names, grown = {target}, True
+    names |= {function.name for function in functions if _reads_any(function, reads)}
     while grown:
         grown = False
         for function in functions:
@@ -964,6 +971,24 @@ def _variable(job, step, name):
     return given[-1] if given else None
 
 
+def _workflow_env(text):
+    """The workflow's own ``env:``, which every job and every step sees, as written: the
+    lines of the block at the file's top level, or the mapping written on its line."""
+    seen, inside = [], False
+    for line in text.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        top = re.fullmatch(r"env:\s*(.*?)\s*", line)
+        if top:
+            inside = True
+            seen += [top.group(1)] if top.group(1) else []
+        elif inside and line[0] in " \t":
+            seen.append(line.strip())
+        else:
+            inside = False
+    return " ".join(seen)
+
+
 def _pytest_args(command):
     """``(marks, paths)`` of the ``pytest`` a step's ``run`` runs, or ``None`` where it
     runs none: each ``-m`` expression, and each path pytest collects from."""
@@ -1058,7 +1083,10 @@ def test_the_test_job_runs_the_harness_check():
 # skips the rest of its test where sum() adds floats left to right, on Python 3.11, and
 # the test job runs every test that reaches it on the one leg the condition names.
 SUMS_GUARD = "_hold_the_sums_bits"
-ON_3_11 = ("matrix.python-version=='3.11'&&matrix.os=='ubuntu-latest'",
+# What the guard reads to decide, and what its skip says: a test that reads either decides
+# the skip as the guard does, and reaches it as surely as a call would.
+SUMS_FLAGS = ("SUM_COMPENSATES", "SUM_311")
+ON_3_11 =("matrix.python-version=='3.11'&&matrix.os=='ubuntu-latest'",
            "matrix.os=='ubuntu-latest'&&matrix.python-version=='3.11'")
 
 # Each module's test of its guard, which reaches the guard to hold it.
@@ -1082,16 +1110,20 @@ def _guarded_tests():
     """``{node id: (test, reaches)}`` for every test of a ``test_*_uk_sec.py`` that reaches
     the guard of the sums' bits, :data:`SUMS_GUARD`, directly or through a function of its
     module that does, at any depth (:func:`_reaching`), read from the sources, in file
-    order; ``reaches`` are the test's calls of the guard and of those functions."""
+    order; ``reaches`` are the test's calls of the guard and of those functions, and its
+    reads of :data:`SUMS_FLAGS`.  So a test that skips by itself, ``if not
+    SUM_COMPENSATES: pytest.skip(SUM_311)``, is a guarded test too."""
     found = {}
     for path in sorted((LIB / "tests").glob("test_*_uk_sec.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        reaching = _reaching((tree,), SUMS_GUARD)
+        reaching = _reaching((tree,), SUMS_GUARD, SUMS_FLAGS)
         for node in tree.body:
             if not (isinstance(node, ast.FunctionDef) and node.name.startswith("test_")):
                 continue
-            reaches = [call for call in ast.walk(node) if isinstance(call, ast.Call)
-                       and isinstance(call.func, ast.Name) and call.func.id in reaching]
+            reaches = [n for n in ast.walk(node)
+                       if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                       and n.func.id in reaching
+                       or isinstance(n, ast.Name) and n.id in SUMS_FLAGS]
             if reaches:
                 found[f"{UK_TESTS}/{path.name}::{node.name}"] = (node, reaches)
     return found
@@ -1099,7 +1131,8 @@ def _guarded_tests():
 
 def _held_before(test, reaches):
     """How many assertions ``test`` makes before it first reaches the guard, ``reaches``
-    being its calls that do: its ``assert`` statements, at any depth, that come first."""
+    being its calls and reads that do: its ``assert`` statements, at any depth, that come
+    first."""
     first = min((call.lineno, call.col_offset) for call in reaches)
     return sum(isinstance(node, ast.Assert) and (node.lineno, node.col_offset) < first
                for node in ast.walk(test))
@@ -1125,13 +1158,14 @@ def test_the_test_job_runs_the_sums_bits_where_sum_adds_left_to_right():
     A test that holds a total to ``sum``'s last bit reaches :data:`SUMS_GUARD`, directly
     or through a function of its module, and the guard skips the rest of it where ``sum()``
     adds left to right, as on Python 3.11, and goes on where it compensates; each module's
-    test of the guard reaches it too.  The modules run in the ``sec_uk`` job alone, on
+    test of the guard reaches it too, and so does a test that reads what the guard reads,
+    or its skip's message (:data:`SUMS_FLAGS`), as one that skips by itself would.  The modules run in the ``sec_uk`` job alone, on
     3.13, so without this step nothing CI runs takes the skip: an assertion resting on
     ``sum`` moved before the guard would pass in every job.  So the step's condition must
     be ``matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest'``; it must run
     ``pytest`` with ``-q``, ``-rs`` and node ids alone, any other option failing, ``-k``
     and ``--deselect`` among them, and under no ``PYTEST_ADDOPTS`` or ``PYTEST_PLUGINS``,
-    since either could leave a test out; and its node ids must be exactly the tests that
+    the workflow's, the job's or its own, since either could leave a test out; and its node ids must be exactly the tests that
     reach the guard, read from the sources (:func:`_guarded_tests`), each once, so that a
     test given a guard later fails here until its node id is added.  None may carry a
     ``cython`` or ``docutils`` mark, which the job installs nothing for.  And each must
@@ -1144,7 +1178,8 @@ def test_the_test_job_runs_the_sums_bits_where_sum_adds_left_to_right():
         pytest.skip("the test job's workflow is this repository's, and it is absent")
     want = _guarded_tests()
     assert want, f"no test of a test_*_uk_sec.py reaches {SUMS_GUARD}"
-    job = _job(WORKFLOW.read_text(encoding="utf-8"), "test")
+    text = WORKFLOW.read_text(encoding="utf-8")
+    job = _job(text, "test")
     assert job is not None, f"{WORKFLOW.name} has no test job"
     runs = [step for step in _steps(job)
             if "".join(re.sub(r"\$\{\{(.*?)\}\}", r"\1", step.get("if", "")).split())
@@ -1154,9 +1189,12 @@ def test_the_test_job_runs_the_sums_bits_where_sum_adds_left_to_right():
         f"alone, not one")
     step = runs[0]
     assert step.get("continue-on-error", "false") == "false", step
+    everywhere = _workflow_env(text)
     for variable in ("PYTEST_ADDOPTS", "PYTEST_PLUGINS"):
         given = _variable(job, step, variable)
         assert given is None, f"the 3.11 step runs under {variable} {given!r}"
+        assert not re.search(rf"(?<!\w){variable}\s*:", everywhere), (
+            f"the workflow runs every step under {variable}: env: {everywhere}")
     words = shlex.split(step["run"])
     options = [word for word in words[1:] if word.startswith("-")]
     ids = [word for word in words[1:] if not word.startswith("-")]
