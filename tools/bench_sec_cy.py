@@ -1,10 +1,12 @@
-"""Time a compiled uslib SEC model against its export and modelx (USLIB-SEC-PLAN.md C6).
+"""Time a compiled uslib or uklib SEC model against its export and modelx (C6).
 
 Phase 2 of USLIB-SEC-PLAN.md makes each ``<Name>_US_SEC`` model compile, and its C6 asks
 what that buys: the same block run, timed on three engines, with peak memory beside each
-time (§8.1, K2).  This script is that benchmark.  It is a script, not a test, because what
-it measures depends on the machine and on what else the machine is doing, so it reports
-both, and what it prints goes into the product's ``model-sec.md`` with them.
+time (§8.1, K2).  This script is that benchmark, and each uklib product's C step, which
+makes its ``<Name>_UK_SEC`` compile, takes C6 from it too (UKLIB-SEC-PLAN.md U2, §5).  It
+is a script, not a test, because what it measures depends on the machine and on what else
+the machine is doing, so it reports both, and what it prints goes into the product's
+``model-sec.md`` with them.
 
 **The engines.**  ``modelx`` reads the model folder.  ``export`` imports the
 ``<Model>_nomx`` package that modelx's ``Model.export`` writes, the pure-Python form mx2cy
@@ -81,8 +83,11 @@ Usage::
     python tools/bench_sec_cy.py term_life --repeat 1 --copies 100 --export-copies 10 \\
         --modelx-copies 2                                     # a quick look
 
-It prints a Markdown table, with the machine, the versions, the load and the command, and
-exits 0.  It exits 1 when a run fails or the engines disagree, and 2 when it cannot start.
+The product is named as ``tools/build_sec_cy.py`` names it: a product directory, or a
+uslib or uklib product, ``<lib>/<product>`` or its folder name alone where only one
+library's product of that name holds a ``*_SEC`` model.  The script prints a Markdown
+table, with the machine, the versions, the load and the command, and exits 0.  It exits 1
+when a run fails or the engines disagree, and 2 when it cannot start.
 """
 import argparse
 import csv
@@ -417,10 +422,12 @@ def report(name, results, engines, loops, copies, argv, collect, loads):
 def main(argv):
     parser = argparse.ArgumentParser(
         prog="python tools/bench_sec_cy.py",
-        description="Time a compiled uslib SEC model against its export and modelx "
-                    "(USLIB-SEC-PLAN.md C6).")
+        description="Time a compiled uslib or uklib SEC model against its export and "
+                    "modelx (USLIB-SEC-PLAN.md C6).")
     parser.add_argument(
-        "product", help="a product directory, or the folder name of a uslib product")
+        "product", help="a product directory, or a uslib or uklib product: "
+                        "<lib>/<product>, or its folder name where only one library's "
+                        "product of that name holds a *_SEC model")
     parser.add_argument(
         "--model", help="the model folder to time (default: the product's *_SEC model)")
     parser.add_argument(
@@ -452,10 +459,10 @@ def main(argv):
             parser.error("copies must be 1 or more")
 
     tool = _build_tool()
-    product = tool.product_directory(args.product)
-    if product is None:
-        parser.error(f"{args.product!r} is neither a directory nor a uslib product")
-    product = product.resolve()
+    try:
+        product = tool.product_directory(args.product).resolve()
+    except ValueError as err:
+        parser.error(str(err))
     try:
         model_dir = tool.find_model(product, args.model).resolve()
     except (FileNotFoundError, ValueError) as err:

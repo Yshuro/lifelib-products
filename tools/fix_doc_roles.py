@@ -106,28 +106,30 @@ def main(argv):
     library = pathlib.Path(args[0] if args else "lifelib/libraries/uslib")
 
     def models_under(root):
-        found = {}
-        for product in sorted((root / "products").iterdir()):
-            if not product.is_dir():
-                continue
-            model = next((d for d in product.iterdir()
-                          if d.is_dir() and (d / "_system.json").exists()), None)
-            if model is not None:
-                found[product.name] = model
-        return found
+        """Every model folder of the library at ``root``: each product's, in name order.
+
+        A product can hold two models, its S model and the SEC model derived from it
+        (USLIB-SEC-PLAN.md D1), so every folder holding a ``_system.json`` is taken, sorted
+        by name as ``tools/gen_scaffolding.py`` sorts them.  This used to take the first in
+        filesystem order, which differs between machines, and so fixed one model of each
+        pair, an item uslib's M1 carried (UKLIB-SEC-PLAN.md G6).
+        """
+        return [d for product in sorted((root / "products").iterdir()) if product.is_dir()
+                for d in sorted(product.iterdir(), key=lambda d: d.name)
+                if d.is_dir() and (d / "_system.json").exists()]
 
     model_dirs = models_under(library)
-    local = {d.name for d in model_dirs.values()}
+    local = {d.name for d in model_dirs}
 
     # Every sibling library's models too, so a cross-library chassis pointer is recognised
     # rather than left dead.  A sibling is any directory beside this one with products/.
     models = set(local)
     for sibling in sorted(library.resolve().parent.iterdir()):
         if sibling.is_dir() and sibling != library.resolve() and (sibling / "products").is_dir():
-            models |= {d.name for d in models_under(sibling).values()}
+            models |= {d.name for d in models_under(sibling)}
 
     totals = collections.Counter()
-    for model_dir in model_dirs.values():
+    for model_dir in model_dirs:
         by_space = spaces(model_dir)
         all_cells = set().union(*by_space.values()) if by_space else set()
 

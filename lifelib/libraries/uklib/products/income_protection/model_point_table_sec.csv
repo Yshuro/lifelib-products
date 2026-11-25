@@ -1,0 +1,20 @@
+point_id,policy_id,entry_age,sex,occ_class,benefit_mth,earnings_annual,deferred_weeks,expiry_age,escalation,premium_mth,premium_basis,status,recovery_basis,policy_count,duration_mth,pols_active_init,benefit_pp_init,premium_pp_init,row_kind,source_policy_id,source_mth,source_refs
+1,IP-000001,35,M,1,2000.0,40000.0,26,65,RPI,35.0,guaranteed,active,return_to_h,1.0,0,1.0,2000.0,35.0,twin,IP-000001,0,
+2,IP-000002,34,M,1,2000.0,40000.0,26,65,none,35.0,guaranteed,in_claim,exit,1.0,12,0.0,2000.0,35.0,twin,IP-000002,0,
+3,IP-000003,35,M,1,2000.0,40000.0,26,65,none,35.0,guaranteed,active,return_to_h,1.0,0,1.0,2000.0,35.0,twin,IP-000003,0,
+4,IP-000004,42,F,3,1500.0,35000.0,13,60,RPI,58.0,guaranteed,active,return_to_h,1.0,0,1.0,1500.0,58.0,twin,IP-000004,0,
+5,IP-000005,47,M,1,2000.0,40000.0,26,65,none,35.0,guaranteed,in_claim,exit,1.0,36,0.0,2000.0,35.0,twin,IP-000005,0,
+6,IP-000006,55,M,2,3000.0,80000.0,52,65,RPI,64.0,guaranteed,active,return_to_h,1.0,0,1.0,3000.0,64.0,twin,IP-000006,0,
+7,IP-000007,34,M,1,2000.0,40000.0,26,65,none,35.0,guaranteed,in_claim,return_to_h,1.0,12,0.0,2000.0,35.0,twin,IP-000007,0,
+8,IP-000001-M12,35,M,1,2000.0,40000.0,26,65,RPI,35.0,guaranteed,active,return_to_h,0.8990020046529404,12,0.9989265254796967,2000.0,35.0,derived,IP-000001,12,
+9,IP-000001-M60,35,M,1,2000.0,40000.0,26,65,RPI,35.0,guaranteed,active,return_to_h,0.6833048851582468,60,0.9959597725049258,2251.01762,41.73815102187499,derived,IP-000001,60,
+10,IP-000001-M359,35,M,1,2000.0,40000.0,26,65,RPI,35.0,guaranteed,active,return_to_h,2.1595065704956337e-01,359,9.4316498967193329e-01,4713.131012018762,125.44127723329201,derived,IP-000001,359,
+11,IP-000002-M24,34,M,1,2000.0,40000.0,26,65,none,35.0,guaranteed,in_claim,exit,0.4234050000000007,36,0.0,2000.0,35.0,derived,IP-000002,24,
+12,IP-000005-M6,47,M,1,2000.0,40000.0,26,65,none,35.0,guaranteed,in_claim,exit,0.9080198235721512,42,0.0,2000.0,35.0,derived,IP-000005,6,
+13,IP-000007-M12,34,M,1,2000.0,40000.0,26,65,none,35.0,guaranteed,in_claim,return_to_h,0.9565537273793496,24,0.3913427655537839,2000.0,35.0,derived,IP-000007,12,
+14,IP-000004-M13,42,F,3,1500.0,35000.0,13,60,RPI,58.0,guaranteed,active,return_to_h,0.8926809653552612,13,9.9354340654957185e-01,1545.0,60.61,derived,IP-000004,13,
+15,IP-000006-M118,55,M,2,3000.0,80000.0,52,65,RPI,64.0,guaranteed,active,return_to_h,0.5170766910491637,118,9.6426711816187249e-01,3914.3195514877348,95.1100889865123,derived,IP-000006,118,
+16,IP-000003-M30,35,M,1,2000.0,40000.0,26,65,none,35.0,guaranteed,active,return_to_h,0.8004288450760463,30,0.997733882611279,2000.0,35.0,derived,IP-000003,30,
+17,IP-000004-F13,42,F,3,1500.0,35000.0,13,60,RPI,58.0,guaranteed,active,return_to_h,1.0,-13,1.0,1500.0,58.0,future,IP-000004,-13,
+18,IP-000001-M40,35,M,1,2000.0,40000.0,26,65,RPI,35.0,guaranteed,active,return_to_h,0.7528583307461296,40,0.9971327511245758,2315.2500000000005,43.480390625,derived,IP-000001,40,rpi_rate 0.05
+19,IP-000004-M30,42,F,3,1500.0,35000.0,13,60,RPI,58.0,guaranteed,active,return_to_h,0.7817909121530964,30,9.8716537001905247e-01,1815.0000000000002,76.70499999999998,derived,IP-000004,30,rpi_rate 0.12

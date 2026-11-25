@@ -790,39 +790,55 @@ def test_cells_names_follow_the_library_vocabulary(income_protection):
 
 
 def test_inputs_live_beside_the_model():
-    """The five input CSVs sit in the model folder's parent directory."""
+    """The five input CSVs sit in the model folder's parent directory.
+
+    An SEC model shares the directory and reads its own inputs beside these
+    (UKLIB-SEC-PLAN.md U1), so this asks that the S model's are present, as uslib's
+    product modules do; that every CSV here is read by some model in the directory is
+    the conventions suite's check.
+    """
     expected = {"model_point_table.csv", "inception_table.csv",
                 "termination_table.csv", "mort_table.csv", "lapse_table.csv"}
-    assert expected == {p.name for p in MODEL_DIR.parent.iterdir()
+    assert expected <= {p.name for p in MODEL_DIR.parent.iterdir()
                         if p.suffix == ".csv"}
 
 
-def test_an_input_can_be_swapped_without_touching_formulas():
+def test_an_input_can_be_swapped_without_touching_formulas(tmp_path):
     """Point a filename Reference at a different file and the projection follows.
 
     This is what a production user does with a licensed IP11 basis: it drops in as a
     same-schema CSV with no formula change.
+
+    The model and its input tables are copied into ``tmp_path``, and the slower table is
+    written there, beside the copy.  Written into the product folder, even for the length
+    of one test, it is a CSV beside ``IP_UK_SEC`` too, which reads the folder's tables: a
+    run of that model's tests on the same checkout meanwhile would see it, and a run
+    killed inside this test would leave it behind, failing the CSV-set tests for both
+    models.
     """
+    import shutil
+
     import pandas as pd
 
-    src = MODEL_DIR.parent / "termination_table.csv"
-    slower = pd.read_csv(src, index_col="claim_duration_year")
+    shutil.copytree(MODEL_DIR, tmp_path / MODEL_DIR.name,
+                    ignore=shutil.ignore_patterns("__pycache__"))
+    for csv in MODEL_DIR.parent.glob("*.csv"):
+        shutil.copy(csv, tmp_path / csv.name)
+    slower = pd.read_csv(tmp_path / "termination_table.csv", index_col="claim_duration_year")
     slower["recovery_rate"] = slower["recovery_rate"] * 0.5
+    alt_name = "termination_table_slow.csv"
+    slower.to_csv(tmp_path / alt_name)
 
-    model = mx.read_model(MODEL_DIR, name="IP_UK_S_swap")
+    model = mx.read_model(tmp_path / MODEL_DIR.name, name="IP_UK_S_swap")
     try:
-        alt_name = "termination_table_slow.csv"
-        slower.to_csv(model.Data.input_dir() / alt_name)
-        try:
-            base = model.Projection[2].pv_benefits()
-            model.Data.termination_file = alt_name
-            model.Data.clear_all()
-            model.Projection.clear_all()
-            # Halving recovery rates lengthens every claim, so the annuity is worth more.
-            assert model.Projection[2].pv_benefits() > base
-            assert model.Projection[2].rec_rate(1) == pytest.approx(0.20, rel=1e-12)
-        finally:
-            (model.Data.input_dir() / alt_name).unlink(missing_ok=True)
+        assert model.Data.input_dir().resolve() == tmp_path.resolve()
+        base = model.Projection[2].pv_benefits()
+        model.Data.termination_file = alt_name
+        model.Data.clear_all()
+        model.Projection.clear_all()
+        # Halving recovery rates lengthens every claim, so the annuity is worth more.
+        assert model.Projection[2].pv_benefits() > base
+        assert model.Projection[2].rec_rate(1) == pytest.approx(0.20, rel=1e-12)
     finally:
         model.close()
 

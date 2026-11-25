@@ -75,7 +75,7 @@ resources page [R13].
 
 | Attribute | Type | Example (anchor cells, product-spec) |
 |---|---|---|
-| `chassis` | enum {UWP_bond, CWP_endowment, SF_prufund} | UWP_bond |
+| `chassis` | enum {UWP_bond, CWP_endowment, SF_smoothed} | UWP_bond |
 | `issue_age` | int (ANB) | 55 (UWP) / 35 (CWP) |
 | `sex` | enum {M, F} | M |
 | `duration_ifo` | int, completed policy years at valuation | 5 |

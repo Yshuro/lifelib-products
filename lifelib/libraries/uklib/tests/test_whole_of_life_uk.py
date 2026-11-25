@@ -682,9 +682,15 @@ def test_cells_names_follow_the_library_vocabulary(whole_of_life):
 
 
 def test_inputs_live_beside_the_model():
-    """The three input CSVs sit in the model folder's parent directory."""
+    """The three input CSVs sit in the model folder's parent directory.
+
+    An SEC model shares the directory and reads its own inputs beside these
+    (UKLIB-SEC-PLAN.md U1), so this asks that the S model's are present, as uslib's
+    product modules do; that every CSV here is read by some model in the directory is
+    the conventions suite's check.
+    """
     expected = {"model_point_table.csv", "mort_table.csv", "lapse_table.csv"}
-    assert expected == {p.name for p in MODEL_DIR.parent.iterdir()
+    assert expected <= {p.name for p in MODEL_DIR.parent.iterdir()
                         if p.suffix == ".csv"}
 
 
@@ -703,27 +709,37 @@ def test_the_shipped_mortality_table_marks_its_own_provenance():
     assert row70 * 1.20 == pytest.approx(0.024, rel=1e-12)
 
 
-def test_an_input_can_be_swapped_without_touching_formulas():
-    """Point a filename Reference at a different file and the projection follows."""
+def test_an_input_can_be_swapped_without_touching_formulas(tmp_path):
+    """Point a filename Reference at a different file and the projection follows.
+
+    The model and its input tables are copied into ``tmp_path``, and the lighter table is
+    written there, beside the copy.  Written into the product folder, even for the length
+    of one test, it would be left behind by a run killed inside the test, and the CSV-set
+    tests would then fail for every model the folder holds.
+    """
+    import shutil
+
     import pandas as pd
 
-    src = MODEL_DIR.parent / "mort_table.csv"
-    lighter = pd.read_csv(src, index_col=["basis", "sex", "smoker", "age"])
+    shutil.copytree(MODEL_DIR, tmp_path / MODEL_DIR.name,
+                    ignore=shutil.ignore_patterns("__pycache__"))
+    for csv in MODEL_DIR.parent.glob("*.csv"):
+        shutil.copy(csv, tmp_path / csv.name)
+    lighter = pd.read_csv(tmp_path / "mort_table.csv",
+                          index_col=["basis", "sex", "smoker", "age"])
     lighter["mort_rate"] = lighter["mort_rate"] * 0.5
+    alt_name = "mort_table_light.csv"
+    lighter.to_csv(tmp_path / alt_name)
 
-    model = mx.read_model(MODEL_DIR, name="WOL_UK_S_swap")
+    model = mx.read_model(tmp_path / MODEL_DIR.name, name="WOL_UK_S_swap")
     try:
-        alt_name = "mort_table_light.csv"
-        lighter.to_csv(model.Data.input_dir() / alt_name)
-        try:
-            base = model.Projection[1].claims(12, "DEATH")
-            model.Data.mort_table_file = alt_name
-            model.Data.clear_all()
-            model.Projection.clear_all()
-            assert model.Projection[1].mort_rate(0) == pytest.approx(0.012, rel=1e-12)
-            assert model.Projection[1].claims(12, "DEATH") < base
-        finally:
-            (model.Data.input_dir() / alt_name).unlink(missing_ok=True)
+        assert model.Data.input_dir().resolve() == tmp_path.resolve()
+        base = model.Projection[1].claims(12, "DEATH")
+        model.Data.mort_table_file = alt_name
+        model.Data.clear_all()
+        model.Projection.clear_all()
+        assert model.Projection[1].mort_rate(0) == pytest.approx(0.012, rel=1e-12)
+        assert model.Projection[1].claims(12, "DEATH") < base
     finally:
         model.close()
 

@@ -922,15 +922,40 @@ def shift_months(df, month_col, d, *, by=(), step=True):
 # state may supply them.  ``duration_mth`` is the twin's, from ``duration_of``, moved on by
 # ``d - source_mth`` for a derived row and set to ``-k`` for a future one.  ``provenance``
 # is S's on a twin and composed from S's keys on the other rows (D8), so no extractor may
-# write one either: that is the text ``CLAUDE.md`` holds to citing by key.
+# write one either: that is the text ``CLAUDE.md`` holds to citing by key.  The three of
+# GENERATED_COLUMNS are on every table, and SOURCE_REFS on a table whose spec has
+# ``derived_refs`` alone (generated_columns).
 GENERATED_COLUMNS = ("row_kind", "source_policy_id", "source_mth")
+SOURCE_REFS = "source_refs"
 _RESERVED = frozenset({"point_id", "policy_id", "duration_mth", "provenance",
-                       *GENERATED_COLUMNS})
+                       *GENERATED_COLUMNS, SOURCE_REFS})
 
 
 def _issued_at_valuation(row):
     """The default ``duration_of``: the S row is new business, issued at ``t = 0``."""
     return 0
+
+
+def _reference_settings(refs):
+    """``refs``, ``{reference: value}``, as a row of ``derived_refs`` is described: each
+    name and its value, ``review_prem_shock 0.1, ci_trend 0.02``, in the spec's order."""
+    return ", ".join(f"{name} {_py(value)!r}" for name, value in refs.items())
+
+
+def generated_columns(spec):
+    """The columns the generator writes to ``spec``'s table, in the order it writes them:
+    :data:`GENERATED_COLUMNS`, then :data:`SOURCE_REFS` where the spec has
+    ``derived_refs``.
+
+    ``source_refs`` records, on each row read from S under References of its own, each
+    Reference and its value, in the spec's order and as :func:`_reference_settings`
+    describes them, ``review_prem_shock 0.1``; it is blank on every other row.  So such a
+    row does not read in its table as a restatement at the shipped References.  No model
+    reads it, and an in-force extract needs it no more than the other three.  A spec
+    without ``derived_refs`` has no such row, and its table no such column: no uslib spec
+    has one, so every uslib table carries the three alone.
+    """
+    return GENERATED_COLUMNS + ((SOURCE_REFS,) if spec.derived_refs else ())
 
 
 @dataclasses.dataclass(frozen=True)
@@ -944,14 +969,17 @@ class SecSpec:
         every S row, under its own ``point_id`` and ``policy_id``.  A new-business twin is
         what T1 compares; the twin of an S row already in force is a splice case.
     ``"derived"``
-        an S row restated in force at S month ``d``, opened with S's own state there.  T2
-        projects it against S from ``d`` on.
+        an S row restated in force at S month ``d``, opened with S's own state there, from
+        S as it ships or, for a row of ``derived_refs``, from S run under References of the
+        row's own.  T2 projects it against S from ``d`` on.
     ``"future"``
         an S new-business row issued ``k`` months after the valuation date (D4), T3's case.
 
     Every row carries ``policy_count``, ``duration_mth`` (months in force at ``t = 0``,
     negative for future new business), ``row_kind``, ``source_policy_id`` (the S policy it
-    comes from) and ``source_mth``, where SEC ``t`` is S ``t + source_mth``.
+    comes from) and ``source_mth``, where SEC ``t`` is S ``t + source_mth``; and the table
+    of a spec with ``derived_refs`` carries ``source_refs`` too, the References a row was
+    read under, blank where they are S's own (:func:`generated_columns`).
 
     Fields:
 
@@ -968,6 +996,22 @@ class SecSpec:
         ``row["duration_mth"]`` on UL.  The default says every S row is new business.
     ``derived``
         ``(S point_id, d)`` pairs, in the order the rows are written.
+    ``derived_refs``
+        ``{(S point_id, d): {reference: value}}``, more derived rows, written after every
+        other row in the spec's order, each restated from S run under References of its
+        own: for a history S reaches only under another assumption, such as a review
+        change that has moved premiums where S ships it at 0.  Each row is the one
+        ``derived`` would make of its pair had S shipped those References, which are set on
+        S's ``Projection`` while the row is read and restored after it.  Its
+        ``source_refs``, a column the table of such a spec alone carries, names each
+        Reference and its value, and so does its ``provenance``, where the S table has
+        one.  A pair may not be one of ``derived``'s, whose row would take its
+        ``policy_id``; and a name must be one of the References of S's ``Projection``.
+        Each companion's rows for such a row are built under the row's References too,
+        from the row alone (:func:`build_sec_table`), so that a companion holds the state
+        of the run its row was read from; its builder must then be row-local, writing rows
+        keyed by the ``point_id`` of the rows it is given and no others, which
+        :func:`build_sec_table` checks.  Empty by default.
     ``future``
         ``(S point_id, k)`` pairs; each S point must be new business.
     ``state``
@@ -976,8 +1020,8 @@ class SecSpec:
         month-``d`` event.  ``policy_count`` may be among them: its default,
         ``s_proj.pols_if(d)``, is the wrong count for SPIA, whose ``pols_if`` is a closing
         measure (D5).  The columns the generator owns may not: the two ids,
-        ``duration_mth``, ``provenance`` and the three it adds, ``row_kind``,
-        ``source_policy_id`` and ``source_mth``.
+        ``duration_mth``, ``provenance`` and the four it adds, ``row_kind``,
+        ``source_policy_id``, ``source_mth`` and ``source_refs``.
     ``twin_state``
         SEC column to ``callable(s_proj, d)`` for the twin rows, called with ``d`` the
         twin's ``source_mth``: the opening state S itself assumes, so the twin reproduces S.
@@ -1024,6 +1068,16 @@ class SecSpec:
         two re-based scenarios (D8).
     ``model_point_file``
         the SEC table's own filename.
+    ``c4_also``
+        ``callable(proj)``, or ``None``: what C4 compares of a point beyond its full sweep,
+        the ``also`` :func:`compiled_mismatches` takes, which uklib's conventions' C4 on the
+        committed points passes it (:func:`spec_c4_also`).  The sweep reaches a cell of a
+        code only at the codes some swept cell asks of it, so a product whose sweep leaves
+        a code unasked calls it here; it is called on a modelx point whose ``proj_len()``
+        has not raised, and must not raise.  ``None``, the default, adds nothing.  No uslib
+        spec sets it: uslib's modules pass their own ``also``, ``_spia_c4_also`` and
+        ``_vul_c4_also`` among them, to their comparisons, and uslib's conventions' C4 on
+        the committed points passes none.
 
     Every file the spec writes ends ``_sec.csv``, which is checked here.  The SEC model
     shares its directory with the S model's inputs, and the suffix is what guarantees the
@@ -1044,8 +1098,14 @@ class SecSpec:
     twin_arg_map: Callable | None = None
     future_state: Mapping[str, Callable] = dataclasses.field(default_factory=dict)
     model_state: Callable | None = None
+    derived_refs: Mapping[tuple[int, int], Mapping[str, object]] = dataclasses.field(
+        default_factory=dict)
+    c4_also: Callable | None = None
 
     def __post_init__(self):
+        if self.c4_also is not None and not callable(self.c4_also):
+            raise TypeError(f"c4_also is {self.c4_also!r}: C4's also is a callable of one "
+                            f"point, or None")
         for filename in (self.model_point_file, *self.companions):
             if not str(filename).endswith("_sec.csv"):
                 raise ValueError(
@@ -1068,6 +1128,20 @@ class SecSpec:
         object.__setattr__(self, "future",
                            tuple((int(p), int(k)) for p, k in self.future))
         object.__setattr__(self, "exempt", frozenset(self.exempt))
+        object.__setattr__(self, "derived_refs", {
+            (int(p), int(d)): dict(refs) for (p, d), refs in self.derived_refs.items()})
+        for (p, d), refs in self.derived_refs.items():
+            if not refs:
+                raise ValueError(f"derived_refs row ({p}, {d}) sets no Reference: a row "
+                                 f"read from S at its own References is a derived row")
+            if (p, d) in self.derived:
+                raise ValueError(
+                    f"derived_refs row ({p}, {d}), under {_reference_settings(refs)}, "
+                    f"repeats derived row ({p}, {d}), read from S at its own References: "
+                    f"the two would take one policy_id")
+
+
+# >>> product specs: this library's own.  tools/check_sec_harness.py compares the rest.
 
 
 def _wl_entering(name, opening):
@@ -3100,6 +3174,8 @@ SEC_SPECS: dict[str, SecSpec] = {
     ),
 }
 
+# <<< product specs
+
 
 def _derived_policy_id(policy_id, d):
     return f"{policy_id}-M{d}"
@@ -3124,9 +3200,9 @@ def _sec_columns(spec, s_table, rename, added=()):
     S's columns in S's order, renamed or dropped by ``rename``; then ``policy_count`` and
     ``duration_mth``, each where S has no column of that name; then the state columns S
     lacks, in the order the spec names them: ``added``, those ``model_state`` gave, then
-    ``twin_state``'s, ``state``'s and ``future_state``'s; then the generator's own columns;
-    and ``provenance`` last, where the S table has one, as every table in the library keeps
-    it.
+    ``twin_state``'s, ``state``'s and ``future_state``'s; then the generator's own columns,
+    :func:`generated_columns`; and ``provenance`` last, where the S table has one, as every
+    table in the library keeps it.
     """
     columns = [rename.get(c, c) for c in ["point_id", *s_table.columns]]
     columns = [c for c in columns if c is not None]
@@ -3137,11 +3213,11 @@ def _sec_columns(spec, s_table, rename, added=()):
               *spec.future_state):
         if c not in columns:
             columns.append(c)
-    for c in GENERATED_COLUMNS:
+    for c in (*GENERATED_COLUMNS, SOURCE_REFS):
         if c in columns:
             raise ValueError(f"{spec.twin}'s table has a {c!r} column, which the generator "
                              f"writes itself")
-        columns.append(c)
+    columns += generated_columns(spec)
     if provenance:
         columns.append("provenance")
     if len(set(columns)) != len(columns):
@@ -3190,18 +3266,41 @@ def build_sec_table(spec, s_model):
         the twin of new-business point ``p``, issued ``k`` months after the valuation
         date: ``duration_mth`` and ``source_mth`` are ``-k``, and the count is S's; then
         ``future_state`` sets the columns it names.
+    derived rows under References of their own, for each ``(p, d)`` of ``derived_refs``
+        made as a derived row is, from S run under the row's References: each is set on
+        S's ``Projection`` before the row is read, and restored after it in a ``finally``,
+        whatever the row raised.  Setting a Reference drops every ItemSpace of S's
+        ``Projection`` and every value they hold, each made afresh when next asked, so
+        these rows are read after every other, and written after them, so that adding one
+        renumbers no row before it.  A caller that swept S, to spare this function
+        projecting it, sweeps it again.
 
-    Derived and future rows take fresh ``point_id`` s after the largest S one, in the
-    spec's order, so the numbering is fixed by the spec, never by a dict or a filesystem.
-    Their ``policy_id`` is composed from S's and the month (``TL-000001-M120``,
-    ``TL-000001-F3``), and where the S table has a ``provenance`` column theirs is composed
-    the same way, citing S's point and policy and the month.  Every other text cell is
+    Derived, future and ``derived_refs`` rows take fresh ``point_id`` s after the largest
+    S one, in that order and each in the order the spec gives, so the numbering is fixed
+    by the spec, never by a hash or a filesystem.  Their ``policy_id`` is composed from S's
+    and the month (``TL-000001-M120``, ``TL-000001-F3``), and where the S table has a
+    ``provenance`` column theirs is composed the same way, citing S's point and policy and
+    the month, and for a ``derived_refs`` row each Reference and its value.  A
+    ``derived_refs`` row names its References in ``source_refs`` too, as
+    :func:`_reference_settings` describes them, a column the table carries only where the
+    spec has such rows, blank on every other row (:func:`generated_columns`), so that the
+    table records them whether or not S's has a ``provenance``.  Every other text cell is
     copied from S.  That is D8's rule under ``CLAUDE.md``: the generator adds no name, and
     a reworded S cell reaches the SEC table through T6.
 
     Returns ``(table, companions)``: the table on a default index, ``point_id`` its first
     column, exactly as the file is written; and ``{filename: DataFrame}`` from the spec's
-    companion builders.
+    companion builders.  Each builder is given the rows read from S as it ships, and then
+    each ``derived_refs`` row alone, under that row's References, set on S's
+    ``Projection`` and restored after it in a ``finally`` as for the row itself; its
+    frames are joined in that order, an empty one left out, on a default index.  So a
+    companion gives each row the state of the run the row was read from.  Joined, the
+    frames must hold no row twice, so each builder must be row-local: every row it writes
+    carries the ``point_id`` of a row it was given (:func:`_check_row_local`).  A builder
+    that writes rows of its own on every call, as uslib's re-based scenario sets write
+    every scenario, would write them again for each ``derived_refs`` row, and is refused,
+    by its name, rather than joined.  A spec with no ``derived_refs`` calls each builder
+    once, on the whole table, as it always has, and holds it to nothing more.
 
     Every S point's ``result_cf()`` is projected, to find its first row.  Pass a model whose
     points are already swept, the instance T1 swept, and that costs nothing.
@@ -3290,6 +3389,39 @@ def build_sec_table(spec, s_model):
             row[column] = extract(projs[p], k)
         row.update(row_kind="future", source_policy_id=twin["policy_id"], source_mth=-k)
         rows.append(row)
+    space = s_model.Projection
+    for (p, d), refs in spec.derived_refs.items():
+        twin_of(p, "derived_refs")
+        unknown = [name for name in refs if name not in space.refs]
+        if unknown:
+            raise ValueError(f"derived_refs row ({p}, {d}) sets {unknown}, which "
+                             f"{spec.twin}'s Projection has no Reference of")
+    for (p, d), refs in spec.derived_refs.items():
+        twin, shipped = twins[p], {name: space.refs[name] for name in refs}
+        try:
+            for name, value in refs.items():
+                setattr(space, name, value)
+            proj, source = space[p], twin["source_mth"]
+            if not source < d < proj.proj_len():
+                raise ValueError(
+                    f"derived_refs row ({p}, {d}), under {_reference_settings(refs)}: d "
+                    f"must fall after the twin's entry month ({source}) and inside S's "
+                    f"frame, which ends at {proj.proj_len() - 1}")
+            row = dict(twin, point_id=next(fresh),
+                       policy_id=_derived_policy_id(twin["policy_id"], d),
+                       policy_count=proj.pols_if(d),
+                       duration_mth=twin["duration_mth"] + d - source)
+            if provenance:
+                row["provenance"] = (f"{_derived_provenance(p, twin['policy_id'], d)} "
+                                     f"under {_reference_settings(refs)}")
+            for column, extract in {**added, **spec.state}.items():
+                row[column] = extract(proj, d)
+        finally:
+            for name, value in shipped.items():
+                setattr(space, name, value)
+        row.update(row_kind="derived", source_policy_id=twin["policy_id"], source_mth=d)
+        row[SOURCE_REFS] = _reference_settings(refs)
+        rows.append(row)
 
     table = pd.DataFrame(rows, columns=columns)
     for key in ("point_id", "policy_id"):
@@ -3298,13 +3430,66 @@ def build_sec_table(spec, s_model):
             raise ValueError(f"the SEC table repeats {key} {dupes}; is a (point, month) "
                              f"pair listed twice?")
     companions = {}
+    shipped = len(table) - len(spec.derived_refs)
     for filename, build in spec.companions.items():
-        frame = build(s_model, table.copy())
-        if not isinstance(frame, pd.DataFrame):
-            raise TypeError(f"the builder of {filename} returned a "
-                            f"{type(frame).__name__}, not a DataFrame")
+        parts = [build(s_model, table.iloc[:shipped].copy())]
+        for i, refs in enumerate(spec.derived_refs.values()):
+            saved = {name: space.refs[name] for name in refs}
+            try:
+                for name, value in refs.items():
+                    setattr(space, name, value)
+                parts.append(build(s_model, table.iloc[[shipped + i]].copy()))
+            finally:
+                for name, value in saved.items():
+                    setattr(space, name, value)
+        for frame in parts:
+            if not isinstance(frame, pd.DataFrame):
+                raise TypeError(f"the builder of {filename} returned a "
+                                f"{type(frame).__name__}, not a DataFrame")
+        if spec.derived_refs:
+            _check_row_local(filename, build, parts, table, shipped)
+        kept = [frame for frame in parts if len(frame)]
+        frame = parts[0]
+        if len(parts) > 1 and kept:
+            frame = pd.concat(kept, ignore_index=True)
         companions[filename] = frame
     return table, companions
+
+
+def _check_row_local(filename, build, parts, table, shipped):
+    """Refuse a companion builder that writes rows beyond those it is given.
+
+    ``parts`` are the frames ``build`` wrote for ``filename``: the first for the rows read
+    from S as it ships, ``table.iloc[:shipped]``, then one for each ``derived_refs`` row
+    alone, in the table's order (:func:`build_sec_table`).  Joined, they must hold no row
+    twice.  So each row of each frame must carry a ``point_id``, and it must be one of the
+    rows that frame was built for: the frames' rows then belong to different points.  A
+    builder that writes rows of its own on every call, keyed by anything else or by points
+    it was not given, would write them once more for each ``derived_refs`` row; it raises
+    ``ValueError``, naming the file, the builder and the rows at fault.  An empty frame
+    holds nothing to repeat.
+    """
+    name = getattr(build, "__name__", repr(build))
+    given = [table.iloc[:shipped]] + [table.iloc[[i]] for i in range(shipped, len(table))]
+    for frame, rows in zip(parts, given):
+        if not len(frame):
+            continue
+        if "point_id" not in frame.columns:
+            raise ValueError(
+                f"{filename}: its builder {name} is not row-local: it wrote rows without "
+                f"a point_id.  A spec with derived_refs builds each such row's companion "
+                f"rows from that row alone, under its References, and joins them to the "
+                f"rest, so a builder must write rows only for the point_ids it is given; "
+                f"one that writes rows of its own on every call would write them again "
+                f"for each derived_refs row")
+        stray = sorted(set(frame["point_id"].tolist()) - set(rows["point_id"].tolist()))
+        if stray:
+            raise ValueError(
+                f"{filename}: its builder {name} is not row-local: given {len(rows)} "
+                f"rows, it wrote rows of point_id {stray}, which it was not given.  A spec "
+                f"with derived_refs builds each such row's companion rows from that row "
+                f"alone, under its References, and joins them to the rest, so a builder "
+                f"must write rows only for the point_ids it is given")
 
 
 _read_names = itertools.count(1)
@@ -3869,7 +4054,10 @@ with open(job_path, "rb") as f:
     job = pickle.load(f)
 model = importlib.import_module(package).mx_model
 for ref, value in job["refs"].items():
-    setattr(model.Projection, ref, value)
+    if ref.startswith("Data."):
+        setattr(model.Data, ref[len("Data."):], value)
+    else:
+        setattr(model.Projection, ref, value)
 
 # Whether each space's class came from an extension module: a package whose build lost one
 # still imports, from the translated .py beside it, and computes the same numbers.
@@ -3982,14 +4170,14 @@ def run_compiled(case_dir, package, job, *, stack_kib=1024, main_thread=False,
 
     ``job`` is ``{"refs": {name: value}, "calls": {idx: [(cell, args), ...]}}``, and may
     name ``"data"``, a list of ``Data`` cells to read once the calls are made.  The child
-    sets each Reference on the base ``Projection`` before any ItemSpace is made, then makes
-    each point's calls in order, on ``Projection[idx]``, in a thread whose stack is
-    ``stack_kib`` KiB or, with ``main_thread``, on its main thread, which is what
-    ``run_sec.py --cython`` runs on.  A compiled chain of cells runs on the C stack, which
-    the interpreter's recursion limit does not count (F7).  The thread's stack is
-    reserved at that size on every platform: ``threading.stack_size`` sets it on POSIX,
-    and on Windows, where that sets only the stack a thread commits, the child makes the
-    thread itself (``COMPILED_RUNNER``).
+    sets each Reference on the base ``Projection``, or one named ``"Data.<name>"`` on
+    ``Data``, before any ItemSpace is made or any cell computed, then makes each point's
+    calls in order, on ``Projection[idx]``, in a thread whose stack is ``stack_kib`` KiB or,
+    with ``main_thread``, on its main thread, which is what ``run_sec.py --cython`` runs on.
+    A compiled chain of cells runs on the C stack, which the interpreter's recursion limit
+    does not count (F7).  The thread's stack is reserved at that size on every platform:
+    ``threading.stack_size`` sets it on POSIX, and on Windows, where that sets only the
+    stack a thread commits, the child makes the thread itself (``COMPILED_RUNNER``).
 
     Returns ``{"exit": code, "stderr": its last lines}``, and when the child exited 0:
     ``"compiled"``, whether each space's class came from an extension module; ``"values"``,
@@ -4793,16 +4981,18 @@ def compiled_mismatches(build, folder, *, refs=None, stack_kib=65536, limit=50,
     by cell.
 
     ``folder`` is the model folder of a case :func:`compiled_case` made, so modelx and the
-    compiled package beside it read the same CSVs.  The model is read from it afresh,
-    under a name of its own, ``refs`` are set on its ``Projection``, and every point is
-    swept (:func:`full_sweep`): every value modelx then holds in a cache, at every
-    argument, is the expectation, and so is every raise.  A fresh read, because the sweep
-    evaluates what no projection asks for, a rate before issue among them, which a test
-    of the same model's instance may forbid.  The compiled package then makes the same
-    calls on the same points with the same ``refs``, in a child (:func:`run_compiled`), on
-    a thread of ``stack_kib`` KiB, and reads every ``Data`` cell whose modelx value is an
-    array or a number.  ``also``, a callable of one modelx point, adds what it calls to
-    the expectation, and so to the compiled run's calls (:func:`c4_expected`).
+    compiled package beside it read the same CSVs.  The model is read from it afresh, under
+    a name of its own, ``refs`` are set on its ``Projection``, a name ``"Data.<name>"`` on
+    its ``Data``, and every point is swept (:func:`full_sweep`): every value modelx then
+    holds in a cache, at every argument, is the expectation, and so is every raise.  A fresh
+    read, because the sweep evaluates what no projection asks for, a rate before issue among
+    them, which a test of the same model's instance may forbid.  The compiled package then
+    makes the same calls on the same points with the same ``refs``, in a child
+    (:func:`run_compiled`), on a thread of ``stack_kib`` KiB, and reads every ``Data`` cell
+    whose modelx value is an array or a number.  ``also``, a callable of one modelx point,
+    adds what it calls to the expectation, and so to the compiled run's calls
+    (:func:`c4_expected`); a model's spec gives its own as ``c4_also``
+    (:func:`spec_c4_also`).
 
     They must agree: a number identical where ``exact`` holds, by default where
     :func:`exact_here` does, and elsewhere within :data:`COMPILED_RTOL` relative, floored
@@ -4819,7 +5009,10 @@ def compiled_mismatches(build, folder, *, refs=None, stack_kib=65536, limit=50,
     model = mx.read_model(folder, name=f"{build.name}_c4_{next(_c4_names)}")
     try:
         for ref, value in refs.items():
-            setattr(model.Projection, ref, value)
+            if ref.startswith("Data."):
+                setattr(model.Data, ref[len("Data."):], value)
+            else:
+                setattr(model.Projection, ref, value)
         labels = list(model.Data.model_point_table().index)
         keys, expected = point_keys(model), {}
         for key in keys:
@@ -4867,6 +5060,18 @@ def compiled_mismatches(build, folder, *, refs=None, stack_kib=65536, limit=50,
     if len(lines) > limit:
         lines = lines[:limit - 1] + [f"(and {len(lines) - limit + 1} more)"]
     return lines
+
+
+def spec_c4_also(name):
+    """The ``also`` of SEC model ``name``'s spec, its :class:`SecSpec` ``c4_also``:
+    ``None`` where the model has no spec or its spec gives none.
+
+    uklib's conventions' C4 on the committed points passes it to
+    :func:`compiled_mismatches`, so that every cell of a code no swept cell reads is
+    compared there too.  No uslib spec sets it, so it is ``None`` for every uslib model.
+    """
+    spec = SEC_SPECS.get(name)
+    return None if spec is None else spec.c4_also
 
 
 # ---------------------------------------------------------------------------

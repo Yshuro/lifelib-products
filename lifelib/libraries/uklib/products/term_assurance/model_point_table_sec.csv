@@ -1,0 +1,15 @@
+point_id,policy_id,shape,age_at_entry,sex,smoker,policy_term,sum_assured,fib_income,sched_rate,joint_first_death,joint_age,joint_sex,joint_smoker,indexation,wop,premium_mth,premium_mode,mort_basis,policy_count,fib_commute_rate,duration_mth,lapse_cum_init,fib_cum_init,fib_streams_init,idx_factor_init,idx_prem_factor_init,wop_waived_frac_init,comm_init_pp_init,row_kind,source_policy_id,source_mth
+1,TA-000001,level,35,M,N,25,150000.0,0.0,0.06,False,,,,False,False,12.0,monthly,applied,1.0,0.0,0,0.0,0.0,0.0,1.0,1.0,0.0,0.0,twin,TA-000001,0
+2,TA-000002,decreasing,35,M,N,25,150000.0,0.0,0.06,False,,,,False,False,12.0,monthly,applied,1.0,0.0,0,0.0,0.0,0.0,1.0,1.0,0.0,0.0,twin,TA-000002,0
+3,TA-000003,fib,35,M,N,25,0.0,1000.0,0.06,False,,,,False,False,12.0,monthly,applied,1.0,0.0,0,0.0,0.0,0.0,1.0,1.0,0.0,0.0,twin,TA-000003,0
+4,TA-000004,fib,35,M,N,25,0.0,1000.0,0.06,False,,,,False,False,12.0,monthly,applied,1.0,1.0,0,0.0,0.0,0.0,1.0,1.0,0.0,0.0,twin,TA-000004,0
+5,TA-000005,level,35,M,N,25,150000.0,0.0,0.06,False,,,,True,False,12.0,monthly,applied,1.0,0.0,0,0.0,0.0,0.0,1.0,1.0,0.0,0.0,twin,TA-000005,0
+6,TA-000006,level,35,M,N,25,150000.0,0.0,0.06,True,33.0,F,N,False,False,18.0,monthly,applied,1.0,0.0,0,0.0,0.0,0.0,1.0,1.0,0.0,0.0,twin,TA-000006,0
+7,TA-000007,level,45,F,S,20,250000.0,0.0,0.06,False,,,,False,True,45.0,monthly,select,1.0,0.0,0,0.0,0.0,0.0,1.0,1.0,0.0,0.0,twin,TA-000007,0
+8,TA-000008,level,35,M,N,25,150000.0,0.0,0.06,False,,,,False,False,12.0,monthly,applied,1.0,0.0,60,0.0,0.0,0.0,1.0,1.0,0.0,216.0,twin,TA-000008,60
+9,TA-000005-M60,level,35,M,N,25,150000.0,0.0,0.06,False,,,,True,False,12.0,monthly,applied,0.6853926606570752,0.0,60,3.1196343786235275e-01,3.8574989671432366e-03,0.0,1.1255088100000002,1.1925186006249997,0.0,216.0,derived,TA-000005,60
+10,TA-000003-M66,fib,35,M,N,25,0.0,1000.0,0.06,False,,,,False,False,12.0,monthly,applied,0.6712622141358484,0.0,66,3.2580779057501225e-01,4.3649042467130763e-03,4.3649042467130763e-03,1.0,1.0,0.0,216.0,derived,TA-000003,66
+11,TA-000007-M66,level,45,F,S,20,250000.0,0.0,0.06,False,,,,False,True,45.0,monthly,select,0.6683951102894978,0.0,66,3.2543274192952254e-01,9.2342802721971008e-03,0.0,1.0,1.0,6.7041295614790834e-03,850.5,derived,TA-000007,66
+12,TA-000007-M4,level,45,F,S,20,250000.0,0.0,0.06,False,,,,False,True,45.0,monthly,select,9.6522452455923938e-01,0.0,4,3.4504724164396650e-02,2.8050600608987657e-04,0.0,1.0,1.0,0.0,850.5,derived,TA-000007,4
+13,TA-000001-M299,level,35,M,N,25,150000.0,0.0,0.06,False,,,,False,False,12.0,monthly,applied,2.9125316916401034e-01,0.0,299,0.6884930912844172,0.0695399799758646,0.0,1.0,1.0,0.0,216.0,derived,TA-000001,299
+14,TA-000007-F13,level,45,F,S,20,250000.0,0.0,0.06,False,,,,False,True,45.0,monthly,select,1.0,0.0,-13,0.0,0.0,0.0,1.0,1.0,0.0,0.0,future,TA-000007,-13

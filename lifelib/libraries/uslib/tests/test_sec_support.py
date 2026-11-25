@@ -824,6 +824,29 @@ def test_build_sec_table_rejects_a_spec_that_does_not_fit_the_s_table(s_model, c
         build_sec_table(dataclasses.replace(SPEC, **change), s_model)
 
 
+def test_a_scenario_companion_is_refused_beside_a_derived_refs_row():
+    """A companion builder that is not row-local cannot sit beside ``derived_refs``.
+
+    FIA's re-based scenario set, ``_fia_rebased_scenarios``, writes every scenario on each
+    call, keyed by scenario and month, not by point.  Given a ``derived_refs`` row, the
+    generator calls it on the shipped rows and again on that row alone, so the joined
+    ``rate_scenario_sec.csv`` would hold each scenario twice, with nothing to say so.  The
+    generator refuses the builder instead, naming the file and the builder
+    (``uk_sec_support``'s copy has a test of each kind of fault).  FIA's spec as shipped,
+    without ``derived_refs``, is T6's in ``test_fixed_indexed_annuity_us_sec.py``.
+    """
+    s = _read("fia", model_path("FIA_US_S"))
+    try:
+        spec = dataclasses.replace(
+            SEC_SPECS["FIA_US_SEC"],
+            derived_refs={(4, 61): {"net_consideration_ratio": 0.88375}})
+        with pytest.raises(ValueError, match="rate_scenario_sec.csv: its builder "
+                                             "_fia_rebased_scenarios is not row-local"):
+            build_sec_table(spec, s)
+    finally:
+        s.close()
+
+
 def _policy_ids(s_model, table):
     """A companion built from the SEC table: one row per SEC point and its policy."""
     return table[["point_id", "policy_id", "source_mth"]]
@@ -1700,6 +1723,24 @@ def test_c4_expects_what_also_calls_beyond_the_full_sweep():
         (0, 0), (0, 5), (1, 0), (1, 5), (2, 0), (2, 5)]
     assert also[("at", (2, 5))] == ("ok", 7.0)
     assert called == []
+
+
+def test_no_uslib_spec_gives_c4_an_also():
+    """``spec_c4_also`` is ``None`` for every uslib SEC model, as the harness's docstrings
+    say: no uslib spec sets ``c4_also``.
+
+    uslib's modules pass their own ``also`` to their comparisons, and uslib's conventions'
+    C4 on the committed points passes none, so a spec's would be read by nothing here, and
+    one set would claim a comparison no test makes.  Every spec, and every SEC model the
+    registry names, is held.
+    """
+    from sec_support import spec_c4_also
+    from us_registry import MODELS, is_sec
+    names = sorted({*SEC_SPECS, *(name for name in MODELS if is_sec(name))})
+    assert names, "no uslib SEC model to hold"
+    given = {name: spec_c4_also(name) for name in names}
+    assert all(also is None for also in given.values()), {
+        name: also for name, also in given.items() if also is not None}
 
 
 def test_vul_maps_s_ids_and_totals_onto_its_positions_and_total_cells():

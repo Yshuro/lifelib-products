@@ -496,6 +496,24 @@ def test_the_cap_is_skipped_when_there_is_no_previous_payout(with_profits):
     assert p.smoothed_payout(0) == pytest.approx(p.asset_share(0))
 
 
+def _copied_into(tmp_path):
+    """The model and its input tables copied into ``tmp_path``: the copy's folder.
+
+    A test that needs a table of its own writes it there, beside the copy, and reads the
+    copy.  Written into the product folder, even for the length of one test, it is a CSV
+    beside ``WP_UK_SEC`` too, which reads the folder's tables: a run of that model's tests
+    on the same checkout meanwhile would see it, and a run killed inside the test would
+    leave it behind, failing the CSV-set tests for both models.
+    """
+    import shutil
+
+    shutil.copytree(MODEL_DIR, tmp_path / MODEL_DIR.name,
+                    ignore=shutil.ignore_patterns("__pycache__"))
+    for csv in MODEL_DIR.parent.glob("*.csv"):
+        shutil.copy(csv, tmp_path / csv.name)
+    return tmp_path / MODEL_DIR.name
+
+
 def test_the_cap_is_applied_before_the_corridor(tmp_path):
     """Order matters: corridor-then-cap collapses to the cap alone.
 
@@ -504,31 +522,32 @@ def test_the_cap_is_applied_before_the_corridor(tmp_path):
     holds the payout well above the asset share and the corridor then pulls it down to
     1.20 of it.  Applying the corridor first would leave the capped figure standing,
     because an asset share is always inside its own corridor.
+
+    The crashed table is written beside a copy of the model in ``tmp_path``, never into
+    the product folder (:func:`_copied_into`).
     """
     import pandas as pd
 
-    model = mx.read_model(MODEL_DIR, name="WP_UK_S_order")
+    copy = _copied_into(tmp_path)
+    table = pd.read_csv(tmp_path / "model_point_table.csv", index_col="point_id")
+    table.loc[2, "fund_return"] = -0.40
+    alt = "model_point_table_crash.csv"
+    table.to_csv(tmp_path / alt)
+    model = mx.read_model(copy, name="WP_UK_S_order")
     try:
-        table = pd.read_csv(MODEL_DIR.parent / "model_point_table.csv",
-                            index_col="point_id")
-        table.loc[2, "fund_return"] = -0.40
-        alt = "model_point_table_crash.csv"
-        table.to_csv(model.Data.input_dir() / alt)
-        try:
-            model.Data.model_point_file = alt
-            model.Data.clear_all()
-            model.Projection.clear_all()
-            p = model.Projection[2]
-            # The cap floor binds in every month of the year once the shock is this
-            # deep, so the capped figure is the opening payout run down twelve times.
-            assert p.smoothed_payout_capped(T) == pytest.approx(
-                p.smooth_cap_dn_mth() * p.smoothed_payout_open(T), abs=PENNY)
-            assert p.smoothed_payout(T) == pytest.approx(1.20 * p.asset_share(T),
-                                                         abs=PENNY)
-            assert p.smoothed_payout(T) < p.smoothed_payout_capped(T)
-            assert p.check_payout_corridor() is True
-        finally:
-            (model.Data.input_dir() / alt).unlink(missing_ok=True)
+        assert model.Data.input_dir().resolve() == tmp_path.resolve()
+        model.Data.model_point_file = alt
+        model.Data.clear_all()
+        model.Projection.clear_all()
+        p = model.Projection[2]
+        # The cap floor binds in every month of the year once the shock is this
+        # deep, so the capped figure is the opening payout run down twelve times.
+        assert p.smoothed_payout_capped(T) == pytest.approx(
+            p.smooth_cap_dn_mth() * p.smoothed_payout_open(T), abs=PENNY)
+        assert p.smoothed_payout(T) == pytest.approx(1.20 * p.asset_share(T),
+                                                     abs=PENNY)
+        assert p.smoothed_payout(T) < p.smoothed_payout_capped(T)
+        assert p.check_payout_corridor() is True
     finally:
         model.close()
 
@@ -824,25 +843,24 @@ def test_the_smoothed_fund_chassis_is_out_of_scope(tmp_path):
     Moving from an annual grid to a monthly one narrows the gap without closing it - a
     5% daily limit needs a daily step - so the exclusion stands rather than being quietly
     relaxed.  The model rejects the chassis by name rather than running it on the wrong
-    grid.
+    grid.  The table naming it is written beside a copy of the model in ``tmp_path``
+    (:func:`_copied_into`).
     """
     import pandas as pd
 
-    model = mx.read_model(MODEL_DIR, name="WP_UK_S_sf")
+    copy = _copied_into(tmp_path)
+    table = pd.read_csv(tmp_path / "model_point_table.csv", index_col="point_id")
+    table.loc[1, "chassis"] = "SF_smoothed"
+    alt = "model_point_table_sf.csv"
+    table.to_csv(tmp_path / alt)
+    model = mx.read_model(copy, name="WP_UK_S_sf")
     try:
-        table = pd.read_csv(MODEL_DIR.parent / "model_point_table.csv",
-                            index_col="point_id")
-        table.loc[1, "chassis"] = "SF_prufund"
-        alt = "model_point_table_sf.csv"
-        table.to_csv(model.Data.input_dir() / alt)
-        try:
-            model.Data.model_point_file = alt
-            model.Data.clear_all()
-            model.Projection.clear_all()
-            with pytest.raises(FormulaError):
-                model.Projection[1].chassis()
-        finally:
-            (model.Data.input_dir() / alt).unlink(missing_ok=True)
+        assert model.Data.input_dir().resolve() == tmp_path.resolve()
+        model.Data.model_point_file = alt
+        model.Data.clear_all()
+        model.Projection.clear_all()
+        with pytest.raises(FormulaError):
+            model.Projection[1].chassis()
     finally:
         model.close()
 
@@ -955,35 +973,42 @@ def test_the_discretionary_scale_is_references_not_a_rate_table(with_profits):
 
 
 def test_inputs_live_beside_the_model():
-    """The three input CSVs sit in the model folder's parent directory."""
+    """The three input CSVs sit in the model folder's parent directory.
+
+    An SEC model shares the directory and reads its own inputs beside these
+    (UKLIB-SEC-PLAN.md U1), so this asks that the S model's are present, as uslib's
+    product modules do; that every CSV here is read by some model in the directory is
+    the conventions suite's check.
+    """
     expected = {"model_point_table.csv", "mort_table.csv", "lapse_table.csv"}
-    assert expected == {p.name for p in MODEL_DIR.parent.iterdir()
+    assert expected <= {p.name for p in MODEL_DIR.parent.iterdir()
                         if p.suffix == ".csv"}
 
 
-def test_an_input_can_be_swapped_without_touching_formulas():
-    """Point a filename Reference at a different file and the projection follows."""
+def test_an_input_can_be_swapped_without_touching_formulas(tmp_path):
+    """Point a filename Reference at a different file and the projection follows.
+
+    The stickier table is written beside a copy of the model in ``tmp_path``, never into
+    the product folder (:func:`_copied_into`).
+    """
     import pandas as pd
 
-    src = MODEL_DIR.parent / "lapse_table.csv"
-    sticky = pd.read_csv(src, index_col=["chassis", "policy_year"])
+    copy = _copied_into(tmp_path)
+    sticky = pd.read_csv(tmp_path / "lapse_table.csv", index_col=["chassis", "policy_year"])
     sticky["lapse_rate"] = sticky["lapse_rate"] * 0.5
-
-    model = mx.read_model(MODEL_DIR, name="WP_UK_S_swap")
+    alt = "lapse_table_sticky.csv"
+    sticky.to_csv(tmp_path / alt)
+    model = mx.read_model(copy, name="WP_UK_S_swap")
     try:
-        alt = "lapse_table_sticky.csv"
-        sticky.to_csv(model.Data.input_dir() / alt)
-        try:
-            base = model.Projection[1].result_cf()["shareholder_transfers"].sum()
-            model.Data.lapse_table_file = alt
-            model.Data.clear_all()
-            model.Projection.clear_all()
-            # Halving surrender keeps policies in force, so more bonus is declared on
-            # them and more is transferred to shareholders.
-            assert model.Projection[1].result_cf()[
-                "shareholder_transfers"].sum() > base
-        finally:
-            (model.Data.input_dir() / alt).unlink(missing_ok=True)
+        assert model.Data.input_dir().resolve() == tmp_path.resolve()
+        base = model.Projection[1].result_cf()["shareholder_transfers"].sum()
+        model.Data.lapse_table_file = alt
+        model.Data.clear_all()
+        model.Projection.clear_all()
+        # Halving surrender keeps policies in force, so more bonus is declared on
+        # them and more is transferred to shareholders.
+        assert model.Projection[1].result_cf()[
+            "shareholder_transfers"].sum() > base
     finally:
         model.close()
 

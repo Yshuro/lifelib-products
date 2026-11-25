@@ -341,20 +341,32 @@ on top — there is nothing left to adjust for.
 
 With `wop = true`, an incapacity state is added: incidence `inc(t)` **[std]**
 (no public UK incidence basis for the WOP work-tasks definitions is in the fetched
-sources), 26-week deferred period [S1], premiums waived while incapacitated (premium
-income multiplied by the active-payer probability), mortality unchanged. The WOP
-extra premium and the incidence/recovery basis are both **[std]** placeholders.
+sources), 26-week deferred period [S1], premiums waived while incapacitated past the
+deferred period (premium income multiplied by the probability of still paying),
+mortality unchanged. The WOP extra premium and the incidence/recovery basis are both
+**[std]** placeholders.
 
 On the monthly grid the deferred period is carried explicitly, as `defer` = 6 months
 **[std]** — the reading of 26 weeks a monthly grid can express, where an annual one
-could only round it to "incidence in year t, waiver from year t + 1". With monthly
-incidence and recovery rates `inc_m`, `rec_m` converted as above, the waived fraction
-follows
+could only round it to "incidence in year t, waiver from year t + 1". Each life in force
+is then in one of three states: **active**, paying and able to become incapacitated;
+**deferred**, incapacitated for less than the deferred period and still paying; and
+**waived**. With monthly incidence and recovery rates `inc_m`, `rec_m` converted as
+above, an active life becomes incapacitated at `inc_m`, and a deferred or waived life
+recovers to active at `rec_m` alike. So the active fraction `act(t)` follows a two-state
+chain of its own, and the waived fraction `u(t)` is fed from it:
 
-    u(t+1) = u(t)(1 − rec_m) + inc_m × [1 − u(t − defer)] × (1 − rec_m)^defer
+    act(t+1) = act(t)(1 − inc_m) + [1 − act(t)] × rec_m,     act(0) = 1
+    u(t+1)   = u(t)(1 − rec_m) + inc_m × act(t − defer) × (1 − rec_m)^defer
 
 — the lives entering waiver this month are those who became incapacitated `defer`
-months ago and have not recovered since.
+months ago and have not recovered since. Only an active life can become incapacitated,
+so the incidence falls on `act(t − defer)`: `1 − u(t − defer)` would count again the
+lives already in their deferred period, and run the waived fraction high. The deferred
+fraction is the rest, `1 − act(t) − u(t)`. At rest, `act = rec_m / (inc_m + rec_m)` and
+`u = inc_m (1 − rec_m)^defer / (inc_m + rec_m)`: the deferred period's survival factor
+holds the waived fraction below the `inc_m / (inc_m + rec_m)` it would settle at with no
+deferral.
 
 ---
 

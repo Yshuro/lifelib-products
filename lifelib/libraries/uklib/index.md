@@ -76,6 +76,59 @@ flows be read, summed or compared without first checking which step they came fr
 carries a second sense in lifelib — scalar, one model point at a time, as against the
 vectorized `_M` models — and that is true of all seven here as well.
 
+Each product carries a second model, `<product>_UK_SEC`, derived from its `_S` model,
+as each of [uslib](../uslib/index.md)'s products does. `E` is for running **in force**: `t`
+counts months from a valuation date shared by every model point, and a model point may be a
+policy issued at that date, one already in force at it, in any month of its policy year, or
+one written after it, as in `basiclife/BasicTerm_SE`. `C` is for compiling, as
+`basiclife/BasicTerm_SC` does, which each model's next step adds. On the `_S` model's
+new-business points, issued at the valuation date, an `_SEC` model reproduces its `_S` model
+cell by cell. Where the `_S` model already has a point in force, as term assurance's
+point 8 is, the `_SEC` twin of that point continues the `_S` projection from the month it
+is valued at, its expenses apart, which inflate from the valuation date; and a point
+restated in force at any month continues it too, opened with the state the `_S` model
+carries into that month, which the `_S` model itself restarts where its frame opens. Each
+`model-sec.md` says what running in force changes. `Term_UK_SEC` is the first: it runs in
+force, and compiles. `CI_UK_SEC` runs in force, and compiles too. `ULB_UK_SEC` runs in
+force and compiles too, its fund, its withdrawals and its count blocked by policy year, so
+that a cold call at its longest cover, 1,236 months, more than a century, runs on a small
+C stack.
+`WOL_UK_SEC` runs in force on two strands, full cover and paid-up, and compiles too, its
+two counts, its paid-up cover and its premiums paid blocked by policy year in the same way.
+`PA_UK_SEC` runs in force and compiles too, each life's survival and its payments to date
+blocked by policy year, so that a cold call at its longest cover, 1,380 months, a
+guarantee from the table's first age, runs on a small C stack.
+`WP_UK_SEC` runs in force on with-profits' coupled chains, the count, the asset share, the
+smoothed payout, the guarantee, the units, the unit price and two cumulants, and compiles
+too, each of its eight chains blocked by policy year, and its claims total compensated as
+Python's `sum` is, three kinds being paid together in a frame's last month.
+`IP_UK_SEC` runs in force with lives in health and in claim at any claim duration, and
+compiles too, its claim cohorts, a tuple a month in `IP_UK_S`, a recursion of two
+parameters, a cohort a cell, whose sums are `IP_UK_S`'s `sum` to the last bit. So every
+product has its in-force model, and every one compiles.
+
+**Compiled speed.** Each `_SEC` model's `model-sec.md` records what compiling buys, timed by
+`tools/bench_sec_cy.py`: one block of the committed model points repeated, each engine in a
+process of its own, the fastest of three runs, the tool run three times. The figures below
+are `net_cf(t)` summed over each point's frame, the projection alone, in milliseconds a
+point, each the median of the tool's three runs, and the ratios are each page's own, the
+median of its three runs' ratios. All seven were timed on a shared 4-CPU Linux machine
+under load, as each `model-sec.md` records, so the figures compare engines within a row
+better than products across rows. The export is the model as plain Python, `modelx`'s
+export, before compiling; `modelx` is the `_SEC` model itself. A point of income protection
+costs the most on every engine, since each month it sums its triangle of claim cohorts
+four times, and modelx records each cohort's dependencies.
+
+| Product | Model | Compiled | Export | modelx | Compiled vs export | Compiled vs modelx |
+|---|---|---|---|---|---|---|
+| Term assurance | [`Term_UK_SEC`](products/term_assurance/model-sec.md) | 0.181 ms | 2.31 ms | 76.8 ms | 12.8× | 419× |
+| Critical illness cover | [`CI_UK_SEC`](products/critical_illness/model-sec.md) | 0.207 ms | 2.74 ms | 85.2 ms | 13.2× | 411× |
+| Income protection | [`IP_UK_SEC`](products/income_protection/model-sec.md) | 2.82 ms | 56.7 ms | 1,430 ms | 20.2× | 508× |
+| Whole of life | [`WOL_UK_SEC`](products/whole_of_life/model-sec.md) | 0.396 ms | 5.10 ms | 187 ms | 13.0× | 470× |
+| With-profits | [`WP_UK_SEC`](products/with_profits/model-sec.md) | 0.803 ms | 10.70 ms | 302 ms | 13.3× | 368× |
+| Unit-linked investment bond | [`ULB_UK_SEC`](products/unit_linked_bond/model-sec.md) | 0.236 ms | 3.13 ms | 111 ms | 13.1× | 470× |
+| Pension annuity | [`PA_UK_SEC`](products/pension_annuity/model-sec.md) | 0.364 ms | 5.31 ms | 152 ms | 14.6× | 417× |
+
 Assumption tables stay in the units they are quoted in: a mortality rate by attained age
 and a lapse rate by policy year are annual, and each model converts them month by month
 with `1 − (1 − r)^(1/12)`, so twelve months compound back to the table rate exactly. The
@@ -95,23 +148,23 @@ close, and whose guarantee is an order of magnitude too large a decade later.
 
 | Product | Model | Grid | Representative design |
 |---|---|---|---|
-| [Term assurance](products/term_assurance/index.md) | `Term_UK_S` | monthly | Guaranteed-premium term in three benefit shapes — level, decreasing at a client-selected mortgage rate, and family income benefit — with terminal illness benefit included and optional RPI indexation; expires at end of term, with no U.S.-style post-level-term tail |
-| [Critical illness cover](products/critical_illness/index.md) | `CI_UK_S` | monthly | Accelerated life-or-CI level term on the **term-assurance chassis**: ~40 ABI-aligned full-payment conditions including TPD, 25%/£25k additional-payment conditions, 50%/£25k children's cover, 14-day survival period; standalone variant minus the death benefit |
-| [Income protection](products/income_protection/index.md) | `IP_UK_S` | monthly | Full-term guaranteed-premium own-occupation IP: two-band earnings cap (65% to £60k, 50% above), deferred periods 4–52 weeks, RPI escalation in claim, proportionate benefit on partial return to work — the one **three-state** model here, healthy / sick / dead |
-| [Whole of life](products/whole_of_life/index.md) | `WOL_UK_S` | monthly | Two cells: underwritten guaranteed whole of life, protection-only with no cash value — unlike U.S. whole life — and over-50s guaranteed acceptance, a fixed cash sum with a 12-month moratorium, premiums ceasing at 90, lapse-supported |
+| [Term assurance](products/term_assurance/index.md) | `Term_UK_S`, `Term_UK_SEC` | monthly | Guaranteed-premium term in three benefit shapes — level, decreasing at a client-selected mortgage rate, and family income benefit — with terminal illness benefit included and optional RPI indexation; expires at end of term, with no U.S.-style post-level-term tail |
+| [Critical illness cover](products/critical_illness/index.md) | `CI_UK_S`, `CI_UK_SEC` | monthly | Accelerated life-or-CI level term on the **term-assurance chassis**: ~40 ABI-aligned full-payment conditions including TPD, 25%/£25k additional-payment conditions, 50%/£25k children's cover, 14-day survival period; standalone variant minus the death benefit |
+| [Income protection](products/income_protection/index.md) | `IP_UK_S`, `IP_UK_SEC` | monthly | Full-term guaranteed-premium own-occupation IP: two-band earnings cap (65% to £60k, 50% above), deferred periods 4–52 weeks, RPI escalation in claim, proportionate benefit on partial return to work — the one **three-state** model here, healthy / sick / dead |
+| [Whole of life](products/whole_of_life/index.md) | `WOL_UK_S`, `WOL_UK_SEC` | monthly | Two cells: underwritten guaranteed whole of life, protection-only with no cash value — unlike U.S. whole life — and over-50s guaranteed acceptance, a fixed cash sum with a 12-month moratorium, premiums ceasing at 90, lapse-supported |
 
 **Savings**
 
 | Product | Model | Grid | Representative design |
 |---|---|---|---|
-| [With-profits](products/with_profits/index.md) | `WP_UK_S` | monthly | 90:10 proprietary fund on retrospective asset shares: 80–120% payout target range, smoothing caps, MVR bounded by the asset-share shortfall; unitised WP as the primary cell and conventional WP endowment as the legacy one |
-| [Unit-linked investment bond](products/unit_linked_bond/index.md) | `ULB_UK_S` | monthly | Modern clean-charge onshore single-premium bond: 100.1% death uplift, segmented mini-policies, AMC-based charges, the 5% p.a. tax-deferred withdrawal machinery; modeled through the classic UK **unit / non-unit** cash flow decomposition |
+| [With-profits](products/with_profits/index.md) | `WP_UK_S`, `WP_UK_SEC` | monthly | 90:10 proprietary fund on retrospective asset shares: 80–120% payout target range, smoothing caps, MVR bounded by the asset-share shortfall; unitised WP as the primary cell and conventional WP endowment as the legacy one |
+| [Unit-linked investment bond](products/unit_linked_bond/index.md) | `ULB_UK_S`, `ULB_UK_SEC` | monthly | Modern clean-charge onshore single-premium bond: 100.1% death uplift, segmented mini-policies, AMC-based charges, the 5% p.a. tax-deferred withdrawal machinery; modeled through the classic UK **unit / non-unit** cash flow decomposition |
 
 **Annuity**
 
 | Product | Model | Grid | Representative design |
 |---|---|---|---|
-| [Pension annuity](products/pension_annuity/index.md) | `PA_UK_S` | monthly | Immediate lifetime annuity on a single carrier's pattern: single or joint life, escalation nil / fixed / RPI-floored / LPI, guarantee period XOR value protection, enhanced terms as a mortality-rating overlay. Longevity is the model |
+| [Pension annuity](products/pension_annuity/index.md) | `PA_UK_S`, `PA_UK_SEC` | monthly | Immediate lifetime annuity on a single carrier's pattern: single or joint life, escalation nil / fixed / RPI-floored / LPI, guarantee period XOR value protection, enhanced terms as a mortality-rating overlay. Longevity is the model |
 
 ### One shape, enforced
 
@@ -224,7 +277,9 @@ one. This is lifelib's own convention (`basiclife/BasicTerm_S`, `savings/CashVal
 `for t in range(proj_len())`). A contractual policy year is the 1-based label
 `duration(t) + 1` and is derived, never indexed by — so is every schedule keyed by it,
 including the lapse tables and the with-profits guarantee dates, which are read through
-`policy_year(t)` rather than re-keyed to months.
+`policy_year(t)` rather than re-keyed to months. An `_SEC` model counts `t` from its
+valuation date instead, the same month for every model point, and its `model-sec.md` sets
+out the two clocks.
 
 The tests ship inside the library and run against *your* copy:
 
@@ -248,18 +303,22 @@ python -m pytest tests -q
   - The liability cash flow model on paper: state variables, recursions, processing order, worked example.
 * - `products/<product>/model.md`
   - How the model implements those notes — what was standardized, what diverges, what the tests cover.
+* - `products/<product>/model-sec.md`
+  - Where the product has an `_SEC` model: how it extends the `_S` one — the in-force interface, the two clocks, the departures — and, once it compiles, the compiled model.
 * - `products/<product>/sources.md`
   - Every source the product's documents cite, with URLs, access dates and retrieval status.
 * - `products/<product>/<Model>/`
   - The modelx model itself. Formulas only — no embedded data.
 * - `products/<product>/*.csv`
-  - The model's inputs, external to the model folder so they can be edited or swapped in place.
+  - The model's inputs, external to the model folder so they can be edited or swapped in place. An `_SEC` model reads the same tables and its own `model_point_table_sec.csv`, with any `*_sec.csv` companion, such as term assurance's waiver pipeline, each generated from the `_S` model and its inputs and checked against them by the tests.
 * - `products/<product>/run.py`
-  - Reads the model and prints its cash flow statement.
+  - Reads the model and prints its cash flow statement. `run_sec.py` does the same for an `_SEC` model, for one model point or the whole block, and `--cython` runs the compiled model.
+* - `products/<product>/sample_sec.py`, `spec_sec.py`
+  - mx2cy's two inputs for compiling an `_SEC` model: the sample run that types each cell, and the size of each cell's cache.
 * - `references/`
   - The cross-product regulatory and actuarial bibliography, cited as `[REG-R#]`.
 * - `tests/`
-  - One module per model for its worked example and invariants, plus `test_model_conventions_uk.py` for the house style, and `uk_registry.py` carrying the model registry.
+  - One module per model for its worked example and invariants, plus `test_model_conventions_uk.py` for the house style, `uk_registry.py` carrying the model registry, and `uk_sec_support.py`, the comparisons and the generator the `_SEC` tests share.
 * - `_research/`
   - The raw research notes every citation traces back to. Provenance, not documentation — kept in the source repository, neither rendered nor packaged with lifelib.
 ```

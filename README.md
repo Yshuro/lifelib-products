@@ -22,8 +22,11 @@ organised on the *Drei-Schichten-Modell*) and Korea (10 product types, four of t
 `lifelib/libraries/uslib/`, seven in `lifelib/libraries/uklib/`, nine in
 `lifelib/libraries/jplib/`, nine in `lifelib/libraries/frlib/`, ten in
 `lifelib/libraries/delib/` and ten in `lifelib/libraries/krlib/`, each one reproducing its
-own technical notes' worked example, asserted cell by cell. All six are lifelib libraries
-in shape: they sit at the path lifelib puts its libraries on, they render as Sphinx page
+own technical notes' worked example, asserted cell by cell. Beside its `_S` model, each of
+uslib's twelve products and uklib's seven carries an `_SEC` model, which also runs in
+force at a valuation date and compiles under modelx-cython
+([USLIB-SEC-PLAN.md](USLIB-SEC-PLAN.md), [UKLIB-SEC-PLAN.md](UKLIB-SEC-PLAN.md)). All six
+are lifelib libraries in shape: they sit at the path lifelib puts its libraries on, they render as Sphinx page
 trees, and every regulatory citation in them is a working link.
 
 ---
@@ -41,8 +44,8 @@ lifelib/libraries/                   the path lifelib keeps its libraries on, an
         model.md                     how the model implements the notes, and what is [std]
         sources.md                   numbered source list for this product's documents
         run.py  *.csv  <Model>/      the modelx model and its inputs
-        model-sec.md  run_sec.py     uslib: an _SEC model's notes and runner, beside it
-        sample_sec.py  spec_sec.py   uslib: an _SEC model's compile inputs, at stage EC
+        model-sec.md  run_sec.py     uslib, uklib: an _SEC model's notes and runner, beside it
+        sample_sec.py  spec_sec.py   uslib, uklib: an _SEC model's compile inputs, at stage EC
     references/
       regulatory-and-actuarial-references.md
                                      curated cross-product bibliography

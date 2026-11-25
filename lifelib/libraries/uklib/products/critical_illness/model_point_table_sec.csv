@@ -1,0 +1,15 @@
+point_id,policy_id,contract_type,age_at_entry,sex,smoker,sum_assured,policy_term,cover_basis,life_basis,joint_age,joint_sex,joint_smoker,premium_guarantee,premium_mth,premium_mode,children_cover,indexation,policy_count,duration_mth,idx_factor_init,idx_prem_factor_init,review_prem_factor_init,ci_sel_latched_init,ci_sel_factor_init,review_prem_shock_init,row_kind,source_policy_id,source_mth,source_refs
+1,CI-000001,accelerated,40,M,NS,100000.0,25,level,single,,,,guaranteed,55.0,monthly,True,False,1.0,0,1.0,1.0,1.0,0,1.0,0.0,twin,CI-000001,0,
+2,CI-000002,standalone,40,M,NS,100000.0,25,level,single,,,,guaranteed,55.0,monthly,True,False,1.0,0,1.0,1.0,1.0,0,1.0,0.0,twin,CI-000002,0,
+3,CI-000003,accelerated,40,M,NS,100000.0,25,level,single,,,,reviewable,55.0,monthly,True,False,1.0,0,1.0,1.0,1.0,0,1.0,0.0,twin,CI-000003,0,
+4,CI-000004,accelerated,40,M,NS,100000.0,25,level,single,,,,guaranteed,55.0,monthly,True,True,1.0,0,1.0,1.0,1.0,0,1.0,0.0,twin,CI-000004,0,
+5,CI-000005,accelerated,40,M,NS,100000.0,25,level,single,,,,guaranteed,55.0,monthly,False,False,1.0,0,1.0,1.0,1.0,0,1.0,0.0,twin,CI-000005,0,
+6,CI-000006,accelerated,45,F,S,150000.0,20,level,single,,,,guaranteed,95.0,monthly,True,False,1.0,0,1.0,1.0,1.0,0,1.0,0.0,twin,CI-000006,0,
+7,CI-000007,accelerated,40,M,NS,100000.0,25,level,joint_first_event,38.0,F,NS,guaranteed,82.5,monthly,True,False,1.0,0,1.0,1.0,1.0,0,1.0,0.0,twin,CI-000007,0,
+8,CI-000004-M36,accelerated,40,M,NS,100000.0,25,level,single,,,,guaranteed,55.0,monthly,True,True,0.7723710454023793,36,1.0609,1.0920249999999998,1.0,0,1.0,0.0,derived,CI-000004,36,
+9,CI-000003-M60,accelerated,40,M,NS,100000.0,25,level,single,,,,reviewable,55.0,monthly,True,False,0.6780351474260894,60,1.0,1.0,1.0,0,1.0,0.0,derived,CI-000003,60,
+10,CI-000003-M66,accelerated,40,M,NS,100000.0,25,level,single,,,,reviewable,55.0,monthly,True,False,0.6630859275352214,66,1.0,1.0,1.0,0,1.0,0.0,derived,CI-000003,66,
+11,CI-000003-M78,accelerated,40,M,NS,100000.0,25,level,single,,,,reviewable,55.0,monthly,True,False,0.6340526384863423,78,1.0,1.0,1.0,0,1.0,0.0,derived,CI-000003,78,
+12,CI-000001-M299,accelerated,40,M,NS,100000.0,25,level,single,,,,guaranteed,55.0,monthly,True,False,2.4091005429258047e-01,299,1.0,1.0,1.0,0,1.0,0.0,derived,CI-000001,299,
+13,CI-000004-F13,accelerated,40,M,NS,100000.0,25,level,single,,,,guaranteed,55.0,monthly,True,True,1.0,-13,1.0,1.0,1.0,0,1.0,0.0,future,CI-000004,-13,
+14,CI-000003-M124,accelerated,40,M,NS,100000.0,25,level,single,,,,reviewable,55.0,monthly,True,False,0.4586414252054156,124,1.0,1.0,1.2100000000000002,1,1.1,0.1,derived,CI-000003,124,review_prem_shock 0.1

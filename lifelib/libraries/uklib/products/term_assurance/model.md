@@ -288,12 +288,16 @@ run reproduces the worked example while the machinery stays visible and testable
 | Selective lapsation | `sel_lapse_lambda` | `0.0` | Loads persisters' mortality by `1 + λ·max(0, w_cum − w_ref)` once cumulative lapse passes `w_ref = 20%`. Lapsers are healthier, so a block that has shed lives carries impaired mortality on the remainder |
 | Rebroking | `premium_market_ratio` | `1.0` | Multiplies the lapse rate by `min(2, max(1, P_inforce/P_market))`. Guaranteed premiums rule out premium-shock lapse; falling market rates for the attained age are the driver instead |
 | Commission clawback | `clawback_mths` | `0` | Recovers `(48 − months in force)/48` of initial commission on lapses inside the window, with `t + 1` months in force at the end of month `t` — exact on this grid, where the annual one could only step twelve at a time. Set it to `48` for the notes' four-year rule; inside the window it reverses the sign of the early-lapse sensitivity |
-| Waiver of premium | model point `wop` | `False` (point 7 excepted) | A two-state incidence/recovery chain on the premium-paying population, plus a premium loading. Both its incidence basis and its extra premium are **[std]** placeholders — no public UK incidence basis for the work-tasks definitions appears in the sources |
+| Waiver of premium | model point `wop` | `False` (point 7 excepted) | Three states, active, in the deferred period and waived, the active fraction following a two-state incidence/recovery chain that feeds the waived one, plus a premium loading. Both its incidence basis and its extra premium are **[std]** placeholders — no public UK incidence basis for the work-tasks definitions appears in the sources |
 
 The waiver module carries the 26-week deferred period [S1] explicitly, as
 `wop_defer_mths = 6` months between incidence and the first waived premium **[std]** —
 the reading a monthly grid can express, where an annual one could only round it to
-"incidence in year `t`, waiver from year `t + 1`". Its one remaining simplification is
+"incidence in year `t`, waiver from year `t + 1`". A life in its deferred period still
+pays, and cannot become incapacitated again, so each month's incidence falls on the
+active fraction alone, `wop_active_frac`, which recovery from the deferred and waived
+states replenishes; the waived fraction, `wop_waived_frac`, takes in the incidence of
+six months before, less the recoveries since. Its one remaining simplification is
 that mortality and lapse are assumed independent of the waiver state **[std]**, which
 is what lets the waived population be carried as a fraction of the in-force rather than
 as its own decrement.
@@ -355,8 +359,10 @@ total, that the FIB stream is not decremented by mortality, expiry with no tail 
 (the frame is `range(proj_len())`, `proj_len() = 12n`, `pols_if(proj_len())` is zero),
 the roll-forward identity, the joint first-death decrement, indexation's ×1.5 premium
 factor stepping on anniversaries, the two mortality bases, the two premium modes, the
-four off-by-default modules in both positions, that an in-force point opens at
-`t = 12 × duration_inforce()`, and that a lapse pays nothing.
+four off-by-default modules in both positions, the waiver's three states partitioning
+the in-force month by month against a ladder rebuilt in the test, its resting fractions
+and its waived fraction inside 0 to 1 at an incidence of 1, that an in-force point opens
+at `t = 12 × duration_inforce()`, and that a lapse pays nothing.
 
 ```bash
 python -m pytest tests -q

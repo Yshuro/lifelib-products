@@ -1,20 +1,24 @@
-"""Write, or check, the generated input files of one uslib SEC model.
+"""Write, or check, the generated input files of one uslib or uklib SEC model.
 
-Each ``<Name>_US_SEC`` model reads its own model point table, ``model_point_table_sec.csv``,
-and some read ``*_sec.csv`` companions beside it: DIA's premium schedule, FIA's and RILA's
-scenarios re-based to each row, and VA's two re-based scenarios (USLIB-SEC-PLAN.md D8).
-None of those rows is typed by hand.  Every one is generated from the S model and its inputs
-as they stand: a twin from its S row, a derived in-force row from S's own state at a chosen
-month, a future row from an S new-business row.  The T6 test regenerates them and compares,
-so the committed files cannot drift from S.  When S changes, a reworded ``provenance`` cell
-or a renamed lookup key, T6 fails until the files are regenerated, in the same commit.
+Each SEC model, uslib's ``<Name>_US_SEC`` or uklib's ``<Name>_UK_SEC``, reads its own model
+point table, ``model_point_table_sec.csv``, and some read ``*_sec.csv`` companions beside
+it: in uslib, DIA's premium schedule, FIA's and RILA's scenarios re-based to each row, and
+VA's two re-based scenarios (USLIB-SEC-PLAN.md D8).  None of those rows is typed by hand.
+Every one is generated from the S model and its inputs as they stand: a twin from its S
+row, a derived in-force row from S's own state at a chosen month, a future row from an S
+new-business row.  The T6 test regenerates them and compares, so the committed files cannot
+drift from S.  When S changes, a reworded ``provenance`` cell or a renamed lookup key, T6
+fails until the files are regenerated, in the same commit.
 
-This is a thin command line over ``sec_support.write_generated`` and
-``sec_support.check_generated``.  The logic lives in the library's
-``lifelib/libraries/uslib/tests/sec_support.py``, beside the per-product specs in its
-``SEC_SPECS``, because ``lifelib.create()`` copies a library's ``tests/`` but not this
-repository's ``tools/``, and T6 must be able to regenerate inside such a copy.  So the tool
-puts that ``tests/`` folder on ``sys.path`` and imports the module from there.
+This is a thin command line over ``write_generated`` and ``check_generated`` in the
+harness of the model's library: ``lifelib/libraries/uslib/tests/sec_support.py`` for a
+``_US_`` model, ``lifelib/libraries/uklib/tests/uk_sec_support.py`` for a ``_UK_`` one
+(UKLIB-SEC-PLAN.md U3).  The logic lives there, beside the per-product specs in the
+harness's ``SEC_SPECS``, because ``lifelib.create()`` copies a library's ``tests/`` but not
+this repository's ``tools/``, and T6 must be able to regenerate inside such a copy.  So the
+tool reads the library from the country tag in the model's name, ``_US_`` or ``_UK_``, puts
+that library's ``tests/`` folder on ``sys.path`` and imports the harness from there
+(``tools/sec_libraries.py``, UKLIB-SEC-PLAN.md U4).
 
 Writing is deterministic.  A rerun with no S change touches no file, and a file is
 rewritten only when a cell would change.  A float compares by its value, not its
@@ -38,16 +42,14 @@ Usage::
 
 ``--check`` writes nothing, prints the drift cell by cell, and exits 1 if there is any.
 ``--product-dir`` reads the S model and its inputs from a copy of the product directory, and
-writes there, instead of the product directory in the registry.  An unknown model name, or a
-malformed command line, exits 2.
+writes there, instead of the product directory in the registry.  A name that carries
+neither tag, a model its library's harness has no spec for, or a malformed command line,
+exits 2.
 """
 import pathlib
 import sys
 
-TESTS = pathlib.Path(__file__).resolve().parents[1] / "lifelib/libraries/uslib/tests"
-sys.path.insert(0, str(TESTS))
-
-import sec_support  # noqa: E402  (it is found through the path inserted above)
+import sec_libraries  # tools/sec_libraries.py, beside this script
 
 USAGE = "usage: python tools/gen_sec_points.py <SEC model> [--check] [--product-dir DIR]"
 
@@ -80,21 +82,26 @@ def main(argv):
         print(USAGE)
         return 2
     name, check, product_dir = parsed
-    if name not in sec_support.SEC_SPECS:
-        known = ", ".join(sorted(sec_support.SEC_SPECS)) or "none yet"
-        print(f"no SecSpec is registered for {name!r} in {TESTS / 'sec_support.py'} "
+    try:
+        harness = sec_libraries.library(name).harness
+    except sec_libraries.UnknownTag as err:
+        print(err)
+        return 2
+    if name not in harness.SEC_SPECS:
+        known = ", ".join(sorted(harness.SEC_SPECS)) or "none yet"
+        print(f"no SecSpec is registered for {name!r} in {harness.__file__} "
               f"(registered: {known})")
         return 2
 
     if check:
-        drift = sec_support.check_generated(name, product_dir)
+        drift = harness.check_generated(name, product_dir)
         for line in drift:
             print(line)
         print(f"{name}: {len(drift)} differences from what S now generates" if drift
               else f"{name}: the generated files are current")
         return 1 if drift else 0
 
-    written = sec_support.write_generated(name, product_dir)
+    written = harness.write_generated(name, product_dir)
     for path, changed in written.items():
         print(f"{'wrote    ' if changed else 'unchanged'} {path}")
     if any(written.values()):

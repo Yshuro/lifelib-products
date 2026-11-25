@@ -16,6 +16,12 @@
 # The third job, `sec`, runs uslib's twelve `_US_SEC` test modules, which the `test` job
 # leaves out: in every leg of it they took the leg to its 90-minute timeout (Tests run 14,
 # USLIB-SEC-PLAN.md K6). One module to a leg, so no leg holds them all.
+#
+# `cython_uk` is the `cython` job over uklib's compile tests, its shards uklib's own, and
+# `sec_uk` is the `sec` job over uklib's `_UK_SEC` modules, Term_UK_SEC's the first
+# (UKLIB-SEC-PLAN.md U7). They are copies rather than a library axis on uslib's
+# jobs, because uslib's shard test reads the job named `cython` and holds every shard in it
+# to uslib's registry, and because a leg takes one library's variables.
 
 name: Tests
 
@@ -73,9 +79,42 @@ jobs:
       # `pytest` from the root, as lifelib's CI runs it, every library in one process. The
       # suites are slow -- every model reproduces its technical notes' worked example,
       # cell by cell -- so report the slowest tests to keep an eye on which models
-      # dominate the run. uslib's `_US_SEC` modules are left to the `sec` job below; the
-      # SEC models' conventions, their registry and `sec_support` still run here.
-      run: pytest -q --durations=10 --ignore-glob='*test_*_us_sec.py'
+      # dominate the run. uslib's `_US_SEC` and uklib's `_UK_SEC` modules are left to the
+      # `sec` and `sec_uk` jobs below; the SEC models' conventions, their registries and
+      # each library's harness still run here.
+      run: pytest -q --durations=10 --ignore-glob='*test_*_us_sec.py' --ignore-glob='*test_*_uk_sec.py'
+
+    - name: Run uklib's tests of a sum's bits where sum() adds left to right
+      # Python 3.11's sum() adds floats left to right, where from 3.12 it compensates, so
+      # each uklib SEC test that holds a total to `sum`'s last bit holds what rests on no
+      # sum first, and then skips the bits there, naming 3.11 (UKLIB-SEC-PLAN.md, M15).
+      # Their modules run in the `sec_uk` job alone, on 3.13, where no guard skips, so an
+      # assertion resting on sum moved before its guard would be green in every job. This
+      # step runs those tests, by node id, and each module's test of its guard, on one leg
+      # of 3.11: the guarded ones skip at the guard, naming 3.11; IP's cohort sums on the
+      # full grid skip too, as everywhere UKLIB_SEC_FULL is unset; the rest pass. They need
+      # neither modelx-cython nor docutils, which this job does not install, and take about
+      # two minutes. test_compiled_conventions_uk.py holds the step to -q, -rs and the node
+      # ids of the tests that reach the guard, so that one guarded later fails until it is
+      # added here, and pins what each asserts before its guard.
+      if: matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest'
+      run: >-
+        pytest -q -rs
+        lifelib/libraries/uklib/tests/test_term_assurance_uk_sec.py::test_the_sums_bits_skip_only_where_sum_adds_left_to_right
+        lifelib/libraries/uklib/tests/test_term_assurance_uk_sec.py::test_the_ledger_residual_is_s_own_bit_for_bit
+        lifelib/libraries/uklib/tests/test_critical_illness_uk_sec.py::test_the_sums_bits_skip_only_where_sum_adds_left_to_right
+        lifelib/libraries/uklib/tests/test_critical_illness_uk_sec.py::test_the_all_total_is_s_total_bit_for_bit
+        lifelib/libraries/uklib/tests/test_income_protection_uk_sec.py::test_the_sums_bits_skip_only_where_sum_adds_left_to_right
+        lifelib/libraries/uklib/tests/test_income_protection_uk_sec.py::test_the_all_total_is_s_total_bit_for_bit
+        lifelib/libraries/uklib/tests/test_income_protection_uk_sec.py::test_the_cohort_sums_are_s_sums_bit_for_bit
+        lifelib/libraries/uklib/tests/test_with_profits_uk_sec.py::test_the_sums_bits_skip_only_where_sum_adds_left_to_right
+        lifelib/libraries/uklib/tests/test_with_profits_uk_sec.py::test_the_all_total_is_s_total_bit_for_bit
+
+    - name: Hold uklib's SEC harness to uslib's
+      # uk_sec_support.py is uslib's sec_support.py under uklib's own name, the libraries'
+      # product specs apart; the check fails on any shared function, class or constant
+      # whose code differs (UKLIB-SEC-PLAN.md U3, K10). It reads the two files alone.
+      run: python tools/check_sec_harness.py
 
   cython:
     # The tests marked `cython`, which compile a model with modelx-cython and check the
@@ -144,14 +183,66 @@ jobs:
         pip install -r requirements.txt -r requirements-cython.txt
 
     - name: Run the compile tests with pytest
-      # Only uslib has compile tests, so only its suite is collected, and `-m cython`
-      # selects them: test_cython_toolchain.py, which compiles Term_US_S, and from its
+      # Only uslib's suite is collected here, uklib's compile tests running in `cython_uk`
+      # below, and `-m cython` selects them: test_cython_toolchain.py, which compiles
+      # Term_US_S, and from its
       # Phase 2 on each SEC model's own, Term_US_SEC's first (M14), with the stage-EC
       # conventions of test_compiled_conventions.py, which compile the model once a
       # session and hold the compiled model to modelx; of those, conftest.py keeps the
       # leg's shard. A run that selects nothing fails, which is wanted for the same reason
       # a skip is.
       run: pytest -q -m cython --durations=10 lifelib/libraries/uslib/tests
+
+  cython_uk:
+    # uklib's compile tests, as the `cython` job runs uslib's (UKLIB-SEC-PLAN.md U7): one
+    # shard to a leg, `toolchain`, test_cython_toolchain_uk.py and any compile test tied to
+    # no one model, and for each uklib SEC model at stage "EC" its product directory, its
+    # module's compile tests with its cases of test_compiled_conventions_uk.py, in one
+    # session. A product's C step adds its shard here, and test_compiled_conventions_uk.py,
+    # in the `test` job, fails until the list is exactly uklib's registry's: term
+    # assurance's, Term_UK_SEC's, first (M2), then critical illness's, CI_UK_SEC's
+    # (M4), the unit-linked bond's, ULB_UK_SEC's (M10), whole of life's, WOL_UK_SEC's
+    # (M6), the pension annuity's, PA_UK_SEC's (M12), with-profits', WP_UK_SEC's (M14),
+    # and income protection's, IP_UK_SEC's (M8).
+    name: Compile uklib ${{ matrix.shard }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [toolchain, term_assurance, critical_illness, whole_of_life, unit_linked_bond,
+                pension_annuity, with_profits, income_protection]
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.13']
+    env:
+      # As in the `cython` job: here a skip is a failure, the compiled grids run at full
+      # size on Linux, and the leg runs one shard, which conftest.py selects.
+      UKLIB_REQUIRE_CYTHON: '1'
+      UKLIB_SEC_FULL: ${{ matrix.os == 'ubuntu-latest' && '1' || '' }}
+      UKLIB_CYTHON_SHARD: ${{ matrix.shard }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+        cache-dependency-path: |
+          requirements.txt
+          requirements-cython.txt
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt -r requirements-cython.txt
+
+    - name: Run the compile tests with pytest
+      # uklib's suite alone, and of it the tests marked `cython` in the leg's shard. A run
+      # that selects nothing fails, as in the `cython` job.
+      run: pytest -q -m cython --durations=10 lifelib/libraries/uklib/tests
 
   sec:
     # uslib's `_US_SEC` test modules, one to a leg (USLIB-SEC-PLAN.md K6). Each module
@@ -211,3 +302,57 @@ jobs:
       run: >-
         pytest -q --durations=10
         lifelib/libraries/uslib/tests/test_${{ matrix.module }}_us_sec.py
+
+  sec_uk:
+    # uklib's `_UK_SEC` test modules, one to a leg, as the `sec` job runs uslib's
+    # (UKLIB-SEC-PLAN.md U7). Each module runs a core of its splice grid by default, and
+    # the rest of the grid, marked `sec_full`, skips unless UKLIB_SEC_FULL is 1. The core
+    # runs on Windows and macOS, the full grid, which holds the core, on Linux; one Python,
+    # as in the `sec` job. A product's E step adds its module to the list.
+    name: SEC uklib ${{ matrix.module }} (${{ matrix.grid }}) on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    # Measured locally, Term_UK_SEC's module took about a minute over its core and two
+    # over its full grid. The hour is the `sec` job's, room for the larger products to
+    # come, and fails a hung leg long before the six-hour default.
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [term_assurance, critical_illness, whole_of_life, unit_linked_bond,
+                 pension_annuity,
+                 income_protection, with_profits]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        grid: [core, full]
+        exclude:
+          - {os: ubuntu-latest, grid: core}
+          - {os: windows-latest, grid: full}
+          - {os: macos-latest, grid: full}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.13
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Install docutils for the docstring parse tests
+      # As in the `sec` job: the full-grid legs install docutils and set
+      # UKLIB_REQUIRE_DOCUTILS below, under which a skipped `docutils` test fails.
+      if: matrix.grid == 'full'
+      run: pip install docutils
+
+    - name: Run the module with pytest
+      env:
+        UKLIB_SEC_FULL: ${{ matrix.grid == 'full' && '1' || '' }}
+        UKLIB_REQUIRE_DOCUTILS: ${{ matrix.grid == 'full' && '1' || '' }}
+      run: >-
+        pytest -q --durations=10
+        lifelib/libraries/uklib/tests/test_${{ matrix.module }}_uk_sec.py

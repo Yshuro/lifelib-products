@@ -1,11 +1,12 @@
 """Freeze an SEC model's Phase 1 fingerprint into its test module, or check it (C2).
 
 USLIB-SEC-PLAN.md's Phase 2 changes how an SEC model is represented and no number it
-computes (D2).  So before a product's Phase 2 changes anything, what its Phase 1 model
-computes is frozen, in brief and in a form a reviewer can read: for every point of the
-committed SEC table, each column of ``result_cf()`` and ``result_pols()``, its sum, its
-largest absolute value and its values at five fixed months (§5.4).  C2 then holds every
-later version of the model to it, to 1e-12 relative.
+computes (D2), and each uklib product's C step does the same (UKLIB-SEC-PLAN.md U2).  So
+before a product's C step changes anything, what its Phase 1 model computes is frozen, in
+brief and in a form a reviewer can read: for every point of the committed SEC table, each
+column of ``result_cf()`` and ``result_pols()``, its sum, its largest absolute value and its
+values at five fixed months (§5.4).  C2 then holds every later version of the model to it,
+to 1e-12 relative.
 
 The freeze is a literal, ``FINGERPRINT = {...}``, in the product's own test module, between
 two marker lines that name the model::
@@ -14,17 +15,22 @@ two marker lines that name the model::
     FINGERPRINT = {}
     # END generated fingerprint: Term_US_SEC
 
-The tool finds the one module of ``lifelib/libraries/uslib/tests`` that holds the model's
-markers, and refuses unless exactly one does.  It fills an empty block only.  A freeze is
-made once, from the Phase 1 model as committed, and committed alone, so a filled block is
-refused unless ``--force`` is given: a refreeze, after an assumption table has changed the
-numbers, is a reviewed change of its own, which changes the input and the freeze together
-and says why.
+The tool finds the one module of its library's tests, ``lifelib/libraries/uslib/tests`` for
+a ``_US_`` model and ``lifelib/libraries/uklib/tests`` for a ``_UK_`` one, that holds the
+model's markers, and refuses unless exactly one does.  It fills an empty block only.  A
+freeze is made once, from the Phase 1 model as committed, and committed alone, so a filled
+block is refused unless ``--force`` is given: a refreeze, after an assumption table has
+changed the numbers, is a reviewed change of its own, which changes the input and the
+freeze together and says why.
 
-This is a thin command line over ``sec_support.fingerprint``, ``fingerprint_text`` and
-``fingerprint_mismatches``, which live in the library's tests, as the T6 generator does
+This is a thin command line over ``fingerprint``, ``fingerprint_text`` and
+``fingerprint_mismatches``, which live in the harness of the model's library, uslib's
+``sec_support`` or uklib's ``uk_sec_support``, as the T6 generator does
 (``tools/gen_sec_points.py``), because C2 must run in a ``lifelib.create()`` copy, which
-carries ``tests/`` and not this repository's ``tools/``.
+carries ``tests/`` and not this repository's ``tools/``.  Like that generator, the tool
+reads the library from the country tag in the model's name, ``_US_`` or ``_UK_``, and
+imports the library's harness and registry from its ``tests/`` (``tools/sec_libraries.py``,
+UKLIB-SEC-PLAN.md U4).
 
 Usage::
 
@@ -32,31 +38,28 @@ Usage::
     python tools/gen_sec_fingerprint.py Term_US_SEC --check    # C2: does the model match?
     python tools/gen_sec_fingerprint.py Term_US_SEC --force    # refreeze a filled block
 
-``--check`` writes nothing, prints each departure, and exits 1 if there is any.  A model
-the registry does not know, markers missing or found in more than one module, a filled
-block without ``--force``, or a malformed command line exit 2.
+``--check`` writes nothing, prints each departure, and exits 1 if there is any.  A name
+that carries neither tag, a model its library's registry does not know, markers missing or
+found in more than one module, a filled block without ``--force``, or a malformed command
+line exit 2.
 """
 import argparse
-import pathlib
 import re
 import sys
 
-TESTS = pathlib.Path(__file__).resolve().parents[1] / "lifelib/libraries/uslib/tests"
-sys.path.insert(0, str(TESTS))
+import modelx as mx
 
-import modelx as mx  # noqa: E402
-
-import sec_support  # noqa: E402  (it is found through the path inserted above)
-from us_registry import MODELS, model_path  # noqa: E402
+import sec_libraries  # tools/sec_libraries.py, beside this script
 
 
-def find_block(name):
-    """``(path, text, start, stop)``: the module holding ``name``'s markers, and the span
-    from the start of its BEGIN line to the end of its END line, or an error message."""
+def find_block(name, tests):
+    """``(path, text, start, stop)``: the module of ``tests``, the library's tests folder,
+    holding ``name``'s markers, and the span from the start of its BEGIN line to the end of
+    its END line, or an error message."""
     begin = re.compile(rf"^# BEGIN generated fingerprint: {re.escape(name)} .*$", re.M)
     end = re.compile(rf"^# END generated fingerprint: {re.escape(name)}\n", re.M)
     found = []
-    for path in sorted(TESTS.glob("test_*.py")):
+    for path in sorted(tests.glob("test_*.py")):
         text = path.read_text(encoding="utf-8")
         b = begin.search(text)
         if b is None:
@@ -67,7 +70,7 @@ def find_block(name):
         found.append((path, text, b.start(), e.end()))
     if len(found) != 1:
         where = ", ".join(path.name for path, *_ in found) or "none"
-        return (f"{len(found)} test modules in {TESTS} hold {name}'s fingerprint markers "
+        return (f"{len(found)} test modules in {tests} hold {name}'s fingerprint markers "
                 f"({where}); exactly one must")
     return found[0]
 
@@ -77,16 +80,24 @@ def main(argv):
         prog="python tools/gen_sec_fingerprint.py",
         description="Freeze an SEC model's fingerprint, or check it "
                     "(USLIB-SEC-PLAN.md C2).")
-    parser.add_argument("model", help="the SEC model, as us_registry.MODELS names it")
+    parser.add_argument("model", help="the SEC model, as its library's registry names it: "
+                                      "us_registry.MODELS for a _US_ model, "
+                                      "uk_registry.MODELS for a _UK_ one")
     parser.add_argument("--check", action="store_true",
                         help="compare the model with its frozen fingerprint; write nothing")
     parser.add_argument("--force", action="store_true",
                         help="refreeze a block that already holds a fingerprint")
     args = parser.parse_args(argv)
-    if args.model not in MODELS:
-        print(f"{args.model!r} is not a model us_registry.MODELS registers")
+    try:
+        library = sec_libraries.library(args.model)
+    except sec_libraries.UnknownTag as err:
+        print(err)
         return 2
-    block = find_block(args.model)
+    harness, registry = library.harness, library.registry
+    if args.model not in registry.MODELS:
+        print(f"{args.model!r} is not a model {registry.__name__}.MODELS registers")
+        return 2
+    block = find_block(args.model, library.tests)
     if isinstance(block, str):
         print(block)
         return 2
@@ -102,16 +113,16 @@ def main(argv):
               f"once; --force refreezes it, as a reviewed change of its own")
         return 2
 
-    model = mx.read_model(model_path(args.model), name=f"{args.model}_fingerprint")
+    model = mx.read_model(registry.model_path(args.model), name=f"{args.model}_fingerprint")
     try:
         if args.check:
-            lines = sec_support.fingerprint_mismatches(frozen, model)
+            lines = harness.fingerprint_mismatches(frozen, model)
             for line in lines:
                 print(line)
             print(f"{args.model}: {len(lines)} departures from its fingerprint" if lines
                   else f"{args.model} reproduces its fingerprint")
             return 1 if lines else 0
-        new = sec_support.fingerprint_text(args.model, sec_support.fingerprint(model))
+        new = harness.fingerprint_text(args.model, harness.fingerprint(model))
     finally:
         model.close()
     path.write_text(text[:start] + new + text[stop:], encoding="utf-8")

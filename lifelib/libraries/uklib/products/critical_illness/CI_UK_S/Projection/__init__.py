@@ -527,17 +527,24 @@ def ci_sel_factor(t):
 
 
 def ci_rate(t, life=1):
-    """The CI diagnosis rate applied to ``life`` in month t: table x trend x selection."""
-    return ci_rate_base(t, life) * ci_trend_factor(t) * ci_sel_factor(t)
+    """The CI diagnosis rate applied to ``life`` in month t: table x trend x selection.
+
+    Capped at 1, the bound second, ``min(q, 1.0)``, so that a missing input, a NaN, stays
+    NaN, where ``min(1.0, q)`` would read it as 1.
+    """
+    return min(ci_rate_base(t, life) * ci_trend_factor(t) * ci_sel_factor(t), 1.0)
 
 
 def claim_rate_life(t, life=1):
     """The combined annual claim decrement for one life: ``i_ci + q_d (1 - k)``.
 
     The overlap term is what stops the two rates being added.  See the Space docstring
-    for why, and for the bounds on ``k``.
+    for why, and for the bounds on ``k``.  Capped at 1, the bound second, as
+    :func:`ci_rate` is: the joint decrement in :func:`claim_rate` is a probability only
+    when each life's rate is, and two lives past 1 would make it less than certain.
     """
-    return ci_rate(t, life) + mort_rate(t, life) * (1.0 - overlap_k)  # noqa: F821
+    return min(ci_rate(t, life)
+               + mort_rate(t, life) * (1.0 - overlap_k), 1.0)        # noqa: F821
 
 
 def claim_rate(t):
@@ -545,13 +552,14 @@ def claim_rate(t):
 
     One life's rate on a single-life policy; on a joint first-event policy the joint
     decrement ``1 - (1 - q_1)(1 - q_2)`` **[std]** on one policy, which pays once and
-    ends.  Capped at 1.
+    ends.  Capped at 1, the bound second, ``min(q, 1.0)``, so that a missing input, a
+    NaN, stays NaN, where ``min(1.0, q)`` would read it as 1.
     """
     q1 = claim_rate_life(t, 1)
     if not is_joint():
-        return min(1.0, q1)
+        return min(q1, 1.0)
     q2 = claim_rate_life(t, 2)
-    return min(1.0, 1.0 - (1.0 - q1) * (1.0 - q2))
+    return min(1.0 - (1.0 - q1) * (1.0 - q2), 1.0)
 
 
 def claim_rate_paid(t):
@@ -563,11 +571,12 @@ def claim_rate_paid(t):
     nothing and neither do diagnoses followed by death inside the period.  The overlap
     factor ``k`` belongs to the non-paying exit and never appears here - applying it to
     the paid decrement understates claims, which is the mirror image of the
-    double-counting pitfall.
+    double-counting pitfall.  The standalone rate is capped at 1, the bound second, as
+    :func:`claim_rate` is.
     """
     if contract_type() == "accelerated":
         return claim_rate(t)
-    return ci_rate(t, 1) * (1.0 - survival_slip)                     # noqa: F821
+    return min(ci_rate(t, 1) * (1.0 - survival_slip), 1.0)           # noqa: F821
 
 
 def claim_rate_mth(t):
@@ -606,7 +615,9 @@ def ap_rate(t):
 
     A **frequency**, not a probability: additional-payment conditions are payable more
     than once across the schedule, subject to one claim per condition, and they never
-    terminate the policy.
+    terminate the policy.  So it has no cap of its own, but it takes :func:`ci_rate`'s,
+    which caps ``i_ci`` at 1: the frequency is at most ``ap_freq_factor``, and a NaN
+    diagnosis rate reaches it as NaN.
     """
     return ap_freq_factor * ci_rate(t, 1)                            # noqa: F821
 

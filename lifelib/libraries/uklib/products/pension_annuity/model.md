@@ -281,7 +281,7 @@ formula changes.
 ```
 q_base  = ONS-shaped table rate × α          α = 0.80    [std]
 q_imp   = q_base × (1 − f(x))^(c − c₀)       f = 1.25% to age 90, tapering to 0 at 110  [std]
-q_rated = min(1, θ × q_imp)                  θ = 1.0 standard, 1.35 on the enhanced point  [std]
+q_rated = min(θ × q_imp, 1)                  θ = 1.0 standard, 1.35 on the enhanced point  [std]
 q_m     = 1 − (1 − q_rated)^(1/12)
 ```
 
