@@ -26,7 +26,9 @@ product meets it from the commit that moves it there, Term_UK_SEC first (M2):
 * C4 on the committed points: the compiled model computes what modelx computes, every cell
   at every argument a full modelx sweep caches, with the codes no swept cell reads, which
   the model's spec adds (its ``c4_also``), every raise and every ``Data`` array, bit for
-  bit on x86-64.  A test with no compiler holds the comparison to the spec's ``also``.
+  bit on x86-64.  A test with no compiler holds the comparison to the spec's ``also``,
+  and another, reading the sources, holds every C4 comparison of each product's module to
+  the model's own.
 * The release: ``run_sec.py --block``, run compiled, holds one point's ItemSpace at a time
   (F5, K2).
 * The block's sum: ``run_sec.py``'s running sum is ``groupby``'s, bit for bit, on the
@@ -59,6 +61,7 @@ model's module, which the ``test`` job leaves out.
 import ast
 import builtins
 import itertools
+import pathlib
 import re
 import shlex
 import sys
@@ -480,6 +483,147 @@ def test_c4_on_the_committed_points_passes_the_spec_s_also(name, monkeypatch, tm
         name, lambda model: types.SimpleNamespace(name=model), tmp_path)
     assert SEC_SPECS[name].c4_also is not None, f"{name}'s spec gives C4 no also"
     assert handed == [(name, {"also": SEC_SPECS[name].c4_also})], handed
+
+
+def _calls_of(tree, name):
+    """``(call, functions)`` for every call of the function ``name`` in ``tree``, with the
+    functions it sits in, outermost first."""
+    found = []
+
+    def visit(node, functions):
+        for child in ast.iter_child_nodes(node):
+            if (isinstance(child, ast.Call) and isinstance(child.func, ast.Name)
+                    and child.func.id == name):
+                found.append((child, functions))
+            visit(child, [*functions, child] if isinstance(child, ast.FunctionDef)
+                  else functions)
+
+    visit(tree, [])
+    return found
+
+
+def _parameters(function):
+    """The names of ``function``'s parameters, in order, the keyword-only ones last."""
+    args = function.args
+    return [a.arg for a in (*args.posonlyargs, *args.args, *args.kwonlyargs)]
+
+
+def _argument(call, function, parameter):
+    """What ``call`` passes ``function``'s ``parameter``, by keyword or by place, or its
+    default where the call leaves it out: an expression, or ``None`` where there is none."""
+    given = {keyword.arg: keyword.value for keyword in call.keywords}
+    if parameter in given:
+        return given[parameter]
+    args = function.args
+    placed = [a.arg for a in (*args.posonlyargs, *args.args)]
+    if parameter in placed and placed.index(parameter) < len(call.args):
+        return call.args[placed.index(parameter)]
+    defaults = dict(zip(placed[len(placed) - len(args.defaults):], args.defaults))
+    defaults.update((a.arg, d) for a, d in zip(args.kwonlyargs, args.kw_defaults))
+    return defaults.get(parameter)
+
+
+def _calls_also(function, own):
+    """Whether ``function``'s body calls the function named ``own``."""
+    return any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+               and node.func.id == own for node in ast.walk(function))
+
+
+def _reaches(tree, own, value, functions, none=False, seen=frozenset()):
+    """Whether ``value``, an expression inside ``functions`` of the module ``tree``, is
+    always the model's own ``also``, the function named ``own``, or a function that calls
+    it; with ``none``, ``None`` passes too, as the first operand of ``also or own`` may.
+
+    ``own`` is ``None`` for the conventions, where the model's own is the spec's, which
+    ``spec_c4_also`` of the test's model returns.  A parameter of a helper reaches it
+    where every call of the helper passes, or leaves as its default, what does.
+    """
+    if value is None or isinstance(value, ast.Constant) and value.value is None:
+        return none
+    if isinstance(value, ast.BoolOp) and isinstance(value.op, ast.Or):
+        *first, last = value.values
+        return (all(_reaches(tree, own, v, functions, True, seen) for v in first)
+                and _reaches(tree, own, last, functions, none, seen))
+    if (isinstance(value, ast.Call) and isinstance(value.func, ast.Name)
+            and value.func.id == "spec_c4_also"):
+        return (own is None and len(value.args) == 1 and isinstance(value.args[0], ast.Name)
+                and any(value.args[0].id in _parameters(f) for f in functions))
+    if not isinstance(value, ast.Name):
+        return False
+    if value.id == own:
+        return True
+    for function in reversed(functions):
+        if value.id in _parameters(function):
+            key = (function.name, value.id)
+            return key not in seen and all(
+                _reaches(tree, own, _argument(call, function, value.id), outer, none,
+                         seen | {key})
+                for call, outer in _calls_of(tree, function.name))
+        local = [node for node in ast.walk(function)
+                 if isinstance(node, ast.FunctionDef) and node.name == value.id]
+        if local:
+            return _calls_also(local[0], own)
+    top = [node for node in tree.body
+           if isinstance(node, ast.FunctionDef) and node.name == value.id]
+    return bool(top) and _calls_also(top[0], own)
+
+
+def _also_faults(path, own):
+    """A line for each call of ``compiled_mismatches`` in the module at ``path`` that does
+    not pass ``also`` the model's own (:func:`_reaches`), and for an ``own`` the module
+    does not import from ``uk_sec_support`` alone; none where every call does."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    found = []
+    if own is not None:
+        imported = any(isinstance(node, ast.ImportFrom) and node.module == "uk_sec_support"
+                       and any(a.name == own and a.asname is None for a in node.names)
+                       for node in tree.body)
+        defined = [node.lineno for node in ast.walk(tree)
+                   if isinstance(node, ast.FunctionDef) and node.name == own
+                   or isinstance(node, ast.Name) and node.id == own
+                   and isinstance(node.ctx, ast.Store)]
+        if not imported or defined:
+            found.append(f"{path.name}: {own} is not uk_sec_support's alone: imported "
+                         f"{imported}, bound at lines {defined}")
+    calls = _calls_of(tree, "compiled_mismatches")
+    if not calls:
+        found.append(f"{path.name}: no call of compiled_mismatches")
+    for call, functions in calls:
+        given = {keyword.arg: keyword.value for keyword in call.keywords}
+        where = f"{path.name}:{call.lineno}"
+        if "also" not in given:
+            found.append(f"{where}: compiled_mismatches is passed no also")
+        elif not _reaches(tree, own, given["also"], functions):
+            found.append(f"{where}: also={ast.unparse(given['also'])} is not always "
+                         f"{own or 'spec_c4_also of the model'}")
+    return found
+
+
+def test_every_c4_comparison_passes_the_model_s_own_also():
+    """Every C4 comparison of a uklib SEC model hands ``compiled_mismatches`` the model's
+    own ``also``, its spec's ``c4_also``, read from the sources.
+
+    Nothing in a comparison shows what it leaves out: a call that drops ``also=``, or
+    passes ``None``, compares fewer calls, and passes.  So every call of
+    ``compiled_mismatches`` in each SEC model's module, ``test_<product>_uk_sec.py``, must
+    pass ``also`` what is always the model's own, the function its spec names, which the
+    module imports from ``uk_sec_support`` and binds nowhere else (:func:`_also_faults`):
+    that name; a function the call's helper defines that calls it, as income protection's
+    ``_c4`` does; ``also or`` it, where every call of the helper leaves ``also`` its
+    default ``None``, as the pension annuity's ``_c4_chunks`` has it; or a parameter of a
+    helper every call of which passes one of these (:func:`_reaches`).  And C4 on the
+    committed points here must pass ``spec_c4_also`` of the model under test, which
+    :func:`test_c4_on_the_committed_points_passes_the_spec_s_also` holds to the spec's.
+    Read statically, so it needs no compiler.
+    """
+    found = []
+    for name in SEC_MODELS:
+        spec = SEC_SPECS.get(name)
+        assert spec is not None and spec.c4_also is not None, f"{name} gives C4 no also"
+        module = LIB / "tests" / f"test_{model_path(name).parent.name}_uk_sec.py"
+        found += _also_faults(module, spec.c4_also.__name__)
+    found += _also_faults(pathlib.Path(__file__), None)
+    assert not found, "\n".join(found)
 
 
 def _block(name, points):
