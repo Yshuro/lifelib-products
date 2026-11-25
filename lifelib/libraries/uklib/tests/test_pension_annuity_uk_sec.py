@@ -4611,6 +4611,7 @@ def test_an_in_force_extract_needs_none_of_the_generator_columns(sec_model, tmp_
     extract's label.
     """
     extract = _extract()
+    assert not set(generated_columns(SPEC)) & set(extract.columns), list(extract.columns)
     folder = _sec_inputs(tmp_path / "extract", extract)
     model = mx.read_model(folder, name=_name("extract"))
     try:

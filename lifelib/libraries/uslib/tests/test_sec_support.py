@@ -1725,6 +1725,24 @@ def test_c4_expects_what_also_calls_beyond_the_full_sweep():
     assert called == []
 
 
+def test_no_uslib_spec_gives_c4_an_also():
+    """``spec_c4_also`` is ``None`` for every uslib SEC model, as the harness's docstrings
+    say: no uslib spec sets ``c4_also``.
+
+    uslib's modules pass their own ``also`` to their comparisons, and uslib's conventions'
+    C4 on the committed points passes none, so a spec's would be read by nothing here, and
+    one set would claim a comparison no test makes.  Every spec, and every SEC model the
+    registry names, is held.
+    """
+    from sec_support import spec_c4_also
+    from us_registry import MODELS, is_sec
+    names = sorted({*SEC_SPECS, *(name for name in MODELS if is_sec(name))})
+    assert names, "no uslib SEC model to hold"
+    given = {name: spec_c4_also(name) for name in names}
+    assert all(also is None for also in given.values()), {
+        name: also for name, also in given.items() if also is not None}
+
+
 def test_vul_maps_s_ids_and_totals_onto_its_positions_and_total_cells():
     """``_vul_twin_args`` maps ``VUL_US_S``'s keys as ``VUL_US_SEC`` takes them (R9, R12).
 

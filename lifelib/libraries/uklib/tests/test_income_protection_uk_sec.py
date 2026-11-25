@@ -4858,6 +4858,7 @@ def test_an_in_force_extract_needs_none_of_the_generator_columns(sec_model, tmp_
     the full grid compares the other committed points.
     """
     extract = _extract()
+    assert not set(generated_columns(SPEC)) & set(extract.columns), list(extract.columns)
     folder = _sec_inputs(tmp_path / "extract", extract, _extract_cohorts())
     model = mx.read_model(folder, name=_name("extract"))
     try:
@@ -5567,8 +5568,8 @@ def test_the_cohort_sums_are_s_sums_bit_for_bit(sec_model, s_model, grid):
     Python 3.11 (:data:`SUM_COMPENSATES`), ``sum`` and ``IP_UK_S`` with it add left to
     right, and the sums here part from theirs in the last bits, and so, through the
     recoveries back in health, do the twins' cohorts: there the cohorts past the live ones,
-    the live one's lives and each sum's type are held, and the bits skip, naming Python
-    3.11 (:data:`SUM_311`).
+    this model's and on the twins S's, the live one's lives and each sum's type are held,
+    and the bits skip, naming Python 3.11 (:data:`SUM_311`).
     """
     found, bits, plain = [], [], 0
     table = sec_model.Data.model_point_table()
@@ -5603,6 +5604,13 @@ def test_the_cohort_sums_are_s_sums_bit_for_bit(sec_model, s_model, grid):
         if p.pv_benefits().hex() != float(sum(terms)).hex():
             bits.append(f"point {point_id}: pv_benefits() is {p.pv_benefits()!r}, sum "
                         f"{sum(terms)!r}")
+    for point_id in NEW_BUSINESS if grid == "core" else ():
+        s, p = _point(s_model, point_id), _point(sec_model, point_id)
+        for t in range(p.proj_len()):
+            past = s.sick_cohorts(t)[p.claim_dur_live(t):]
+            if any(v != 0.0 for v in past):
+                found.append(f"point {point_id}, t = {t}: S's sick_cohorts({t}) holds "
+                             f"{[v for v in past if v != 0.0][:3]} past claim_dur_live")
     assert not found, found[:10]
     _hold_the_sums_bits()
     for point_id in NEW_BUSINESS if grid == "core" else ():
@@ -5610,8 +5618,7 @@ def test_the_cohort_sums_are_s_sums_bit_for_bit(sec_model, s_model, grid):
         for t in range(p.proj_len()):
             live, held = p.claim_dur_live(t), s.sick_cohorts(t)
             mine = tuple(p.pols_sick_dur(t, z) for z in range(1, live + 1))
-            if [v.hex() for v in mine] != [v.hex() for v in held[:live]] or any(
-                    v != 0.0 for v in held[live:]):
+            if [v.hex() for v in mine] != [v.hex() for v in held[:live]]:
                 bits.append(f"point {point_id}, t = {t}: the cohorts part from S's "
                             f"sick_cohorts({t})")
             for cell in COHORT_SUMS:
