@@ -19,8 +19,9 @@ step, M7, are done too, 2026-11-24, by run 55 (§6.4, *Record — M6*, and §6.3
 M7*), with-profits' in-force step, M13, by run 56 (§6.5, *Record — M13*), the pension
 annuity's compile step, M12, by run 57 (§6.7, *Record — M12*), with-profits', M14, by run
 58 (§6.5, *Record — M14*), and income protection's, M8, by runs 59 and 60 (§6.3, *Record —
-M8*). So all seven products run in force and compile; the close, M15, has not started
-(§7).
+M8*). So all seven products run in force and compile. The close, M15, is done too,
+2026-11-25: Tests run 61 passed all 111 jobs, and the plan is closed (§7, *Record —
+M15*).
 Like USLIB-SEC-PLAN.md, this document is both the
 specification and the record: each milestone records what it actually did, including where
 the implementation departed from the plan.
@@ -4757,6 +4758,327 @@ what was measured (K6) and the faults injected.
 M1 and M2 run alone. M3–M8 and M9–M14 run as the two streams. A milestone whose gate is met
 on Linux alone is done on Linux, and stays open until `cython_uk` has run on Windows
 (uslib's §6.3).
+
+### Record — M15, done 2026-11-25
+
+M15 closes the plan. It took up §7's row and the items the product records carry into it:
+- §6.3, *Record — M8*, *Carried into M15*;
+- §6.4, *Record — M6*, *Carried into M15*;
+- §6.5, *Record — M14*, *Carried into M15*;
+- §6.6, *Record — M9*, *For the harness, at the close*;
+- §6.7, *Record — M11*'s note on the LPI's bounds, and *Record — M12*, *Carried into M15*.
+
+**Commits.** Fifteen, on M8's record:
+- `c1afbe3`: uklib's `index.md` gains *Compiled speed*, the table of seven rows. Each row
+  gives the SEC model's `net_cf` time for a point compiled, as the export and in modelx,
+  with the two ratios, as its `model-sec.md` records C6. The README's status and
+  organization lines, and MERGE.md's page counts and folder note, name uklib's SEC models.
+- `afc434e`: `PA_UK_SEC`'s C6, timed again at the caches `omega_age_max` sets (*C6 at the
+  grown caches*, below).
+- `1c8a517`: the generator's `source_refs` column, and the six tables it changes.
+- `ddf1804`: `SecSpec.c4_also`, which the conventions' C4 passes, and `also` for Term, CI
+  and ULB.
+- `57e0f7b`: the exact `sum` checks skip on Python 3.11.
+- `2a2afeb`: the six runners name a `derived_refs` row's References.
+- `48800b0`: a test holds every C4 call to its model's own `also`.
+- `6d12bde`: Term's and CI's `also` ask every cell of a life at both lives.
+- `215257d`: the pages of Term, CI, WOL, PA and ULB.
+- `a39a7e6`: the `test` job runs the tests of a sum's bits on Python 3.11.
+- `f0684fa`: the review's smaller items.
+- `155d933`: the static tests read the harness's helpers and the step's options, and pin
+  what each guarded test asserts before its guard.
+- `6aa505c`: every cell of a life, and the refusal of a single life's second life
+  alone.
+- `f2ce426`: the extract tests name the generator's columns.
+- `98eecce`: the landing's own, closing three gaps the re-check found (*The build, the
+  review and the rework*, below).
+
+No number moved. All seven uklib fingerprints and all twelve uslib ones reproduce, and
+every uslib table and companion regenerates byte for byte.
+
+**The build, the review and the rework.**
+- One agent built the four code items in three commits, injecting 17 faults, all caught.
+  - No compiled cell differed from modelx at any newly compared code.
+  - Running all seven modules under a left-to-right `sum` found two more tests that rest
+    on `sum` compensating, beyond the three the records named: IP's claims total against
+    S's twins, whose S benefit reads S's cohort sums, and Term's ledger residual.
+- A second agent reviewed it, injecting 22 faults of its own, and two on the harness
+  check. Nothing blocked the four items:
+  - uslib was unchanged to the byte: 18 generated files of 12 models, and 12
+    fingerprints;
+  - C4's new `also` asked every timing and kind code in every month on every row;
+  - compiled, the conventions' C4 with each spec's `also` passed for all seven models, in
+    625 s at a peak of 3.4 GB.
+
+  Its findings, each fixed in the rework (*What exists now*):
+  - The runners still printed a `derived_refs` row as a restatement at the shipped
+    References. `origin()` read the other three generator columns, never `source_refs`.
+  - Nothing held a Term, CI or ULB C4 call to its `also`. With `also=` deleted from ULB's
+    splice-grid call, every test still passed.
+  - Four `model-sec.md` pages counted the generator's three columns, where their extract
+    tests drop four. Term's, CI's and ULB's pages never named their new `also`.
+  - The codes tests took only cells of a timing or a kind. On the committed rows, 80
+    computable calls in Term and 132 in CI, cells of a life, went uncompared. Their
+    values were trivial, but a later coded cell under another name would have escaped.
+  - No CI job took the 3.11 skip path. An assertion moved above its guard passed on 3.13
+    and failed only under a left-to-right `sum`.
+  - Smaller gaps: IP checked S's cohorts past the live extent after its guard, though that
+    check does not rest on `sum`; an extract test stripping three generator columns
+    passed with `source_refs` left in; and nothing held the claim that no uslib spec sets
+    `c4_also`.
+- The builder reworked every finding in six commits, injecting 11 faults, all caught. They
+  included the review's five uncaught faults:
+  - the splice-grid call without `also`;
+  - a uslib spec setting `c4_also`;
+  - the extract test stripping three columns;
+  - the guard called first;
+  - an assertion moved above its guard.
+
+  Asked at both lives in every month, compiled agreed with modelx at every call newly
+  compared. `life_gap.py` now finds nothing uncompared on Term or CI.
+- A third agent verified the rework, injecting 35 faults. Every review finding was closed,
+  and every fault the review named was now caught. On a real Python 3.11, an assertion
+  moved above its guard failed (`assert 0 == 415`), and on 3.13 it passed. It found eight
+  places where the new tests held less than their docstrings said, none hiding a defect:
+  - The C4-call test let a call through:
+    - through a harness helper;
+    - through `**` unpacking;
+    - through a stand-in that asked the `also` on some rows only;
+    - through a helper parameter named as the `also`.
+  - The step test let a test be dropped through `-k` or `--deselect`, or through a guard
+    reached through a helper.
+  - Any `assert` counted as asserting before the guard.
+  - The step's comment gave too short a time, and left out the full grid's skip.
+  - The codes tests derived two shapes of cell of a life alone. A cell `(y, life)` would
+    have gone unasked.
+  - The `also` and the gap test accepted a refusal at any life, on any row, where only
+    life 2 of a single life is refused.
+  - Nothing held the `also`'s narrow catch.
+  - The extract tests' new assertion read the same `generated_columns(SPEC)` that a fault
+    could change.
+- The builder closed each of the eight in three more commits, and injected 15 faults,
+  all caught: the twelve that had got through, and three of the review's five again, the
+  splice-grid call without `also`, the guard called first and the assertion moved above
+  its guard.
+- The verifier re-checked them. Each of the twelve faults now failed, and so did the
+  review's three. Its new faults found three more gaps, which the landing closed in a
+  commit of its own (`98eecce`):
+  - a `PYTEST_ADDOPTS` set in the workflow's own `env:`, which every step sees;
+  - a later test that skipped by itself on `SUM_COMPENSATES`, without the guard, which
+    the step need not name;
+  - a catch on the word "invalid" alone.
+
+  Each of seven faults on these passed the tests before that commit, and each fails them
+  since.
+- Two things stay as they are:
+  - **The pins are counts.** A builder who moves a guard up can lower its pin to match.
+    The diff shows the pin change, for review to see.
+  - **A lambda is refused.** `also=lambda p: _ulb_c4_also(p)` always asks the `also`, but
+    the C4-call test refuses it. A named stand-in that asks the `also` passes.
+
+**What exists now.**
+- **C4 asks each model's `also`.**
+  - `SecSpec` has a field, `c4_also`, a callable of one modelx point or `None`, and
+    `spec_c4_also(name)` reads it. Both harness copies carry them identically.
+  - uklib's conventions' C4 on the committed points passes each model's `also` to
+    `compiled_mismatches`. All seven specs set it.
+  - No uslib spec sets it, so uslib's comparisons are as they were.
+  - A compiler-free conventions test runs the real C4 test with stand-ins, and checks
+    that it hands over each spec's hook. A harness test shows the hook reaching
+    `compiled_mismatches` on a toy model.
+  - A second compiler-free test reads the seven modules, the conventions and the
+    harness's helpers. Every `compiled_mismatches` call must pass the model's own
+    `also`:
+    - directly;
+    - through a helper's parameter that every caller fills so;
+    - or through a stand-in that asks it of every point it is given, in a statement of
+      its own body, outside any `if`, loop or `try`, as IP's `_c4` does.
+
+    A call without it, with `also=None`, or with `*` or `**` unpacking fails the test. So
+    does the `also`'s name bound other than by its import.
+  - IP's, PA's, WOL's and WP's `also` functions moved unchanged from their modules into
+    `uk_sec_support.py`'s product part, so the specs reach them without the conventions
+    importing a product module.
+- **`also` for Term, CI and ULB.** Each asks every coded cell at every code, in every
+  month, on every row C4 compares. Term's and CI's also ask every cell of a life at both
+  lives, as PA's does. Each cell of a month and a life is asked in every month, and a
+  life-only cell once.
+  - A single life's point refuses its second life, and `also` passes that call over. A
+    refused call caches nothing, so C4 never compares it. Any other error is raised, as
+    is this refusal at life 1 or on a joint point, by the point's own `is_joint()`. A
+    harness test holds that on stand-ins that raise.
+  - ULB has no cell of a life.
+
+  Each module passes its `also` in every C4 call, on the committed points and the splice
+  rows.
+
+  A compiler-free test in each module derives its cells from modelx: every cell of `t`
+  and one more parameter, and every cell with `life` among its parameters. Row by row,
+  it derives what each cell takes, and holds `also` and the spec's hook to that. A cell
+  added later under any name is held. A cell of a life whose shape no `also` asks, such
+  as `(y, life)`, fails the test until one does. On Term and CI, a second test finds no
+  call of a life that computes but goes uncompared. Before, the review counted 80 such
+  calls on Term and 132 on CI.
+
+  Newly compared, compiled against modelx, all agree:
+  - Term's count at `AFT_DECR`, in every month;
+  - CI's count at `BEF_LAPSE` and `AFT_DECR`, and its benefits after the frame;
+  - ULB's fund at `BEF_GROWTH`;
+  - every cell of a life on Term and CI, at both lives.
+- **`source_refs`.**
+  - The generator writes the column on each `derived_refs` row: each Reference and its
+    value, in the spec's order, as the harness describes References elsewhere
+    (`review_prem_shock 0.1`). It is blank on every other row.
+  - It is written only to a table whose spec has `derived_refs`. CI's, ULB's, WOL's,
+    PA's, IP's and WP's tables carry it. Term's and every uslib table keep their columns
+    and bytes.
+  - It is a generator column, `generated_columns(spec)`. No model reads it, and an
+    in-force extract needs it no more than `row_kind`, `source_policy_id` and
+    `source_mth`. The extract tests strip it with them, and each asserts by name that
+    its extract carries none of them. An S column of that name is refused.
+  - The six runners print it. ULB's point 12 reads `(S's ULB-000004 at its month 66,
+    under fund_return 0.0)`, where it read like a restatement at the shipped References,
+    and CI's point 14 likewise. A compiler-free test in each module runs the runner's
+    `origin()` on every row.
+- **Python 3.11.** Five tests hold a sum to `sum`'s bits:
+  - IP's cohort sums, and its claims total against S's twins;
+  - CI's and WP's claims totals;
+  - Term's ledger residual.
+
+  Each checks first what does not depend on `sum`. Then, where `sum([0.1] * 10) != 1.0`,
+  it skips, naming Python 3.11; otherwise it checks the bits. The test is
+  `SUM_COMPENSATES`, as the conventions' T1 floors read it. A guard test in each module
+  holds the constant against `math.fsum` and the guard's two branches, so an inverted
+  guard fails on 3.13. Each module's docstring, and the `model-sec.md` pages that say the
+  sums are `sum`'s bits, say what 3.11 changes.
+
+  CI's `test` job gains a step on its Python 3.11 leg on Linux. By node id, it runs the
+  five guarded tests and the four guard tests. The guarded tests skip at the guard, and
+  the rest pass.
+  - A compiler-free test holds the step to `pytest -q -rs` and node ids alone. The ids
+    must be exactly the tests that reach the guard, directly or through a helper. So a
+    guarded test added later fails until the step names it, and no `-k` or
+    `--deselect` can drop one.
+  - The same test pins how many assertions each guarded test makes before its guard. So
+    a guard moved earlier fails it, and the skip's "the rest was held" stays true.
+  - On a real Python 3.11.18 with `requirements.txt` installed, as the job installs it,
+    the step gave 4 passed and 6 skipped in 115 s. Five skips named 3.11, and one was
+    the full grid's.
+- **uklib's `index.md`**, *Compiled speed*. Compiled, a point's `net_cf` takes 0.181 ms
+  (Term) to 2.82 ms (IP): 12.8 to 20.2 times its export, and 368 to 508 times modelx.
+
+**The carried items**, one each, with where it stands:
+- *The shared conventions' C4 runs without `also`* (§6.3, §6.5 and §6.7: *Record — M8*,
+  *M14* and *M12*): done, through `SecSpec.c4_also`.
+- *Term, CI and ULB pass no `also` to C4* (§6.4, *Record — M6*): done. No compiled cell
+  differs from modelx at a newly compared code.
+- *A row derived under References of its own records them nowhere in its table* (§6.6,
+  *Record — M9*): done, as `source_refs`.
+- *Fingerprinting a `derived_refs` row under its own References* (§6.7, *Record — M11*):
+  left as it is. C2 reads at the shipped References, and T2 already holds each such row
+  against S at its own References.
+- *The caches' widths rest on a Cython internal* (§6.3, *Record — M8*): accepted, as
+  recorded. A Cython release that changed how the unpickle function pools its
+  temporaries would fail the Linux build, under `-Werror`, and the generated-C test, not
+  the numbers.
+- *The product modules assume Python 3.12 or later* (§6.3, *Record — M8*): done, by the
+  guards and by the `test` job's step that runs them on Python 3.11. The rest of each
+  product module still runs on 3.13 alone, in `sec_uk`.
+- *C6 at the grown caches* (§6.7, *Record — M12*): done, `afc434e`.
+  - The run: `tools/bench_sec_cy.py pension_annuity`, three times, on one build of
+    today's model, whose ItemSpace's struct is 1,390,576 bytes. The 1-minute load was
+    0.98 to 1.99.
+  - `net_cf`: 0.364 ms a point compiled, against 5.31 ms as the export and 152 ms in
+    modelx, so 14.6 and 417 times.
+  - `result_cf`: 0.803 ms, 7.2 and 190 times.
+  - Before the caches grew, at a load of 1.5 to 4.0, `net_cf` took 0.393 ms compiled.
+    The load moves the figures more than the caches did.
+  - Every engine, loop and run summed `net_cf` to the same −5,946,586.352.
+
+**Measured for K6.** On the shared 4-CPU Linux machine:
+- Each module's default run, `-m "not cython"`, as `sec_uk` runs it, on the rework:
+
+  | Module | Result | Time | Peak |
+  |---|---|---|---|
+  | `test_term_assurance_uk_sec.py` | 299 passed, 119 skipped | 137 s | 1,059 MiB |
+  | `test_critical_illness_uk_sec.py` | 528 passed, 101 skipped | 189 s | 1,125 MiB |
+  | `test_unit_linked_bond_uk_sec.py` | 314 passed, 97 skipped | 246 s | 1,153 MiB |
+
+  Each is inside U6's five minutes. Asking both lives costs these runs mostly their gap
+  tests. Alone, Term's takes 6.3 s and CI's 8.2 s. Inside CI's module, its gap test adds
+  about 15 s and 130 MiB.
+- The compiled conventions' module whole, with each spec's `also`, for all seven models:
+  84 passed, in 625 s on the review's run and 732 s on the rework's, at a peak of 3.4 GB.
+- The new step, on Python 3.11.18: 107 to 120 s, at a peak of 1.4 GB.
+- At landing, `f2ce426` ran its gate here in two lanes, beside the verifier's re-check:
+  - the `test` job's view of uklib, its SEC modules left out, under `-m "not cython"`:
+    1,082 passed and 19 skipped, in 434 s, at a peak of 3.5 GiB;
+  - the compiled conventions of all seven models: 21 passed, in 677 s, at 3.3 GiB;
+  - Term's, CI's and ULB's modules by default: 299, 528 and 314 passed, in 148, 195 and
+    246 s, at 1,077, 944 and 1,166 MiB;
+  - their shards: 13, 14 and 14 passed, in 169, 177 and 189 s;
+  - the tests the rework changed in WOL's, PA's, IP's and WP's modules: 15 passed and 4
+    skipped;
+  - the new step, on Python 3.11.18: 4 passed and 6 skipped, in 124 s;
+  - uslib's harness test: 80 passed;
+  - the generators' and fingerprints' checks, for all seven uklib and all twelve uslib SEC
+    models;
+  - the harness check, with 149 statements compared;
+  - doccheck, at 0 warnings in 549 pages;
+  - md_lint, at 0;
+  - the scaffolding, at 0 files.
+
+  On `98eecce`, the landing's own commit, the static and harness tests passed, 159 of
+  them, and so did the changed tests on Python 3.11.
+
+In CI, the Tests workflow's run 61 on `98eecce` passed all 111 jobs, each at its first
+attempt. None was rerun, where runs 59 and 60 had each lost macOS legs that were never
+given a runner. Its `test` job on Python 3.11 and Ubuntu:
+- ran the suites: 7,229 passed and 129 skipped, in 46 min 49 s;
+- then the new step: 4 passed and 6 skipped, in 106 s. Five skips named Python 3.11, and
+  one was the full grid's, as here;
+- then the harness check, with 149 statements compared.
+
+The legs whose tests M15 changed most:
+- `sec_uk`'s full grids on Ubuntu: Term's in 3.1 min, CI's in 5.3 and ULB's in 12.6;
+- `cython_uk`'s legs on Ubuntu and Windows: Term's in 3.9 and 3.9 min, CI's in 3.6 and
+  5.0, and ULB's in 3.5 and 3.3.
+
+**The matrix (K6).** Run 61 is the matrix at the close, 111 jobs, as K6 foresaw. They took
+92.7 minutes from the dispatch to the last job's end, and 1,448 runner-minutes:
+
+| Job | Legs | A leg, in minutes | Its median | Median wait to start |
+|---|---|---|---|---|
+| `test` | 12 | 24.3 to 50.3 | 46.2 | 1.7 |
+| `sec` | 36 | 1.2 to 30.8 | 7.6 | 56.9 |
+| `sec_uk` | 21 | 3.1 to 30.6 | 7.5 | 39.6 |
+| `cython` | 26 | 0.6 to 26.3 | 8.5 | 18.0 |
+| `cython_uk` | 16 | 0.7 to 23.9 | 4.9 | 0.0 |
+
+- At most 20 jobs ran at once, and 15.6 on average. Only 30 of the 111 started within
+  five minutes, and the last to start waited 68.1 minutes.
+- So the queue sets the run's span, not any leg. The longest leg, the `test` job on Python
+  3.14 and macOS, took 50.3 of the 92.7 minutes.
+- uklib's slowest legs are `sec_uk`'s full grids of IP and WP, 30.6 and 29.9 minutes, and
+  `cython_uk`'s IP on Ubuntu, 23.9. Each is half its job's 60-minute limit. The `test`
+  job's legs take 24.3 to 50.3 of their 90.
+
+**Faults.** Each was injected into a copy of its own.
+- **The builder:** 17, then 11 on the rework, and 15 on the verification's items. All
+  were caught.
+- **The review:** 22, and two on the harness check. Five survived:
+  - ULB's splice-grid call without `also`;
+  - a uslib spec setting `c4_also`;
+  - an extract test stripping three generator columns;
+  - the guard called first;
+  - an assertion that rests on `sum`, moved above its guard.
+
+  Each is caught since the rework.
+- **The verification:** 35. Twelve survived, the eight places listed above. Each is caught
+  since the second rework.
+- **The re-check:** the twelve again, and three of the review's five, all caught. Its new
+  faults found the three gaps above. Of the landing's seven faults on them, each is
+  caught since the landing's commit, and none was before.
 
 ---
 
