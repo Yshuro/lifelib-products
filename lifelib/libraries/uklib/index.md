@@ -76,7 +76,7 @@ flows be read, summed or compared without first checking which step they came fr
 carries a second sense in lifelib — scalar, one model point at a time, as against the
 vectorized `_M` models — and that is true of all seven here as well.
 
-Each product is to carry a second model, `<product>_UK_SEC`, derived from its `_S` model,
+Each product carries a second model, `<product>_UK_SEC`, derived from its `_S` model,
 as each of [uslib](../uslib/index.md)'s products does. `E` is for running **in force**: `t`
 counts months from a valuation date shared by every model point, and a model point may be a
 policy issued at that date, one already in force at it, in any month of its policy year, or
@@ -104,7 +104,30 @@ too, each of its eight chains blocked by policy year, and its claims total compe
 Python's `sum` is, three kinds being paid together in a frame's last month.
 `IP_UK_SEC` runs in force with lives in health and in claim at any claim duration, and
 compiles too, its claim cohorts, a tuple a month in `IP_UK_S`, a recursion of two
-parameters, a cohort a cell, whose sums are `IP_UK_S`'s `sum` to the last bit.
+parameters, a cohort a cell, whose sums are `IP_UK_S`'s `sum` to the last bit. So every
+product has its in-force model, and every one compiles.
+
+**Compiled speed.** Each `_SEC` model's `model-sec.md` records what compiling buys, timed by
+`tools/bench_sec_cy.py`: one block of the committed model points repeated, each engine in a
+process of its own, the fastest of three runs, the tool run three times. The figures below
+are `net_cf(t)` summed over each point's frame, the projection alone, in milliseconds a
+point, each the median of the tool's three runs, and the ratios are each page's own, the
+median of its three runs' ratios. All seven were timed on a shared 4-CPU Linux machine
+under load, as each `model-sec.md` records, so the figures compare engines within a row
+better than products across rows. The export is the model as plain Python, `modelx`'s
+export, before compiling; `modelx` is the `_SEC` model itself. A point of income protection
+costs the most on every engine, since each month it sums its triangle of claim cohorts
+four times, and modelx records each cohort's dependencies.
+
+| Product | Model | Compiled | Export | modelx | Compiled vs export | Compiled vs modelx |
+|---|---|---|---|---|---|---|
+| Term assurance | [`Term_UK_SEC`](products/term_assurance/model-sec.md) | 0.181 ms | 2.31 ms | 76.8 ms | 12.8× | 419× |
+| Critical illness cover | [`CI_UK_SEC`](products/critical_illness/model-sec.md) | 0.207 ms | 2.74 ms | 85.2 ms | 13.2× | 411× |
+| Income protection | [`IP_UK_SEC`](products/income_protection/model-sec.md) | 2.82 ms | 56.7 ms | 1,430 ms | 20.2× | 508× |
+| Whole of life | [`WOL_UK_SEC`](products/whole_of_life/model-sec.md) | 0.396 ms | 5.10 ms | 187 ms | 13.0× | 470× |
+| With-profits | [`WP_UK_SEC`](products/with_profits/model-sec.md) | 0.803 ms | 10.70 ms | 302 ms | 13.3× | 368× |
+| Unit-linked investment bond | [`ULB_UK_SEC`](products/unit_linked_bond/model-sec.md) | 0.236 ms | 3.13 ms | 111 ms | 13.1× | 470× |
+| Pension annuity | [`PA_UK_SEC`](products/pension_annuity/model-sec.md) | 0.393 ms | 5.92 ms | 192 ms | 15.1× | 489× |
 
 Assumption tables stay in the units they are quoted in: a mortality rate by attained age
 and a lapse rate by policy year are annual, and each model converts them month by month

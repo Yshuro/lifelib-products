@@ -110,7 +110,7 @@ page under `doc/source/libraries/<lib>/` is a one-line `{include}` of the corres
 library document, and the page tree mirrors the library tree so the authored relative links
 keep resolving. Nothing is copied and nothing is generated at build time.
 
-Copy `doc/source/libraries/uslib/` (98 files), `doc/source/libraries/uklib/` (58 files) and
+Copy `doc/source/libraries/uslib/` (146 files), `doc/source/libraries/uklib/` (86 files) and
 `doc/source/libraries/jplib/` (74 files) from this repository into lifelib's
 `doc/source/libraries/` as they stand. All of them come
 from `python tools/gen_scaffolding.py lifelib/libraries/<lib>`, and every include path they
@@ -122,8 +122,9 @@ Those trees also carry the autodoc pages — `<Model>/<Model>.rst` and one
 `<Model>/<Space>.rst` per Space, following `annuallife/TradLife_A.rst` — which deliberately
 do **not** live in the libraries: they are Sphinx plumbing, and a `lifelib.create()` copy is
 better without them. Each model has a folder of its own, in every library, because a uslib
-product can hold two models whose Spaces share their names: its `<Name>_US_S` and the
-`<Name>_US_SEC` beside it (USLIB-SEC-PLAN.md D9). A model page's URL is therefore
+or uklib product can hold two models whose Spaces share their names: its `<Name>_US_S` and
+the `<Name>_US_SEC` beside it (USLIB-SEC-PLAN.md D9), or its `<Name>_UK_S` and the
+`<Name>_UK_SEC` beside it (UKLIB-SEC-PLAN.md U1). A model page's URL is therefore
 `libraries/<lib>/products/<slug>/<Model>/<Model>.html`.
 
 `_research/` is excluded by simply having no pages, so there is no `exclude_patterns` entry
